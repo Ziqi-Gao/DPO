@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
+
+import torch
+from transformers import AutoConfig, AutoTokenizer
 
 from posttrain_circuits.circuits.mib_eap_ig import MIB_REVISION
 from posttrain_circuits.core.config import compose_config
@@ -74,6 +79,49 @@ def main(argv: list[str] | None = None) -> None:
         blockers.append("SLURM_ACCOUNT is unset")
     if not checks["slurm_gpu_partition"]:
         blockers.append("SLURM_GPU_PARTITION/SLURM_PARTITION is unset")
+    checks["cuda_torch_build"] = torch.version.cuda is not None
+    if not checks["cuda_torch_build"]:
+        blockers.append("the selected Python has a CPU-only torch build")
+    checks["accelerate_available"] = importlib.util.find_spec("accelerate") is not None
+    checks["transformer_lens_available"] = importlib.util.find_spec("transformer_lens") is not None
+    if not checks["accelerate_available"]:
+        blockers.append("accelerate is unavailable in the selected Python")
+    if not checks["transformer_lens_available"]:
+        blockers.append("transformer_lens is unavailable in the selected Python")
+    requested_python = os.environ.get("PYTHON_BIN", "")
+    checks["selected_python_matches_preflight"] = (
+        bool(requested_python) and Path(requested_python).resolve() == Path(sys.executable).resolve()
+    )
+    if not checks["selected_python_matches_preflight"]:
+        blockers.append(
+            f"PYTHON_BIN does not match the preflight interpreter: {requested_python!r} != {sys.executable!r}"
+        )
+    checks["accelerate_executable"] = bool(
+        os.environ.get("ACCELERATE_BIN") and Path(os.environ["ACCELERATE_BIN"]).is_file()
+    )
+    if not checks["accelerate_executable"]:
+        blockers.append("ACCELERATE_BIN is unset or is not a file")
+    cache_error = ""
+    try:
+        for section in ("model", "teacher"):
+            spec = config[section]
+            AutoConfig.from_pretrained(
+                str(spec["model_name_or_path"]),
+                revision=str(spec["model_revision"]),
+                local_files_only=True,
+                trust_remote_code=bool(spec["trust_remote_code"]),
+            )
+            AutoTokenizer.from_pretrained(
+                str(spec["tokenizer_name_or_path"]),
+                revision=str(spec["tokenizer_revision"]),
+                local_files_only=True,
+                trust_remote_code=bool(spec["trust_remote_code"]),
+            )
+        checks["pinned_model_cache"] = True
+    except (OSError, ValueError, KeyError) as exc:
+        checks["pinned_model_cache"] = False
+        cache_error = str(exc)
+        blockers.append(f"pinned model/tokenizer cache is incomplete: {cache_error}")
     payload: dict[str, Any] = {
         "phase": "G0_preflight",
         "passed": all(checks.values()),
@@ -82,6 +130,11 @@ def main(argv: list[str] | None = None) -> None:
         "git_commit": git_commit,
         "prereg_commit": prereg_commit,
         "mib_revision": mib_revision,
+        "python_executable": sys.executable,
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "hf_home": os.environ.get("HF_HOME"),
+        "model_cache_error": cache_error or None,
         "resolved_config_sha256": sha256_value(config),
         "created_at": utc_now(),
     }
