@@ -6,6 +6,10 @@ if [[ -d .opd-git && ! -f .git/HEAD ]]; then
   export GIT_DIR="${project_root}/.opd-git"
   export GIT_WORK_TREE="${project_root}"
 fi
+export PROJECT_ROOT=${PROJECT_ROOT:-${project_root}}
+export PYTHON_BIN=${PYTHON_BIN:-${project_root}/.venv/bin/python}
+export ACCELERATE_BIN=${ACCELERATE_BIN:-${project_root}/.venv/bin/accelerate}
+export OUTPUT_ROOT=${OUTPUT_ROOT:-outputs}
 run_id=${G0_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 run_dir=${G0_RUN_DIR:-${OUTPUT_ROOT:-outputs}/g0/${run_id}}
 mkdir -p "${run_dir}/logs"
@@ -19,8 +23,9 @@ if ! "${PYTHON_BIN:-.venv/bin/python}" -m posttrain_circuits.cli.preflight_g0 \
 fi
 
 partition=${SLURM_GPU_PARTITION:-${SLURM_PARTITION:?Set SLURM_PARTITION}}
+walltime=${SLURM_G0_TIME:-12:00:00}
 submission=$(sbatch --parsable --account="${SLURM_ACCOUNT:?Set SLURM_ACCOUNT}" \
-  --partition="${partition}" --export=ALL,G0_RUN_DIR="${run_dir}" \
+  --partition="${partition}" --time="${walltime}" --export=ALL,G0_RUN_DIR="${run_dir}" \
   --output="${run_dir}/logs/g0-%j.out" --error="${run_dir}/logs/g0-%j.err" \
   scripts/slurm/g0_qwen.slurm)
 job_id=${submission%%;*}
