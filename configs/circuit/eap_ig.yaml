@@ -1,0 +1,16 @@
+name: eap_ig
+backend: mib
+mib_revision: b759df34433c9e31043ba9e02908ce0bf20e894f
+node_or_edge_level: edge
+integrated_gradient_steps: 10
+smoke_steps: 5
+validation_steps: 50
+discovery_pair_count: 32
+validation_pair_count: 32
+mib_bootstrap_replicates: 20
+compatibility_tolerance: 0.02
+random_mask_repeats: 5
+prompt_bootstrap_samples: 1000
+ablation_baseline: counterfactual_replacement
+sparsity_grid: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
+

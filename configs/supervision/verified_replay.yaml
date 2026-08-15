@@ -1,0 +1,5 @@
+name: verified_replay
+normalization: sequence
+minimum_positives: 1
+retry_limit: 8
+

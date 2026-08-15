@@ -1,0 +1,18 @@
+groups:
+  model: gemma2_2b
+  teacher: gemma2_teacher_9b
+  task: proofgraph_main
+overrides:
+  trainer:
+    backend: accelerate
+    max_steps: 600
+    token_budget: 32000000
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    validation_examples: 128
+  task:
+    validation_split_path: outputs/datasets/proofgraph-validation
+profile_kind: secondary_gemma
+full_parameter_training: true
+student: gemma2_2b
+teacher: gemma2_teacher_9b

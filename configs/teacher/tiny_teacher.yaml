@@ -1,0 +1,7 @@
+teacher_id: local/proofgraph-oracle-teacher
+teacher_revision: local-proofgraph-v1
+resolved_teacher_commit: local-proofgraph-v1
+generation_seed: 31415
+temperature: 1.0
+top_p: 0.95
+backend: proofgraph_oracle_smoke

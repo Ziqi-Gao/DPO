@@ -1,0 +1,5 @@
+name: grpo_random_reward
+state_source: current_policy
+supervision: grpo
+reward: matched_random
+

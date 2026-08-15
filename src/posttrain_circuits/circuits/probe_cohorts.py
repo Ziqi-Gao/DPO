@@ -1,0 +1,191 @@
+"""Hash-pinned pre-training circuit-probe cohort construction."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+
+COHORTS = ("base_capable", "challenge")
+SUBSETS = ("discovery", "validation")
+
+
+def _subset_manifest(
+    cohort: str,
+    subset: str,
+    rows: list[dict[str, Any]],
+    source_split_hash: str,
+) -> dict[str, Any]:
+    examples = [
+        {
+            "example_id": str(row["example_id"]),
+            "example_sha256": sha256_value(row),
+            "example": row,
+        }
+        for row in rows
+    ]
+    payload: dict[str, Any] = {
+        "cohort": cohort,
+        "subset": subset,
+        "source_split_hash": source_split_hash,
+        "num_examples": len(examples),
+        "examples": examples,
+    }
+    payload["sha256"] = sha256_value(payload)
+    return payload
+
+
+def build_probe_cohort_manifest(
+    split_rows: dict[str, list[dict[str, Any]]],
+    scores: dict[str, dict[str, bool]],
+    *,
+    source_split_hashes: dict[str, str],
+    initial_student_checkpoint_hash: str,
+    scoring_manifest_hash: str,
+    learnability_evidence_hash: str,
+    git_commit: str = "test-unfrozen",
+    prereg_commit: str = "test-unfrozen",
+    source_artifacts: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Partition every frozen discovery/validation probe before training.
+
+    Challenge examples must be initially unsolved and independently marked as
+    learnable by a frozen pilot/calibration artifact. No probe can be silently
+    dropped or shared between cohorts.
+    """
+
+    if set(split_rows) != set(SUBSETS) or set(source_split_hashes) != set(SUBSETS):
+        raise ValueError("probe cohorts require exactly discovery and validation source splits")
+    required_hashes = {
+        "initial_student_checkpoint_hash": initial_student_checkpoint_hash,
+        "scoring_manifest_hash": scoring_manifest_hash,
+        "learnability_evidence_hash": learnability_evidence_hash,
+        "git_commit": git_commit,
+        "prereg_commit": prereg_commit,
+        "created_at": utc_now(),
+        "construction_phase": "before_confirmatory_training",
+        "training_ancestry": [],
+        "source_artifacts": source_artifacts or {},
+        **{f"source_{key}_hash": value for key, value in source_split_hashes.items()},
+    }
+    if any(not str(value).strip() for value in required_hashes.values()):
+        raise ValueError("probe cohort provenance hashes must all be non-empty")
+    partitions: dict[str, dict[str, list[dict[str, Any]]]] = {
+        cohort: {subset: [] for subset in SUBSETS} for cohort in COHORTS
+    }
+    seen_ids: set[str] = set()
+    for subset in SUBSETS:
+        for row in split_rows[subset]:
+            example_id = str(row.get("example_id", ""))
+            if not example_id or example_id in seen_ids:
+                raise ValueError(f"probe IDs must be non-empty and globally unique: {example_id!r}")
+            seen_ids.add(example_id)
+            if example_id not in scores:
+                raise ValueError(f"probe {example_id} has no initial-student score")
+            score = scores[example_id]
+            if set(score) < {"initial_correct", "learnable_after_post_training"}:
+                raise ValueError(f"probe {example_id} lacks capability/learnability fields")
+            if bool(score["initial_correct"]):
+                cohort = "base_capable"
+            elif bool(score["learnable_after_post_training"]):
+                cohort = "challenge"
+            else:
+                raise ValueError(f"initially unsolved probe {example_id} lacks frozen learnability evidence")
+            partitions[cohort][subset].append(row)
+    manifests = {
+        cohort: {
+            subset: _subset_manifest(
+                cohort,
+                subset,
+                partitions[cohort][subset],
+                source_split_hashes[subset],
+            )
+            for subset in SUBSETS
+        }
+        for cohort in COHORTS
+    }
+    for cohort in COHORTS:
+        for subset in SUBSETS:
+            if manifests[cohort][subset]["num_examples"] < 1:
+                raise ValueError(f"probe cohort {cohort}/{subset} cannot be empty")
+    payload: dict[str, Any] = {
+        "format_version": 1,
+        "frozen_before_training": True,
+        "initial_student_checkpoint_hash": initial_student_checkpoint_hash,
+        "scoring_manifest_hash": scoring_manifest_hash,
+        "learnability_evidence_hash": learnability_evidence_hash,
+        "selection_rules": {
+            "base_capable": "initial_correct == true",
+            "challenge": (
+                "initial_correct == false and learnable_after_post_training == true "
+                "from a frozen pilot/calibration artifact"
+            ),
+        },
+        "source_split_hashes": source_split_hashes,
+        "cohorts": manifests,
+    }
+    payload["sha256"] = sha256_value(payload)
+    return payload
+
+
+def write_probe_cohort_manifest(output: Path, manifest: dict[str, Any]) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    for cohort in COHORTS:
+        for subset in SUBSETS:
+            atomic_write_json(
+                output / cohort / f"{subset}.json",
+                manifest["cohorts"][cohort][subset],
+            )
+    atomic_write_json(output / "manifest.json", manifest)
+
+
+def validate_probe_cohort_manifest(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    expected = payload.pop("sha256", None)
+    if expected != sha256_value(payload):
+        raise ValueError("probe cohort manifest hash mismatch")
+    payload["sha256"] = expected
+    if payload.get("frozen_before_training") is not True:
+        raise ValueError("probe cohorts were not frozen before training")
+    ids: set[str] = set()
+    for cohort in COHORTS:
+        for subset in SUBSETS:
+            manifest = payload["cohorts"][cohort][subset]
+            subset_expected = manifest.get("sha256")
+            subset_payload = {key: value for key, value in manifest.items() if key != "sha256"}
+            if subset_expected != sha256_value(subset_payload):
+                raise ValueError(f"probe subset hash mismatch for {cohort}/{subset}")
+            if manifest["num_examples"] < 1:
+                raise ValueError(f"probe subset is empty for {cohort}/{subset}")
+            for row in manifest["examples"]:
+                example_id = str(row["example_id"])
+                exact = row.get("example")
+                if not isinstance(exact, dict) or sha256_value(exact) != row.get("example_sha256"):
+                    raise ValueError(f"probe example byte hash mismatch: {example_id}")
+                if example_id in ids:
+                    raise ValueError(f"probe appears in multiple cohorts/subsets: {example_id}")
+                ids.add(example_id)
+    return payload
+
+
+def load_probe_examples(
+    path: Path,
+    *,
+    cohort: str,
+    subset: str,
+    expected_initial_checkpoint_hash: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if cohort not in COHORTS or subset not in SUBSETS:
+        raise ValueError(f"invalid probe selection {cohort}/{subset}")
+    payload = validate_probe_cohort_manifest(path)
+    if (
+        expected_initial_checkpoint_hash is not None
+        and payload["initial_student_checkpoint_hash"] != expected_initial_checkpoint_hash
+    ):
+        raise ValueError("probe cohort initial checkpoint hash mismatch")
+    subset_manifest = payload["cohorts"][cohort][subset]
+    rows = [dict(item["example"]) for item in subset_manifest["examples"]]
+    return rows, payload

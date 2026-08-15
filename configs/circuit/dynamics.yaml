@@ -1,0 +1,6 @@
+name: dynamics
+primary_metrics: [excess_churn, full_score_spearman, weighted_overlap, cross_checkpoint_mask_transfer, heldout_exact_patching]
+diagnostic_metrics: [thresholded_jaccard, thresholded_churn, continuous_churn]
+matching_axes: [training_progress, validation_accuracy, output_kl, parameter_update_norm]
+bootstrap_samples: 1000
+estimator_noise_protocol: same_checkpoint_discovery_set_bootstrap_reruns

@@ -1,0 +1,32 @@
+defaults:
+  - model: tiny_qwen
+  - teacher: tiny_teacher
+  - task: a_implies_b
+  - state_source: fixed_bank
+  - supervision: hard_teacher
+  - circuit: eap_ig
+  - anti_shortcut: proofgraph
+  - experiment: offline_hard
+
+seed: 42
+output_root: outputs
+trainer:
+  max_steps: 2
+  steps_per_round: 1
+  batch_size: 4
+  learning_rate: 0.0005
+  weight_decay: 0.0
+  checkpoint_every: 1
+  backend: torch_smoke
+  gradient_accumulation_steps: 1
+  max_completion_length: 128
+  token_budget: 1024
+logging:
+  wandb_enabled: false
+production_safety:
+  max_smoke_steps: 100
+  max_smoke_tokens: 1000000
+  require_anti_shortcut_gate: true
+  require_frozen_probe_cohorts: true
+  probe_cohort_manifest: outputs/probes/proofgraph/manifest.json
+  readiness_report: outputs/readiness/readiness.json

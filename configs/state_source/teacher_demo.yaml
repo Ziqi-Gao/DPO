@@ -1,0 +1,5 @@
+name: teacher_demo
+store_path: outputs/teacher_demos/canonical
+num_candidates: 8
+require_exact_verifier_success: true
+

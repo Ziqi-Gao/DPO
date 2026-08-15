@@ -1,0 +1,5 @@
+name: offline_hard
+state_source: fixed_bank
+supervision: hard_teacher
+use_verifier_reward: false
+

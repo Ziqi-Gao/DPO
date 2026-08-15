@@ -1,0 +1,8 @@
+report_path: outputs/readiness/anti_shortcut.json
+num_examples: 1000
+distractor_ood_count: 32
+max_completion_length: 256
+max_shortcut_gap: 0.05
+minimum_iid_accuracy: 0.10
+minimum_transformed_accuracy: 0.08
+minimum_per_transformation_accuracy: 0.05

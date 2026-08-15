@@ -1,0 +1,6 @@
+model: tiny_qwen
+max_steps: 2
+batch_size: 4
+backend: torch_smoke
+production_scale: false
+

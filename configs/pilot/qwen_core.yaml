@@ -1,0 +1,30 @@
+groups:
+  model: qwen25_1p5b
+  teacher: qwen25_teacher_7b
+  task: proofgraph_main
+overrides:
+  seed: 42
+  trainer:
+    backend: accelerate
+    max_steps: 120
+    token_budget: 2000000
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    checkpoint_every: 20
+    validation_examples: 128
+  task:
+    num_examples: 4096
+    validation_split_path: outputs/datasets/proofgraph-validation
+  production_safety:
+    readiness_report: outputs/readiness/readiness.json
+profile_kind: single_seed_pipeline_pilot
+full_parameter_training: true
+seeds: [42]
+factorial_cells:
+  - offline_hard
+  - online_hard
+  - offline_soft
+  - online_soft_opd
+  - offline_verified_replay
+  - online_verified_replay
+anchors: [canonical_sft, canonical_grpo]

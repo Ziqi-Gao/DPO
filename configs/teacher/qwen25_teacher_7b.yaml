@@ -1,0 +1,17 @@
+teacher_id: Qwen/Qwen2.5-7B-Instruct
+teacher_revision: a09a35458c702b33eeacc393d103063234e8bc28
+resolved_teacher_commit: a09a35458c702b33eeacc393d103063234e8bc28
+model_name_or_path: Qwen/Qwen2.5-7B-Instruct
+model_revision: a09a35458c702b33eeacc393d103063234e8bc28
+tokenizer_name_or_path: Qwen/Qwen2.5-7B-Instruct
+tokenizer_revision: a09a35458c702b33eeacc393d103063234e8bc28
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+gradient_checkpointing: false
+use_cache: true
+trust_remote_code: false
+allow_unpinned_revision: false
+generation_seed: 31415
+temperature: 1.0
+top_p: 0.95
+backend: huggingface

@@ -1,0 +1,5 @@
+name: exact_patching
+ablation_baselines: [counterfactual_replacement, mean, zero]
+components: [attention_head_output, mlp_output, residual_stream, q, k, v]
+require_gqa_mapping: true
+

@@ -1,0 +1,7 @@
+name: fixed_bank
+store_path: outputs/rollout_banks/common_mu
+behavior_policy_id: common_mu
+max_policy_lag: 0
+target_success_range: [0.20, 0.60]
+include_successes_and_failures: true
+

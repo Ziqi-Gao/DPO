@@ -1,0 +1,8 @@
+name: local_fork
+branches: [hard_teacher, soft_teacher, verified_replay, grpo_or_reinforce]
+horizons: [1, 5, 20]
+primary_horizon: 20
+primary_match_axis: output_kl_new_to_fork
+secondary_axes: [update_count, parameter_update_norm]
+output_kl_relative_tolerance: 0.25
+

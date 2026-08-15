@@ -1,0 +1,12 @@
+model_name_or_path: google/gemma-2-2b-it
+model_revision: 299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8
+tokenizer_name_or_path: google/gemma-2-2b-it
+tokenizer_revision: 299a8560bedf22ed1c72a8a11e7dce4a7f9f51f8
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+gradient_checkpointing: true
+use_cache: false
+trust_remote_code: false
+allow_unpinned_revision: false
+gated_model: true
+

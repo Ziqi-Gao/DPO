@@ -1,0 +1,11 @@
+name: posttrain-circuits
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.12.11
+  - pip=25.2
+  - pip:
+      - -e .[all]
+

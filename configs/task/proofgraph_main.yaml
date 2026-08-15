@@ -1,0 +1,19 @@
+name: proofgraph
+num_examples: 100000
+seed: 42
+depth_range: [2, 4]
+ood_depth_range: [5, 7]
+distractor_range: [4, 16]
+structures: [chain, branch, converging_dag]
+balanced_labels: true
+unique_proof_for_circuits: true
+multiple_valid_proof_fraction: 0.5
+split_sizes:
+  train: 100000
+  validation: 10000
+  iid_test: 10000
+  ood_depth_test: 10000
+  ood_structure_test: 10000
+  circuit_discovery: 2000
+  circuit_validation: 2000
+

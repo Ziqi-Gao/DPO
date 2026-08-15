@@ -1,0 +1,6 @@
+name: online_soft_opd
+state_source: current_policy
+supervision: soft_teacher
+use_verifier_reward: false
+use_policy_gradient: false
+

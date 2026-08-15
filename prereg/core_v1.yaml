@@ -1,0 +1,82 @@
+version: core_v1
+supersedes: core_v0
+status: frozen_before_G0_and_pilot
+change_rationale:
+  - add_absolute_anti_shortcut_capability_floors
+  - remove_direction_dependent_model_escalation
+  - bind_G0_and_single_seed_pilot_execution_gates
+primary_student: Qwen/Qwen2.5-1.5B-Instruct
+primary_endpoints:
+  - heldout_exact_patching_necessity_and_sufficiency_on_base_capable_probes
+  - heldout_exact_patching_acquisition_on_challenge_probes
+  - excess_churn_after_same_checkpoint_estimator_noise_subtraction
+  - CPR_and_CMD_over_the_preregistered_sparsity_grid
+primary_counterfactual_ablation_protocol:
+  discovery: EAP-IG_candidates_on_frozen_discovery_subsets_only
+  validation: exact_activation_and_selected_path_patching_on_heldout_validation_subsets
+  primary_baseline: counterfactual_replacement
+  controls: [mean_replacement, zero_ablation, layer_size_type_matched_random_masks]
+  cohorts: [base_capable_preservation, challenge_acquisition]
+faithfulness_sparsity_grid: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
+matched_accuracy_rules:
+  source: frozen_formal_validation_split_only
+  maximum_absolute_gap: 0.02
+  interpolation: within_adjacent_observed_checkpoints_only
+  extrapolation: forbidden
+  required_output: [lower_checkpoint, upper_checkpoint, interpolation_weight, validation_artifact_hash]
+local_fork_output_kl_matching_rule:
+  divergence: KL(output_new || output_fork)
+  probe_set: fixed_hash_pinned_multi_prompt_pretraining_probe_set
+  target: hard_teacher_KL_at_each_nominal_horizon
+  relative_tolerance: 0.25
+  maximum_calibration_rounds: 2
+  nominal_horizons: [1, 5, 20]
+  primary_axis: matched_output_KL
+  secondary_axes: [update_count, parameter_update_norm]
+  out_of_tolerance_action: invalidate_cell_and_exit_nonzero
+anti_shortcut_gate:
+  transformations: [entity_symbol_renaming, fact_order_permutation, rule_order_permutation, surface_template_paraphrase, distractor_count_OOD]
+  maximum_shortcut_gap: 0.05
+  minimum_iid_accuracy: 0.10
+  minimum_transformed_accuracy: 0.08
+  minimum_per_transformation_accuracy: 0.05
+  zero_zero_result: fail
+  evidence_bindings: [initial_checkpoint, dataset, suite, code_commit, prereg_commit]
+  required_before_G0_or_training: true
+estimator_noise_protocol:
+  method: independent_same_checkpoint_discovery_bootstrap_reruns
+  retain: [resample_indices, full_score_vectors, raw_graph_hashes]
+  primary_dynamics: [full_score_spearman, weighted_overlap, observed_churn, within_checkpoint_noise, excess_churn, cross_checkpoint_mask_transfer, heldout_exact_patching]
+  thresholded_jaccard_role: diagnostic_only
+G0_gate:
+  required: [production_config, clean_git_and_prereg, base_capability, teacher_mass, anti_shortcut, frozen_probes, HF_TL_GQA_parity, bootstrap_EAP_IG, heldout_exact_patching, matched_random_control, calibration, deterministic_resume, split_isolation]
+  pass_only_if_all_required_valid: true
+pilot_gate:
+  seeds: [42]
+  launch_only_after_G0_passed_true: true
+  effect_direction_is_not_a_success_criterion: true
+escalation_1p5b_to_3b:
+  decision_point: after_valid_1p5b_core_analysis
+  escalate_if:
+    - artifacts_and_manifests_are_valid
+    - estimates_are_stable_with_acceptable_uncertainty
+    - heldout_causal_evidence_exceeds_estimator_noise_and_random_controls
+    - expected_information_value_justifies_resources
+  observed_effect_direction: never_a_gate
+confirmatory_contrasts:
+  - online_hard_minus_offline_hard
+  - online_soft_opd_minus_offline_soft
+  - online_verified_replay_minus_offline_verified_replay
+  - online_soft_opd_minus_online_hard
+  - online_verified_replay_minus_canonical_grpo
+  - gemma_offline_soft_minus_online_soft_opd
+  - gemma_online_hard_minus_online_soft_opd
+  - gemma_online_verified_replay_minus_canonical_grpo
+secondary_exploratory_analyses: [natural_rollout_sensitivity, edge_lifecycle_and_compensation, Track_B_long_CoT, delta_transplant, five_seed_expansion, Edge_Pruning]
+nonblocking_dependencies: [OLMo, Edge_Pruning, Track_B_long_CoT, delta_transplant, five_seed_expansion]
+invariants:
+  - StateSource_x_Supervisor_architecture_is_preserved
+  - every_offline_factorial_cell_uses_the_same_frozen_behavior_policy_rollout_bank
+  - frozen_rollout_bank_is_not_replaced_by_teacher_trajectories
+  - canonical_SFT_is_distinct_from_offline_hard_teacher_relabeling
+  - EAP_IG_is_discovery_and_heldout_exact_patching_is_causal_validation

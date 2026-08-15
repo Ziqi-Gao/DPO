@@ -1,0 +1,5 @@
+name: offline_verified_replay
+state_source: fixed_bank
+supervision: verified_replay
+use_verifier_reward: true
+

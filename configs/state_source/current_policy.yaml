@@ -1,0 +1,6 @@
+name: current_policy
+refresh_interval: 1
+max_policy_lag: 0
+temperature: 1.0
+top_p: 0.95
+

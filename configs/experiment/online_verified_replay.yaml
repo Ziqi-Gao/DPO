@@ -1,0 +1,5 @@
+name: online_verified_replay
+state_source: current_policy
+supervision: verified_replay
+use_verifier_reward: true
+

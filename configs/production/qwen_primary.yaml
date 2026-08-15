@@ -1,0 +1,21 @@
+groups:
+  model: qwen25_1p5b
+  teacher: qwen25_teacher_7b
+  task: proofgraph_main
+overrides:
+  trainer:
+    backend: accelerate
+    max_steps: 1000
+    token_budget: 64000000
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    validation_examples: 128
+  task:
+    validation_split_path: outputs/datasets/proofgraph-validation
+  production_safety:
+    readiness_report: outputs/readiness/readiness.json
+profile_kind: primary_qwen
+full_parameter_training: true
+student: qwen25_1p5b
+teacher: qwen25_teacher_7b
+checkpoint_fractions: [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 1.0]

@@ -1,0 +1,25 @@
+groups:
+  model: qwen25_1p5b
+  teacher: qwen25_teacher_7b
+  task: proofgraph_main
+overrides:
+  task:
+    validation_split_path: outputs/datasets/proofgraph-validation
+  anti_shortcut:
+    report_path: outputs/g0/anti_shortcut.json
+    num_examples: 128
+  circuit:
+    discovery_pair_count: 8
+    validation_pair_count: 8
+    mib_bootstrap_replicates: 5
+    prompt_bootstrap_samples: 200
+profile_kind: qwen_production_stack_gate
+full_parameter_training: false
+seed: 42
+parity_tolerance: 0.02
+minimum_bootstrap_spearman: 0.50
+minimum_random_control_margin: 0.0
+require_identity_sanity: true
+require_full_corruption_sanity: true
+probe_candidates_per_split: 64
+base_accuracy_examples: 128

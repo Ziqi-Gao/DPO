@@ -1,0 +1,5 @@
+name: canonical_sft
+state_source: teacher_demo
+supervision: canonical_sft
+use_verifier_reward: false
+

@@ -1,0 +1,4 @@
+name: canonical_sft
+normalization: sequence
+require_teacher_demo_store: true
+mask_prompt_tokens: true

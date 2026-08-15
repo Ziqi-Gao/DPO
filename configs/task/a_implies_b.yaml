@@ -1,0 +1,8 @@
+name: a_implies_b
+num_examples: 32
+seed: 42
+depth: 2
+distractors: 2
+structure: chain
+balanced_labels: true
+

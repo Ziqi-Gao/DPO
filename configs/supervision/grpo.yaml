@@ -1,0 +1,9 @@
+name: grpo
+beta: 0.0
+num_generations: 8
+temperature: 1.0
+max_completion_length: 256
+loss_type: dapo
+scale_rewards: false
+gradient_accumulation_steps: 8
+

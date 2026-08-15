@@ -1,0 +1,5 @@
+name: grpo_format_reward
+state_source: current_policy
+supervision: grpo
+reward: format_only
+

@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "posttrain-circuits"
+version = "0.1.0"
+description = "Causal factorization of state visitation and supervision in LLM post-training circuits"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11,<3.14"
+authors = [{ name = "Post-Training Circuits contributors" }]
+dependencies = [
+  "numpy==1.26.4",
+  "omegaconf==2.3.0",
+  "pydantic==2.11.7",
+  "pyyaml==6.0.2",
+  "safetensors==0.5.3",
+  "tokenizers==0.22.0",
+  "torch==2.8.0",
+  "transformers==4.56.2",
+]
+
+[project.optional-dependencies]
+train = [
+  "accelerate==1.10.1",
+  "datasets==4.0.0",
+  "pandas==2.3.2",
+  "pyarrow==21.0.0",
+  "scipy==1.16.1",
+]
+analysis = [
+  "posttrain-circuits[train]",
+  "statsmodels==0.14.6",
+]
+rl = [
+  "posttrain-circuits[train]",
+  "trl==0.22.2",
+]
+circuits = [
+  "posttrain-circuits[analysis]",
+  "matplotlib==3.10.5",
+  "transformer-lens==2.16.1",
+]
+dev = [
+  "mypy==1.17.1",
+  "pre-commit==4.3.0",
+  "pytest==8.4.1",
+  "pytest-cov==6.2.1",
+  "ruff==0.12.10",
+  "types-PyYAML==6.0.12.20250822",
+]
+all = [
+  "posttrain-circuits[train,rl,circuits,dev]",
+]
+
+[project.scripts]
+ptc-generate-task = "posttrain_circuits.cli.generate_task:main"
+ptc-build-splits = "posttrain_circuits.cli.build_splits:main"
+ptc-build-teacher-demos = "posttrain_circuits.cli.build_teacher_demos:main"
+ptc-train = "posttrain_circuits.cli.train:main"
+ptc-readiness = "posttrain_circuits.cli.readiness:main"
+ptc-evaluate-anti-shortcut = "posttrain_circuits.cli.evaluate_anti_shortcut:main"
+ptc-build-probe-cohorts = "posttrain_circuits.cli.build_probe_cohorts:main"
+ptc-check-factorial-prerequisites = "posttrain_circuits.cli.check_factorial_prerequisites:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/posttrain_circuits"]
+ptc-evaluate-anti-shortcut = "posttrain_circuits.cli.evaluate_anti_shortcut:main"
+ptc-build-probe-cohorts = "posttrain_circuits.cli.build_probe_cohorts:main"
+ptc-check-factorial-prerequisites = "posttrain_circuits.cli.check_factorial_prerequisites:main"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "unit: fast isolated test",
+  "integration: multi-component CPU test",
+  "slow: long-running test",
+  "gpu: requires CUDA",
+  "network: requires network access",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+check_untyped_defs = true
+ignore_missing_imports = true
+packages = ["posttrain_circuits"]
+warn_unreachable = true

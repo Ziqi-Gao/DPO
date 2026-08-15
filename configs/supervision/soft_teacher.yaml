@@ -1,0 +1,8 @@
+name: soft_teacher
+teacher_top_k: 128
+topk_mode: renormalized
+include_eos: true
+minimum_retained_mass: 0.90
+use_task_rewards: false
+use_policy_gradient: false
+

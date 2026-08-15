@@ -1,0 +1,5 @@
+name: hard_teacher
+teacher_top_k: 128
+include_eos: true
+token_normalization: token
+
