@@ -52,8 +52,13 @@ def main(argv: list[str] | None = None) -> None:
     mib_revision = "unavailable"
     if mib_root is not None and mib_root.is_dir():
         with contextlib.suppress(OSError, subprocess.CalledProcessError):
+            external_git_environment = {
+                key: value for key, value in os.environ.items() if key not in {"GIT_DIR", "GIT_WORK_TREE"}
+            }
             mib_revision = subprocess.check_output(
-                ["git", "-C", str(mib_root), "rev-parse", "HEAD"], text=True
+                ["git", "-C", str(mib_root), "rev-parse", "HEAD"],
+                text=True,
+                env=external_git_environment,
             ).strip()
     checks["pinned_mib"] = mib_revision == MIB_REVISION
     if not checks["pinned_mib"]:

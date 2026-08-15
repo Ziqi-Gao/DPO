@@ -88,6 +88,7 @@ class MibEapIgAdapter:
                 "HEAD",
             ],
             text=True,
+            env={key: value for key, value in os.environ.items() if key not in {"GIT_DIR", "GIT_WORK_TREE"}},
         ).strip()
         if actual != MIB_REVISION:
             raise RuntimeError(f"MIB revision mismatch: expected {MIB_REVISION}, got {actual}")

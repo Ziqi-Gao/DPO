@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import random
 import statistics
 import subprocess
@@ -227,6 +228,7 @@ def main(argv: list[str] | None = None) -> None:
             "HEAD",
         ],
         text=True,
+        env={key: value for key, value in os.environ.items() if key not in {"GIT_DIR", "GIT_WORK_TREE"}},
     ).strip()
     if actual_revision != args.expected_revision:
         raise RuntimeError("MIB revision changed after adapter validation")
