@@ -8,7 +8,7 @@ if [[ -d .opd-git && ! -f .git/HEAD ]]; then
 fi
 run_id=${G0_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 run_dir=${G0_RUN_DIR:-${OUTPUT_ROOT:-outputs}/g0/${run_id}}
-mkdir -p "${run_dir}"
+mkdir -p "${run_dir}/logs"
 
 if ! "${PYTHON_BIN:-.venv/bin/python}" -m posttrain_circuits.cli.preflight_g0 \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
