@@ -18,7 +18,7 @@ from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.rollout.generation import hf_generate_trajectories
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.utils.smoke import build_fixed_bank, build_smoke_examples
+from posttrain_circuits.utils.smoke import build_grouped_fork_bank, build_smoke_examples
 from posttrain_circuits.utils.tiny_model import build_tiny_tokenizer
 
 
@@ -50,12 +50,16 @@ def main(argv: list[str] | None = None) -> None:
     seed = int(config["seed"])
     model_config = config["model"]
     production = not str(model_config["model_name_or_path"]).startswith("local/")
+    generations_per_prompt = int(config["state_source"].get("num_generations_per_prompt", 4))
+    if generations_per_prompt < 1:
+        raise ValueError("num_generations_per_prompt must be positive")
     if not production:
         tokenizer = build_tiny_tokenizer()
-        records = build_fixed_bank(
+        records = build_grouped_fork_bank(
             build_smoke_examples(8, seed),
             tokenizer,
             seed,
+            group_size=max(4, generations_per_prompt),
         )
         behavior_policy = {
             "id": "common_mu_smoke",
@@ -84,8 +88,8 @@ def main(argv: list[str] | None = None) -> None:
         for start in range(0, len(examples), batch_size):
             batch = examples[start : start + batch_size]
             prompts = PromptBatch(
-                tuple(example.example_id for example in batch),
-                tuple(task.render(example) for example in batch),
+                tuple(example.example_id for example in batch for _ in range(generations_per_prompt)),
+                tuple(task.render(example) for example in batch for _ in range(generations_per_prompt)),
             )
             records.extend(
                 hf_generate_trajectories(
@@ -119,6 +123,7 @@ def main(argv: list[str] | None = None) -> None:
             "temperature": float(config["state_source"].get("temperature", 1.0)),
             "top_p": float(config["state_source"].get("top_p", 1.0)),
             "max_new_tokens": int(config["trainer"]["max_completion_length"]),
+            "num_generations_per_prompt": generations_per_prompt,
         },
         verifier_version="proofgraph-exact-v1",
         teacher_version=None,

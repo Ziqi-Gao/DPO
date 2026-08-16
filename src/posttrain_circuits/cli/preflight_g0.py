@@ -20,10 +20,15 @@ from posttrain_circuits.circuits.mib_eap_ig import MIB_REVISION
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.provenance import require_git_output
+from posttrain_circuits.core.scientific_versions import (
+    CORE_PREREG_VERSION,
+    scientific_compatibility_fields,
+)
 
 
 def _git(args: list[str]) -> str:
-    return subprocess.check_output(["git", *args], text=True).strip()
+    return require_git_output(args)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -38,7 +43,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         git_commit = _git(["rev-parse", "HEAD"])
         checks["git_repository"] = True
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, RuntimeError, subprocess.CalledProcessError):
         git_commit = "unavailable"
         checks["git_repository"] = False
         blockers.append("Git repository/HEAD is unavailable")
@@ -47,13 +52,13 @@ def main(argv: list[str] | None = None) -> None:
     if dirty:
         blockers.append("working tree is not clean")
     prereg_commit = (
-        _git(["log", "-n", "1", "--format=%H", "--", "prereg/core_v1.yaml"])
+        _git(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"])
         if checks["git_repository"]
         else "unavailable"
     )
     checks["frozen_prereg"] = bool(prereg_commit)
     if not prereg_commit:
-        blockers.append("prereg/core_v1.yaml has no frozen commit")
+        blockers.append("prereg/core_v2.yaml has no frozen commit")
     mib_value = os.environ.get("MIB_REPOSITORY", "")
     mib_root = Path(mib_value) if mib_value else None
     mib_revision = "unavailable"
@@ -160,12 +165,16 @@ def main(argv: list[str] | None = None) -> None:
         cache_error = str(exc)
         blockers.append(f"pinned model/tokenizer cache is incomplete: {cache_error}")
     payload: dict[str, Any] = {
+        "format_version": 2,
+        **scientific_compatibility_fields(),
         "phase": "G0_preflight",
         "passed": all(checks.values()),
         "checks": checks,
         "external_blockers": blockers,
         "git_commit": git_commit,
         "prereg_commit": prereg_commit,
+        "prereg_path": "prereg/core_v2.yaml",
+        "prereg_version": CORE_PREREG_VERSION,
         "mib_revision": mib_revision,
         "python_executable": sys.executable,
         "torch_version": torch.__version__,

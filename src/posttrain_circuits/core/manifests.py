@@ -44,6 +44,11 @@ class DatasetManifest:
     seed_range: tuple[int, int]
     num_examples: int
     difficulty_distribution: dict[str, Any]
+    dataset_schema_version: str = "proofgraph-dataset-v2-paired"
+    label_semantics: str = "signed_entailment"
+    prereg_version: str = "core_v2"
+    pair_group_count: int = 0
+    pair_group_hash: str = ""
     sha256: str = ""
     created_at: str = field(default_factory=utc_now)
 

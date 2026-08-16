@@ -48,6 +48,8 @@ class ForkBundleManifest:
     probe_output_hash: str
     manifest_hashes: dict[str, str]
     policy_version: int
+    group_membership_hash: str
+    minimum_group_size: int
 
 
 @dataclass
@@ -151,13 +153,38 @@ def create_fork_bundle(
     probe_input_ids: torch.Tensor | None = None,
     manifest_hashes: dict[str, str],
     model_spec: dict[str, Any] | None = None,
+    minimum_group_size: int = 4,
 ) -> ForkBundleManifest:
     trajectories.validate()
+    if minimum_group_size < 2:
+        raise ValueError("policy-gradient fork minimum group size must be at least two")
+    groups: dict[str, list[TrajectoryRecord]] = defaultdict(list)
     for record in trajectories.records:
         if not record.behavior_logprobs or record.verifier_reward is None:
             raise ValueError("fork records need behavior log probabilities and exact verifier rewards")
         if not record.teacher_topk_ids:
             raise ValueError("fork records need both hard and soft teacher targets")
+        if not record.generation_group_id:
+            raise ValueError("fork records require frozen generation_group_id metadata")
+        groups[record.generation_group_id].append(record)
+    group_membership = {}
+    for group_id, records in sorted(groups.items()):
+        if len(records) < minimum_group_size:
+            raise ValueError(
+                f"fork group {group_id} has {len(records)} trajectories; requires {minimum_group_size}"
+            )
+        if len({record.prompt_id for record in records}) != 1:
+            raise ValueError(f"fork group {group_id} mixes prompts")
+        if len({float(record.verifier_reward or 0.0) for record in records}) < 2:
+            raise ValueError(f"fork group {group_id} has no reward variance")
+        if any(record.prompt_group_size != len(records) for record in records):
+            raise ValueError(f"fork group {group_id} prompt_group_size metadata is inconsistent")
+        indices = sorted(record.generation_group_index for record in records)
+        if indices != list(range(len(records))):
+            raise ValueError(f"fork group {group_id} indices are not contiguous")
+        group_membership[group_id] = [
+            record.trajectory_id for record in sorted(records, key=lambda item: item.generation_group_index)
+        ]
     if not isinstance(optimizer, torch.optim.AdamW):
         raise TypeError("fork bundles currently require torch.optim.AdamW")
     if not isinstance(scheduler, torch.optim.lr_scheduler.LambdaLR):
@@ -198,6 +225,8 @@ def create_fork_bundle(
         probe_output_hash=state_hash(probe_outputs),
         manifest_hashes=manifest_hashes,
         policy_version=trajectories.policy_version,
+        group_membership_hash=sha256_value(group_membership),
+        minimum_group_size=minimum_group_size,
     )
     bundle_id = "fork-" + sha256_value(asdict(manifest))[:16]
     manifest = ForkBundleManifest(
@@ -338,8 +367,8 @@ def restore_bundle_fresh(
     )
 
 
-class SharedTrajectoryReinforceSupervisor:
-    """Explicit 1-0 REINFORCE branch over frozen shared trajectories."""
+class SharedTrajectoryUncenteredReinforceDiagnostic:
+    """Historical binary estimator retained only for replay-collinearity tests."""
 
     def __init__(self, pad_token_id: int) -> None:
         self.pad_token_id = pad_token_id
@@ -378,7 +407,92 @@ class SharedTrajectoryReinforceSupervisor:
         loss = -(batch.rewards * sequence_logprob).mean()
         return LossOutput(
             loss,
-            {"reinforce_loss": float(loss.detach())},
+            {"uncentered_reinforce_loss": float(loss.detach())},
+        )
+
+
+class SharedTrajectoryCenteredPolicyGradientSupervisor:
+    """Frozen grouped advantages with an old-policy clipped surrogate."""
+
+    def __init__(
+        self,
+        pad_token_id: int,
+        *,
+        clip_epsilon: float = 0.2,
+        advantage_epsilon: float = 1e-6,
+    ) -> None:
+        if not 0 < clip_epsilon < 1:
+            raise ValueError("centered policy-gradient clip epsilon must be in (0, 1)")
+        self.pad_token_id = pad_token_id
+        self.clip_epsilon = clip_epsilon
+        self.advantage_epsilon = advantage_epsilon
+
+    def prepare_targets(
+        self,
+        trajectories: TrajectoryBatch,
+        teacher: Any,
+        verifier: Any,
+    ) -> SupervisionBatch:
+        del teacher, verifier
+        groups: dict[str, list[int]] = defaultdict(list)
+        for index, record in enumerate(trajectories.records):
+            if not record.generation_group_id:
+                raise ValueError("centered policy gradient requires generation groups")
+            groups[record.generation_group_id].append(index)
+        advantages = torch.empty(len(trajectories.records), dtype=torch.float32)
+        for group_id, indices in groups.items():
+            rewards = torch.tensor(
+                [float(trajectories.records[index].verifier_reward or 0.0) for index in indices],
+                dtype=torch.float32,
+            )
+            if len(indices) < 2 or float(rewards.var(unbiased=False)) <= 0.0:
+                raise ValueError(f"centered policy-gradient group {group_id} has no reward variance")
+            centered = rewards - rewards.mean()
+            scaled = centered / (rewards.std(unbiased=False) + self.advantage_epsilon)
+            advantages[torch.tensor(indices)] = scaled
+        batch = collate_trajectories(trajectories, pad_token_id=self.pad_token_id)
+        old_sequence_logprobs = []
+        for record in trajectories.records:
+            included = [
+                value
+                for value, include in zip(record.behavior_logprobs, record.response_token_mask, strict=True)
+                if include
+            ]
+            if not included:
+                raise ValueError("centered policy gradient requires behavior log-probabilities")
+            old_sequence_logprobs.append(sum(included))
+        batch.metadata.update(
+            {
+                "generation_group_ids": [record.generation_group_id for record in trajectories.records],
+                "frozen_advantages": advantages,
+                "old_sequence_logprobs": torch.tensor(old_sequence_logprobs, dtype=torch.float32),
+                "clip_epsilon": self.clip_epsilon,
+            }
+        )
+        return batch
+
+    def compute_loss(self, model: Any, batch: SupervisionBatch) -> LossOutput:
+        logits = model(input_ids=batch.input_ids, attention_mask=batch.attention_mask).logits[:, :-1]
+        labels = batch.input_ids[:, 1:]
+        mask = batch.response_mask[:, 1:]
+        token_logprob = -functional.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]), labels.reshape(-1), reduction="none"
+        ).reshape_as(labels)
+        sequence_logprob = (token_logprob * mask).sum(dim=1)
+        advantages = batch.metadata["frozen_advantages"].to(sequence_logprob.device)
+        old = batch.metadata["old_sequence_logprobs"].to(sequence_logprob.device)
+        ratio = torch.exp((sequence_logprob - old).clamp(-20.0, 20.0))
+        clipped = ratio.clamp(1.0 - self.clip_epsilon, 1.0 + self.clip_epsilon)
+        surrogate = torch.minimum(ratio * advantages, clipped * advantages)
+        loss = -surrogate.mean()
+        return LossOutput(
+            loss,
+            {
+                "centered_policy_gradient_loss": float(loss.detach()),
+                "positive_advantage_count": float((advantages > 0).sum()),
+                "negative_advantage_count": float((advantages < 0).sum()),
+                "mean_probability_ratio": float(ratio.mean().detach()),
+            },
         )
 
 
@@ -417,7 +531,7 @@ def run_branch(
         "hard_teacher": HardTeacherSupervisor(pad_token_id),
         "soft_teacher": SoftTeacherSupervisor(pad_token_id),
         "verified_replay": VerifiedReplaySupervisor(pad_token_id),
-        "grpo_or_reinforce": SharedTrajectoryReinforceSupervisor(pad_token_id),
+        "centered_policy_gradient": SharedTrajectoryCenteredPolicyGradientSupervisor(pad_token_id),
     }
     if branch not in supervisors:
         raise ValueError(f"unknown fork branch {branch!r}")
@@ -449,6 +563,7 @@ def run_branch(
         },
     )
     losses = []
+    step_metrics = []
     for _ in range(horizon):
         output = supervisor.compute_loss(restored.model, prepared)
         output.loss.backward()
@@ -456,6 +571,7 @@ def run_branch(
         restored.scheduler.step()
         restored.optimizer.zero_grad(set_to_none=True)
         losses.append(float(output.loss.detach()))
+        step_metrics.append(output.metrics)
     probe_ids = restored.probe_input_ids.to(next(restored.model.parameters()).device)
     was_training = restored.model.training
     restored.model.eval()
@@ -488,6 +604,8 @@ def run_branch(
         "initial_trajectory_hash": restored.initial_hashes["trajectories"],
         "probe_input_hash": restored.initial_hashes["probe_inputs"],
         "step_losses": losses,
+        "step_metrics": step_metrics,
+        "group_membership_hash": bundle_payload["manifest"]["group_membership_hash"],
         "loss": losses[-1],
         "parameter_update_norm": parameter_update_norm(
             before,

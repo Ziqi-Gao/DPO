@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import Literal, ProofStep, Rule, TaskExample
 from posttrain_circuits.tasks.proofgraph.verifier import closure
@@ -252,7 +253,8 @@ def evaluate_anti_shortcut_suite(
         and all(value >= minimum_per_transformation_accuracy for value in accuracies.values())
     )
     payload: dict[str, Any] = {
-        "format_version": 1,
+        "format_version": 2,
+        **scientific_compatibility_fields(),
         "accuracy_metric": "exact_verifier_reward",
         "model_checkpoint_hash": model_checkpoint_hash,
         "iid_example_count": len(examples),

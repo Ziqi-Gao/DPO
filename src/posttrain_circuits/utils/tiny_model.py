@@ -20,6 +20,7 @@ def tiny_vocabulary() -> dict[str, int]:
         "true",
         "OUTPUT",
         "FORMAT",
+        "TRUE",
         "NOT",
         "AND",
         "->",
@@ -40,6 +41,18 @@ def tiny_vocabulary() -> dict[str, int]:
     tokens.extend([f"S{index:02d}" for index in range(1, 9)])
     tokens.extend(list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
     tokens.extend([f"I{index:02d}" for index in range(1, 8)])
+    for index in range(96):
+        base = f"SYM_{index:03d}"
+        tokens.extend(
+            [
+                base,
+                f"{base}_L",
+                f"{base}_R",
+                f"{base}_ALT",
+                f"{base}_ALT_L",
+                f"{base}_ALT_R",
+            ]
+        )
     ordered = specials + list(dict.fromkeys(tokens))
     return {token: index for index, token in enumerate(ordered)}
 
@@ -72,7 +85,7 @@ def build_tiny_qwen(seed: int = 0) -> Qwen2ForCausalLM:
         num_hidden_layers=1,
         num_attention_heads=2,
         num_key_value_heads=1,
-        max_position_embeddings=256,
+        max_position_embeddings=512,
         bos_token_id=2,
         eos_token_id=3,
         pad_token_id=0,

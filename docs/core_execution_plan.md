@@ -1,7 +1,7 @@
 # Core execution plan
 
-The historical design is retained at `prereg/core_v0.yaml`; the active frozen design is
-`prereg/core_v1.yaml`. A production run is valid only when its manifest records
+The historical designs are retained at `prereg/core_v0.yaml` and `prereg/core_v1.yaml`; the active
+frozen design is `prereg/core_v2.yaml`. A production run is valid only when its manifest records
 the Git commit that last changed that file, its current SHA-256, and a clean preregistration status.
 Editing the preregistration after that commit blocks production until the change is explicitly
 committed as a new version.
@@ -13,7 +13,7 @@ committed as a new version.
    membership requires an initially incorrect result plus hash-pinned learnability evidence from a
    prior pilot/calibration artifact.
 2. Run the semantics-preserving anti-shortcut suite on the initial student. It must pass the gap,
-   IID, transformed aggregate, and per-transformation capability floors in `core_v1`; zero/zero is
+   IID, transformed aggregate, and per-transformation capability floors in `core_v2`; zero/zero is
    a failure. Production submission and trainer entry both require the hash-valid full readiness
    report, not only the anti-shortcut and probe sub-gates.
 3. Build one common behavior-policy rollout bank. Every offline factorial cell reads this exact bank
@@ -28,6 +28,11 @@ committed as a new version.
 6. Local forks keep nominal 1/5/20-update horizons, but the primary comparison is matched
    `KL(output_new || output_fork)` on the frozen probe set. Update count and parameter norm are
    secondary axes.
+7. Before any training claim, run teacher answer/proof/process correctness separately from retained
+   top-k mass. Build tokenizer-specific, stage-specific frozen circuit manifests. Final-answer
+   circuits are evidence about the answer stage, not a proxy for the complete reasoning process.
+8. Run `grpo_random_reward` before the final Qwen mechanism claim. Its Bernoulli marginal is frozen
+   before individual completions are visible, and its reward is content-independent thereafter.
 
 ## G0 and pilot
 

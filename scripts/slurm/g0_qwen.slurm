@@ -38,6 +38,15 @@ initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.
   task=proofgraph_main task.num_examples=256 state_source.store_path="${demo_store}" \
   --output "${demo_store}" --confirm-production
 
+"${PYTHON_BIN}" -m posttrain_circuits.cli.audit_label_leakage \
+  --split-root "${data_root}/validation" --split validation \
+  --output "${run_dir}/label_leakage.json"
+
+"${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_teacher_readiness \
+  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  --validation-split "${data_root}/validation" --output "${run_dir}/teacher_readiness.json" \
+  --confirm-production
+
 "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
   -m posttrain_circuits.cli.train pilot=qwen_core experiment=canonical_sft \
   model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
@@ -74,17 +83,21 @@ learnability_hash=$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sy
   production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
   --output "${run_dir}/anti_shortcut.json" --confirm-production
 
-"${PYTHON_BIN}" -m posttrain_circuits.cli.discover_circuit \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
-  --checkpoint "${initial_checkpoint}" --probe-cohort-manifest "${probe_root}/manifest.json" \
-  --initial-checkpoint "${initial_checkpoint}" \
-  --cohort base_capable --output "${circuit_root}/circuit.json" --confirm-production
-"${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_circuit \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
-  --circuit-artifact "${circuit_root}/circuit.json" --checkpoint "${initial_checkpoint}" \
-  --initial-checkpoint "${initial_checkpoint}" \
-  --probe-cohort-manifest "${probe_root}/manifest.json" --cohort base_capable \
-  --output "${circuit_root}/exact_patching.json" --confirm-production
+for stage in final_answer first_rule_selection; do
+  stage_root="${circuit_root}/${stage}"
+  "${PYTHON_BIN}" -m posttrain_circuits.cli.discover_circuit \
+    g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    --stage "${stage}" --checkpoint "${initial_checkpoint}" \
+    --probe-cohort-manifest "${probe_root}/manifest.json" \
+    --initial-checkpoint "${initial_checkpoint}" --cohort base_capable \
+    --output "${stage_root}/circuit.json" --confirm-production
+  "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_circuit \
+    g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    --circuit-artifact "${stage_root}/circuit.json" --checkpoint "${initial_checkpoint}" \
+    --initial-checkpoint "${initial_checkpoint}" \
+    --probe-cohort-manifest "${probe_root}/manifest.json" --cohort base_capable \
+    --output "${stage_root}/exact_patching.json" --confirm-production
+done
 
 for replica in a b; do
   "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
@@ -105,9 +118,14 @@ done
 "${PYTHON_BIN}" -m posttrain_circuits.cli.finalize_g0 \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
   --base-scores "${probe_scores}" --teacher-store-manifest "${teacher_bank}/manifest.json" \
+  --teacher-readiness "${run_dir}/teacher_readiness.json" \
+  --label-leakage "${run_dir}/label_leakage.json" \
   --anti-shortcut "${run_dir}/anti_shortcut.json" --probe-manifest "${probe_root}/manifest.json" \
-  --circuit "${circuit_root}/circuit.json" --exact-patching "${circuit_root}/exact_patching.json" \
-  --compatibility "${circuit_root}/mib_raw/compatibility.json" \
+  --final-circuit "${circuit_root}/final_answer/circuit.json" \
+  --final-exact-patching "${circuit_root}/final_answer/exact_patching.json" \
+  --process-circuit "${circuit_root}/first_rule_selection/circuit.json" \
+  --process-exact-patching "${circuit_root}/first_rule_selection/exact_patching.json" \
+  --compatibility "${circuit_root}/final_answer/mib_raw/compatibility.json" \
   --distributed-resume "${run_dir}/distributed_resume.json" \
   --initial-checkpoint "${initial_checkpoint}" --gpu-preflight "${GPU_PREFLIGHT_JSON:?}" \
   --job-id "${SLURM_JOB_ID}" \

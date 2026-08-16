@@ -28,7 +28,10 @@ def parse_response(text: str) -> ParsedResponse:
                 citation.strip() for citation in step_match.group("citations").split(",") if citation.strip()
             )
             try:
-                conclusion = Literal.parse(step_match.group("literal"))
+                literal_text = step_match.group("literal")
+                if literal_text.startswith("TRUE "):
+                    literal_text = literal_text[5:]
+                conclusion = Literal.parse(literal_text)
             except ValueError:
                 return ParsedResponse(False, [], int(match.group("answer")), text, "literal_syntax")
             steps.append(

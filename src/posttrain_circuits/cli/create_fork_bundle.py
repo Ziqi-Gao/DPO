@@ -12,7 +12,7 @@ from posttrain_circuits.cli._common import dry_run_report, print_json
 from posttrain_circuits.core.config import compose_config, is_production_scale
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.seeding import RNGState
-from posttrain_circuits.core.types import PromptBatch, TrajectoryBatch
+from posttrain_circuits.core.types import PromptBatch, TrajectoryBatch, TrajectoryRecord
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
@@ -20,7 +20,7 @@ from posttrain_circuits.models.loading import (
 from posttrain_circuits.teacher.hf_scorer import HuggingFaceTeacherScorer
 from posttrain_circuits.training.local_fork import create_fork_bundle
 from posttrain_circuits.utils.smoke import (
-    build_fixed_bank,
+    build_grouped_fork_bank,
     build_smoke_examples,
 )
 from posttrain_circuits.utils.tiny_model import (
@@ -51,6 +51,24 @@ def _load_portable_optimizer_state(
     elif key_type != "parameter_id":
         raise ValueError(f"unsupported optimizer state key type: {key_type}")
     optimizer.load_state_dict(state)
+
+
+@torch.no_grad()
+def _bind_smoke_behavior_logprobs(
+    model: torch.nn.Module,
+    records: list[TrajectoryRecord],
+) -> None:
+    """Make the tiny frozen behavior policy exactly equal to the fork model."""
+
+    device = next(model.parameters()).device
+    for record in records:
+        tokens = record.input_ids + record.response_ids
+        tensor = torch.tensor([tokens], dtype=torch.long, device=device)
+        logprobs = model(input_ids=tensor).logits[0].float().log_softmax(-1)
+        start = len(record.input_ids) - 1
+        record.behavior_logprobs = [
+            float(logprobs[start + index, token].cpu()) for index, token in enumerate(record.response_ids)
+        ]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -129,6 +147,7 @@ def main(argv: list[str] | None = None) -> None:
             "prompt_ids": prompt_payload.get("prompt_ids"),
             "prompt_texts": prompt_payload.get("prompt_texts"),
             "trajectory_ids": prompt_payload.get("trajectory_ids"),
+            "generation_groups": prompt_payload.get("generation_groups"),
         }
         if prompt_payload.get("sha256") != sha256_value(prompt_content):
             raise ValueError("frozen fork prompt manifest hash mismatch")
@@ -160,6 +179,14 @@ def main(argv: list[str] | None = None) -> None:
         trajectories.validate(max_policy_lag=0)
         if any(record.policy_version != trajectories.policy_version for record in selected):
             raise ValueError("fork trajectory store mixes policy versions")
+        observed_groups = {
+            group_id: [record.trajectory_id for record in selected if record.generation_group_id == group_id]
+            for group_id in sorted({record.generation_group_id for record in selected})
+        }
+        if observed_groups != prompt_content["generation_groups"]:
+            raise ValueError("fork prompt manifest generation-group membership mismatch")
+        if prompt_payload.get("group_membership_hash") != sha256_value(observed_groups):
+            raise ValueError("fork prompt manifest group-membership hash mismatch")
         probe_payload = json.loads(args.probe_set.read_text(encoding="utf-8"))
         probe_rows = probe_payload.get("input_ids")
         if probe_payload.get("sha256") != sha256_value(probe_rows):
@@ -179,6 +206,7 @@ def main(argv: list[str] | None = None) -> None:
             ),
             "verifier_rewards": sha256_value([record.verifier_reward for record in selected]),
             "behavior_logprobs": sha256_value([record.behavior_logprobs for record in selected]),
+            "generation_groups": sha256_value(observed_groups),
         }
     else:
         teacher = HuggingFaceTeacherScorer(
@@ -188,17 +216,21 @@ def main(argv: list[str] | None = None) -> None:
             top_k=min(128, int(model.config.vocab_size)),
             minimum_retained_mass=0.0,
         )
-        examples = build_smoke_examples(4, args.seed)
-        bank = build_fixed_bank(examples, tokenizer, args.seed)
+        examples = build_smoke_examples(2, args.seed)
+        bank = build_grouped_fork_bank(examples, tokenizer, args.seed, group_size=4)
         prompts = PromptBatch(
-            tuple(example.example_id for example in examples),
-            tuple(record.prompt_text for record in bank[::2]),
+            tuple(record.prompt_id for record in bank),
+            tuple(record.prompt_text for record in bank),
         )
-        records = [record for index, record in enumerate(bank) if index % 2 == 0]
-        if all(record.verifier_reward == records[0].verifier_reward for record in records):
-            records[1] = build_fixed_bank(examples[1:2], tokenizer, args.seed + 100)[1]
+        records = bank
         trajectories = teacher.score(TrajectoryBatch(records, policy_version=0))
-        probe = torch.tensor([records[0].input_ids], device=next(model.parameters()).device)
+        _bind_smoke_behavior_logprobs(model, trajectories.records)
+        probe_rows = [records[0].input_ids, records[4].input_ids]
+        width = max(map(len, probe_rows))
+        probe = torch.tensor(
+            [row + [int(tokenizer.pad_token_id)] * (width - len(row)) for row in probe_rows],
+            device=next(model.parameters()).device,
+        )
         input_hashes = {
             "task": "smoke-task-v1",
             "bank": "smoke-bank-v1",

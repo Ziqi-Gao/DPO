@@ -24,8 +24,9 @@ case "${cell}" in
       trainer.backend=accelerate --output "${output}" --confirm-production
     ;;
   canonical_grpo)
-    "${PYTHON_BIN}" -m posttrain_circuits.cli.run_grpo experiment=canonical_grpo \
-      "${common[@]}" --output "${output}" --confirm-production
+    "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
+      -m posttrain_circuits.cli.run_grpo experiment=canonical_grpo "${common[@]}" \
+      --output "${output}" --confirm-production
     ;;
   *)
     extra=()

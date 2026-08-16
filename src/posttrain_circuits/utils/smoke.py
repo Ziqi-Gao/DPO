@@ -31,6 +31,9 @@ def make_trajectory(
     policy_version: int,
     seed: int,
     behavior_policy_id: str,
+    generation_group_id: str = "",
+    generation_group_index: int = 0,
+    prompt_group_size: int = 1,
 ) -> TrajectoryRecord:
     task = ProofGraphTask()
     prompt = task.render(example)
@@ -59,6 +62,9 @@ def make_trajectory(
         behavior_logprobs=[0.0] * len(response_ids),
         verifier_reward=verification.reward,
         verification_trace=asdict(verification),
+        generation_group_id=generation_group_id,
+        generation_group_index=generation_group_index,
+        prompt_group_size=prompt_group_size,
         created_at=datetime.now(UTC).isoformat(),
     )
 
@@ -78,6 +84,37 @@ def build_fixed_bank(
                     policy_version=0,
                     seed=seed + index * 2 + offset,
                     behavior_policy_id="common_mu_smoke",
+                )
+            )
+    return records
+
+
+def build_grouped_fork_bank(
+    examples: list[TaskExample],
+    tokenizer: PreTrainedTokenizerBase,
+    seed: int,
+    *,
+    group_size: int = 4,
+) -> list[TrajectoryRecord]:
+    """Build frozen same-prompt groups with both reward classes for fork tests."""
+
+    if group_size < 4 or group_size % 2:
+        raise ValueError("fork smoke groups require an even group_size of at least four")
+    records: list[TrajectoryRecord] = []
+    for prompt_index, example in enumerate(examples):
+        group_id = "fork-group-" + sha256_value([example.example_id, seed])[:16]
+        for group_index in range(group_size):
+            records.append(
+                make_trajectory(
+                    example,
+                    tokenizer,
+                    successful=group_index < group_size // 2,
+                    policy_version=0,
+                    seed=seed + prompt_index * group_size + group_index,
+                    behavior_policy_id="common_mu_grouped_smoke",
+                    generation_group_id=group_id,
+                    generation_group_index=group_index,
+                    prompt_group_size=group_size,
                 )
             )
     return records

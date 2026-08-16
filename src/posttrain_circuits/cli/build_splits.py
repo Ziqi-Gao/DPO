@@ -64,11 +64,16 @@ def main(argv: list[str] | None = None) -> None:
             seed_range=(min(seeds), max(seeds)),
             num_examples=len(examples),
             difficulty_distribution=difficulty_distribution(examples),
+            pair_group_count=len({example.pair_group_id for example in examples}),
+            pair_group_hash=sha256_value(sorted({example.pair_group_id for example in examples})),
         ).finalize(serialized)
         manifest.write(split_root / "manifest.json")
         manifests[split] = asdict(manifest)
     global_manifest = {
+        "dataset_schema_version": "proofgraph-dataset-v2-paired",
+        "prereg_version": "core_v2",
         "generator_version": task.generator_version,
+        "label_semantics": task.label_semantics,
         "split_sizes": split_sizes,
         "split_hashes": {split: manifest["sha256"] for split, manifest in manifests.items()},
         "global_semantic_hash": sha256_value(
@@ -76,6 +81,7 @@ def main(argv: list[str] | None = None) -> None:
         ),
         "leakage_check": "passed",
     }
+    global_manifest["sha256"] = sha256_value(global_manifest)
     atomic_write_json(output / "manifest.json", global_manifest)
     print_json({"output": str(output), "manifest": global_manifest})
 

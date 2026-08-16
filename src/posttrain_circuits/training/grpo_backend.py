@@ -24,6 +24,41 @@ class GrpoSettings:
     seed: int = 0
 
 
+def resolve_grpo_batch_contract(settings: GrpoSettings, *, world_size: int) -> dict[str, int | str]:
+    """Resolve the pinned TRL 0.22 generation-batch contract.
+
+    In TRL 0.22.2 the default ``steps_per_generation`` equals gradient
+    accumulation, and ``generation_batch_size`` is per-device batch times
+    process count times that value. That generation batch, not merely the
+    per-device microbatch, must be divisible by ``num_generations``.
+    """
+
+    if world_size < 1:
+        raise ValueError("GRPO world_size must be positive")
+    if settings.num_generations < 2:
+        raise ValueError("GRPO requires at least two generations per prompt")
+    global_micro_batch = world_size * settings.per_device_train_batch_size
+    effective_global_batch = global_micro_batch * settings.gradient_accumulation_steps
+    generation_batch_size = effective_global_batch
+    if generation_batch_size % settings.num_generations:
+        raise ValueError(
+            "TRL generation_batch_size must be divisible by num_generations: "
+            f"{generation_batch_size} % {settings.num_generations} != 0"
+        )
+    return {
+        "trl_version_contract": "0.22.2-default-steps_per_generation",
+        "world_size": world_size,
+        "per_device_train_batch_size": settings.per_device_train_batch_size,
+        "gradient_accumulation_steps": settings.gradient_accumulation_steps,
+        "global_micro_batch_size": global_micro_batch,
+        "effective_global_batch_size": effective_global_batch,
+        "generation_batch_size": generation_batch_size,
+        "steps_per_generation": settings.gradient_accumulation_steps,
+        "num_generations": settings.num_generations,
+        "groups_per_update": generation_batch_size // settings.num_generations,
+    }
+
+
 class TrlGrpoBackend:
     def __init__(self, settings: GrpoSettings) -> None:
         self.settings = settings

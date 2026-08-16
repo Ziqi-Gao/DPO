@@ -25,11 +25,9 @@ def test_chain_branch_and_converging_dag_are_real_templates() -> None:
         2,
         {"structure": "chain", "depth": 3, "positive": True, "distractors": 0},
     )
-    assert [str(rule.consequent) for rule in chain.rules.values()] == [
-        "I01",
-        "I02",
-        "Q",
-    ]
+    assert len(chain.rules) == 6
+    assert chain.query in {rule.consequent for rule in chain.rules.values()}
+    assert chain.query.flipped() in {rule.consequent for rule in chain.rules.values()}
     assert all(len(rule.antecedents) == 1 for rule in chain.rules.values())
 
     branch = task.generate(
@@ -37,9 +35,10 @@ def test_chain_branch_and_converging_dag_are_real_templates() -> None:
         {"structure": "branch", "depth": 2, "positive": True, "distractors": 0},
     )
     branch_rules = list(branch.rules.values())
-    assert len(branch_rules) == 3
-    assert len(branch_rules[-1].antecedents) == 2
-    assert str(branch_rules[-1].consequent) == "Q"
+    assert len(branch_rules) == 6
+    assert sum(len(rule.antecedents) == 2 for rule in branch_rules) == 2
+    assert branch.query in {rule.consequent for rule in branch_rules}
+    assert branch.query.flipped() in {rule.consequent for rule in branch_rules}
 
     dag = task.generate(
         2,
@@ -51,10 +50,10 @@ def test_chain_branch_and_converging_dag_are_real_templates() -> None:
         },
     )
     dag_rules = list(dag.rules.values())
-    assert len(dag_rules) == 4
-    assert len(dag_rules[1].antecedents) == 2
-    assert len(dag_rules[2].antecedents) == 2
-    assert str(dag_rules[-1].consequent) == "Q"
+    assert len(dag_rules) == 8
+    assert sum(len(rule.antecedents) == 2 for rule in dag_rules) == 4
+    assert dag.query in {rule.consequent for rule in dag_rules}
+    assert dag.query.flipped() in {rule.consequent for rule in dag_rules}
 
     for example in (chain, branch, dag):
         result = task.verify(

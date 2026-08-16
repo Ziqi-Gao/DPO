@@ -30,6 +30,7 @@ from posttrain_circuits.training.local_fork import (
 )
 from posttrain_circuits.utils.smoke import (
     build_fixed_bank,
+    build_grouped_fork_bank,
     build_smoke_examples,
 )
 from posttrain_circuits.utils.tiny_model import (
@@ -42,10 +43,11 @@ def _create_populated_bundle(path: Path) -> Path:
     seed_everything(1729)
     tokenizer = build_tiny_tokenizer()
     model = build_tiny_qwen(7)
-    records = build_fixed_bank(
+    records = build_grouped_fork_bank(
         build_smoke_examples(2, seed=31),
         tokenizer,
         seed=41,
+        group_size=4,
     )
     trajectories = HuggingFaceTeacherScorer(
         build_tiny_qwen(8),
@@ -65,9 +67,19 @@ def _create_populated_bundle(path: Path) -> Path:
     optimizer.step()
     scheduler.step()
     optimizer.zero_grad(set_to_none=True)
+    for record in trajectories.records:
+        tokens = record.input_ids + record.response_ids
+        with torch.no_grad():
+            logprobs = model(input_ids=torch.tensor([tokens])).logits[0].float().log_softmax(-1)
+        start = len(record.input_ids) - 1
+        record.behavior_logprobs = [
+            float(logprobs[start + index, token]) for index, token in enumerate(record.response_ids)
+        ]
     was_training = model.training
     model.eval()
-    probe_ids = torch.tensor([records[0].input_ids])
+    probe_rows = [records[0].input_ids, records[4].input_ids]
+    width = max(map(len, probe_rows))
+    probe_ids = torch.tensor([row + [tokenizer.pad_token_id] * (width - len(row)) for row in probe_rows])
     with torch.no_grad():
         probe_outputs = model(input_ids=probe_ids).logits
     model.train(was_training)
@@ -82,6 +94,7 @@ def _create_populated_bundle(path: Path) -> Path:
         scheduler=scheduler,
         prompts=prompts,
         trajectories=trajectories,
+        probe_input_ids=probe_ids,
         pre_update_outputs=probe_outputs,
         manifest_hashes={
             "task": "proofgraph-smoke",

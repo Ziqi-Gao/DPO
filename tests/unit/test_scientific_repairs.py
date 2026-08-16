@@ -79,12 +79,12 @@ def test_production_profile_rejects_wrong_teacher_family() -> None:
 def _probe_manifest() -> dict[str, object]:
     rows = {
         "discovery": [
-            {"example_id": "d0", "payload": "capable"},
-            {"example_id": "d1", "payload": "challenge"},
+            {"example_id": "d0", "pair_group_id": "pd0", "payload": "capable"},
+            {"example_id": "d1", "pair_group_id": "pd1", "payload": "challenge"},
         ],
         "validation": [
-            {"example_id": "v0", "payload": "capable"},
-            {"example_id": "v1", "payload": "challenge"},
+            {"example_id": "v0", "pair_group_id": "pv0", "payload": "capable"},
+            {"example_id": "v1", "pair_group_id": "pv1", "payload": "challenge"},
         ],
     }
     scores = {

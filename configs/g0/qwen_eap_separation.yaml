@@ -19,6 +19,9 @@ seed: 42
 parity_tolerance: 0.02
 minimum_bootstrap_spearman: 0.50
 minimum_random_control_margin: 0.0
+minimum_attribution_exact_spearman: 0.20
+minimum_spearman_bootstrap_lower_bound: -0.05
+minimum_selected_vs_random_cpr_margin: 0.0
 require_identity_sanity: true
 require_full_corruption_sanity: true
 probe_candidates_per_split: 128

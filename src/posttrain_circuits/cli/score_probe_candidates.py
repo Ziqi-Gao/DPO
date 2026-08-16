@@ -12,6 +12,7 @@ from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 from posttrain_circuits.data.splits import load_frozen_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
@@ -108,7 +109,8 @@ def main(argv: list[str] | None = None) -> None:
     }
     metrics = aggregate_verification(initial_validation_results)
     payload = {
-        "format_version": 1,
+        "format_version": 2,
+        **scientific_compatibility_fields(),
         "scores": rows,
         "initial_validation_metrics": metrics,
         "calibrated_validation_metrics": aggregate_verification(calibrated_validation_results),

@@ -12,6 +12,11 @@ from safetensors.torch import load_file, save_file
 
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.scientific_versions import (
+    TRAJECTORY_STORE_VERSION,
+    require_core_v2_artifact,
+    scientific_compatibility_fields,
+)
 from posttrain_circuits.core.types import TrajectoryRecord
 
 
@@ -118,7 +123,8 @@ class TrajectoryStore:
         rewards = [float(record.verifier_reward or 0.0) for record in records]
         lengths = [len(record.response_ids) for record in records]
         manifest: dict[str, Any] = {
-            "format_version": 1,
+            "format_version": TRAJECTORY_STORE_VERSION,
+            **scientific_compatibility_fields(),
             "behavior_policy": behavior_policy,
             "prompt_manifest_hash": prompt_manifest_hash,
             "sampling_configuration": sampling_configuration,
@@ -160,6 +166,9 @@ class TrajectoryStore:
 
     def check_integrity(self) -> dict[str, Any]:
         manifest = json.loads((self.root / "manifest.json").read_text(encoding="utf-8"))
+        if manifest.get("format_version") != TRAJECTORY_STORE_VERSION:
+            raise ValueError("pre-core-v2 trajectory stores are scientific-history only")
+        require_core_v2_artifact(manifest)
         for name, expected in manifest["files"].items():
             actual = sha256_file(self.root / name)
             if actual != expected:

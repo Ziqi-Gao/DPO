@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.analysis.factorial import match_validation_accuracy
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.provenance import require_git_output
 from posttrain_circuits.core.readiness import validate_readiness_report
 
 CELLS = (
@@ -160,8 +160,7 @@ def main(argv: list[str] | None = None) -> None:
     matched = _matched_summary(rows_by_cell, validation_hash)
     checks = {
         "g0_passed_and_hash_valid": g0.get("passed") is True and _hash_valid(g0),
-        "g0_git_binding": g0.get("git_commit")
-        == subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "g0_git_binding": g0.get("git_commit") == require_git_output(["rev-parse", "HEAD"]),
         "full_readiness_report": readiness.get("ready") is True,
         "all_training_cells_present": len(manifests) == len(CELLS),
         "all_artifacts_finite": all(_finite(rows) for rows in rows_by_cell.values())
@@ -205,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
         if _curve(rows, "output_kl_from_initial")[1]
     }
     job_ids = [line.strip() for line in args.job_ids.read_text(encoding="utf-8").splitlines() if line]
-    git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    git_commit = require_git_output(["rev-parse", "HEAD"])
     payload: dict[str, Any] = {
         "phase": "single_seed_qwen_core_pilot",
         "passed": all(checks.values()),

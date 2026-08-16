@@ -8,7 +8,9 @@ from pathlib import Path
 import torch
 
 from posttrain_circuits.cli._common import print_json
+from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 from posttrain_circuits.models.loading import load_model_and_tokenizer
 from posttrain_circuits.training.local_fork import (
     calibrate_learning_rate_for_output_kl,
@@ -25,7 +27,7 @@ _BRANCHES = (
     "hard_teacher",
     "soft_teacher",
     "verified_replay",
-    "grpo_or_reinforce",
+    "centered_policy_gradient",
 )
 
 
@@ -156,15 +158,16 @@ def main(argv: list[str] | None = None) -> None:
                         "relative_error": status["relative_error"],
                     }
                 )
-    atomic_write_json(
-        args.output,
-        {
-            "bundle": payload["manifest"],
-            "results": results,
-            "valid_for_primary_analysis": not invalid_cells,
-            "invalid_cells": invalid_cells,
-        },
-    )
+    report = {
+        "format_version": 2,
+        **scientific_compatibility_fields(),
+        "bundle": payload["manifest"],
+        "results": results,
+        "valid_for_primary_analysis": not invalid_cells,
+        "invalid_cells": invalid_cells,
+    }
+    report["sha256"] = sha256_value(report)
+    atomic_write_json(args.output, report)
     if invalid_cells:
         raise RuntimeError(
             "local-fork output-KL matching remained outside tolerance after calibration; "

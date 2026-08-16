@@ -158,7 +158,17 @@ def main(argv: list[str] | None = None) -> None:
         prompt_texts = [render_example(example) for example in examples]
         if state_source_name == "fixed_bank":
             if local_model:
-                fixed_bank = build_fixed_bank(examples, tokenizer, seed)
+                smoke_store_path = Path(str(config["state_source"].get("store_path", "")))
+                if (smoke_store_path / "manifest.json").is_file():
+                    fixed_store = TrajectoryStore(smoke_store_path)
+                    fixed_bank_manifest = fixed_store.check_integrity()
+                    fixed_bank = fixed_store.read()
+                    expected_tokenizer_hash = sha256_value(tokenizer.get_vocab())
+                    if fixed_bank_manifest.get("tokenizer_hash") != expected_tokenizer_hash:
+                        raise ValueError("smoke rollout-bank tokenizer does not match the student tokenizer")
+                    prompt_ids, prompt_texts = _teacher_demo_prompts(fixed_bank)
+                else:
+                    fixed_bank = build_fixed_bank(examples, tokenizer, seed)
             else:
                 assert loaded_student is not None
                 fixed_store = TrajectoryStore(Path(str(config["state_source"]["store_path"])))

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
+from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import DatasetManifest
+from posttrain_circuits.core.provenance import require_git_output
 from posttrain_circuits.data.splits import (
     build_split,
     difficulty_distribution,
@@ -46,7 +47,7 @@ def main(argv: list[str] | None = None) -> None:
         dataset_id=f"proofgraph-{split}-{min(seeds)}",
         generator_version=task.generator_version,
         git_commit=(
-            subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+            require_git_output(["rev-parse", "HEAD"])
             if not str(config["model"]["model_name_or_path"]).startswith("local/")
             else "smoke-unversioned"
         ),
@@ -55,6 +56,8 @@ def main(argv: list[str] | None = None) -> None:
         seed_range=(min(seeds), max(seeds)),
         num_examples=count,
         difficulty_distribution=difficulty_distribution(examples),
+        pair_group_count=len({example.pair_group_id for example in examples}),
+        pair_group_hash=sha256_value(sorted({example.pair_group_id for example in examples})),
     ).finalize(serialized)
     manifest.write(output / "manifest.json")
     print_json({"output": str(output), "manifest": asdict(manifest)})

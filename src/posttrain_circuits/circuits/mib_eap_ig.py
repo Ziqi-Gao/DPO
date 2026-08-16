@@ -13,6 +13,7 @@ from posttrain_circuits.circuits.exact_patching import (
     ExactPatchingBackend,
 )
 from posttrain_circuits.circuits.graph import CircuitScores
+from posttrain_circuits.circuits.probes import CIRCUIT_PROBE_SCHEMA_VERSION
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
 
@@ -34,6 +35,19 @@ def write_fixed_discovery_pairs(
         "corrupt_prompt",
         "clean_target",
         "corrupt_target",
+        "clean_input_ids",
+        "corrupt_input_ids",
+        "clean_target_ids",
+        "corrupt_target_ids",
+        "clean_metric_positions",
+        "corrupt_metric_positions",
+        "clean_intervention_positions",
+        "corrupt_intervention_positions",
+        "stage",
+        "semantic_pair_hash",
+        "tokenized_pair_hash",
+        "semantic_manifest_hash",
+        "tokenizer_hash",
     }
     identifiers = []
     normalized = []
@@ -41,22 +55,37 @@ def write_fixed_discovery_pairs(
         missing = required - set(row)
         if missing:
             raise ValueError(f"discovery pair is missing {sorted(missing)}")
-        item = {
-            key: str(row[key])
-            for key in (
-                "pair_id",
-                "clean_prompt",
-                "corrupt_prompt",
-                "clean_target",
-                "corrupt_target",
-            )
-        }
+        item = {key: row[key] for key in sorted(required)}
+        for key in ("pair_id", "clean_prompt", "corrupt_prompt", "clean_target", "corrupt_target"):
+            item[key] = str(item[key])
+        for key in (
+            "clean_input_ids",
+            "corrupt_input_ids",
+            "clean_target_ids",
+            "corrupt_target_ids",
+            "clean_metric_positions",
+            "corrupt_metric_positions",
+            "clean_intervention_positions",
+            "corrupt_intervention_positions",
+        ):
+            item[key] = [int(value) for value in item[key]]
+        if len(item["clean_input_ids"]) != len(item["corrupt_input_ids"]):
+            raise ValueError(f"discovery pair {item['pair_id']} is not token-shape matched")
+        if len(item["clean_target_ids"]) != len(item["corrupt_target_ids"]):
+            raise ValueError(f"discovery pair {item['pair_id']} targets are not shape matched")
+        if item["stage"] != "final_answer" and {item["clean_target"], item["corrupt_target"]} <= {
+            "0",
+            "1",
+        }:
+            raise ValueError("process-stage MIB rows cannot use final-answer token IDs")
         identifiers.append(item["pair_id"])
         normalized.append(item)
     if len(set(identifiers)) != len(identifiers):
         raise ValueError("discovery pair IDs must be unique")
     payload = {
-        "format_version": 1,
+        "format_version": 2,
+        "circuit_probe_schema_version": CIRCUIT_PROBE_SCHEMA_VERSION,
+        "prereg_version": "core_v2",
         "pair_count": len(normalized),
         "pairs": normalized,
         "sha256": sha256_value(normalized),
@@ -224,6 +253,16 @@ class MibEapIgAdapter:
                             "checkpoint_sha256",
                             "base_model_revision",
                             "tokenizer_hash",
+                            "circuit_probe_schema_version",
+                            "prereg_version",
+                            "probe_stages",
+                            "semantic_manifest_hash",
+                            "semantic_pair_hashes",
+                            "tokenized_pair_hashes",
+                            "target_strings",
+                            "target_token_ids",
+                            "target_metric_positions",
+                            "intervention_positions",
                         )
                         if key in payload
                     },

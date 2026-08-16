@@ -29,6 +29,15 @@ def verify_response(example: TaskExample, response: ParsedResponse) -> Verificat
     if not response.parse_valid or response.answer is None:
         return VerificationResult(False, False, False, [], 0.0, response.error_code or "parse_invalid")
 
+    derived = closure(example)
+    positive_derivable = example.query in derived
+    negative_derivable = example.query.flipped() in derived
+    if positive_derivable == negative_derivable:
+        graph_error = "contradictory_graph" if positive_derivable else "unresolved_graph"
+        return VerificationResult(True, False, False, [], 0.0, graph_error)
+    semantic_label = int(positive_derivable)
+    expected_conclusion = example.query if semantic_label == 1 else example.query.flipped()
+
     established: dict[str, Literal] = dict(example.facts)
     results: list[StepVerification] = []
     seen_steps: set[str] = set()
@@ -53,14 +62,16 @@ def verify_response(example: TaskExample, response: ParsedResponse) -> Verificat
         established[step.step_id] = step.conclusion
         seen_steps.add(step.step_id)
 
-    semantic_label = int(example.query in closure(example))
-    final_matches = bool(response.steps and response.steps[-1].conclusion == example.query)
-    proof_valid = final_matches if response.answer == 1 else not response.steps and semantic_label == 0
-    answer_correct = response.answer == example.label == semantic_label
-    error = None
+    final_matches = bool(response.steps and response.steps[-1].conclusion == expected_conclusion)
+    proof_valid = bool(response.steps) and final_matches
+    answer_correct = response.answer == semantic_label
+    final_error: str | None = None
     if not proof_valid:
-        error = "final_conclusion_mismatch"
+        final_error = "final_conclusion_mismatch"
     elif not answer_correct:
-        error = "answer_mismatch"
+        final_error = "answer_mismatch"
+    elif example.label != semantic_label:
+        final_error = "example_label_mismatch"
+        answer_correct = False
     reward = float(response.parse_valid and proof_valid and answer_correct)
-    return VerificationResult(True, proof_valid, answer_correct, results, reward, error)
+    return VerificationResult(True, proof_valid, answer_correct, results, reward, final_error)

@@ -51,14 +51,9 @@ def build_grpo_rows_and_reward(
         if reward_name == "format_only":
             return format_reward(prompt_texts, completion_texts)
         if reward_name == "matched_random":
-            exact_rewards = exact(prompt_texts, completion_texts)
-            if matched_positive_rate is not None:
-                return random_reward(prompt_texts, completion_texts)
-            return random_reward(
-                prompt_texts,
-                completion_texts,
-                exact_rewards=exact_rewards,
-            )
+            if matched_positive_rate is None:
+                raise ValueError("matched random GRPO requires a frozen calibration artifact")
+            return random_reward(prompt_texts, completion_texts)
         raise ValueError(f"unsupported GRPO reward {reward_name!r}")
 
     return rows, reward

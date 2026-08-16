@@ -17,10 +17,13 @@ import yaml
 from posttrain_circuits.core.hashing import sha256_file
 from posttrain_circuits.core.manifests import atomic_write_json
 
-PREREG_PATH = Path("prereg/core_v1.yaml")
+PREREG_PATH = Path("prereg/core_v2.yaml")
+PREREG_VERSION = "core_v2"
 
 
-def _git(args: list[str]) -> str | None:
+def git_output(args: list[str]) -> str | None:
+    """Run Git against either a conventional checkout or this repo's .opd-git metadata."""
+
     try:
         environment = None
         fallback = Path(".opd-git")
@@ -37,6 +40,18 @@ def _git(args: list[str]) -> str | None:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
+
+
+def require_git_output(args: list[str]) -> str:
+    """Return Git output or fail closed when repository provenance is unavailable."""
+
+    value = git_output(args)
+    if value is None:
+        raise RuntimeError(f"Git provenance command failed: git {' '.join(args)}")
+    return value
+
+
+_git = git_output
 
 
 def dependency_versions() -> dict[str, str]:
@@ -92,6 +107,7 @@ class RunManifest:
     prereg_git_commit: str = field(default_factory=_prereg_commit)
     prereg_sha256: str = field(default_factory=_prereg_sha256)
     prereg_dirty: bool = field(default_factory=_prereg_dirty)
+    prereg_version: str = PREREG_VERSION
 
     def validate(self, *, require_git: bool) -> None:
         required_text = {
@@ -117,11 +133,13 @@ class RunManifest:
                 "initialize the repository and commit the experiment source first"
             )
         if require_git and (self.prereg_git_commit == "unavailable" or self.prereg_sha256 == "unavailable"):
-            raise RuntimeError("formal run refused because prereg/core_v1.yaml has no frozen Git commit")
+            raise RuntimeError("formal run refused because prereg/core_v2.yaml has no frozen Git commit")
         if require_git and self.prereg_dirty:
             raise RuntimeError(
-                "formal run refused because prereg/core_v1.yaml differs from its frozen Git commit"
+                "formal run refused because prereg/core_v2.yaml differs from its frozen Git commit"
             )
+        if self.prereg_version != PREREG_VERSION:
+            raise RuntimeError("formal run refused because its preregistration is not core_v2")
 
 
 def initialize_run_directory(

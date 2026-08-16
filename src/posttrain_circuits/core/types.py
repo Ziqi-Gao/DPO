@@ -44,6 +44,9 @@ class TrajectoryRecord:
     teacher_topk_logprobs: list[list[float]] = field(default_factory=list)
     teacher_topk_mass: list[float] = field(default_factory=list)
     teacher_entropy: list[float] = field(default_factory=list)
+    generation_group_id: str = ""
+    generation_group_index: int = 0
+    prompt_group_size: int = 1
     created_at: str = ""
 
     def validate(self) -> None:
@@ -64,6 +67,11 @@ class TrajectoryRecord:
         for name, values in aligned_fields.items():
             if values and len(values) != response_length:
                 raise ValueError(f"{name} is not aligned to response tokens")
+        if self.generation_group_id:
+            if self.prompt_group_size < 2:
+                raise ValueError("grouped trajectories require prompt_group_size >= 2")
+            if not 0 <= self.generation_group_index < self.prompt_group_size:
+                raise ValueError("generation_group_index is outside prompt_group_size")
 
 
 @dataclass

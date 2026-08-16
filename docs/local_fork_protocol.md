@@ -11,10 +11,19 @@ target and the other branches calibrate learning rate until the configured relat
 met or the calibration budget is exhausted. Parameter-update norm is always recorded, but both it
 and update count are secondary axes rather than the main matched comparison.
 
-Signal branches load that same bundle and run hard teacher, soft teacher, verified replay, and an
-explicit shared-trajectory 1–0 REINFORCE diagnostic. No branch resamples prompts or responses.
+Signal branches load that same bundle and run hard teacher, soft teacher, verified replay, and
+`centered_policy_gradient`. The policy-gradient branch requires at least four trajectories per
+prompt group and within-group reward variance. It freezes
+`(reward - group_mean)/(group_std + epsilon)`, uses stored old-policy response log probabilities,
+and optimizes a clipped likelihood-ratio surrogate with both positive and negative advantages. No
+branch resamples prompts or responses.
 Horizons 1, 5, and 20 start independently from the common state; twenty is primary and one is a
 gradient diagnostic.
+
+The old uncentered binary reward-weighted estimator is retained only as a diagnostic because on
+0/1 rewards it is gradient-collinear with positive-only verified replay. Centered policy gradient
+must show distinct gradient geometry. This local branch is a controlled policy-gradient comparison,
+not full GRPO; official TRL GRPO remains the canonical external anchor.
 
 The state-source fork holds the soft-teacher objective fixed while selecting trajectories from the
 common behavior policy, initial student, current fork checkpoint, or teacher. Matching strata are

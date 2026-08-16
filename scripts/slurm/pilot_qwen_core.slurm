@@ -23,7 +23,8 @@ common=(pilot=qwen_core model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgr
   production_safety.initial_checkpoint_hash="${PILOT_INITIAL_CHECKPOINT_SHA256:?}")
 
 if [[ "${cell}" == canonical_grpo ]]; then
-  "${PYTHON_BIN}" -m posttrain_circuits.cli.run_grpo experiment=canonical_grpo "${common[@]}" \
+  "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
+    -m posttrain_circuits.cli.run_grpo experiment=canonical_grpo "${common[@]}" \
     trainer.batch_size=8 \
     --output "${output}" --confirm-production
 elif [[ "${cell}" == canonical_sft ]]; then

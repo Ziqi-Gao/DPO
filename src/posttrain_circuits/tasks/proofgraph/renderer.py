@@ -5,6 +5,12 @@ from __future__ import annotations
 from posttrain_circuits.tasks.proofgraph.schemas import ProofStep, TaskExample
 
 
+def render_proof_literal(step: ProofStep) -> str:
+    """Use a polarity-explicit, token-symmetric proof conclusion syntax."""
+
+    return str(step.conclusion) if step.conclusion.negated else f"TRUE {step.conclusion.atom}"
+
+
 def render_example(example: TaskExample) -> str:
     facts = "\n".join(f"{key}: {value}" for key, value in example.facts.items())
     rules = "\n".join(
@@ -20,7 +26,7 @@ def render_example(example: TaskExample) -> str:
 
 def render_step(step: ProofStep) -> str:
     citations = ",".join(step.citations)
-    return f"{step.step_id}: {step.rule_id}({citations}) -> {step.conclusion}"
+    return f"{step.step_id}: {step.rule_id}({citations}) -> {render_proof_literal(step)}"
 
 
 def render_target(example: TaskExample) -> str:

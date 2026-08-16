@@ -4,4 +4,4 @@ behavior_policy_id: common_mu
 max_policy_lag: 0
 target_success_range: [0.20, 0.60]
 include_successes_and_failures: true
-
+num_generations_per_prompt: 4

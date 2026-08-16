@@ -13,11 +13,13 @@ import torch
 from posttrain_circuits.circuits.exact_patching import (
     ExactPatchingBackend,
     ExactTokenPair,
+    _metric_value,
     component_specs,
 )
 from posttrain_circuits.circuits.graph import CircuitScores
+from posttrain_circuits.circuits.probes import TargetSequenceMetric
 
-BehaviorMetric = Callable[[torch.Tensor], torch.Tensor]
+BehaviorMetric = Callable[[torch.Tensor], torch.Tensor] | TargetSequenceMetric
 
 
 @dataclass(frozen=True)
@@ -50,10 +52,7 @@ class TinyEapIgBackend:
         pair: ExactTokenPair,
         metric: BehaviorMetric,
     ) -> dict[str, float]:
-        exact = ExactPatchingBackend(
-            pair.clean_ids,
-            pair.corrupt_ids,
-        )
+        exact = ExactPatchingBackend(pair)
         names = tuple(component_specs(model))
         with torch.no_grad():
             clean_cache = exact._capture(
@@ -83,7 +82,7 @@ class TinyEapIgBackend:
                     pair.clean_ids,
                     {name: interpolated},
                 )
-                objective = metric(logits)
+                objective = _metric_value(metric, logits, pair, side="clean")
                 gradient = torch.autograd.grad(
                     objective,
                     interpolated,

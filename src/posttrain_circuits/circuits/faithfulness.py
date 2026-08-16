@@ -101,6 +101,27 @@ def _bootstrap_curve_summaries(
     return _interval(cpr_values), _interval(cmd_values)
 
 
+def _calibration_bootstrap(
+    attribution: dict[str, float],
+    per_pair_patching: list[dict[str, float]],
+    *,
+    samples: int,
+    seed: int,
+) -> dict[str, float]:
+    if len(per_pair_patching) < 2:
+        raise ValueError("attribution calibration bootstrap needs at least two held-out pairs")
+    names = sorted(attribution)
+    rng = random.Random(seed)
+    values = []
+    for _ in range(samples):
+        indices = [rng.randrange(len(per_pair_patching)) for _ in per_pair_patching]
+        aggregate = {
+            name: sum(per_pair_patching[index][name] for index in indices) / len(indices) for name in names
+        }
+        values.append(attribution_rank_stability(attribution, aggregate))
+    return _interval(values)
+
+
 def faithfulness_sparsity_curve(
     backend: Any,
     model: Any,
@@ -110,6 +131,7 @@ def faithfulness_sparsity_curve(
     validation_pairs: list[Any],
     *,
     patching_scores: dict[str, float] | None = None,
+    patching_scores_per_pair: list[dict[str, float]] | None = None,
     random_seed: int = 0,
     random_repeats: int = 5,
     bootstrap_samples: int = 1000,
@@ -205,6 +227,8 @@ def faithfulness_sparsity_curve(
     )
     calibration = None
     spearman = None
+    spearman_ci = None
+    topk_precision = None
     if patching_scores is not None:
         shared = sorted(set(scores) & set(patching_scores))
         if len(shared) < 2:
@@ -223,6 +247,29 @@ def faithfulness_sparsity_curve(
             }
             for name in shared
         ]
+        top_k = max(1, round(len(shared) * 0.1))
+        attribution_top = {
+            name
+            for name, _ in sorted(attribution.items(), key=lambda item: abs(item[1]), reverse=True)[:top_k]
+        }
+        patching_top = {
+            name for name, _ in sorted(patching.items(), key=lambda item: abs(item[1]), reverse=True)[:top_k]
+        }
+        topk_precision = len(attribution_top & patching_top) / top_k
+        if patching_scores_per_pair is not None:
+            aligned_per_pair = [
+                {name: row[name] for name in shared}
+                for row in patching_scores_per_pair
+                if all(name in row for name in shared)
+            ]
+            if len(aligned_per_pair) != len(patching_scores_per_pair):
+                raise ValueError("per-pair exact patching calibration omitted scored components")
+            spearman_ci = _calibration_bootstrap(
+                attribution,
+                aligned_per_pair,
+                samples=bootstrap_samples,
+                seed=random_seed + 7_331,
+            )
     return {
         "sparsity_grid": list(REQUIRED_SPARSITY_GRID),
         "validation_pair_count": len(validation_pairs),
@@ -243,6 +290,8 @@ def faithfulness_sparsity_curve(
         "cmd_ci": cmd_ci,
         "bootstrap_samples": bootstrap_samples,
         "attribution_patching_spearman": spearman,
+        "attribution_patching_spearman_ci": spearman_ci,
+        "attribution_exact_topk_precision": topk_precision,
         "calibration": calibration,
         "heldout_exact_patching_effects": {
             "necessity": primary[-1]["necessity"],

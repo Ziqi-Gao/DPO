@@ -8,6 +8,11 @@ from typing import Any
 
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.scientific_versions import (
+    PROBE_COHORT_SCHEMA_VERSION,
+    require_core_v2_artifact,
+    scientific_compatibility_fields,
+)
 
 COHORTS = ("base_capable", "challenge")
 SUBSETS = ("discovery", "validation")
@@ -27,12 +32,19 @@ def _subset_manifest(
         }
         for row in rows
     ]
+    pair_group_ids = sorted(
+        {str(row.get("pair_group_id", row.get("metadata", {}).get("pair_group_id", ""))) for row in rows}
+    )
+    if any(not value for value in pair_group_ids):
+        raise ValueError("probe subset examples require pair_group_id")
     payload: dict[str, Any] = {
         "cohort": cohort,
         "subset": subset,
         "source_split_hash": source_split_hash,
         "num_examples": len(examples),
         "examples": examples,
+        "pair_group_count": len(pair_group_ids),
+        "pair_group_hash": sha256_value(pair_group_ids),
     }
     payload["sha256"] = sha256_value(payload)
     return payload
@@ -113,7 +125,9 @@ def build_probe_cohort_manifest(
             if manifests[cohort][subset]["num_examples"] < 1:
                 raise ValueError(f"probe cohort {cohort}/{subset} cannot be empty")
     payload: dict[str, Any] = {
-        "format_version": 1,
+        "format_version": 2,
+        "probe_cohort_schema_version": PROBE_COHORT_SCHEMA_VERSION,
+        **scientific_compatibility_fields(),
         "frozen_before_training": True,
         **required_hashes,
         "selection_rules": {
@@ -152,6 +166,9 @@ def validate_probe_cohort_manifest(
     if expected != sha256_value(payload):
         raise ValueError("probe cohort manifest hash mismatch")
     payload["sha256"] = expected
+    require_core_v2_artifact(payload)
+    if payload.get("probe_cohort_schema_version") != PROBE_COHORT_SCHEMA_VERSION:
+        raise ValueError("pre-core-v2 probe cohort manifests are not accepted")
     if payload.get("frozen_before_training") is not True:
         raise ValueError("probe cohorts were not frozen before training")
     if (
@@ -212,6 +229,21 @@ def validate_probe_cohort_manifest(
                 raise ValueError(f"probe subset hash mismatch for {cohort}/{subset}")
             if manifest["num_examples"] < 1:
                 raise ValueError(f"probe subset is empty for {cohort}/{subset}")
+            pair_ids = sorted(
+                {
+                    str(
+                        row["example"].get(
+                            "pair_group_id",
+                            row["example"].get("metadata", {}).get("pair_group_id", ""),
+                        )
+                    )
+                    for row in manifest["examples"]
+                }
+            )
+            if manifest.get("pair_group_count") != len(pair_ids):
+                raise ValueError(f"probe pair-group count mismatch for {cohort}/{subset}")
+            if manifest.get("pair_group_hash") != sha256_value(pair_ids):
+                raise ValueError(f"probe pair-group hash mismatch for {cohort}/{subset}")
             for row in manifest["examples"]:
                 example_id = str(row["example_id"])
                 exact = row.get("example")

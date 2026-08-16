@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -13,6 +12,7 @@ from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.core.provenance import require_git_output
 from posttrain_circuits.data.splits import build_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.anti_shortcut import (
@@ -96,11 +96,8 @@ def main(argv: list[str] | None = None) -> None:
         minimum_transformed_accuracy=float(gate_config["minimum_transformed_accuracy"]),
         minimum_per_transformation_accuracy=float(gate_config["minimum_per_transformation_accuracy"]),
         dataset_hash=sha256_value([asdict(example) for example in examples]),
-        code_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        prereg_commit=subprocess.check_output(
-            ["git", "log", "-n", "1", "--format=%H", "--", "prereg/core_v1.yaml"],
-            text=True,
-        ).strip(),
+        code_commit=require_git_output(["rev-parse", "HEAD"]),
+        prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"]),
     )
     atomic_write_json(output, report)
     print_json({"output": str(output), **report})

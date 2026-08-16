@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +13,7 @@ import torch.distributed as dist
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.provenance import require_git_output
 from posttrain_circuits.models.loading import load_model_and_tokenizer
 
 
@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
     status = torch.tensor(int(forward_finite), device=device)
     dist.broadcast(status, src=0)
     if rank == 0:
-        git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        git_commit = require_git_output(["rev-parse", "HEAD"])
         payload: dict[str, Any] = {
             "phase": "gpu_preflight",
             "passed": nccl_passed and bool(status.item()),

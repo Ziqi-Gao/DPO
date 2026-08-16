@@ -50,6 +50,7 @@ class TaskExample:
     query: Literal
     label: int
     canonical_proof: list[ProofStep]
+    pair_group_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

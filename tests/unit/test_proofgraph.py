@@ -30,27 +30,28 @@ def test_canonical_proofs_verify(task: ProofGraphTask, depth: int) -> None:
 
 
 @pytest.mark.unit
-def test_negative_answer_with_empty_proof_verifies(task: ProofGraphTask) -> None:
+def test_negative_answer_requires_nonempty_signed_proof(task: ProofGraphTask) -> None:
     example = task.generate(3, {"positive": False})
+    assert example.canonical_proof
+    assert example.canonical_proof[-1].conclusion == example.query.flipped()
     result = task.verify(example, task.parse_response(task.canonical_target(example)))
     assert result.reward == 1.0
+    empty = task.parse_response("<proof>\n\n</proof>\n<answer>0</answer>")
+    assert task.verify(example, empty).reward == 0.0
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    ("replacement", "error"),
-    [
-        ("R01(F01)", "unknown_citation"),
-        ("R99(F01)", "unknown_rule"),
-    ],
-)
-def test_invalid_citations_and_rules_are_rejected(task: ProofGraphTask, replacement: str, error: str) -> None:
+@pytest.mark.parametrize("error", ["unknown_citation", "unknown_rule"])
+def test_invalid_citations_and_rules_are_rejected(task: ProofGraphTask, error: str) -> None:
     example = task.generate(2, {"positive": True})
     target = task.canonical_target(example)
+    step = example.canonical_proof[0]
+    source = f"{step.rule_id}({','.join(step.citations)})"
     if error == "unknown_citation":
-        target = target.replace("R01(F01)", "R01(F99)")
+        replacement = f"{step.rule_id}(F99)"
     else:
-        target = target.replace("R01(F01)", replacement)
+        replacement = f"R99({','.join(step.citations)})"
+    target = target.replace(source, replacement, 1)
     result = task.verify(example, task.parse_response(target))
     assert result.reward == 0.0
     assert result.error_code == error
@@ -59,7 +60,12 @@ def test_invalid_citations_and_rules_are_rejected(task: ProofGraphTask, replacem
 @pytest.mark.unit
 def test_conclusion_and_answer_mismatch_are_rejected(task: ProofGraphTask) -> None:
     example = task.generate(2, {"positive": True})
-    wrong_conclusion = task.canonical_target(example).replace("-> I01", "-> WRONG", 1)
+    first_line = task.canonical_target(example).splitlines()[1]
+    wrong_conclusion = task.canonical_target(example).replace(
+        first_line,
+        first_line.rsplit(" ", 1)[0] + " WRONG",
+        1,
+    )
     assert task.verify(example, task.parse_response(wrong_conclusion)).error_code == "conclusion_mismatch"
     wrong_answer = task.canonical_target(example).replace("<answer>1", "<answer>0")
     assert task.verify(example, task.parse_response(wrong_answer)).reward == 0.0

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -94,6 +95,8 @@ def hf_generate_trajectories(
     with generation_rng(seed, device), torch.no_grad():
         sequences = model.generate(**encoded, **generation_kwargs)
     records: list[TrajectoryRecord] = []
+    prompt_counts = Counter(prompt_batch.prompt_ids)
+    prompt_indices: dict[str, int] = defaultdict(int)
     prompt_width = encoded.input_ids.shape[1]
     generated_ids = sequences.sequences[:, prompt_width:]
     raw_eos = getattr(model.generation_config, "eos_token_id", tokenizer.eos_token_id)
@@ -113,6 +116,14 @@ def hf_generate_trajectories(
         )
         if not (len(response_ids) == len(logprobs)):
             raise RuntimeError("generated response IDs and behavior logprobs are misaligned")
+        group_size = int(prompt_counts[prompt_id])
+        group_index = prompt_indices[prompt_id]
+        prompt_indices[prompt_id] += 1
+        group_id = (
+            "generation-group-" + sha256_value([prompt_id, policy_version, seed])[:16]
+            if group_size > 1
+            else ""
+        )
         records.append(
             TrajectoryRecord(
                 trajectory_id=f"traj-{sha256_value([prompt_id, policy_version, seed, row])[:16]}",
@@ -130,6 +141,9 @@ def hf_generate_trajectories(
                 sampling_temperature=temperature,
                 top_p=top_p,
                 behavior_logprobs=logprobs,
+                generation_group_id=group_id,
+                generation_group_index=group_index,
+                prompt_group_size=group_size,
                 created_at=datetime.now(UTC).isoformat(),
             )
         )

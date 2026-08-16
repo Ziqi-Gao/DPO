@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.models.loading import tokenizer_fingerprint
 
 
 def load_checkpoint_into_hf_model(
@@ -41,8 +42,8 @@ def load_checkpoint_into_hf_model(
 
 
 def _collate(
-    rows: list[tuple[str, str, tuple[int, int]]],
-) -> tuple[list[str], list[str], tuple[tuple[int, int], ...]]:
+    rows: list[tuple[str, str, dict[str, Any]]],
+) -> tuple[list[str], list[str], tuple[dict[str, Any], ...]]:
     clean, corrupt, labels = zip(*rows, strict=True)
     return list(clean), list(corrupt), labels
 
@@ -65,23 +66,33 @@ class _FixedPairDataset(Dataset):
                 row["corrupt_prompt"],
                 add_special_tokens=False,
             )
+            if clean_tokens != [int(value) for value in row["clean_input_ids"]]:
+                raise ValueError(f"pair {row['pair_id']} clean token bytes changed")
+            if corrupt_tokens != [int(value) for value in row["corrupt_input_ids"]]:
+                raise ValueError(f"pair {row['pair_id']} corrupt token bytes changed")
             if len(clean_tokens) != len(corrupt_tokens):
                 raise ValueError(f"pair {row['pair_id']} is not token-shape matched")
-            clean_target = tokenizer.encode(
-                row["clean_target"],
-                add_special_tokens=False,
-            )
-            corrupt_target = tokenizer.encode(
-                row["corrupt_target"],
-                add_special_tokens=False,
-            )
-            if len(clean_target) != 1 or len(corrupt_target) != 1:
-                raise ValueError(f"pair {row['pair_id']} targets must each be one token")
+            clean_target = [int(value) for value in row["clean_target_ids"]]
+            corrupt_target = [int(value) for value in row["corrupt_target_ids"]]
+            clean_positions = [int(value) for value in row["clean_metric_positions"]]
+            corrupt_positions = [int(value) for value in row["corrupt_metric_positions"]]
+            if not clean_target or len(clean_target) != len(corrupt_target):
+                raise ValueError(f"pair {row['pair_id']} target sequences are invalid")
+            if len(clean_positions) != len(clean_target) or len(corrupt_positions) != len(corrupt_target):
+                raise ValueError(f"pair {row['pair_id']} target positions are invalid")
             self.items.append(
                 (
                     row["clean_prompt"],
                     row["corrupt_prompt"],
-                    (clean_target[0], corrupt_target[0]),
+                    {
+                        "pair_id": str(row["pair_id"]),
+                        "stage": str(row["stage"]),
+                        "clean_target_ids": clean_target,
+                        "corrupt_target_ids": corrupt_target,
+                        "clean_metric_positions": clean_positions,
+                        "corrupt_metric_positions": corrupt_positions,
+                        "padding_side": str(getattr(tokenizer, "padding_side", "right")),
+                    },
                 )
             )
 
@@ -91,11 +102,11 @@ class _FixedPairDataset(Dataset):
     def __getitem__(
         self,
         index: int,
-    ) -> tuple[str, str, tuple[int, int]]:
+    ) -> tuple[str, str, dict[str, Any]]:
         return self.items[index]
 
 
-def _logit_difference(
+def _target_sequence_difference(
     circuit_logits: torch.Tensor,
     clean_logits: torch.Tensor,
     input_length: torch.Tensor,
@@ -105,19 +116,24 @@ def _logit_difference(
     loss: bool = False,
 ) -> torch.Tensor:
     del clean_logits
-    positions = input_length - 1
-    batch = torch.arange(
-        circuit_logits.shape[0],
-        device=circuit_logits.device,
-    )
-    final_logits = circuit_logits[batch, positions]
-    label_tensor = torch.as_tensor(
-        labels,
-        dtype=torch.long,
-        device=final_logits.device,
-    )
-    selected = torch.gather(final_logits, -1, label_tensor)
-    result = selected[:, 0] - selected[:, 1]
+    values = []
+    for index, label in enumerate(labels):
+        clean_ids = torch.tensor(label["clean_target_ids"], dtype=torch.long, device=circuit_logits.device)
+        corrupt_ids = torch.tensor(
+            label["corrupt_target_ids"], dtype=torch.long, device=circuit_logits.device
+        )
+        positions = torch.tensor(
+            label["clean_metric_positions"], dtype=torch.long, device=circuit_logits.device
+        )
+        if label.get("padding_side") == "left":
+            positions = positions + (circuit_logits.shape[1] - int(input_length[index]))
+        if int(positions.min()) < 0 or int(positions.max()) >= circuit_logits.shape[1]:
+            raise ValueError(f"MIB target positions are invalid for pair {label['pair_id']}")
+        log_probs = circuit_logits[index].index_select(0, positions).log_softmax(dim=-1)
+        clean = log_probs.gather(-1, clean_ids.view(-1, 1)).sum()
+        corrupt = log_probs.gather(-1, corrupt_ids.view(-1, 1)).sum()
+        values.append(clean - corrupt)
+    result = torch.stack(values)
     if loss:
         result = -result
     return result.mean() if mean else result
@@ -165,7 +181,7 @@ def _run_graph(
         neuron_level=False,
         node_scores=level == "node",
     )
-    metric = partial(_logit_difference, mean=True, loss=True)
+    metric = partial(_target_sequence_difference, mean=True, loss=True)
     if level == "edge":
         attribute_edge(
             model,
@@ -255,6 +271,8 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     pair_payload = json.loads(args.pairs.read_text(encoding="utf-8"))
+    if pair_payload.get("circuit_probe_schema_version") != "circuit-probe-v2-stage-sequence":
+        raise ValueError("MIB requires the core-v2 stage-sequence probe schema")
     rows = pair_payload["pairs"]
     if pair_payload.get("sha256") != sha256_value(rows):
         raise ValueError("fixed pair manifest hash mismatch")
@@ -367,6 +385,22 @@ def main(argv: list[str] | None = None) -> None:
             "integrated_gradient_steps": args.ig_steps,
             "level": args.level,
             "pair_manifest_hash": pair_payload["sha256"],
+            "circuit_probe_schema_version": pair_payload["circuit_probe_schema_version"],
+            "prereg_version": pair_payload.get("prereg_version"),
+            "probe_stages": sorted({str(row["stage"]) for row in rows}),
+            "semantic_manifest_hash": sha256_value(
+                sorted({str(row["semantic_manifest_hash"]) for row in rows})
+            ),
+            "semantic_pair_hashes": [str(row["semantic_pair_hash"]) for row in rows],
+            "tokenized_pair_hashes": [str(row["tokenized_pair_hash"]) for row in rows],
+            "target_strings": [[str(row["clean_target"]), str(row["corrupt_target"])] for row in rows],
+            "target_token_ids": [[row["clean_target_ids"], row["corrupt_target_ids"]] for row in rows],
+            "target_metric_positions": [
+                [row["clean_metric_positions"], row["corrupt_metric_positions"]] for row in rows
+            ],
+            "intervention_positions": [
+                [row["clean_intervention_positions"], row["corrupt_intervention_positions"]] for row in rows
+            ],
             "pair_count": len(rows),
             "bootstrap_replicates": args.bootstrap_replicates,
             "uncertainty_method": "prompt_bootstrap_standard_error",
@@ -374,7 +408,7 @@ def main(argv: list[str] | None = None) -> None:
             "checkpoint_path": str(args.checkpoint.resolve()),
             "checkpoint_sha256": actual_checkpoint_hash,
             "base_model_revision": args.model_revision,
-            "tokenizer_hash": sha256_value(tokenizer.get_vocab()),
+            "tokenizer_hash": tokenizer_fingerprint(tokenizer),
             "graph": primary_graph,
             "primary_raw_graph_hash": sha256_file(raw_root / "primary.json"),
             "scores": primary_scores,

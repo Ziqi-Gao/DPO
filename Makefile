@@ -2,7 +2,7 @@ PYTHON ?= .venv/bin/python
 
 .PHONY: test lint format typecheck validate-configs smoke-factorial smoke-sft \
 	smoke-grpo smoke-local-fork smoke-resume smoke-circuits readiness \
-	test-scientific-design
+	test-scientific-design smoke-repaired-g0
 
 test:
 	$(PYTHON) -m pytest -q -m "not gpu and not slow and not network"
@@ -19,7 +19,7 @@ typecheck:
 	$(PYTHON) -m mypy src
 
 test-scientific-design:
-	$(PYTHON) -m pytest -q tests/unit/test_scientific_updates.py
+	$(PYTHON) -m pytest -q tests/unit/test_scientific_updates.py tests/unit/test_scientific_repair_v2.py
 
 validate-configs:
 	$(PYTHON) -m posttrain_circuits.cli.validate_configs --output outputs/validation/configs.json
@@ -44,6 +44,9 @@ smoke-resume:
 smoke-circuits:
 	$(PYTHON) -m posttrain_circuits.cli.discover_circuit task=proofgraph_small circuit=eap_ig model=tiny_qwen circuit.smoke_steps=2 --output outputs/smoke-circuits/circuit.json
 	$(PYTHON) -m posttrain_circuits.cli.evaluate_circuit task=proofgraph_small circuit.random_mask_repeats=2 circuit.prompt_bootstrap_samples=20 --circuit-artifact outputs/smoke-circuits/circuit.json --output outputs/smoke-circuits/exact-patching.json
+
+smoke-repaired-g0:
+	bash scripts/smoke/run_repaired_g0.sh
 
 readiness:
 	$(PYTHON) -m posttrain_circuits.cli.readiness --output outputs/readiness

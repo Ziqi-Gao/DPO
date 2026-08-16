@@ -39,6 +39,7 @@ make smoke-grpo
 make smoke-local-fork
 make smoke-resume
 make smoke-circuits
+make smoke-repaired-g0
 .venv/bin/python -m posttrain_circuits.cli.build_anchor_pilots \
   --output-dir outputs/anchor-pilots --seed 42 \
   --discovery-per-task 4 --validation-per-task 4
@@ -46,7 +47,9 @@ make smoke-circuits
 
 `smoke-grpo` uses the official `trl.GRPOTrainer`, executes one optimizer step on CPU, and refuses to
 pass unless the tiny model's parameter-update norm is nonzero. `smoke-circuits` writes both a genuine
-activation-space EAP-IG artifact and a held-out exact-patching artifact.
+activation-space EAP-IG artifact and a held-out exact-patching artifact. `smoke-repaired-g0` runs the
+complete three-stage CPU vertical slice and labels its result `passed_cpu_smoke_only`; it is not a
+real G0 and does not download Qwen or Gemma.
 
 Production-scale commands print their resolved model, dataset, token estimate, output directory, and
 scale classification under `--dry-run`; they require `--confirm-production` to execute. Nothing in
@@ -56,9 +59,17 @@ the quick start downloads Qwen or Gemma.
 
 ## Frozen scientific-design gates
 
-The version-controlled design is [`prereg/core_v0.yaml`](prereg/core_v0.yaml), with execution order
+The active version-controlled design is [`prereg/core_v2.yaml`](prereg/core_v2.yaml), with execution order
 in [`docs/core_execution_plan.md`](docs/core_execution_plan.md). Production run manifests record
 the frozen preregistration Git commit and SHA-256; a dirty or uncommitted preregistration is refused.
+`core_v0.yaml` and `core_v1.yaml` are retained only as scientific history; their datasets, circuit
+probes, and run artifacts are rejected by formal core-v2 loaders.
+
+Core-v2 ProofGraph is paired signed entailment. Each pair has the same query, rules, topology,
+counts, and ordering, while critical support entails either `Q` or `NOT Q`. Both labels require a
+nonempty exact proof, so the query surface cannot determine the answer. Circuit evidence is
+stage-specific (`first_rule_selection`, `intermediate_conclusion`, `final_answer`): EAP-IG proposes
+candidates and held-out exact activation/path patching supplies the causal validation.
 
 Before Qwen factorial submission, evaluate the initial checkpoint's semantics-preserving
 anti-shortcut suite and freeze the `base_capable` and `challenge` discovery/validation probe
@@ -105,6 +116,7 @@ make smoke-grpo
 make smoke-local-fork
 make smoke-resume
 make smoke-circuits
+make smoke-repaired-g0
 ```
 
 ## Outputs
@@ -115,7 +127,7 @@ manifests and content hashes. Weights, banks, datasets, checkpoints, W&B caches,
 excluded by `.gitignore`.
 
 Production manifests also record the Git commit and SHA-256 of the frozen preregistration. A missing,
-uncommitted, or modified `prereg/core_v0.yaml` is a hard production refusal.
+uncommitted, or modified `prereg/core_v2.yaml` is a hard production refusal.
 
 ## Status
 

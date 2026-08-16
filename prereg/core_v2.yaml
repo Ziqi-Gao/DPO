@@ -1,0 +1,188 @@
+version: core_v2
+supersedes: core_v1
+status: frozen_before_repaired_G0
+change_rationale:
+  - replace_label_leaking_open_world_task_with_paired_signed_entailment
+  - replace_prompt_end_answer_logit_with_stage_specific_teacher_forced_targets
+  - replace_uncentered_binary_REINFORCE_fork_with_centered_policy_gradient
+  - add_teacher_correctness_gate
+  - replace_component_type_functional_gate
+  - strengthen_attribution_calibration
+  - repair_distributed_GRPO_launch
+
+active_models:
+  primary_student: Qwen/Qwen2.5-1.5B-Instruct
+  primary_teacher: Qwen/Qwen2.5-7B-Instruct
+  replication_student: google/gemma-2-2b-it
+  replication_teacher: google/gemma-2-9b-it
+
+task:
+  generator_version: proofgraph-v3-signed-paired
+  label_semantics: signed_entailment
+  paired_generation: true
+  require_exactly_one_query_polarity: true
+  both_labels_require_nonempty_proofs: true
+  pair_group_split_isolation: true
+  core_multiple_valid_proof_fraction: 0.0
+  leakage_audit:
+    maximum_query_only_accuracy: 0.55
+    maximum_surface_feature_accuracy: 0.55
+    maximum_bow_accuracy: 0.60
+
+primary_endpoints:
+  - heldout_exact_patching_necessity_and_sufficiency_on_base_capable_probes
+  - heldout_exact_patching_acquisition_on_challenge_probes
+  - stage_specific_process_and_final_answer_causal_effects
+  - excess_churn_after_same_checkpoint_estimator_noise_subtraction
+  - CPR_and_CMD_over_the_preregistered_sparsity_grid
+
+primary_counterfactual_ablation_protocol:
+  discovery: EAP-IG_candidates_on_frozen_discovery_subsets_only
+  validation: exact_activation_and_selected_path_patching_on_heldout_validation_subsets
+  primary_corruption: active_support_path_swap
+  corruption_class: semantic_target_changing
+  primary_baseline: counterfactual_replacement
+  controls: [mean_replacement, zero_ablation, layer_size_activation_matched_random_masks]
+  cohorts: [base_capable_preservation, challenge_acquisition]
+  query_flip_role: auxiliary_query_routing_only
+
+circuit_probes:
+  schema_version: circuit-probe-v2-stage-sequence
+  semantic_manifest: one_frozen_manifest_shared_across_checkpoints_and_arms
+  tokenizer_manifests: [Qwen_specific, Gemma_specific]
+  stages: [first_rule_selection, intermediate_conclusion, final_answer]
+  primary_G0_stages: [final_answer, one_of_first_rule_selection_or_intermediate_conclusion]
+  metric: teacher_forced_full_target_sequence_log_probability
+  hard_alignment:
+    - equal_clean_corrupt_model_input_length
+    - equal_target_sequence_length
+    - aligned_query_and_identifier_spans
+    - aligned_output_prefix
+
+faithfulness_sparsity_grid: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
+
+matched_accuracy_rules:
+  source: frozen_formal_validation_split_only
+  maximum_absolute_gap: 0.02
+  interpolation: within_adjacent_observed_checkpoints_only
+  extrapolation: forbidden
+  required_output: [lower_checkpoint, upper_checkpoint, interpolation_weight, validation_artifact_hash]
+
+local_fork:
+  branches: [hard_teacher, soft_teacher, verified_replay, centered_policy_gradient]
+  estimator: grouped_frozen_advantage_old_policy_clipped_surrogate
+  minimum_group_size: 4
+  require_within_group_reward_variance: true
+  advantage: (reward_minus_group_mean)/(group_standard_deviation_plus_epsilon)
+  exact_group_membership_hash_required: true
+  output_kl_matching:
+    divergence: KL(output_new || output_fork)
+    probe_set: fixed_hash_pinned_multi_prompt_pretraining_probe_set
+    target: hard_teacher_KL_at_each_nominal_horizon
+    relative_tolerance: 0.25
+    maximum_calibration_rounds: 2
+    nominal_horizons: [1, 5, 20]
+    primary_axis: matched_output_KL
+    secondary_axes: [update_count, parameter_update_norm]
+    out_of_tolerance_action: invalidate_cell_and_exit_nonzero
+
+teacher_readiness:
+  minimum_teacher_answer_accuracy: 0.90
+  minimum_teacher_exact_proof_accuracy: 0.85
+  minimum_teacher_first_rule_top1_accuracy: 0.80
+  minimum_teacher_intermediate_top1_accuracy: 0.80
+  minimum_teacher_topk_mass: 0.90
+  additional_metrics: [format_validity, topk_target_coverage, corrupted_prefix_recovery]
+
+attribution_calibration:
+  minimum_attribution_exact_spearman: 0.20
+  minimum_spearman_bootstrap_lower_bound: -0.05
+  minimum_selected_vs_random_cpr_margin: 0.0
+  component_type_counts_are_scientific_gates: false
+
+anti_shortcut_gate:
+  transformations: [entity_symbol_renaming, fact_order_permutation, rule_order_permutation, surface_template_paraphrase, distractor_count_OOD]
+  maximum_shortcut_gap: 0.05
+  minimum_iid_accuracy: 0.10
+  minimum_transformed_accuracy: 0.08
+  minimum_per_transformation_accuracy: 0.05
+  zero_zero_result: fail
+  evidence_bindings: [initial_checkpoint, dataset, suite, code_commit, prereg_commit]
+  required_before_G0_or_training: true
+
+estimator_noise_protocol:
+  method: independent_same_checkpoint_discovery_bootstrap_reruns
+  retain: [resample_indices, full_score_vectors, thresholded_masks, raw_graph_hashes]
+  primary_dynamics: [full_score_spearman, weighted_overlap, observed_churn, within_checkpoint_noise, excess_churn, cross_checkpoint_mask_transfer, heldout_exact_patching]
+  thresholded_jaccard_role: diagnostic_only
+
+canonical_GRPO:
+  implementation: pinned_official_TRL_GRPOTrainer
+  launcher: accelerate_multi_process
+  batch_contract: world_size_times_per_device_batch_times_gradient_accumulation_divisible_by_num_generations
+  main_process_only_artifact_writes: true
+  behavioral_probe: frozen_hash_pinned_multi_prompt
+  required_checkpoint_evidence: [initial_hash, final_hash, global_step, update_norm, optimizer_scheduler_state]
+
+random_reward_control:
+  cell: grpo_random_reward
+  timing: required_before_final_Qwen_mechanism_claim
+  calibration: frozen_exact_reward_positive_marginal_artifact
+  individual_correctness_visible_after_calibration: false
+  format_only_reward_role: secondary
+
+controlled_factorial:
+  cells: [offline_hard, online_hard, offline_soft, online_soft_opd, offline_verified_replay, online_verified_replay]
+  all_offline_cells_share_same_frozen_behavior_policy_rollout_bank: true
+  frozen_bank_is_teacher_trajectories: false
+  canonical_SFT_is_separate_anchor: true
+  canonical_GRPO_is_separate_anchor: true
+
+G0_gate:
+  required:
+    - clean_git_and_committed_core_v2
+    - pinned_model_and_tokenizer_revisions
+    - paired_signed_entailment_validity_and_pair_isolation
+    - label_leakage_audit
+    - nontrivial_student_capability
+    - teacher_answer_proof_step_correctness_and_topk_mass
+    - anti_shortcut
+    - frozen_base_capable_and_challenge_cohorts
+    - tokenizer_aligned_stage_specific_probes
+    - HF_TransformerLens_GQA_parity
+    - EAP_IG_bootstrap_stability
+    - final_answer_selected_beats_matched_random
+    - process_stage_selected_beats_matched_random
+    - quantitative_EAP_to_exact_calibration
+    - identity_and_full_corruption_sanity
+    - deterministic_distributed_resume
+    - artifact_hash_reconstruction
+  pass_only_if_all_required_valid: true
+
+escalation_1p5b_to_3b:
+  decision_point: after_valid_1p5b_core_analysis
+  escalate_if:
+    - artifacts_and_manifests_are_valid
+    - estimates_are_stable_with_acceptable_uncertainty
+    - heldout_causal_evidence_exceeds_estimator_noise_and_random_controls
+    - expected_information_value_justifies_resources
+  observed_effect_direction: never_a_gate
+
+confirmatory_contrasts:
+  - online_hard_minus_offline_hard
+  - online_soft_opd_minus_offline_soft
+  - online_verified_replay_minus_offline_verified_replay
+  - online_soft_opd_minus_online_hard
+  - online_verified_replay_minus_canonical_GRPO
+  - Gemma_offline_soft_minus_online_soft_OPD
+  - Gemma_online_hard_minus_online_soft_OPD
+  - Gemma_online_verified_replay_minus_canonical_GRPO
+
+secondary_exploratory_analyses:
+  - natural_rollout_sensitivity
+  - edge_lifecycle_and_compensation
+  - Track_B_long_CoT
+  - delta_transplant
+  - five_seed_expansion
+  - Edge_Pruning
+nonblocking_dependencies: [OLMo, Edge_Pruning, Track_B_long_CoT, delta_transplant, five_seed_expansion]

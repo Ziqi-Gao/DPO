@@ -1,0 +1,14 @@
+name: proofgraph
+label_semantics: signed_entailment
+paired_generation: true
+require_exactly_one_query_polarity: true
+num_examples: 1000
+seed: 42
+depth_range: [2, 4]
+distractor_range: [2, 8]
+structures: [chain, branch, converging_dag]
+ood_depth_range: [5, 7]
+unique_proof_for_circuits: true
+multiple_valid_proof_fraction: 0.5
+balanced_labels: true
+analysis_role: secondary_multiple_proof_robustness

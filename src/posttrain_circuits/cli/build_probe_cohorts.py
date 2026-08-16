@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +13,7 @@ from posttrain_circuits.circuits.probe_cohorts import (
 )
 from posttrain_circuits.cli._common import print_json
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
+from posttrain_circuits.core.provenance import require_git_output
 
 
 def _jsonl(path: Path) -> list[dict[str, Any]]:
@@ -95,11 +95,8 @@ def main(argv: list[str] | None = None) -> None:
         initial_student_checkpoint_hash=args.initial_checkpoint_hash,
         scoring_manifest_hash=sha256_file(args.scores),
         learnability_evidence_hash=args.learnability_evidence_hash,
-        git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        prereg_commit=subprocess.check_output(
-            ["git", "log", "-n", "1", "--format=%H", "--", "prereg/core_v1.yaml"],
-            text=True,
-        ).strip(),
+        git_commit=require_git_output(["rev-parse", "HEAD"]),
+        prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"]),
         source_artifacts={
             subset: {
                 "path": str((args.splits_root / source).resolve()),

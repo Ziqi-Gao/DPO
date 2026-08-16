@@ -11,6 +11,10 @@ from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_mani
 from posttrain_circuits.core.config import is_production_scale
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.scientific_versions import (
+    require_core_v2_artifact,
+    scientific_compatibility_fields,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,8 @@ class ReadinessReport:
     def write(self, root: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
         payload = {
+            "format_version": 2,
+            **scientific_compatibility_fields(),
             "ready": self.ready,
             "created_at": self.created_at,
             "checks": [asdict(check) for check in self.checks],
@@ -67,6 +73,8 @@ def build_readiness_report(
         "split_leakage_absent",
         "anti_shortcut_gap",
         "probe_cohorts_frozen",
+        "teacher_correctness",
+        "label_leakage",
     )
     checks = [
         ReadinessCheck(name, *evidence.get(name, (False, "no evidence supplied"))) for name in required_names
@@ -85,6 +93,7 @@ def validate_anti_shortcut_report(
     if expected_hash != sha256_value(payload):
         raise ValueError("anti-shortcut report hash mismatch")
     payload["sha256"] = expected_hash
+    require_core_v2_artifact(payload)
     if str(payload.get("model_checkpoint_hash")) != expected_model_checkpoint_hash:
         raise RuntimeError(
             "anti-shortcut evidence is for a different initial student checkpoint: "
@@ -122,6 +131,7 @@ def validate_readiness_report(
     if expected_hash != sha256_value(payload):
         raise ValueError("readiness report hash mismatch")
     payload["sha256"] = expected_hash
+    require_core_v2_artifact(payload)
     checks = payload.get("checks", [])
     names = {str(check.get("name")) for check in checks if isinstance(check, dict)}
     required = {check.name for check in build_readiness_report({}).checks}

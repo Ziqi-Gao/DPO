@@ -18,8 +18,9 @@ from posttrain_circuits.circuits.graph import (
 from posttrain_circuits.circuits.model_adapter import (
     q_to_kv_head_mapping,
 )
+from posttrain_circuits.circuits.probes import CircuitProbeSpec, TargetSequenceMetric
 
-BehaviorMetric = Callable[[torch.Tensor], torch.Tensor]
+BehaviorMetric = Callable[[torch.Tensor], torch.Tensor] | TargetSequenceMetric
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,62 @@ class ExactTokenPair:
     pair_id: str
     clean_ids: torch.Tensor
     corrupt_ids: torch.Tensor
+    clean_target_ids: tuple[int, ...] = ()
+    corrupt_target_ids: tuple[int, ...] = ()
+    clean_metric_positions: tuple[int, ...] = ()
+    corrupt_metric_positions: tuple[int, ...] = ()
+    clean_intervention_positions: tuple[int, ...] = ()
+    corrupt_intervention_positions: tuple[int, ...] = ()
+    stage: str = ""
+    semantic_pair_hash: str = ""
+    tokenized_pair_hash: str = ""
 
     def __post_init__(self) -> None:
         if self.clean_ids.shape != self.corrupt_ids.shape:
             raise ValueError(f"pair {self.pair_id} is not token-shape matched")
+        if self.clean_target_ids or self.corrupt_target_ids:
+            if not self.clean_target_ids or len(self.clean_target_ids) != len(self.corrupt_target_ids):
+                raise ValueError(f"pair {self.pair_id} target sequences are not shape matched")
+            if len(self.clean_metric_positions) != len(self.clean_target_ids):
+                raise ValueError(f"pair {self.pair_id} clean metric positions are invalid")
+            if len(self.corrupt_metric_positions) != len(self.corrupt_target_ids):
+                raise ValueError(f"pair {self.pair_id} corrupt metric positions are invalid")
+
+    @classmethod
+    def from_probe(
+        cls,
+        probe: CircuitProbeSpec,
+        *,
+        device: torch.device | None = None,
+    ) -> ExactTokenPair:
+        clean = torch.tensor([probe.clean_input_ids], dtype=torch.long, device=device)
+        corrupt = torch.tensor([probe.corrupt_input_ids], dtype=torch.long, device=device)
+        return cls(
+            pair_id=probe.probe_id,
+            clean_ids=clean,
+            corrupt_ids=corrupt,
+            clean_target_ids=probe.clean_target_ids,
+            corrupt_target_ids=probe.corrupt_target_ids,
+            clean_metric_positions=probe.clean_metric_positions,
+            corrupt_metric_positions=probe.corrupt_metric_positions,
+            clean_intervention_positions=probe.clean_intervention_positions,
+            corrupt_intervention_positions=probe.corrupt_intervention_positions,
+            stage=probe.stage,
+            semantic_pair_hash=probe.semantic_pair_hash,
+            tokenized_pair_hash=probe.tokenized_pair_hash,
+        )
+
+
+def _metric_value(
+    metric: BehaviorMetric,
+    logits: torch.Tensor,
+    pair: ExactTokenPair,
+    *,
+    side: str,
+) -> torch.Tensor:
+    if isinstance(metric, TargetSequenceMetric):
+        return metric(logits, pair=pair, side=side)
+    return metric(logits)
 
 
 @dataclass(frozen=True)
@@ -228,14 +281,17 @@ class ExactPatchingBackend:
 
     def __init__(
         self,
-        clean_ids: torch.Tensor,
-        corrupt_ids: torch.Tensor,
+        clean_ids: torch.Tensor | ExactTokenPair,
+        corrupt_ids: torch.Tensor | None = None,
     ) -> None:
-        self.discovery_pair = ExactTokenPair(
-            "discovery",
-            clean_ids,
-            corrupt_ids,
-        )
+        if isinstance(clean_ids, ExactTokenPair):
+            if corrupt_ids is not None:
+                raise ValueError("do not pass corrupt_ids with an ExactTokenPair")
+            self.discovery_pair = clean_ids
+        else:
+            if corrupt_ids is None:
+                raise ValueError("exact patching requires corrupt token IDs")
+            self.discovery_pair = ExactTokenPair("discovery", clean_ids, corrupt_ids)
 
     def _capture(
         self,
@@ -364,7 +420,14 @@ class ExactPatchingBackend:
             self.discovery_pair.corrupt_ids,
             names,
         )
-        clean_value = float(metric(model(input_ids=self.discovery_pair.clean_ids).logits))
+        clean_value = float(
+            _metric_value(
+                metric,
+                model(input_ids=self.discovery_pair.clean_ids).logits,
+                self.discovery_pair,
+                side="clean",
+            )
+        )
         scores: dict[str, float] = {}
         for name in names:
             patched = self._run_patched(
@@ -372,7 +435,9 @@ class ExactPatchingBackend:
                 self.discovery_pair.clean_ids,
                 {name: corrupt_cache[name]},
             )
-            scores[name] = clean_value - float(metric(patched))
+            scores[name] = clean_value - float(
+                _metric_value(metric, patched, self.discovery_pair, side="clean")
+            )
         return CircuitScores(scores=scores, node_scores=scores)
 
     @torch.no_grad()
@@ -439,7 +504,14 @@ class ExactPatchingBackend:
             )
         finally:
             handle.remove()
-        clean = float(metric(model(input_ids=self.discovery_pair.clean_ids).logits))
+        clean = float(
+            _metric_value(
+                metric,
+                model(input_ids=self.discovery_pair.clean_ids).logits,
+                self.discovery_pair,
+                side="clean",
+            )
+        )
         path_logits = self._run_patched(
             model,
             self.discovery_pair.clean_ids,
@@ -447,8 +519,14 @@ class ExactPatchingBackend:
         )
         path_name = f"{sender}->{receiver}"
         return CircuitScores(
-            scores={path_name: clean - float(metric(path_logits))},
-            edge_scores={path_name: clean - float(metric(path_logits))},
+            scores={
+                path_name: clean
+                - float(_metric_value(metric, path_logits, self.discovery_pair, side="clean"))
+            },
+            edge_scores={
+                path_name: clean
+                - float(_metric_value(metric, path_logits, self.discovery_pair, side="clean"))
+            },
         )
 
     def _transmitted_receiver_cache(
@@ -656,24 +734,24 @@ class ExactPatchingBackend:
                     pair.clean_ids,
                     mask.components,
                 )
-            clean = float(metric(model(input_ids=pair.clean_ids).logits))
-            corrupt = float(metric(model(input_ids=pair.corrupt_ids).logits))
+            clean = float(_metric_value(metric, model(input_ids=pair.clean_ids).logits, pair, side="clean"))
+            corrupt = float(
+                _metric_value(metric, model(input_ids=pair.corrupt_ids).logits, pair, side="corrupt")
+            )
             patched = float(
-                metric(
-                    self._run_patched(
-                        model,
-                        pair.clean_ids,
-                        cache,
-                    )
+                _metric_value(
+                    metric,
+                    self._run_patched(model, pair.clean_ids, cache),
+                    pair,
+                    side="clean",
                 )
             )
             sufficient = float(
-                metric(
-                    self._run_patched(
-                        model,
-                        pair.corrupt_ids,
-                        clean_cache,
-                    )
+                _metric_value(
+                    metric,
+                    self._run_patched(model, pair.corrupt_ids, clean_cache),
+                    pair,
+                    side="corrupt",
                 )
             )
             denominator = clean - corrupt
@@ -728,10 +806,28 @@ class ExactPatchingBackend:
         components = tuple(component_specs(model))
         clean_cache = self._capture(model, pair.clean_ids, components)
         corrupt_cache = self._capture(model, pair.corrupt_ids, components)
-        clean_metric = float(metric(model(input_ids=pair.clean_ids).logits))
-        corrupt_metric = float(metric(model(input_ids=pair.corrupt_ids).logits))
-        identity_metric = float(metric(self._run_patched(model, pair.clean_ids, clean_cache)))
-        full_corruption_metric = float(metric(self._run_patched(model, pair.clean_ids, corrupt_cache)))
+        clean_metric = float(
+            _metric_value(metric, model(input_ids=pair.clean_ids).logits, pair, side="clean")
+        )
+        corrupt_metric = float(
+            _metric_value(metric, model(input_ids=pair.corrupt_ids).logits, pair, side="corrupt")
+        )
+        identity_metric = float(
+            _metric_value(
+                metric,
+                self._run_patched(model, pair.clean_ids, clean_cache),
+                pair,
+                side="clean",
+            )
+        )
+        full_corruption_metric = float(
+            _metric_value(
+                metric,
+                self._run_patched(model, pair.clean_ids, corrupt_cache),
+                pair,
+                side="clean",
+            )
+        )
         identity_error = abs(identity_metric - clean_metric)
         full_corruption_error = abs(full_corruption_metric - corrupt_metric)
         scale = max(1.0, abs(clean_metric), abs(corrupt_metric))

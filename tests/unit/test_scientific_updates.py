@@ -111,12 +111,12 @@ def test_anti_shortcut_gate_rejects_failed_or_wrong_checkpoint_report(tmp_path: 
 def _probe_rows() -> dict[str, list[dict[str, object]]]:
     return {
         "discovery": [
-            {"example_id": "d-capable", "payload": 1},
-            {"example_id": "d-challenge", "payload": 2},
+            {"example_id": "d-capable", "pair_group_id": "pair-d-capable", "payload": 1},
+            {"example_id": "d-challenge", "pair_group_id": "pair-d-challenge", "payload": 2},
         ],
         "validation": [
-            {"example_id": "v-capable", "payload": 3},
-            {"example_id": "v-challenge", "payload": 4},
+            {"example_id": "v-capable", "pair_group_id": "pair-v-capable", "payload": 3},
+            {"example_id": "v-challenge", "pair_group_id": "pair-v-challenge", "payload": 4},
         ],
     }
 
@@ -300,8 +300,8 @@ def test_gemma_core_replication_config_contains_only_minimum_cells() -> None:
     assert replication["teacher"] == "gemma2_teacher_9b"
     assert replication["complete_factorial_required"] is False
     assert len(replication["confirmatory_contrasts"]) == 3
-    prereg = Path("prereg/core_v1.yaml").read_text(encoding="utf-8")
-    assert "local_fork_output_kl_matching_rule" in prereg
+    prereg = Path("prereg/core_v2.yaml").read_text(encoding="utf-8")
+    assert "output_kl_matching" in prereg
     assert "escalation_1p5b_to_3b" in prereg
     assert "observed_effect_direction: never_a_gate" in prereg
     assert "at_least_two_of_three_seeds_have_the_preregistered_direction" not in prereg

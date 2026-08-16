@@ -6,6 +6,8 @@
   random-matched controls diagnose only part of this risk.
 - **Circuit estimator noise.** EAP-IG rankings vary with prompts and integration paths. Bootstrap and
   fixed discovery pairs are mandatory.
+- **Stage over-interpretation.** A final-answer circuit can omit rule selection or intermediate
+  deduction. Claims must name the probed stage and cannot generalize from answer to full reasoning.
 - **GQA conversion errors.** Treating query heads as independent K/V heads invalidates Qwen patching;
   compatibility and explicit mappings gate analysis.
 - **Attribution/patching approximation.** High attribution need not imply a large exact effect.
@@ -24,3 +26,6 @@
   discovery set before post-training.
 - **Cluster nondeterminism.** Distributed kernels may not be bitwise deterministic. Resume is tested
   within a numerical tolerance on each target execution stack.
+- **Superseded artifacts.** Pre-v2 datasets encode a label-leaking non-provability task, and pre-v2
+  circuit artifacts use prompt-end targets. They are scientific history only and formal loaders
+  reject them rather than attempting migration in place.

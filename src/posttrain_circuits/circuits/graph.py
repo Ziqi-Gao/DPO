@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
 
 
@@ -72,7 +73,21 @@ class CircuitArtifact:
     probe_subset: str = ""
     probe_cohort_manifest_hash: str = ""
     graph_convention: str = ""
+    circuit_probe_schema_version: str = ""
+    prereg_version: str = ""
+    generator_version: str = ""
+    label_semantics: str = ""
+    probe_stage: str = ""
+    semantic_probe_manifest_hash: str = ""
+    tokenized_probe_manifest_hash: str = ""
+    stage_target_manifest_hash: str = ""
+    semantic_probe_manifest_path: str = ""
+    tokenized_probe_manifest_path: str = ""
+    semantic_pair_hashes: list[str] = field(default_factory=list)
+    tokenized_pair_hashes: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
 
     def write(self, path: Path) -> None:
-        atomic_write_json(path, asdict(self))
+        payload = asdict(self)
+        payload["sha256"] = sha256_value(payload)
+        atomic_write_json(path, payload)

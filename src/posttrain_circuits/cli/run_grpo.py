@@ -18,7 +18,7 @@ from posttrain_circuits.cli._common import (
     parse_cli,
     print_json,
 )
-from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.core.provenance import (
     RunManifest,
@@ -28,14 +28,17 @@ from posttrain_circuits.core.provenance import (
 from posttrain_circuits.core.seeding import RNGState
 from posttrain_circuits.data.splits import build_split, load_frozen_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
+from posttrain_circuits.rewards.random_matched import validate_random_reward_calibration
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
 from posttrain_circuits.training.evaluation import build_proofgraph_evaluator
 from posttrain_circuits.training.grpo_backend import (
     GrpoSettings,
     TrlGrpoBackend,
+    resolve_grpo_batch_contract,
 )
 from posttrain_circuits.training.grpo_data import build_grpo_rows_and_reward
+from posttrain_circuits.training.local_fork import state_hash
 from posttrain_circuits.utils.tiny_model import (
     build_tiny_qwen,
     build_tiny_tokenizer,
@@ -69,20 +72,33 @@ def _cpu_tree(value: object) -> object:
 
 
 @torch.no_grad()
-def _probe_log_probs(model: torch.nn.Module, input_ids: torch.Tensor) -> torch.Tensor:
+def _probe_log_probs(
+    model: torch.nn.Module,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+) -> torch.Tensor:
     device = next(model.parameters()).device
-    return model(input_ids=input_ids.to(device)).logits.log_softmax(dim=-1).detach()
+    mask = attention_mask.to(device)
+    logits = model(
+        input_ids=input_ids.to(device),
+        attention_mask=mask,
+    ).logits
+    positions = mask.long().sum(dim=1) - 1
+    selected = logits[torch.arange(logits.shape[0], device=device), positions]
+    return selected.float().log_softmax(dim=-1).detach()
 
 
 @torch.no_grad()
 def _output_kl_new_to_initial(
     model: torch.nn.Module,
     input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
     initial_log_probs: torch.Tensor,
 ) -> float:
-    current = _probe_log_probs(model, input_ids)
+    current = _probe_log_probs(model, input_ids, attention_mask)
     initial = initial_log_probs.to(current.device)
-    return float((current.exp() * (current - initial)).sum(dim=-1).mean().detach().cpu())
+    prompt_kl = (current.exp() * (current - initial)).sum(dim=-1)
+    return float(prompt_kl.mean().detach().cpu())
 
 
 def _atomic_torch_save(path: Path, payload: dict[str, object]) -> None:
@@ -98,6 +114,91 @@ def _atomic_torch_save(path: Path, payload: dict[str, object]) -> None:
         raise
 
 
+def _snapshot_parameter_state(
+    state: dict[str, torch.Tensor],
+    root: Path,
+) -> dict[str, object]:
+    """Persist one tensor per file so update-norm comparison stays bounded."""
+
+    root.mkdir(parents=True, exist_ok=True)
+    tensors = {}
+    for index, (name, tensor) in enumerate(state.items()):
+        path = root / f"{index:06d}.pt"
+        torch.save(tensor.detach().cpu(), path)
+        tensors[name] = {
+            "path": str(path),
+            "sha256": sha256_file(path),
+            "shape": list(tensor.shape),
+            "dtype": str(tensor.dtype),
+        }
+    payload: dict[str, object] = {"tensors": tensors}
+    payload["sha256"] = sha256_value(payload)
+    atomic_write_json(root / "manifest.json", payload)
+    return payload
+
+
+def _streaming_parameter_update_norm(
+    snapshot: dict[str, object],
+    final_state: dict[str, torch.Tensor],
+) -> float:
+    squared = 0.0
+    rows = snapshot.get("tensors")
+    if not isinstance(rows, dict) or not rows:
+        raise ValueError("GRPO initial parameter snapshot is empty")
+    for name, raw in rows.items():
+        if name not in final_state or not isinstance(raw, dict):
+            raise ValueError(f"GRPO final state omitted snapshotted parameter {name}")
+        path = Path(str(raw["path"]))
+        if sha256_file(path) != raw["sha256"]:
+            raise ValueError(f"GRPO initial parameter snapshot was modified: {name}")
+        before = torch.load(path, map_location="cpu", weights_only=True).float()
+        after = final_state[name].detach().cpu().float()
+        squared += float(torch.sum((after - before) ** 2).item())
+    return math.sqrt(squared)
+
+
+def _world_info() -> tuple[int, int]:
+    return int(os.environ.get("WORLD_SIZE", "1")), int(os.environ.get("RANK", "0"))
+
+
+@torch.no_grad()
+def _distributed_parameter_checksum(model: torch.nn.Module, *, world_size: int) -> str:
+    """Hash an all-reduced checksum over replicated or sharded live parameters."""
+
+    device = next(model.parameters()).device
+    summary = torch.zeros(3, dtype=torch.float64, device=device)
+    for parameter in model.parameters():
+        values = parameter.detach().double()
+        summary[0] += values.numel()
+        summary[1] += values.sum()
+        summary[2] += torch.square(values).sum()
+    if world_size > 1:
+        if not torch.distributed.is_initialized():
+            raise RuntimeError("distributed GRPO checksum requires an initialized process group")
+        torch.distributed.all_reduce(summary)
+    return sha256_value(
+        {
+            "world_size": world_size,
+            "all_reduced_numel": float(summary[0].cpu()),
+            "all_reduced_sum": float(summary[1].cpu()),
+            "all_reduced_squared_sum": float(summary[2].cpu()),
+        }
+    )
+
+
+def _directory_hashes(root: Path) -> dict[str, str]:
+    files = sorted(path for path in root.rglob("*") if path.is_file())
+    if not files:
+        raise RuntimeError("Accelerate checkpoint directory is empty")
+    return {str(path.relative_to(root)): sha256_file(path) for path in files}
+
+
+def _wait_for_everyone(trainer: object) -> None:
+    accelerator = getattr(trainer, "accelerator", None)
+    if accelerator is not None:
+        accelerator.wait_for_everyone()
+
+
 def main(argv: list[str] | None = None) -> None:
     args, config = parse_cli("Run canonical TRL GRPO", argv)
     output = args.output or (Path(config["output_root"]) / "runs" / str(config["experiment"]["name"]))
@@ -111,6 +212,8 @@ def main(argv: list[str] | None = None) -> None:
 
     model_config = config["model"]
     is_tiny = str(model_config["model_name_or_path"]).startswith("local/")
+    world_size, rank = _world_info()
+    is_main_process = rank == 0
     initial_checkpoint_hash: str | None = None
     settings = GrpoSettings(
         max_completion_length=int(
@@ -139,10 +242,7 @@ def main(argv: list[str] | None = None) -> None:
         ),
         seed=int(config["seed"]),
     )
-    if settings.per_device_train_batch_size % settings.num_generations != 0:
-        raise ValueError(
-            "GRPO train batch size must be divisible by num_generations",
-        )
+    batch_contract = resolve_grpo_batch_contract(settings, world_size=world_size)
 
     if is_tiny:
         model = build_tiny_qwen(int(config["seed"]))
@@ -177,6 +277,7 @@ def main(argv: list[str] | None = None) -> None:
         if is_tiny
         else []
     )
+    production_parameter_snapshot = None
 
     task_config = config["task"]
     validation_examples: list[TaskExample] = []
@@ -196,7 +297,23 @@ def main(argv: list[str] | None = None) -> None:
         dict(task_config),
     )
     reward_name = str(config["experiment"]["reward"])
-    matched_positive_rate = 0.5 if is_tiny and reward_name == "matched_random" else None
+    matched_positive_rate = None
+    random_reward_calibration_hash = None
+    if reward_name == "matched_random":
+        if is_tiny:
+            matched_positive_rate = 0.5
+            random_reward_calibration_hash = sha256_value(
+                {"fixture": "tiny-frozen-random-reward-calibration", "positive_rate": 0.5}
+            )
+        else:
+            calibration_path = Path(str(config["experiment"].get("random_reward_calibration_path", "")))
+            if not calibration_path.is_file():
+                raise ValueError("random-reward GRPO requires a frozen calibration artifact")
+            calibration = validate_random_reward_calibration(
+                json.loads(calibration_path.read_text(encoding="utf-8"))
+            )
+            matched_positive_rate = float(calibration["positive_rate"])
+            random_reward_calibration_hash = str(calibration["sha256"])
     rows, reward = build_grpo_rows_and_reward(
         examples,
         reward_name=reward_name,
@@ -205,6 +322,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     prompt_hash = sha256_value(rows)
     probe_input_ids: torch.Tensor | None = None
+    probe_attention_mask: torch.Tensor | None = None
+    output_kl_probe_manifest_hash: str | None = None
     initial_probe_log_probs: torch.Tensor | None = None
     initial_validation_metrics: dict[str, float] = {}
     if validation_examples:
@@ -214,12 +333,29 @@ def main(argv: list[str] | None = None) -> None:
             max_completion_length=int(config["supervision"]["max_completion_length"]),
         )
         initial_validation_metrics = evaluator(model)
-        probe_input_ids = tokenizer(
-            str(rows[0]["prompt"]),
+        probe_examples = validation_examples[: min(16, len(validation_examples))]
+        encoded_probe = tokenizer(
+            [ProofGraphTask().render(example) for example in probe_examples],
             add_special_tokens=False,
             return_tensors="pt",
-        ).input_ids
-        initial_probe_log_probs = _probe_log_probs(model, probe_input_ids)
+            padding=True,
+        )
+        probe_input_ids = encoded_probe.input_ids
+        probe_attention_mask = encoded_probe.attention_mask
+        probe_manifest = {
+            "kind": "multi_prompt_behavioral_output_kl",
+            "example_ids": [example.example_id for example in probe_examples],
+            "input_ids": probe_input_ids.tolist(),
+            "attention_mask": probe_attention_mask.tolist(),
+            "validation_manifest_hash": validation_manifest_hash,
+            "tokenizer_revision": resolved_tokenizer_commit,
+        }
+        output_kl_probe_manifest_hash = sha256_value(probe_manifest)
+        initial_probe_log_probs = _probe_log_probs(
+            model,
+            probe_input_ids,
+            probe_attention_mask,
+        )
     source_hash = sha256_value(
         {
             "state_source": config["state_source"],
@@ -257,20 +393,6 @@ def main(argv: list[str] | None = None) -> None:
         rollout_bank_hash=source_hash,
         prompt_schedule_hash=prompt_hash,
     )
-    initialize_run_directory(output, config, manifest, require_git=not is_tiny)
-    if initial_validation_metrics:
-        with (Path(output) / "metrics.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(
-                    {
-                        "step": 0,
-                        **initial_validation_metrics,
-                        "output_kl_from_initial": 0.0,
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
     try:
         from datasets import Dataset
     except ImportError as error:
@@ -285,85 +407,200 @@ def main(argv: list[str] | None = None) -> None:
         output_dir=str(output),
         processing_class=tokenizer,
     )
+    _wait_for_everyone(trainer)
+    accelerator = getattr(trainer, "accelerator", None)
+    if not is_tiny:
+        if accelerator is None:
+            raise RuntimeError("production GRPO requires an Accelerator-managed trainer")
+        initial_full_state = accelerator.get_state_dict(trainer.model)
+        if is_main_process:
+            production_parameter_snapshot = _snapshot_parameter_state(
+                initial_full_state,
+                Path(output) / "initial_parameter_snapshot",
+            )
+    if is_main_process:
+        initialize_run_directory(output, config, manifest, require_git=not is_tiny)
+        if initial_validation_metrics:
+            with (Path(output) / "metrics.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "step": 0,
+                            **initial_validation_metrics,
+                            "output_kl_from_initial": 0.0,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+    _wait_for_everyone(trainer)
     result = trainer.train()
+    _wait_for_everyone(trainer)
     global_step = int(
         getattr(getattr(trainer, "state", None), "global_step", 0),
     )
     if global_step < 1:
         raise RuntimeError("GRPO trainer completed without an optimizer step")
-    update_norm = _parameter_update_norm(initial_parameters, model) if is_tiny else None
-    if is_tiny and (update_norm is None or update_norm <= 0.0):
-        raise RuntimeError("tiny GRPO optimizer step did not change parameters")
     trained_model = (
         trainer.accelerator.unwrap_model(trainer.model) if hasattr(trainer, "accelerator") else trainer.model
     )
+    if accelerator is not None:
+        final_state = accelerator.get_state_dict(trainer.model)
+    else:
+        final_state = trained_model.state_dict()
+    final_model_state_hash = state_hash(final_state) if final_state else None
+    distributed_checksum = _distributed_parameter_checksum(trainer.model, world_size=world_size)
+    if world_size > 1:
+        from accelerate.utils import gather_object
+
+        rank_model_hashes = gather_object(final_model_state_hash)
+        rank_parameter_checksums = gather_object(distributed_checksum)
+    else:
+        rank_model_hashes = [final_model_state_hash]
+        rank_parameter_checksums = [distributed_checksum]
+    distributed_consistency_passed = len(set(rank_parameter_checksums)) == 1
+    if is_main_process and not distributed_consistency_passed:
+        raise RuntimeError("distributed GRPO ranks disagree on the final parameter checksum")
+    optimizer_state = trainer.optimizer.state_dict()
+    scheduler_state = trainer.lr_scheduler.state_dict()
+    update_norm = None
+    if is_main_process:
+        if is_tiny:
+            update_norm = _parameter_update_norm(initial_parameters, trained_model)
+        else:
+            assert production_parameter_snapshot is not None
+            if not final_state:
+                raise RuntimeError("main GRPO rank did not receive the full FSDP state dict")
+            update_norm = _streaming_parameter_update_norm(
+                production_parameter_snapshot,
+                final_state,
+            )
+    if is_main_process and (update_norm is None or update_norm <= 0.0):
+        raise RuntimeError("GRPO optimizer step did not change parameters")
     validation_metrics: dict[str, float] = {}
     if validation_examples:
         validation_metrics = build_proofgraph_evaluator(
             validation_examples,
             tokenizer,
             max_completion_length=int(config["supervision"]["max_completion_length"]),
-        )(trained_model)
+        )(trainer.model)
     output_kl = None
-    if probe_input_ids is not None and initial_probe_log_probs is not None:
+    if (
+        probe_input_ids is not None
+        and probe_attention_mask is not None
+        and initial_probe_log_probs is not None
+    ):
         output_kl = _output_kl_new_to_initial(
-            trained_model,
+            trainer.model,
             probe_input_ids,
+            probe_attention_mask,
             initial_probe_log_probs,
         )
     checkpoint_path = Path(output) / "checkpoints" / f"step-{global_step:08d}.pt"
-    _atomic_torch_save(
-        checkpoint_path,
-        {
-            "model": _cpu_tree(trained_model.state_dict()),
-            "optimizer": _cpu_tree(trainer.optimizer.state_dict()),
-            "scheduler": _cpu_tree(trainer.lr_scheduler.state_dict()),
-            "rng": RNGState.capture().as_dict(),
-            "resolved_config": config,
-            "global_step": global_step,
-        },
-    )
-    evidence = {
-        "backend": "trl.GRPOTrainer",
-        "trl_train_called": True,
-        "optimizer_steps": global_step,
-        "parameter_update_norm": update_norm,
-        "parameters_changed": (update_norm > 0.0 if update_norm is not None else None),
-        "reward": reward_name,
-        "tiny_smoke_matched_positive_rate": matched_positive_rate,
-        "settings": settings.__dict__,
-        "checkpoint": str(checkpoint_path),
-        "validation_metrics": validation_metrics,
-        "initial_validation_metrics": initial_validation_metrics,
-        "output_kl_from_initial": output_kl,
-    }
+    accelerate_state_path = Path(output) / "checkpoints" / f"accelerate-step-{global_step:08d}"
     evidence_path = Path(output) / "grpo_update_evidence.json"
-    atomic_write_json(evidence_path, evidence)
-    if validation_metrics:
-        with (Path(output) / "metrics.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(
-                    {
-                        "step": global_step,
-                        **validation_metrics,
-                        "output_kl_from_initial": output_kl,
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
-    finalize_run_directory(output, manifest)
-    print_json(
-        {
-            "status": "completed",
-            "settings": settings.__dict__,
-            "output": str(output),
-            "train_result": str(result),
-            "optimizer_update_evidence": str(evidence_path),
+    _wait_for_everyone(trainer)
+    accelerate_state_hashes = None
+    if accelerator is not None:
+        accelerator.save_state(str(accelerate_state_path))
+        _wait_for_everyone(trainer)
+        if is_main_process:
+            accelerate_state_hashes = _directory_hashes(accelerate_state_path)
+    if is_main_process:
+        _atomic_torch_save(
+            checkpoint_path,
+            {
+                "model": _cpu_tree(final_state),
+                "optimizer": (
+                    _cpu_tree(optimizer_state)
+                    if accelerator is None
+                    else {
+                        "accelerate_state_path": str(accelerate_state_path),
+                        "files": accelerate_state_hashes,
+                    }
+                ),
+                "scheduler": _cpu_tree(scheduler_state),
+                "rng": RNGState.capture().as_dict(),
+                "resolved_config": config,
+                "global_step": global_step,
+                "world_size": world_size,
+                "initial_checkpoint_sha256": initial_checkpoint_hash,
+            },
+        )
+        checkpoint_sha256 = sha256_file(checkpoint_path)
+        reward_artifact_hash = random_reward_calibration_hash or sha256_value(
+            {"reward": reward_name, "seed": config["seed"]}
+        )
+        evidence = {
+            "format_version": 2,
+            "prereg_version": "core_v2",
+            "generator_version": ProofGraphTask.generator_version,
+            "label_semantics": ProofGraphTask.label_semantics,
+            "backend": "trl.GRPOTrainer",
+            "trl_train_called": True,
+            "main_process_only_writes": True,
             "optimizer_steps": global_step,
             "parameter_update_norm": update_norm,
+            "parameter_update_norm_method": "one-tensor-at-a-time-disk-snapshot",
+            "parameters_changed": bool(update_norm and update_norm > 0.0),
+            "reward": reward_name,
+            "reward_artifact_hash": reward_artifact_hash,
+            "random_reward_calibration_hash": random_reward_calibration_hash,
+            "tiny_smoke_matched_positive_rate": matched_positive_rate,
+            "settings": settings.__dict__,
+            "batch_contract": batch_contract,
+            "world_size": world_size,
+            "checkpoint": str(checkpoint_path),
+            "initial_checkpoint_hash": initial_checkpoint_hash
+            or state_hash({str(index): tensor for index, tensor in enumerate(initial_parameters)}),
+            "final_checkpoint_hash": checkpoint_sha256,
+            "final_model_state_hash": final_model_state_hash,
+            "rank_model_hashes": rank_model_hashes,
+            "synchronized_final_model_hashes": (
+                all(value is not None for value in rank_model_hashes) and len(set(rank_model_hashes)) == 1
+            ),
+            "distributed_parameter_checksum": distributed_checksum,
+            "rank_distributed_parameter_checksums": rank_parameter_checksums,
+            "distributed_consistency_passed": distributed_consistency_passed,
+            "accelerate_state_path": str(accelerate_state_path) if accelerator is not None else None,
+            "accelerate_state_hashes": accelerate_state_hashes,
+            "validation_metrics": validation_metrics,
+            "initial_validation_metrics": initial_validation_metrics,
+            "output_kl_from_initial": output_kl,
+            "output_kl_probe_manifest_hash": output_kl_probe_manifest_hash,
+            "output_kl_probe_prompt_count": (
+                int(probe_input_ids.shape[0]) if probe_input_ids is not None else 0
+            ),
         }
-    )
+        evidence["sha256"] = sha256_value(evidence)
+        atomic_write_json(evidence_path, evidence)
+        if validation_metrics:
+            with (Path(output) / "metrics.jsonl").open("a", encoding="utf-8") as handle:
+                handle.write(
+                    json.dumps(
+                        {
+                            "step": global_step,
+                            **validation_metrics,
+                            "output_kl_from_initial": output_kl,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+        finalize_run_directory(output, manifest)
+        print_json(
+            {
+                "status": "completed",
+                "settings": settings.__dict__,
+                "batch_contract": batch_contract,
+                "output": str(output),
+                "train_result": str(result),
+                "optimizer_update_evidence": str(evidence_path),
+                "optimizer_steps": global_step,
+                "parameter_update_norm": update_norm,
+            }
+        )
+    _wait_for_everyone(trainer)
 
 
 if __name__ == "__main__":

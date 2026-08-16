@@ -2,4 +2,4 @@ name: grpo_random_reward
 state_source: current_policy
 supervision: grpo
 reward: matched_random
-
+random_reward_calibration_path: outputs/rewards/random_reward_calibration.json

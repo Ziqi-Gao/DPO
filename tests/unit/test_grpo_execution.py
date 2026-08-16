@@ -45,12 +45,17 @@ def test_grpo_reward_adapter_supports_exact_format_and_matched_random() -> None:
         examples,
         reward_name="matched_random",
         seed=3,
+        matched_positive_rate=0.5,
     )
     values = random_reward(
         [row["prompt"] for row in rows],
         completions,
     )
-    assert sum(values) == sum(exact([row["prompt"] for row in rows], completions))
+    assert sum(values) == 1.0
+    assert values == random_reward(
+        [row["prompt"] for row in rows],
+        list(reversed(completions)),
+    )
 
 
 @pytest.mark.unit

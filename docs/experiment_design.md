@@ -11,6 +11,11 @@ information in the signal without changing visited prefixes. Giving each cell it
 confound signal with sampling noise and policy behavior. The bank deliberately includes verifier
 successes and failures; the calibration target is 20–60% success.
 
+Core-v2 uses paired signed-entailment ProofGraph examples. Pair siblings share query text, rules,
+topology, counts, and ordering; one derives `Q` and the other derives `NOT Q`. Both answer labels
+therefore require a nonempty proof. Pair groups are atomic across every split, and query-only,
+surface-feature, and bag-of-words leakage audits are readiness gates rather than post-hoc checks.
+
 Teacher demonstrations are separate from this grid. Canonical SFT changes both the states and the
 targets: it follows verified teacher trajectories rather than behavior/student trajectories.
 Likewise, verified replay and canonical GRPO are both necessary. Replay isolates reward information
@@ -28,7 +33,17 @@ group-relative policy-gradient update on current-policy generations.
   outcome information under the same source class.
 - `online_verified_replay - canonical_grpo` connects reward-gated imitation to the policy-gradient
   rule, but natural trajectories can diverge; the shared-state local fork is the sharper update-rule
-  diagnostic.
+diagnostic.
+
+The local-fork `centered_policy_gradient` branch uses frozen within-prompt standardized advantages,
+old-policy response log probabilities, and a clipped likelihood-ratio surrogate. It is a controlled
+policy-gradient intervention on shared trajectories, not a claim to reproduce full canonical GRPO.
+Canonical GRPO remains the separately launched official-TRL external anchor.
+
+Circuit endpoints are stage-specific. First-rule selection, intermediate conclusion, and final
+answer each have explicit teacher-forced target token IDs and metric positions. A final-answer
+circuit is not interpreted as the complete reasoning circuit. EAP-IG is candidate discovery on a
+frozen discovery subset; only held-out exact activation/path patching is causal validation.
 
 Circuit locking is evaluated by raw progress and at matched validation accuracy, output KL from the
 initial model, parameter-update norm, generated-token budget, and supervised-token budget. A raw
@@ -38,4 +53,3 @@ This design cannot establish backbone universality, real-world reasoning validit
 free-form chain-of-thought circuit. Circuit estimators are measurements with error; exact patching,
 random controls, bootstrap stability, and cross-mask transfer constrain interpretation but do not
 turn a synthetic-task result into a biological or universal mechanism claim.
-

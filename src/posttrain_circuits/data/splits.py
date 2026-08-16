@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
+from posttrain_circuits.core.scientific_versions import (
+    DATASET_SCHEMA_VERSION,
+    require_core_v2_artifact,
+)
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import Literal, ProofStep, Rule, TaskExample
 
@@ -69,6 +73,8 @@ def build_split(
         raise ValueError(f"unknown split {split!r}")
     if num_examples < 1:
         raise ValueError("num_examples must be positive")
+    if num_examples % 2:
+        raise ValueError("paired signed-entailment splits require an even num_examples")
     cfg = _split_config(split, difficulty)
     multiple_fraction = float(cfg.pop("multiple_valid_proof_fraction", 0.0))
     if not 0.0 <= multiple_fraction <= 1.0:
@@ -78,20 +84,20 @@ def build_split(
     seen: set[str] = set()
     seed = base_seed + offset
     while len(examples) < num_examples:
-        candidate_cfg = {
-            **cfg,
-            "positive": len(examples) % 2 == 0,
-        }
+        candidate_cfg = dict(cfg)
         if split == "train" and multiple_fraction > 0:
             threshold = int(multiple_fraction * 10_000)
             multiple = int(sha256_value(seed)[:8], 16) % 10_000 < threshold
             candidate_cfg["multiple_valid_proofs"] = multiple
             candidate_cfg["unique_proof"] = not multiple
-        candidate = task.generate(seed, candidate_cfg)
-        key = canonical_semantic_key(candidate)
-        if key not in seen:
-            examples.append(candidate)
-            seen.add(key)
+        positive, negative = task.generate_pair(seed, candidate_cfg)
+        pair = [positive, negative]
+        if int(sha256_value([split, seed])[:8], 16) % 2:
+            pair.reverse()
+        keys = [canonical_semantic_key(candidate) for candidate in pair]
+        if not (set(keys) & seen):
+            examples.extend(pair)
+            seen.update(keys)
         seed += 1
         if seed - (base_seed + offset) > num_examples * 100:
             raise RuntimeError("could not generate enough semantically unique examples")
@@ -102,12 +108,21 @@ def assert_split_isolation(
     splits: dict[str, list[TaskExample]],
 ) -> None:
     owner: dict[str, str] = {}
+    pair_owner: dict[str, str] = {}
     for split, examples in splits.items():
         for example in examples:
             key = canonical_semantic_key(example)
             if key in owner:
                 raise ValueError(f"semantic duplicate across {owner[key]} and {split}: {example.example_id}")
             owner[key] = split
+            pair_group_id = example.pair_group_id or str(example.metadata.get("pair_group_id", ""))
+            if not pair_group_id:
+                raise ValueError(f"paired example has no pair_group_id: {example.example_id}")
+            if pair_group_id in pair_owner and pair_owner[pair_group_id] != split:
+                raise ValueError(
+                    f"pair group crosses {pair_owner[pair_group_id]} and {split}: {pair_group_id}"
+                )
+            pair_owner[pair_group_id] = split
 
 
 def build_all_splits(
@@ -149,6 +164,9 @@ def difficulty_distribution(
         "distractors": counts("distractors"),
         "label": dict(sorted(Counter(str(example.label) for example in examples).items())),
         "proof_multiplicity": counts("proof_multiplicity"),
+        "pair_group_count": len({example.pair_group_id for example in examples}),
+        "pair_group_hash": sha256_value(sorted(example.pair_group_id for example in examples)),
+        "topology": counts("topology_hash"),
     }
 
 
@@ -184,6 +202,7 @@ def deserialize_example(row: dict[str, Any]) -> TaskExample:
         query=Literal(**row["query"]),
         label=int(row["label"]),
         canonical_proof=proof,
+        pair_group_id=str(row.get("pair_group_id", row.get("metadata", {}).get("pair_group_id", ""))),
         metadata=dict(row.get("metadata", {})),
     )
 
@@ -201,11 +220,20 @@ def load_frozen_split(root: Path, *, expected_split: str) -> tuple[list[TaskExam
         raise ValueError(
             f"frozen split mismatch: expected {expected_split}, observed {manifest.get('split_name')}"
         )
+    require_core_v2_artifact(manifest)
+    if manifest.get("dataset_schema_version") != DATASET_SCHEMA_VERSION:
+        raise ValueError("frozen split uses a pre-core-v2 dataset schema")
     if int(manifest.get("num_examples", -1)) != len(rows):
         raise ValueError("frozen split row count does not match manifest")
     content = {key: value for key, value in manifest.items() if key not in {"sha256", "created_at"}}
     expected_hash = sha256_value({"manifest": content, "examples": rows})
     if manifest.get("sha256") != expected_hash:
         raise ValueError("frozen split manifest hash does not match exact example bytes")
+    examples = [deserialize_example(row) for row in rows]
+    pair_groups = sorted({example.pair_group_id for example in examples})
+    if manifest.get("pair_group_count") != len(pair_groups):
+        raise ValueError("frozen split pair-group count mismatch")
+    if manifest.get("pair_group_hash") != sha256_value(pair_groups):
+        raise ValueError("frozen split pair-group hash mismatch")
     manifest["examples_file_sha256"] = sha256_file(examples_path)
-    return [deserialize_example(row) for row in rows], manifest
+    return examples, manifest

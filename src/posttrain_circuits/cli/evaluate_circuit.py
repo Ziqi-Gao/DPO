@@ -22,23 +22,27 @@ from posttrain_circuits.circuits.plots import (
     write_attribution_patching_calibration,
 )
 from posttrain_circuits.circuits.probe_cohorts import load_probe_examples
+from posttrain_circuits.circuits.probes import (
+    CIRCUIT_PROBE_SCHEMA_VERSION,
+    CircuitProbeSpec,
+    TargetSequenceMetric,
+)
 from posttrain_circuits.cli._common import (
     dry_run_report,
     print_json,
-)
-from posttrain_circuits.cli.discover_circuit import (
-    _fixed_pairs,
-    _padded_pair,
 )
 from posttrain_circuits.core.config import (
     compose_config,
     is_production_scale,
 )
-from posttrain_circuits.core.hashing import sha256_file
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.data.splits import deserialize_example
-from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+from posttrain_circuits.core.scientific_versions import require_core_v2_artifact
+from posttrain_circuits.models.loading import (
+    load_model_and_tokenizer,
+    move_model_to_local_cuda,
+    tokenizer_fingerprint,
+)
 from posttrain_circuits.utils.tiny_model import (
     build_tiny_qwen,
     build_tiny_tokenizer,
@@ -46,25 +50,35 @@ from posttrain_circuits.utils.tiny_model import (
 
 
 def _load_discovery_pair(
-    artifact_path: Path,
-    tokenizer: object,
     device: torch.device,
+    tokenized: list[CircuitProbeSpec],
+    stage: str,
 ) -> ExactTokenPair:
-    pair_path = artifact_path.with_name("fixed_discovery_pairs.json")
-    if not pair_path.is_file():
-        raise ValueError("circuit evaluation requires the immutable fixed_discovery_pairs.json artifact")
-    payload = json.loads(pair_path.read_text(encoding="utf-8"))
-    row = payload["pairs"][0]
-    clean_ids, corrupt_ids = _padded_pair(
-        tokenizer,
-        row["clean_prompt"],
-        row["corrupt_prompt"],
-    )
-    return ExactTokenPair(
-        row["pair_id"],
-        clean_ids.to(device),
-        corrupt_ids.to(device),
-    )
+    probes = [probe for probe in tokenized if probe.subset == "discovery" and probe.stage == stage]
+    if not probes:
+        raise ValueError("tokenized manifest contains no matching discovery-stage probe")
+    return ExactTokenPair.from_probe(probes[0], device=device)
+
+
+def _load_tokenized_probes(
+    artifact: dict[str, object],
+    tokenizer: object,
+) -> tuple[list[CircuitProbeSpec], dict[str, object]]:
+    path = Path(str(artifact.get("tokenized_probe_manifest_path", "")))
+    if not path.is_file():
+        raise ValueError("exact patching requires the frozen tokenized probe manifest from discovery")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    content = {key: value for key, value in payload.items() if key != "sha256"}
+    if payload.get("sha256") != sha256_value(content):
+        raise ValueError("tokenized circuit probe manifest hash mismatch")
+    if payload.get("sha256") != artifact.get("tokenized_probe_manifest_hash"):
+        raise ValueError("exact patching tokenized manifest differs from discovery")
+    if payload.get("circuit_probe_schema_version") != CIRCUIT_PROBE_SCHEMA_VERSION:
+        raise ValueError("exact patching rejects legacy circuit probe schemas")
+    if payload.get("tokenizer_hash") != tokenizer_fingerprint(tokenizer):
+        raise ValueError("exact patching tokenizer hash differs from frozen discovery probes")
+    probes = [CircuitProbeSpec(**row) for row in payload["probes"]]
+    return probes, payload
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -102,6 +116,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.circuit_artifact is None:
         raise ValueError("--circuit-artifact is required outside --dry-run")
     artifact = json.loads(args.circuit_artifact.read_text(encoding="utf-8"))
+    require_core_v2_artifact(artifact, require_circuit_schema=True, require_hash=True)
 
     model_config = config["model"]
     if str(model_config["model_name_or_path"]).startswith("local/"):
@@ -134,21 +149,15 @@ def main(argv: list[str] | None = None) -> None:
         model = move_model_to_local_cuda(model)
     model.eval()
     device = next(model.parameters()).device
-    discovery_pair = _load_discovery_pair(
-        args.circuit_artifact,
-        tokenizer,
-        device,
-    )
-    backend = ExactPatchingBackend(
-        discovery_pair.clean_ids,
-        discovery_pair.corrupt_ids,
-    )
+    tokenized_probes, tokenized_manifest = _load_tokenized_probes(artifact, tokenizer)
+    stage = str(artifact.get("probe_stage", ""))
+    discovery_pair = _load_discovery_pair(device, tokenized_probes, stage)
+    backend = ExactPatchingBackend(discovery_pair)
     raw_scores = {key: float(value) for key, value in artifact["scores"].items()}
     scores, unsupported = normalize_circuit_scores(
         model,
         raw_scores,
     )
-    task = ProofGraphTask()
     validation_count = int(config["circuit"]["validation_pair_count"])
     if str(model_config["model_name_or_path"]).startswith("local/"):
         validation_count = max(2, min(validation_count, 2))
@@ -157,7 +166,7 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("production exact patching requires --probe-cohort-manifest and --cohort")
         if args.cohort != artifact.get("probe_cohort"):
             raise ValueError("exact patching cohort differs from discovery cohort")
-        rows, probe_manifest = load_probe_examples(
+        _, probe_manifest = load_probe_examples(
             args.probe_cohort_manifest,
             cohort=args.cohort,
             subset="validation",
@@ -165,65 +174,42 @@ def main(argv: list[str] | None = None) -> None:
         )
         if probe_manifest["sha256"] != artifact.get("probe_cohort_manifest_hash"):
             raise ValueError("exact patching probe manifest differs from discovery")
-        if len(rows) < validation_count:
-            raise ValueError("frozen probe cohort has fewer validation examples than requested")
-        examples = [deserialize_example(row) for row in rows[:validation_count]]
-        heldout = [
-            task.make_counterfactual(example, "query_flip", args.seed + 1_000_000 + index)
-            for index, example in enumerate(examples)
-        ]
-    else:
-        heldout = _fixed_pairs(
-            task,
-            count=validation_count,
-            seed=args.seed + 1_000_000,
-            task_config=config["task"],
-        )
-    validation_pairs = []
-    for pair in heldout:
-        clean_ids, corrupt_ids = _padded_pair(
-            tokenizer,
-            pair.clean_prompt,
-            pair.corrupt_prompt,
-        )
-        validation_pairs.append(
-            ExactTokenPair(
-                pair.pair_id,
-                clean_ids.to(device),
-                corrupt_ids.to(device),
-            )
-        )
-    answer_one = tokenizer.encode(
-        "1",
-        add_special_tokens=False,
-    )[0]
-    answer_zero = tokenizer.encode(
-        "0",
-        add_special_tokens=False,
-    )[0]
+    validation_probes = [
+        probe for probe in tokenized_probes if probe.subset == "validation" and probe.stage == stage
+    ]
+    if len(validation_probes) < validation_count:
+        raise ValueError("frozen tokenized manifest has too few held-out stage probes")
+    validation_pairs = [
+        ExactTokenPair.from_probe(probe, device=device) for probe in validation_probes[:validation_count]
+    ]
+    metric = TargetSequenceMetric()
 
-    def metric(logits: torch.Tensor) -> torch.Tensor:
-        return logits[:, -1, answer_one].mean() - logits[:, -1, answer_zero].mean()
-
+    per_pair_patching_scores = []
     if all("->" in name for name in scores):
-        patching_scores = {}
-        for name in scores:
-            sender, receiver = name.split("->", 1)
-            patching_scores.update(
-                backend.score_path(
-                    model,
-                    metric,
-                    sender=sender,
-                    receiver=receiver,
-                ).scores
-            )
+        for pair in validation_pairs:
+            pair_backend = ExactPatchingBackend(pair)
+            row = {}
+            for name in scores:
+                sender, receiver = name.split("->", 1)
+                row.update(
+                    pair_backend.score_path(
+                        model,
+                        metric,
+                        sender=sender,
+                        receiver=receiver,
+                    ).scores
+                )
+            per_pair_patching_scores.append(row)
     elif any("->" in name for name in scores):
         raise ValueError("circuit artifact mixes node and edge score levels")
     else:
-        patching_scores = backend.score_all_components(
-            model,
-            metric,
-        ).scores
+        per_pair_patching_scores = [
+            ExactPatchingBackend(pair).score_all_components(model, metric).scores for pair in validation_pairs
+        ]
+    patching_scores = {
+        name: sum(row[name] for row in per_pair_patching_scores) / len(per_pair_patching_scores)
+        for name in scores
+    }
     evaluation = faithfulness_sparsity_curve(
         backend,
         model,
@@ -232,6 +218,7 @@ def main(argv: list[str] | None = None) -> None:
         [float(value) for value in config["circuit"]["sparsity_grid"]],
         validation_pairs,
         patching_scores=patching_scores,
+        patching_scores_per_pair=per_pair_patching_scores,
         random_seed=args.seed,
         random_repeats=int(config["circuit"]["random_mask_repeats"]),
         bootstrap_samples=int(config["circuit"]["prompt_bootstrap_samples"]),
@@ -242,24 +229,20 @@ def main(argv: list[str] | None = None) -> None:
         metric,
         tolerance=1e-5,
     )
-    component_groups = {
-        (
-            "attention"
-            if "attention_head" in name
-            else "mlp"
-            if "mlp" in name
-            else "residual"
-            if "resid" in name
-            else "qkv"
-            if any(token in name for token in ("q_head", "k_head", "v_head"))
-            else "other"
-        )
-        for name in scores
+    evaluation["functional_evidence"] = {
+        "probe_stage": stage,
+        "semantic_probe_manifest_hash": artifact.get("semantic_probe_manifest_hash"),
+        "tokenized_probe_manifest_hash": tokenized_manifest["sha256"],
+        "stage_target_manifest_hash": artifact.get("stage_target_manifest_hash"),
+        "selected_vs_matched_random_cpr_margin": evaluation.get("selected_vs_matched_random_cpr_margin"),
     }
-    evaluation["functional_groups"] = sorted(component_groups)
-    evaluation["functional_group_count"] = len(component_groups)
     if args.transfer_source_circuit is not None:
         source_artifact = json.loads(args.transfer_source_circuit.read_text(encoding="utf-8"))
+        require_core_v2_artifact(
+            source_artifact,
+            require_circuit_schema=True,
+            require_hash=True,
+        )
         if source_artifact.get("probe_cohort_manifest_hash") != artifact.get(
             "probe_cohort_manifest_hash"
         ) or source_artifact.get("probe_cohort") != artifact.get("probe_cohort"):
@@ -306,9 +289,38 @@ def main(argv: list[str] | None = None) -> None:
         "probe_cohort": artifact.get("probe_cohort"),
         "probe_subset": "validation",
         "probe_cohort_manifest_hash": artifact.get("probe_cohort_manifest_hash"),
+        "probe_stage": stage,
+        "circuit_probe_schema_version": artifact.get("circuit_probe_schema_version"),
+        "semantic_probe_manifest_hash": artifact.get("semantic_probe_manifest_hash"),
+        "tokenized_probe_manifest_hash": tokenized_manifest["sha256"],
+        "stage_target_manifest_hash": artifact.get("stage_target_manifest_hash"),
+        "semantic_pair_hashes": artifact.get("semantic_pair_hashes"),
+        "tokenized_pair_hashes": [probe.tokenized_pair_hash for probe in validation_probes],
+        "target_strings": [[probe.clean_target, probe.corrupt_target] for probe in validation_probes],
+        "target_token_ids": [
+            [list(probe.clean_target_ids), list(probe.corrupt_target_ids)] for probe in validation_probes
+        ],
+        "target_metric_positions": [
+            [list(probe.clean_metric_positions), list(probe.corrupt_metric_positions)]
+            for probe in validation_probes
+        ],
         "unsupported_source_components": unsupported,
         "mapped_component_count": len(scores),
     }
+    evaluation.update(
+        {
+            "format_version": 2,
+            "prereg_version": artifact.get("prereg_version"),
+            "generator_version": artifact.get("generator_version"),
+            "label_semantics": artifact.get("label_semantics"),
+            "circuit_probe_schema_version": artifact.get("circuit_probe_schema_version"),
+            "probe_stage": stage,
+            "semantic_probe_manifest_hash": artifact.get("semantic_probe_manifest_hash"),
+            "tokenized_probe_manifest_hash": tokenized_manifest["sha256"],
+            "stage_target_manifest_hash": artifact.get("stage_target_manifest_hash"),
+        }
+    )
+    evaluation["sha256"] = sha256_value(evaluation)
     atomic_write_json(output, evaluation)
     print_json(
         {

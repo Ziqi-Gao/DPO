@@ -1,4 +1,7 @@
 name: proofgraph
+label_semantics: signed_entailment
+paired_generation: true
+require_exactly_one_query_polarity: true
 num_examples: 100000
 seed: 42
 depth_range: [2, 4]
@@ -7,7 +10,7 @@ distractor_range: [4, 16]
 structures: [chain, branch, converging_dag]
 balanced_labels: true
 unique_proof_for_circuits: true
-multiple_valid_proof_fraction: 0.5
+multiple_valid_proof_fraction: 0.0
 split_sizes:
   train: 100000
   validation: 10000
@@ -16,4 +19,3 @@ split_sizes:
   ood_structure_test: 10000
   circuit_discovery: 2000
   circuit_validation: 2000
-
