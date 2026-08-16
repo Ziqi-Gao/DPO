@@ -15,10 +15,12 @@ export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 run_id=${G0_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 run_dir=${G0_RUN_DIR:-${OUTPUT_ROOT:-outputs}/g0/${run_id}}
 mkdir -p "${run_dir}/logs"
+gpu_preflight_json=${GPU_PREFLIGHT_JSON:?Set GPU_PREFLIGHT_JSON to a passed, hash-valid GPU preflight}
+export GPU_PREFLIGHT_JSON="${gpu_preflight_json}"
 
 if ! "${PYTHON_BIN:-.venv/bin/python}" -m posttrain_circuits.cli.preflight_g0 \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
-  --output "${run_dir}/preflight.json"; then
+  --gpu-preflight "${gpu_preflight_json}" --output "${run_dir}/preflight.json"; then
   cp "${run_dir}/preflight.json" "${run_dir}/g0.json"
   cp "${run_dir}/preflight.md" "${run_dir}/g0.md"
   exit 1

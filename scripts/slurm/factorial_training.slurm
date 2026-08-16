@@ -27,6 +27,8 @@ seed=${seeds[$seed_index]}
   anti_shortcut.report_path="${ANTI_SHORTCUT_REPORT:-${OUTPUT_ROOT}/readiness/anti_shortcut.json}" \
   production_safety.probe_cohort_manifest="${PROBE_COHORT_MANIFEST:-${OUTPUT_ROOT}/probes/proofgraph/manifest.json}" \
   production_safety.readiness_report="${READINESS_REPORT:-${OUTPUT_ROOT}/readiness/readiness.json}" \
+  production_safety.initial_checkpoint_path="${INITIAL_CHECKPOINT:?Set INITIAL_CHECKPOINT}" \
+  production_safety.initial_checkpoint_hash="${INITIAL_CHECKPOINT_SHA256:?Set INITIAL_CHECKPOINT_SHA256}" \
   trainer.backend=accelerate \
   --output "${OUTPUT_ROOT}/runs/${cell}/seed-${seed}" \
   --confirm-production

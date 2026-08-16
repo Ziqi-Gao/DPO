@@ -19,6 +19,13 @@ def _read(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _mask_transfer(payload: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]]:
+    transfer = payload.get("cross_checkpoint_mask_transfer")
+    if not isinstance(transfer, dict | list) or not transfer:
+        raise ValueError("transfer artifact lacks cross_checkpoint_mask_transfer evidence")
+    return transfer
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Analyze checkpoint-specific circuit dynamics")
     parser.add_argument("--circuits", nargs="+", type=Path, required=True)
@@ -33,7 +40,7 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError("dynamics artifacts must align: N circuits/evaluations and N-1 transfers")
     circuits = [_read(path) for path in args.circuits]
     evaluations = [_read(path) for path in args.evaluations]
-    transfers = [_read(path) for path in args.transfers]
+    transfers = [_mask_transfer(_read(path)) for path in args.transfers]
     cohort_keys = {(row.get("probe_cohort_manifest_hash"), row.get("probe_cohort")) for row in circuits}
     conventions = {(row.get("graph_convention"), row.get("node_or_edge_level")) for row in circuits}
     component_sets = {tuple(sorted(row.get("scores", {}))) for row in circuits}

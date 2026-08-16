@@ -49,6 +49,7 @@ def build_probe_cohort_manifest(
     git_commit: str = "test-unfrozen",
     prereg_commit: str = "test-unfrozen",
     source_artifacts: dict[str, dict[str, str]] | None = None,
+    candidate_selection_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Partition every frozen discovery/validation probe before training.
 
@@ -114,9 +115,7 @@ def build_probe_cohort_manifest(
     payload: dict[str, Any] = {
         "format_version": 1,
         "frozen_before_training": True,
-        "initial_student_checkpoint_hash": initial_student_checkpoint_hash,
-        "scoring_manifest_hash": scoring_manifest_hash,
-        "learnability_evidence_hash": learnability_evidence_hash,
+        **required_hashes,
         "selection_rules": {
             "base_capable": "initial_correct == true",
             "challenge": (
@@ -124,6 +123,7 @@ def build_probe_cohort_manifest(
                 "from a frozen pilot/calibration artifact"
             ),
         },
+        "candidate_selection_audit": candidate_selection_audit or {},
         "source_split_hashes": source_split_hashes,
         "cohorts": manifests,
     }
@@ -142,7 +142,11 @@ def write_probe_cohort_manifest(output: Path, manifest: dict[str, Any]) -> None:
     atomic_write_json(output / "manifest.json", manifest)
 
 
-def validate_probe_cohort_manifest(path: Path) -> dict[str, Any]:
+def validate_probe_cohort_manifest(
+    path: Path,
+    *,
+    expected_initial_checkpoint_hash: str | None = None,
+) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     expected = payload.pop("sha256", None)
     if expected != sha256_value(payload):
@@ -150,7 +154,55 @@ def validate_probe_cohort_manifest(path: Path) -> dict[str, Any]:
     payload["sha256"] = expected
     if payload.get("frozen_before_training") is not True:
         raise ValueError("probe cohorts were not frozen before training")
+    if (
+        not str(payload.get("git_commit", "")).strip()
+        or not str(payload.get("prereg_commit", "")).strip()
+        or payload.get("construction_phase") != "before_confirmatory_training"
+        or payload.get("training_ancestry") != []
+    ):
+        raise ValueError("probe cohorts lack verifiable pre-training Git/prereg provenance")
+    if (
+        expected_initial_checkpoint_hash is not None
+        and payload.get("initial_student_checkpoint_hash") != expected_initial_checkpoint_hash
+    ):
+        raise ValueError("probe cohort initial checkpoint hash mismatch")
     ids: set[str] = set()
+    source_artifacts = payload.get("source_artifacts", {})
+    if source_artifacts:
+        if not isinstance(source_artifacts, dict) or set(source_artifacts) != set(SUBSETS):
+            raise ValueError("probe source artifacts must cover discovery and validation")
+        for subset, artifact in source_artifacts.items():
+            if not isinstance(artifact, dict):
+                raise ValueError(f"probe source artifact is malformed for {subset}")
+            root = Path(str(artifact.get("path", "")))
+            manifest_path = root / "manifest.json"
+            if not manifest_path.is_file():
+                raise ValueError(f"probe source artifact is unavailable for {subset}: {root}")
+            source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if source_manifest.get("sha256") != artifact.get("manifest_hash"):
+                raise ValueError(f"probe source manifest hash mismatch for {subset}")
+            if artifact.get("manifest_hash") != payload["source_split_hashes"][subset]:
+                raise ValueError(f"probe source binding differs from subset hash for {subset}")
+    elif payload.get("git_commit") != "test-unfrozen":
+        raise ValueError("production probe cohorts require immutable source artifact paths")
+    candidate_audit = payload.get("candidate_selection_audit", {})
+    if candidate_audit:
+        if not isinstance(candidate_audit, dict) or set(candidate_audit) != set(SUBSETS):
+            raise ValueError("probe candidate audit must cover discovery and validation")
+        for subset, audit in candidate_audit.items():
+            if not isinstance(audit, dict):
+                raise ValueError(f"probe candidate audit is malformed for {subset}")
+            expected_audit_hash = audit.get("sha256")
+            audit_payload = {key: value for key, value in audit.items() if key != "sha256"}
+            if expected_audit_hash != sha256_value(audit_payload):
+                raise ValueError(f"probe candidate audit hash mismatch for {subset}")
+            selected = int(audit.get("selected_count", -1))
+            excluded = int(audit.get("excluded_count", -1))
+            if selected + excluded != int(audit.get("candidate_count", -2)):
+                raise ValueError(f"probe candidate accounting mismatch for {subset}")
+            frozen = sum(int(payload["cohorts"][cohort][subset]["num_examples"]) for cohort in COHORTS)
+            if selected != frozen:
+                raise ValueError(f"probe selected/frozen count mismatch for {subset}")
     for cohort in COHORTS:
         for subset in SUBSETS:
             manifest = payload["cohorts"][cohort][subset]
@@ -180,12 +232,10 @@ def load_probe_examples(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if cohort not in COHORTS or subset not in SUBSETS:
         raise ValueError(f"invalid probe selection {cohort}/{subset}")
-    payload = validate_probe_cohort_manifest(path)
-    if (
-        expected_initial_checkpoint_hash is not None
-        and payload["initial_student_checkpoint_hash"] != expected_initial_checkpoint_hash
-    ):
-        raise ValueError("probe cohort initial checkpoint hash mismatch")
+    payload = validate_probe_cohort_manifest(
+        path,
+        expected_initial_checkpoint_hash=expected_initial_checkpoint_hash,
+    )
     subset_manifest = payload["cohorts"][cohort][subset]
     rows = [dict(item["example"]) for item in subset_manifest["examples"]]
     return rows, payload

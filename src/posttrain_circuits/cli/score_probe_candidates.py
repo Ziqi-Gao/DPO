@@ -13,7 +13,7 @@ from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.data.splits import load_frozen_split
-from posttrain_circuits.models.loading import load_model_and_tokenizer
+from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.metrics import aggregate_verification
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample, VerificationResult
@@ -81,22 +81,23 @@ def main(argv: list[str] | None = None) -> None:
     validation = validation[: args.probe_limit_per_split]
     task_validation = task_validation[: args.task_validation_limit]
     loaded = load_model_and_tokenizer(config["model"], for_training=False)
+    model = move_model_to_local_cuda(loaded.model)
     initial_hash = sha256_file(args.initial_checkpoint)
-    load_checkpoint_into_hf_model(loaded.model, args.initial_checkpoint, expected_sha256=initial_hash)
+    load_checkpoint_into_hf_model(model, args.initial_checkpoint, expected_sha256=initial_hash)
     max_new_tokens = int(config["anti_shortcut"]["max_completion_length"])
     initial_probe, _ = _score_examples(
-        loaded.model, loaded.tokenizer, [*discovery, *validation], max_new_tokens=max_new_tokens
+        model, loaded.tokenizer, [*discovery, *validation], max_new_tokens=max_new_tokens
     )
     _, initial_validation_results = _score_examples(
-        loaded.model, loaded.tokenizer, task_validation, max_new_tokens=max_new_tokens
+        model, loaded.tokenizer, task_validation, max_new_tokens=max_new_tokens
     )
     calibration_hash = sha256_file(args.calibration_checkpoint)
-    load_checkpoint_into_hf_model(loaded.model, args.calibration_checkpoint, expected_sha256=calibration_hash)
+    load_checkpoint_into_hf_model(model, args.calibration_checkpoint, expected_sha256=calibration_hash)
     calibrated_probe, _ = _score_examples(
-        loaded.model, loaded.tokenizer, [*discovery, *validation], max_new_tokens=max_new_tokens
+        model, loaded.tokenizer, [*discovery, *validation], max_new_tokens=max_new_tokens
     )
     _, calibrated_validation_results = _score_examples(
-        loaded.model, loaded.tokenizer, task_validation, max_new_tokens=max_new_tokens
+        model, loaded.tokenizer, task_validation, max_new_tokens=max_new_tokens
     )
     rows = {
         example_id: {

@@ -13,6 +13,7 @@ from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.types import TrajectoryRecord
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.models.loading import tokenizer_fingerprint
+from posttrain_circuits.rollout.generation import generation_rng
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
 
@@ -20,10 +21,19 @@ VERIFIER_VERSION = "proofgraph-exact-v1"
 
 
 class HfTeacherCandidateGenerator:
-    def __init__(self, model: Any, tokenizer: PreTrainedTokenizerBase) -> None:
+    def __init__(
+        self,
+        model: Any,
+        tokenizer: PreTrainedTokenizerBase,
+        *,
+        max_new_tokens: int = 256,
+    ) -> None:
+        if max_new_tokens < 1:
+            raise ValueError("teacher generation length must be positive")
         self.model = model
         self.tokenizer = tokenizer
         self.task = ProofGraphTask()
+        self.max_new_tokens = max_new_tokens
 
     def __call__(
         self,
@@ -40,18 +50,16 @@ class HfTeacherCandidateGenerator:
         device = next(self.model.parameters()).device
         encoded = self.tokenizer(
             self.task.render(example),
-            add_special_tokens=True,
+            add_special_tokens=False,
             return_tensors="pt",
         ).to(device)
-        generator = torch.Generator(device=device).manual_seed(generation_seed)
-        with torch.no_grad():
+        with generation_rng(generation_seed, device), torch.no_grad():
             generated = self.model.generate(
                 **encoded,
                 do_sample=temperature > 0,
                 temperature=max(temperature, 1e-6),
                 top_p=top_p,
-                max_new_tokens=256,
-                generator=generator,
+                max_new_tokens=self.max_new_tokens,
                 use_cache=True,
             )
         response_ids = generated[0, encoded.input_ids.shape[1] :]

@@ -8,7 +8,7 @@ import os
 import tempfile
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +78,26 @@ def _atomic_torch_save(path: Path, payload: dict[str, Any]) -> None:
         raise
 
 
+def _cpu_tree(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().clone()
+    if isinstance(value, dict):
+        return {key: _cpu_tree(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_cpu_tree(child) for child in value]
+    if isinstance(value, tuple):
+        return tuple(_cpu_tree(child) for child in value)
+    return copy.deepcopy(value)
+
+
+def _move_supervision_batch(batch: SupervisionBatch, device: torch.device) -> SupervisionBatch:
+    for item in fields(batch):
+        value = getattr(batch, item.name)
+        if isinstance(value, torch.Tensor):
+            setattr(batch, item.name, value.to(device))
+    return batch
+
+
 def state_hash(value: Any) -> str:
     """Hash nested PyTorch state with unambiguous type/length framing."""
 
@@ -142,8 +162,8 @@ def create_fork_bundle(
         raise TypeError("fork bundles currently require torch.optim.AdamW")
     if not isinstance(scheduler, torch.optim.lr_scheduler.LambdaLR):
         raise TypeError("fork bundles currently require LambdaLR schedulers")
-    model_state = copy.deepcopy(model.state_dict())
-    optimizer_state = copy.deepcopy(optimizer.state_dict())
+    model_state = _cpu_tree(model.state_dict())
+    optimizer_state = _cpu_tree(optimizer.state_dict())
     scheduler_state = copy.deepcopy(scheduler.state_dict())
     parameter_names = {id(parameter): name for name, parameter in model.named_parameters()}
     optimizer_parameter_names = []
@@ -407,14 +427,18 @@ def run_branch(
         None,
         None,
     )
+    prepared = _move_supervision_batch(
+        prepared,
+        next(restored.model.parameters()).device,
+    )
     pre_checkpoint = checkpoint_root / "pre.pt"
     post_checkpoint = checkpoint_root / "post.pt"
     _atomic_torch_save(
         pre_checkpoint,
         {
             "bundle_id": bundle_payload["manifest"]["bundle_id"],
-            "model": restored.model.state_dict(),
-            "optimizer": restored.optimizer.state_dict(),
+            "model": _cpu_tree(restored.model.state_dict()),
+            "optimizer": _cpu_tree(restored.optimizer.state_dict()),
             "scheduler": restored.scheduler.state_dict(),
             "rng": RNGState.capture().as_dict(),
             "prompts": asdict(restored.prompts),
@@ -442,8 +466,8 @@ def run_branch(
         post_checkpoint,
         {
             "bundle_id": bundle_payload["manifest"]["bundle_id"],
-            "model": restored.model.state_dict(),
-            "optimizer": restored.optimizer.state_dict(),
+            "model": _cpu_tree(restored.model.state_dict()),
+            "optimizer": _cpu_tree(restored.optimizer.state_dict()),
             "scheduler": restored.scheduler.state_dict(),
             "rng": RNGState.capture().as_dict(),
             "prompts": asdict(restored.prompts),

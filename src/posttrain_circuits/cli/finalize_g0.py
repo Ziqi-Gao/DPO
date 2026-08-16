@@ -34,22 +34,33 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--exact-patching", type=Path, required=True)
     parser.add_argument("--compatibility", type=Path, required=True)
     parser.add_argument("--distributed-resume", type=Path, required=True)
+    parser.add_argument("--initial-checkpoint", type=Path, required=True)
+    parser.add_argument("--gpu-preflight", type=Path, required=True)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
     base = _read(args.base_scores)
     teacher = _read(args.teacher_store_manifest)
+    initial_checkpoint_hash = sha256_file(args.initial_checkpoint)
     anti = validate_anti_shortcut_report(
         args.anti_shortcut,
         max_shortcut_gap=float(config["anti_shortcut"]["max_shortcut_gap"]),
-        expected_model_checkpoint_hash=str(config["model"]["model_revision"]),
+        expected_model_checkpoint_hash=initial_checkpoint_hash,
     )
-    probes = validate_probe_cohort_manifest(args.probe_manifest)
+    probes = validate_probe_cohort_manifest(
+        args.probe_manifest,
+        expected_initial_checkpoint_hash=initial_checkpoint_hash,
+    )
     circuit = _read(args.circuit)
     exact = _read(args.exact_patching)
     compatibility = _read(args.compatibility)
     resume = _read(args.distributed_resume)
+    gpu_preflight = _read(args.gpu_preflight)
+    gpu_digest = gpu_preflight.pop("sha256", None)
+    if gpu_digest != sha256_value(gpu_preflight) or gpu_preflight.get("passed") is not True:
+        raise ValueError("G0 requires a passed, hash-valid GPU preflight")
+    gpu_preflight["sha256"] = gpu_digest
     noise = estimate_estimator_noise_floor(
         circuit.get("bootstrap_score_vectors", []),
         activation_threshold=0.0,
@@ -57,17 +68,28 @@ def main(argv: list[str] | None = None) -> None:
     metrics = base.get("initial_validation_metrics", {})
     calibrated_metrics = base.get("calibrated_validation_metrics", {})
     teacher_mass = teacher.get("teacher_topk_mass", {})
+    bank_total = int(teacher.get("total_trajectories", 0))
+    bank_positive = int(teacher.get("reward_distribution", {}).get("positive", 0))
+    compatibility_payload = {
+        key: value for key, value in compatibility.items() if key not in {"sha256", "hf_identity_max_error"}
+    }
     checks = {
         "base_task_accuracy": float(metrics.get("answer_accuracy", 0.0))
         >= float(config["anti_shortcut"]["minimum_iid_accuracy"]),
         "teacher_topk_mass": float(teacher_mass.get("minimum", 0.0)) >= 0.90,
+        "fixed_bank_mixed_rewards": 0 < bank_positive < bank_total,
         "calibration_anchor_improves_accuracy": float(calibrated_metrics.get("answer_accuracy", 0.0))
         > float(metrics.get("answer_accuracy", 0.0)),
         "anti_shortcut": anti.get("passed") is True,
         "base_capable_probes": probes["cohorts"]["base_capable"]["discovery"]["num_examples"] > 0
         and probes["cohorts"]["base_capable"]["validation"]["num_examples"] > 0,
+        "probe_scoring_binding": base.get("initial_checkpoint_sha256") == initial_checkpoint_hash
+        and probes.get("scoring_manifest_hash") == sha256_file(args.base_scores)
+        and probes.get("learnability_evidence_hash") == base.get("sha256"),
         "hf_transformerlens_gqa_parity": compatibility.get("passed") is True
-        and compatibility.get("transformerlens_parity_passed") is True,
+        and compatibility.get("transformerlens_parity_passed") is True
+        and compatibility.get("sha256") == sha256_value(compatibility_payload)
+        and circuit.get("model_compatibility_hash") == compatibility.get("sha256"),
         "bootstrap_stability": float(noise["within_checkpoint_full_score_spearman"])
         >= float(config["g0"]["minimum_bootstrap_spearman"]),
         "eap_ig_beats_matched_random": float(
@@ -81,11 +103,15 @@ def main(argv: list[str] | None = None) -> None:
         "distributed_checkpoint_resume": resume.get("passed") is True
         and int(resume.get("world_size", 0)) == 4,
         "split_probe_isolation": probes.get("frozen_before_training") is True,
-        "artifact_reconstruction": all(
-            str(row.get("checkpoint_sha256", "")) for row in (circuit, exact.get("artifacts", {}))
-        ),
+        "artifact_reconstruction": circuit.get("checkpoint_sha256") == initial_checkpoint_hash
+        and exact.get("artifacts", {}).get("checkpoint_sha256") == initial_checkpoint_hash,
+        "gpu_preflight": gpu_preflight.get("passed") is True and int(gpu_preflight.get("world_size", 0)) == 4,
     }
     git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    checks["gpu_preflight_binding"] = (
+        gpu_preflight.get("git_commit") == git_commit
+        and gpu_preflight.get("model_revision") == config["model"]["model_revision"]
+    )
     prereg_commit = subprocess.check_output(
         ["git", "log", "-n", "1", "--format=%H", "--", "prereg/core_v1.yaml"], text=True
     ).strip()
@@ -112,6 +138,8 @@ def main(argv: list[str] | None = None) -> None:
         "artifact_hashes": {
             str(path): sha256_file(path)
             for path in (
+                args.initial_checkpoint,
+                args.gpu_preflight,
                 args.base_scores,
                 args.teacher_store_manifest,
                 args.anti_shortcut,
@@ -126,8 +154,6 @@ def main(argv: list[str] | None = None) -> None:
     }
     payload["sha256"] = sha256_value(payload)
     atomic_write_json(args.output, payload)
-    bank_total = int(teacher.get("total_trajectories", 0))
-    bank_positive = int(teacher.get("reward_distribution", {}).get("positive", 0))
     readiness_evidence = {
         "base_task_accuracy_nontrivial": (
             checks["base_task_accuracy"],
@@ -185,7 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     readiness = build_readiness_report(
         readiness_evidence,
         bindings={
-            "initial_checkpoint_hash": str(config["model"]["model_revision"]),
+            "initial_checkpoint_hash": initial_checkpoint_hash,
             "dataset_hash": str(anti["dataset_hash"]),
             "suite_hash": str(anti["suite_hash"]),
             "code_commit": git_commit,

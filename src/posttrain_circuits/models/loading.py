@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,20 @@ class LoadedModel:
     requested_tokenizer_revision: str
     resolved_tokenizer_commit: str
     tokenizer_hash: str
+
+
+def move_model_to_local_cuda(model: Any) -> Any:
+    """Place an inference or teacher model on this process's assigned CUDA device."""
+
+    if not torch.cuda.is_available():
+        return model
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    if local_rank < 0 or local_rank >= torch.cuda.device_count():
+        raise RuntimeError(
+            f"LOCAL_RANK={local_rank} is outside {torch.cuda.device_count()} visible CUDA devices"
+        )
+    torch.cuda.set_device(local_rank)
+    return model.to(torch.device("cuda", local_rank))
 
 
 def _resolved_commit(value: Any, fallback: str) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ from transformers import AutoConfig, AutoTokenizer
 
 from posttrain_circuits.circuits.mib_eap_ig import MIB_REVISION
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
 
 
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Preflight real Qwen G0")
     parser.add_argument("overrides", nargs="*")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--gpu-preflight", type=Path, required=True)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
     checks: dict[str, bool] = {}
@@ -101,6 +103,41 @@ def main(argv: list[str] | None = None) -> None:
     )
     if not checks["accelerate_executable"]:
         blockers.append("ACCELERATE_BIN is unset or is not a file")
+    gpu_error = ""
+    try:
+        gpu_preflight = json.loads(args.gpu_preflight.read_text(encoding="utf-8"))
+        gpu_digest = gpu_preflight.pop("sha256", None)
+        checks["gpu_preflight_hash"] = gpu_digest == sha256_value(gpu_preflight)
+        checks["gpu_preflight_passed"] = gpu_preflight.get("passed") is True
+        checks["gpu_preflight_world_size"] = int(gpu_preflight.get("world_size", 0)) == 4
+        checks["gpu_preflight_git_commit"] = gpu_preflight.get("git_commit") == git_commit
+        checks["gpu_preflight_model_revision"] = (
+            gpu_preflight.get("model_revision") == config["model"]["model_revision"]
+        )
+        gpu_preflight["sha256"] = gpu_digest
+        if not all(
+            checks[name]
+            for name in (
+                "gpu_preflight_hash",
+                "gpu_preflight_passed",
+                "gpu_preflight_world_size",
+                "gpu_preflight_git_commit",
+                "gpu_preflight_model_revision",
+            )
+        ):
+            gpu_error = "GPU preflight is invalid, failed, or bound to different code/model inputs"
+            blockers.append(gpu_error)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        gpu_error = str(exc)
+        for name in (
+            "gpu_preflight_hash",
+            "gpu_preflight_passed",
+            "gpu_preflight_world_size",
+            "gpu_preflight_git_commit",
+            "gpu_preflight_model_revision",
+        ):
+            checks[name] = False
+        blockers.append(f"GPU preflight is unreadable: {gpu_error}")
     cache_error = ""
     try:
         for section in ("model", "teacher"):
@@ -135,6 +172,9 @@ def main(argv: list[str] | None = None) -> None:
         "torch_cuda_version": torch.version.cuda,
         "hf_home": os.environ.get("HF_HOME"),
         "model_cache_error": cache_error or None,
+        "gpu_preflight_path": str(args.gpu_preflight.resolve()),
+        "gpu_preflight_file_sha256": sha256_file(args.gpu_preflight),
+        "gpu_preflight_error": gpu_error or None,
         "resolved_config_sha256": sha256_value(config),
         "created_at": utc_now(),
     }

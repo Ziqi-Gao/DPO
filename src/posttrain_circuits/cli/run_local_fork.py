@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import torch
+
 from posttrain_circuits.cli._common import print_json
 from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.models.loading import load_model_and_tokenizer
@@ -60,10 +62,13 @@ def main(argv: list[str] | None = None) -> None:
         ).tokenizer
 
         def model_factory():  # type: ignore[no-untyped-def]
-            return load_model_and_tokenizer(
+            model = load_model_and_tokenizer(
                 model_spec,
                 for_training=True,
             ).model
+            if torch.cuda.is_available():
+                model.to(torch.device("cuda"))
+            return model
 
     base_learning_rate = float(payload["optimizer"]["param_groups"][0]["lr"])
     results = []

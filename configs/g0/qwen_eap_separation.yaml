@@ -21,5 +21,5 @@ minimum_bootstrap_spearman: 0.50
 minimum_random_control_margin: 0.0
 require_identity_sanity: true
 require_full_corruption_sanity: true
-probe_candidates_per_split: 64
+probe_candidates_per_split: 128
 base_accuracy_examples: 128

@@ -9,11 +9,12 @@ from typing import Any
 
 import torch
 
+from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
-from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.data.splits import build_split
-from posttrain_circuits.models.loading import load_model_and_tokenizer
+from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.anti_shortcut import (
     build_anti_shortcut_suite,
     evaluate_anti_shortcut_suite,
@@ -61,9 +62,17 @@ def main(argv: list[str] | None = None) -> None:
         checkpoint_hash = str(model_config["model_revision"])
     else:
         loaded = load_model_and_tokenizer(model_config, for_training=False)
-        model = loaded.model.eval()
+        model = move_model_to_local_cuda(loaded.model).eval()
         tokenizer = loaded.tokenizer
-        checkpoint_hash = loaded.resolved_model_commit
+        checkpoint_value = config["production_safety"].get("initial_checkpoint_path")
+        if not checkpoint_value:
+            raise ValueError("production anti-shortcut evaluation requires initial_checkpoint_path")
+        checkpoint_path = Path(str(checkpoint_value))
+        checkpoint_hash = sha256_file(checkpoint_path)
+        expected_hash = str(config["production_safety"].get("initial_checkpoint_hash", ""))
+        if checkpoint_hash != expected_hash:
+            raise ValueError("anti-shortcut initial checkpoint bytes differ from configured hash")
+        load_checkpoint_into_hf_model(model, checkpoint_path, expected_sha256=checkpoint_hash)
     task_config = dict(config["task"])
     examples = build_split(
         ProofGraphTask(),

@@ -11,3 +11,4 @@
 - Keep pinned Hugging Face snapshots in the project cache and set `HF_HOME` plus `HF_HUB_OFFLINE=1` for production jobs. Model downloads belong in CPU/login preparation, not inside a charged GPU allocation.
 - A queued job is not a completed experiment. Monitor `squeue`, `sacct`, and logs through terminal state; diagnose deterministic failures before retrying. Submit the seed-42 pilot only when the hash-valid G0 artifact says `passed: true`.
 - Never launch the full three-seed factorial or Gemma replication unless the user separately authorizes it.
+- Keep this task at no more than four concurrently allocated GPUs. Four-GPU training arrays run one task at a time; one-GPU circuit arrays may run at most four tasks concurrently.

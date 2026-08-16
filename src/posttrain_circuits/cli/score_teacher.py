@@ -15,6 +15,7 @@ from posttrain_circuits.core.types import TrajectoryBatch
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
+    move_model_to_local_cuda,
     tokenizer_fingerprint,
 )
 from posttrain_circuits.teacher.hf_scorer import HuggingFaceTeacherScorer
@@ -83,7 +84,7 @@ def main(argv: list[str] | None = None) -> None:
         teacher_revision = loaded.resolved_model_commit
         teacher_commit = loaded.resolved_model_commit
         tokenizer_hash = loaded.tokenizer_hash
-        model = loaded.model
+        model = move_model_to_local_cuda(loaded.model)
     else:
         tokenizer = build_tiny_tokenizer()
         records = build_fixed_bank(build_smoke_examples(4), tokenizer, 42)

@@ -15,6 +15,9 @@ from posttrain_circuits.circuits.probe_cohorts import (
     validate_probe_cohort_manifest,
     write_probe_cohort_manifest,
 )
+from posttrain_circuits.cli.analyze_circuit_dynamics import _mask_transfer
+from posttrain_circuits.cli.build_probe_cohorts import _eligible_candidates
+from posttrain_circuits.cli.finalize_pilot import _curve
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.core.readiness import (
@@ -137,6 +140,9 @@ def test_probe_cohorts_are_complete_disjoint_and_hash_pinned(tmp_path: Path) -> 
     write_probe_cohort_manifest(tmp_path, manifest)
     validated = validate_probe_cohort_manifest(tmp_path / "manifest.json")
     assert validated["sha256"] == manifest["sha256"]
+    assert validated["git_commit"] == "test-unfrozen"
+    assert validated["prereg_commit"] == "test-unfrozen"
+    assert validated["training_ancestry"] == []
     assert validated["cohorts"]["base_capable"]["discovery"]["num_examples"] == 1
     assert validated["cohorts"]["challenge"]["validation"]["num_examples"] == 1
     bad_scores = copy.deepcopy(scores)
@@ -150,6 +156,28 @@ def test_probe_cohorts_are_complete_disjoint_and_hash_pinned(tmp_path: Path) -> 
             scoring_manifest_hash="scores",
             learnability_evidence_hash="pilot",
         )
+
+
+@pytest.mark.unit
+def test_unlearned_probe_candidates_are_excluded_with_a_hash_audit() -> None:
+    rows = [
+        {"example_id": "base"},
+        {"example_id": "challenge"},
+        {"example_id": "not-eligible"},
+    ]
+    scores = {
+        "base": {"initial_correct": True, "learnable_after_post_training": True},
+        "challenge": {"initial_correct": False, "learnable_after_post_training": True},
+        "not-eligible": {"initial_correct": False, "learnable_after_post_training": False},
+    }
+    selected, audit = _eligible_candidates(rows, scores)
+    assert [row["example_id"] for row in selected] == ["base", "challenge"]
+    assert audit["candidate_count"] == 3
+    assert audit["selected_count"] == 2
+    assert audit["excluded"][0]["example_id"] == "not-eligible"
+    from posttrain_circuits.core.hashing import sha256_value
+
+    assert audit["sha256"] == sha256_value({key: value for key, value in audit.items() if key != "sha256"})
 
 
 @pytest.mark.unit
@@ -240,6 +268,28 @@ def test_noise_floor_and_excess_churn_are_reported_with_causal_evidence() -> Non
     )
     assert report["thresholded_jaccard_role"] == "diagnostic_only_not_sole_churn_evidence"
     assert report["full_score_spearman_stability"] <= 1.0
+
+
+@pytest.mark.unit
+def test_dynamics_consumes_only_explicit_mask_transfer_evidence() -> None:
+    transfer = [{"sparsity": 0.1, "necessity": 0.3}]
+    assert _mask_transfer({"cross_checkpoint_mask_transfer": transfer}) == transfer
+    with pytest.raises(ValueError, match="lacks cross_checkpoint_mask_transfer"):
+        _mask_transfer({"cpr": 0.9})
+
+
+@pytest.mark.unit
+def test_pilot_curves_skip_intentionally_unevaluated_steps() -> None:
+    steps, values = _curve(
+        [
+            {"step": 1, "validation_accuracy": None},
+            {"step": 20, "validation_accuracy": 0.25},
+            {"step": 40, "validation_accuracy": 0.5},
+        ],
+        "validation_accuracy",
+    )
+    assert steps == [20.0, 40.0]
+    assert values == [0.25, 0.5]
 
 
 @pytest.mark.unit

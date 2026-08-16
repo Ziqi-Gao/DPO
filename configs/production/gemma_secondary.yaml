@@ -9,6 +9,8 @@ overrides:
     token_budget: 32000000
     batch_size: 4
     gradient_accumulation_steps: 4
+    checkpoint_every: 30
+    evaluation_every: 30
     validation_examples: 128
   task:
     validation_split_path: outputs/datasets/proofgraph-validation

@@ -64,6 +64,18 @@ def test_qwen_production_profile_resolves_without_smoke_defaults() -> None:
     assert config["task"]["validation_split_path"]
 
 
+@pytest.mark.unit
+def test_production_profile_rejects_wrong_teacher_family() -> None:
+    with pytest.raises(ValueError, match="wrong production model/teacher pair"):
+        compose_config(
+            [
+                "production=qwen_primary",
+                "experiment=offline_soft",
+                "teacher=gemma2_teacher_9b",
+            ]
+        )
+
+
 def _probe_manifest() -> dict[str, object]:
     rows = {
         "discovery": [

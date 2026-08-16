@@ -50,6 +50,7 @@ class TrainerConfig:
     steps_per_round: int = 1
     learning_rate: float = 5e-4
     checkpoint_every: int = 1
+    evaluation_every: int = 1
     backend: str = "torch_smoke"
     gradient_accumulation_steps: int = 1
     max_completion_length: int = 128
@@ -64,6 +65,8 @@ class TrainerConfig:
             raise ValueError("gradient_accumulation_steps must be positive")
         if self.checkpoint_every < 1:
             raise ValueError("checkpoint_every must be positive")
+        if self.evaluation_every < 1:
+            raise ValueError("evaluation_every must be positive")
 
 
 class FactorialTrainer:
@@ -301,6 +304,11 @@ class FactorialTrainer:
 
     def _evaluation_metrics(self) -> dict[str, float | None]:
         metrics: dict[str, float | None] = dict.fromkeys(_REQUIRED_EVALUATION_METRICS)
+        due = self.global_step % self.config.evaluation_every == 0 or (
+            self.global_step == self.config.max_steps
+        )
+        if not due:
+            return metrics
         if self.evaluation_fn is not None:
             metrics.update(self.evaluation_fn(self.model))
         if self.config.require_evaluation_metrics:
@@ -404,7 +412,21 @@ class FactorialTrainer:
             self._accelerator.save_state(str(state_dir))
             self._accelerator.wait_for_everyone()
             full_model_state = self._accelerator.get_state_dict(self.model)
-            optimizer_state = self.optimizer.state_dict()
+            optimizer_state_key_type = "parameter_id"
+            try:
+                from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+                if isinstance(self.model, FSDP):
+                    optimizer_state = FSDP.full_optim_state_dict(
+                        self.model,
+                        self.optimizer,
+                        rank0_only=True,
+                    )
+                    optimizer_state_key_type = "parameter_name"
+                else:
+                    optimizer_state = self.optimizer.state_dict()
+            except ImportError:
+                optimizer_state = self.optimizer.state_dict()
             scheduler_state = self.scheduler.state_dict()
             scaler = getattr(self._accelerator, "scaler", None)
             if self.is_main_process:
@@ -414,6 +436,7 @@ class FactorialTrainer:
                         "format": "accelerate_fsdp_full_export_v1",
                         "model": full_model_state,
                         "optimizer": optimizer_state,
+                        "optimizer_state_key_type": optimizer_state_key_type,
                         "scheduler": scheduler_state,
                         "scaler": scaler.state_dict() if scaler is not None else None,
                         "accelerate_state_dir": str(state_dir.resolve()),

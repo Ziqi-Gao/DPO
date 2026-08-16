@@ -70,6 +70,11 @@ def test_run_grpo_builds_official_backend_and_calls_train(
         def __init__(self, model):  # type: ignore[no-untyped-def]
             self.model = model
             self.state = SimpleNamespace(global_step=0)
+            self.optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+            self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda _: 1.0,
+            )
 
         def train(self):  # type: ignore[no-untyped-def]
             with torch.no_grad():

@@ -15,7 +15,7 @@ from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.types import PromptBatch, TrajectoryRecord
 from posttrain_circuits.data.splits import build_split
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
-from posttrain_circuits.models.loading import load_model_and_tokenizer
+from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.rollout.generation import hf_generate_trajectories
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.utils.smoke import build_fixed_bank, build_smoke_examples
@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> None:
         resolved_tokenizer_commit = str(model_config["tokenizer_revision"])
     else:
         loaded = load_model_and_tokenizer(model_config, for_training=False)
+        policy_model = move_model_to_local_cuda(loaded.model)
         tokenizer = loaded.tokenizer
         task_config = config["task"]
         task = ProofGraphTask()
@@ -88,7 +89,7 @@ def main(argv: list[str] | None = None) -> None:
             )
             records.extend(
                 hf_generate_trajectories(
-                    loaded.model,
+                    policy_model,
                     tokenizer,
                     prompts,
                     policy_version=0,

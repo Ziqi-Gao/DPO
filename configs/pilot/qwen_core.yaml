@@ -10,11 +10,17 @@ overrides:
     token_budget: 2000000
     batch_size: 4
     gradient_accumulation_steps: 4
-    checkpoint_every: 20
+    checkpoint_every: 120
+    evaluation_every: 20
     validation_examples: 128
   task:
     num_examples: 4096
     validation_split_path: outputs/datasets/proofgraph-validation
+  circuit:
+    discovery_pair_count: 8
+    validation_pair_count: 8
+    mib_bootstrap_replicates: 5
+    prompt_bootstrap_samples: 200
   production_safety:
     readiness_report: outputs/readiness/readiness.json
 profile_kind: single_seed_pipeline_pilot

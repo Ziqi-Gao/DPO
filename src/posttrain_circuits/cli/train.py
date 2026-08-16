@@ -10,6 +10,7 @@ from typing import Any
 
 import torch
 
+from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
 from posttrain_circuits.core.config import is_production_scale
 from posttrain_circuits.core.hashing import sha256_value
@@ -27,6 +28,7 @@ from posttrain_circuits.models.loading import (
     LoadedModel,
     assert_tokenizer_compatible,
     load_model_and_tokenizer,
+    move_model_to_local_cuda,
 )
 from posttrain_circuits.rollout.generation import build_proofgraph_hf_generator
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
@@ -107,6 +109,22 @@ def main(argv: list[str] | None = None) -> None:
         model = loaded_student.model
     if not local_model:
         assert loaded_student is not None
+    initial_checkpoint_hash: str | None = None
+    if production_scale:
+        initial_checkpoint_value = str(
+            config.get("production_safety", {}).get("initial_checkpoint_path", "")
+        ).strip()
+        expected_initial_hash = str(
+            config.get("production_safety", {}).get("initial_checkpoint_hash", "")
+        ).strip()
+        if not initial_checkpoint_value or len(expected_initial_hash) != 64:
+            raise ValueError("production training requires initial_checkpoint_path and its SHA-256")
+        initial_checkpoint = Path(initial_checkpoint_value)
+        initial_checkpoint_hash = load_checkpoint_into_hf_model(
+            model,
+            initial_checkpoint,
+            expected_sha256=expected_initial_hash,
+        )
     state_source_name = str(config["state_source"]["name"])
     supervision_name = str(config["supervision"]["name"])
     batch_size = int(config["trainer"]["batch_size"])
@@ -200,7 +218,7 @@ def main(argv: list[str] | None = None) -> None:
                 tokenizer,
                 loaded_teacher.tokenizer,
             )
-            teacher_model = loaded_teacher.model
+            teacher_model = move_model_to_local_cuda(loaded_teacher.model)
             teacher_id_value = loaded_teacher.model_id
             teacher_revision_value = loaded_teacher.resolved_model_commit
         teacher = HuggingFaceTeacherScorer(
@@ -245,6 +263,8 @@ def main(argv: list[str] | None = None) -> None:
     if validation_manifest is not None:
         dataset_hashes["validation_manifest"] = str(validation_manifest["sha256"])
         dataset_hashes["validation_file"] = str(validation_manifest["examples_file_sha256"])
+    if initial_checkpoint_hash is not None:
+        dataset_hashes["initial_checkpoint"] = initial_checkpoint_hash
     for name, evidence in prerequisite_evidence.items():
         dataset_hashes[f"prerequisite_{name}"] = str(
             evidence.get("report_hash", evidence.get("manifest_hash"))
@@ -324,6 +344,7 @@ def main(argv: list[str] | None = None) -> None:
         steps_per_round=int(config["trainer"]["steps_per_round"]),
         learning_rate=float(config["trainer"]["learning_rate"]),
         checkpoint_every=int(config["trainer"]["checkpoint_every"]),
+        evaluation_every=int(config["trainer"].get("evaluation_every", 1)),
         backend=str(config["trainer"]["backend"]),
         gradient_accumulation_steps=int(config["trainer"]["gradient_accumulation_steps"]),
         max_completion_length=int(config["trainer"]["max_completion_length"]),

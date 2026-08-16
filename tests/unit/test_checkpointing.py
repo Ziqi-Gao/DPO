@@ -5,9 +5,14 @@ import random
 import numpy as np
 import pytest
 import torch
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import OptimStateKeyType
 
+from posttrain_circuits.cli.create_fork_bundle import _load_portable_optimizer_state
 from posttrain_circuits.core.seeding import seed_everything
 from posttrain_circuits.training.checkpointing import load_checkpoint, save_checkpoint
+from posttrain_circuits.training.local_fork import state_hash
+from posttrain_circuits.utils.tiny_model import build_tiny_qwen
 
 
 @pytest.mark.unit
@@ -83,3 +88,31 @@ def test_checkpoint_resume_reproduces_next_random_update(tmp_path, tiny_model) -
     assert actual_state.keys() == expected_state.keys()
     for name in expected_state:
         assert torch.allclose(actual_state[name], expected_state[name], atol=1e-7, rtol=1e-6)
+
+
+@pytest.mark.unit
+def test_parameter_name_optimizer_export_loads_into_unwrapped_fork() -> None:
+    source = build_tiny_qwen(101)
+    source_optimizer = torch.optim.AdamW(source.parameters(), lr=1e-3)
+    loss = source(input_ids=torch.tensor([[1, 2, 3]])).logits.float().square().mean()
+    loss.backward()
+    source_optimizer.step()
+    named_state = FSDP.rekey_optim_state_dict(
+        source_optimizer.state_dict(),
+        OptimStateKeyType.PARAM_NAME,
+        source,
+        optim=source_optimizer,
+    )
+    target = build_tiny_qwen(101)
+    target_optimizer = torch.optim.AdamW(target.parameters(), lr=1e-3)
+    _load_portable_optimizer_state(
+        target_optimizer,
+        target,
+        {
+            "optimizer": named_state,
+            "optimizer_state_key_type": "parameter_name",
+        },
+    )
+    assert state_hash(target_optimizer.state_dict()["state"]) == state_hash(
+        source_optimizer.state_dict()["state"]
+    )

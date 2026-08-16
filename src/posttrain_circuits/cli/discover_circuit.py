@@ -99,6 +99,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Discover a circuit")
     parser.add_argument("overrides", nargs="*")
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--initial-checkpoint", type=Path)
     parser.add_argument("--probe-cohort-manifest", type=Path)
     parser.add_argument("--cohort", choices=("base_capable", "challenge"))
     parser.add_argument("--dry-run", action="store_true")
@@ -129,15 +130,21 @@ def main(argv: list[str] | None = None) -> None:
             task_config=config["task"],
         )
     else:
-        if args.checkpoint is None or args.probe_cohort_manifest is None or args.cohort is None:
+        if (
+            args.checkpoint is None
+            or args.initial_checkpoint is None
+            or args.probe_cohort_manifest is None
+            or args.cohort is None
+        ):
             raise ValueError(
-                "production circuit discovery requires --checkpoint, --probe-cohort-manifest, and --cohort"
+                "production circuit discovery requires --checkpoint, --initial-checkpoint, "
+                "--probe-cohort-manifest, and --cohort"
             )
         rows, probe_manifest = load_probe_examples(
             args.probe_cohort_manifest,
             cohort=args.cohort,
             subset="discovery",
-            expected_initial_checkpoint_hash=str(config["model"]["model_revision"]),
+            expected_initial_checkpoint_hash=sha256_file(args.initial_checkpoint),
         )
         if len(rows) < pair_count:
             raise ValueError("frozen probe cohort has fewer discovery examples than requested")

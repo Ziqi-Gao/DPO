@@ -29,6 +29,30 @@ from posttrain_circuits.utils.tiny_model import (
 )
 
 
+def _load_portable_optimizer_state(
+    optimizer: torch.optim.Optimizer,
+    model: torch.nn.Module,
+    checkpoint_payload: dict[str, object],
+) -> None:
+    state = checkpoint_payload["optimizer"]
+    if not isinstance(state, dict):
+        raise ValueError("fork checkpoint optimizer state is malformed")
+    key_type = checkpoint_payload.get("optimizer_state_key_type", "parameter_id")
+    if key_type == "parameter_name":
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp import OptimStateKeyType
+
+        state = FSDP.rekey_optim_state_dict(
+            state,
+            OptimStateKeyType.PARAM_ID,
+            model,
+            optim=optimizer,
+        )
+    elif key_type != "parameter_id":
+        raise ValueError(f"unsupported optimizer state key type: {key_type}")
+    optimizer.load_state_dict(state)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Create a shared-state fork bundle")
     parser.add_argument("overrides", nargs="*")
@@ -71,6 +95,8 @@ def main(argv: list[str] | None = None) -> None:
         )
         tokenizer = loaded_student.tokenizer
         model = loaded_student.model
+        if torch.cuda.is_available():
+            model.to(torch.device("cuda"))
     checkpoint_payload = None
     if args.checkpoint is not None:
         checkpoint_payload = torch.load(
@@ -102,6 +128,7 @@ def main(argv: list[str] | None = None) -> None:
         prompt_content = {
             "prompt_ids": prompt_payload.get("prompt_ids"),
             "prompt_texts": prompt_payload.get("prompt_texts"),
+            "trajectory_ids": prompt_payload.get("trajectory_ids"),
         }
         if prompt_payload.get("sha256") != sha256_value(prompt_content):
             raise ValueError("frozen fork prompt manifest hash mismatch")
@@ -117,11 +144,18 @@ def main(argv: list[str] | None = None) -> None:
         ):
             raise ValueError("fork trajectory store tokenizer differs from student tokenizer")
         records = store.read()
-        by_prompt = {record.prompt_id: record for record in records}
+        by_trajectory = {record.trajectory_id: record for record in records}
         try:
-            selected = [by_prompt[prompt_id] for prompt_id in prompts.prompt_ids]
+            selected = [
+                by_trajectory[str(trajectory_id)] for trajectory_id in prompt_content["trajectory_ids"]
+            ]
         except KeyError as error:
-            raise ValueError(f"fork prompt has no frozen trajectory: {error}") from error
+            raise ValueError(f"fork manifest has no exact frozen trajectory: {error}") from error
+        if len(selected) != len(prompts.prompt_ids) or any(
+            record.prompt_id != prompt_id
+            for record, prompt_id in zip(selected, prompts.prompt_ids, strict=True)
+        ):
+            raise ValueError("fork trajectory IDs are not aligned with the frozen prompts")
         trajectories = TrajectoryBatch(selected, policy_version=selected[0].policy_version)
         trajectories.validate(max_policy_lag=0)
         if any(record.policy_version != trajectories.policy_version for record in selected):
@@ -130,6 +164,8 @@ def main(argv: list[str] | None = None) -> None:
         probe_rows = probe_payload.get("input_ids")
         if probe_payload.get("sha256") != sha256_value(probe_rows):
             raise ValueError("fixed fork probe-set hash mismatch")
+        if probe_payload.get("trajectory_ids") != prompt_content["trajectory_ids"]:
+            raise ValueError("fork probe set is bound to different frozen trajectories")
         probe = torch.tensor(probe_rows, dtype=torch.long, device=next(model.parameters()).device)
         if probe.ndim != 2 or probe.shape[0] < 2:
             raise ValueError("production fork probe set requires at least two fixed prompts")
@@ -177,7 +213,7 @@ def main(argv: list[str] | None = None) -> None:
         lambda _: 1.0,
     )
     if checkpoint_payload is not None:
-        optimizer.load_state_dict(checkpoint_payload["optimizer"])
+        _load_portable_optimizer_state(optimizer, model, checkpoint_payload)
         scheduler.load_state_dict(checkpoint_payload["scheduler"])
     was_training = model.training
     model.eval()

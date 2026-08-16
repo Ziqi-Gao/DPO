@@ -32,12 +32,21 @@ committed as a new version.
 ## G0 and pilot
 
 `bash scripts/production/run_g0.sh` is the only entry point for G0. It performs a clean-Git,
-frozen-prereg, pinned-MIB and Slurm preflight, then submits and waits for the real Qwen production
-stack. A hash-bound `g0.json` must say `passed: true`; submission alone is not success.
+frozen-prereg, pinned-MIB and Slurm preflight. Before G0, a short four-GPU preflight must establish
+CUDA/NCCL operation and load the pinned offline Qwen snapshot with a finite real-model forward.
+The hash-valid preflight is bound to the exact Git commit and model revision consumed by G0. G0
+then submits and waits for the real Qwen production stack. A hash-bound `g0.json` must say
+`passed: true`; submission alone is not success.
 
 Only then may `bash scripts/production/submit_pilot.sh` prepare the explicit
 `configs/pilot/qwen_core.yaml` single-seed (42) pilot. The pilot array contains the six factorial
 cells plus distinct canonical SFT and GRPO anchors. It is not the three-seed confirmatory grid.
+Every cell loads the same byte-hashed initial checkpoint. Formal validation is evaluated at frozen
+checkpoint intervals and the final step; canonical GRPO records both step-0 and final validation
+and `KL(output_new || output_initial)`. Pilot execution then runs initial circuits, final circuits,
+1/5/20 local forks, distributed resume, and noise-corrected dynamics as separately monitored
+stages. The pilot report requires all preregistered matched-accuracy summaries to stay within
+observed formal-validation ranges; extrapolation is invalid.
 Opposite-direction effects remain valid observations and never block escalation by direction.
 
 ## Core Gemma mini-replication

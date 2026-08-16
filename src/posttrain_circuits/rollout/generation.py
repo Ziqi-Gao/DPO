@@ -15,7 +15,7 @@ from posttrain_circuits.core.types import PromptBatch, TrajectoryRecord
 
 
 @contextmanager
-def _generation_rng(seed: int, device: torch.device) -> Iterator[None]:
+def generation_rng(seed: int, device: torch.device) -> Iterator[None]:
     """Isolate HF generation from, and restore, the caller's RNG streams."""
 
     cuda_devices: list[int] = []
@@ -91,7 +91,7 @@ def hf_generate_trajectories(
     }
     if temperature > 0:
         generation_kwargs.update(temperature=temperature, top_p=top_p)
-    with _generation_rng(seed, device), torch.no_grad():
+    with generation_rng(seed, device), torch.no_grad():
         sequences = model.generate(**encoded, **generation_kwargs)
     records: list[TrajectoryRecord] = []
     prompt_width = encoded.input_ids.shape[1]

@@ -31,6 +31,7 @@ done
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.export_initial_checkpoint \
   g0=qwen_eap_separation model=qwen25_1p5b --output "${initial_checkpoint}" --confirm-production
+initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "${initial_checkpoint}")
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_teacher_demos \
   pilot=qwen_core experiment=canonical_sft model=qwen25_1p5b teacher=qwen25_teacher_7b \
@@ -41,7 +42,9 @@ done
   -m posttrain_circuits.cli.train pilot=qwen_core experiment=canonical_sft \
   model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
   task.validation_split_path="${data_root}/validation" \
-  state_source.store_path="${demo_store}" trainer.max_steps=120 trainer.checkpoint_every=20 \
+  production_safety.initial_checkpoint_path="${initial_checkpoint}" \
+  production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
+  state_source.store_path="${demo_store}" trainer.max_steps=120 trainer.checkpoint_every=120 \
   --output "${calibration_run}" --confirm-production
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.score_probe_candidates \
@@ -50,13 +53,13 @@ done
   --discovery-split "${data_root}/circuit_discovery" \
   --validation-split "${data_root}/circuit_validation" \
   --task-validation-split "${data_root}/validation" \
-  --probe-limit-per-split 64 --task-validation-limit 128 --output "${probe_scores}"
+  --probe-limit-per-split 128 --task-validation-limit 128 --output "${probe_scores}"
 
 learnability_hash=$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "${probe_scores}")
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_probe_cohorts \
   --splits-root "${data_root}" --scores "${probe_scores}" \
-  --initial-checkpoint-hash 989aa7980e4cf806f80c7fef2b1adb7bc71aa306 \
-  --learnability-evidence-hash "${learnability_hash}" --limit-per-split 64 --output "${probe_root}"
+  --initial-checkpoint-hash "${initial_checkpoint_hash}" \
+  --learnability-evidence-hash "${learnability_hash}" --limit-per-split 128 --output "${probe_root}"
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_rollout_bank \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
@@ -67,15 +70,19 @@ learnability_hash=$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sy
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_anti_shortcut \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  production_safety.initial_checkpoint_path="${initial_checkpoint}" \
+  production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
   --output "${run_dir}/anti_shortcut.json" --confirm-production
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.discover_circuit \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
   --checkpoint "${initial_checkpoint}" --probe-cohort-manifest "${probe_root}/manifest.json" \
+  --initial-checkpoint "${initial_checkpoint}" \
   --cohort base_capable --output "${circuit_root}/circuit.json" --confirm-production
 "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_circuit \
   g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
   --circuit-artifact "${circuit_root}/circuit.json" --checkpoint "${initial_checkpoint}" \
+  --initial-checkpoint "${initial_checkpoint}" \
   --probe-cohort-manifest "${probe_root}/manifest.json" --cohort base_capable \
   --output "${circuit_root}/exact_patching.json" --confirm-production
 
@@ -84,6 +91,8 @@ for replica in a b; do
     -m posttrain_circuits.cli.train pilot=qwen_core experiment=canonical_sft \
     model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
     task.validation_split_path="${data_root}/validation" \
+    production_safety.initial_checkpoint_path="${initial_checkpoint}" \
+    production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
     state_source.store_path="${demo_store}" trainer.max_steps=121 trainer.checkpoint_every=1 \
     --resume "${calibration_checkpoint}" --output "${run_dir}/resume-${replica}" --confirm-production
 done
@@ -99,5 +108,7 @@ done
   --anti-shortcut "${run_dir}/anti_shortcut.json" --probe-manifest "${probe_root}/manifest.json" \
   --circuit "${circuit_root}/circuit.json" --exact-patching "${circuit_root}/exact_patching.json" \
   --compatibility "${circuit_root}/mib_raw/compatibility.json" \
-  --distributed-resume "${run_dir}/distributed_resume.json" --job-id "${SLURM_JOB_ID}" \
+  --distributed-resume "${run_dir}/distributed_resume.json" \
+  --initial-checkpoint "${initial_checkpoint}" --gpu-preflight "${GPU_PREFLIGHT_JSON:?}" \
+  --job-id "${SLURM_JOB_ID}" \
   --output "${run_dir}/g0.json"

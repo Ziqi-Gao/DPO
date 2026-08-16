@@ -6,7 +6,7 @@ from pathlib import Path
 
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
 from posttrain_circuits.data.splits import build_split
-from posttrain_circuits.models.loading import load_model_and_tokenizer
+from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
 from posttrain_circuits.teacher.demo_generation import (
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         tokenizer = loaded_teacher.tokenizer
         candidate_generator = HfTeacherCandidateGenerator(
-            loaded_teacher.model,
+            move_model_to_local_cuda(loaded_teacher.model),
             tokenizer,
         )
         teacher_id = loaded_teacher.model_id

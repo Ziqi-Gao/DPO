@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import torch
 
+from posttrain_circuits.circuits.cross_mask_transfer import evaluate_mask_transfer
 from posttrain_circuits.circuits.exact_patching import (
     ExactPatchingBackend,
     ExactTokenPair,
@@ -35,7 +37,7 @@ from posttrain_circuits.core.config import (
 from posttrain_circuits.core.hashing import sha256_file
 from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.data.splits import deserialize_example
-from posttrain_circuits.models.loading import load_model_and_tokenizer
+from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.utils.tiny_model import (
     build_tiny_qwen,
@@ -74,6 +76,8 @@ def main(argv: list[str] | None = None) -> None:
         required=False,
     )
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--initial-checkpoint", type=Path)
+    parser.add_argument("--transfer-source-circuit", type=Path)
     parser.add_argument("--probe-cohort-manifest", type=Path)
     parser.add_argument("--cohort", choices=("base_capable", "challenge"))
     parser.add_argument("--output", type=Path)
@@ -112,6 +116,8 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer = loaded.tokenizer
     if production and args.checkpoint is None:
         raise ValueError("production exact patching requires --checkpoint")
+    if production and args.initial_checkpoint is None:
+        raise ValueError("production exact patching requires --initial-checkpoint")
     if args.checkpoint is not None:
         checkpoint_sha256 = sha256_file(args.checkpoint)
         if checkpoint_sha256 != artifact.get("checkpoint_sha256"):
@@ -124,6 +130,8 @@ def main(argv: list[str] | None = None) -> None:
         if not isinstance(payload, dict) or "model" not in payload:
             raise ValueError("exact patching checkpoint is incomplete")
         model.load_state_dict(payload["model"], strict=True)
+    if production and torch.cuda.is_available():
+        model = move_model_to_local_cuda(model)
     model.eval()
     device = next(model.parameters()).device
     discovery_pair = _load_discovery_pair(
@@ -153,7 +161,7 @@ def main(argv: list[str] | None = None) -> None:
             args.probe_cohort_manifest,
             cohort=args.cohort,
             subset="validation",
-            expected_initial_checkpoint_hash=str(model_config["model_revision"]),
+            expected_initial_checkpoint_hash=sha256_file(args.initial_checkpoint),
         )
         if probe_manifest["sha256"] != artifact.get("probe_cohort_manifest_hash"):
             raise ValueError("exact patching probe manifest differs from discovery")
@@ -250,6 +258,41 @@ def main(argv: list[str] | None = None) -> None:
     }
     evaluation["functional_groups"] = sorted(component_groups)
     evaluation["functional_group_count"] = len(component_groups)
+    if args.transfer_source_circuit is not None:
+        source_artifact = json.loads(args.transfer_source_circuit.read_text(encoding="utf-8"))
+        if source_artifact.get("probe_cohort_manifest_hash") != artifact.get(
+            "probe_cohort_manifest_hash"
+        ) or source_artifact.get("probe_cohort") != artifact.get("probe_cohort"):
+            raise ValueError("mask-transfer source uses a different frozen probe cohort")
+        if source_artifact.get("graph_convention") != artifact.get("graph_convention"):
+            raise ValueError("mask-transfer source uses a different graph convention")
+        source_scores, source_unsupported = normalize_circuit_scores(
+            model,
+            {key: float(value) for key, value in source_artifact["scores"].items()},
+        )
+        if source_unsupported:
+            raise ValueError(
+                f"mask-transfer source contains unsupported target components: {source_unsupported}"
+            )
+        evaluation["cross_checkpoint_mask_transfer"] = [
+            asdict(
+                evaluate_mask_transfer(
+                    backend=backend,
+                    target_model=model,
+                    validation_pairs=validation_pairs,
+                    metric=metric,
+                    source_scores=source_scores,
+                    sparsity=float(sparsity),
+                    source_run=str(source_artifact.get("run_id", "source")),
+                    source_checkpoint=str(source_artifact["checkpoint_sha256"]),
+                    source_method=str(source_artifact.get("attribution_method", "EAP-IG")),
+                    target_run=str(artifact.get("run_id", "target")),
+                    target_checkpoint=str(artifact["checkpoint_sha256"]),
+                    target_method=str(artifact.get("attribution_method", "EAP-IG")),
+                )
+            )
+            for sparsity in config["circuit"]["sparsity_grid"]
+        ]
     calibration_paths = write_attribution_patching_calibration(
         evaluation["calibration"],
         spearman=float(evaluation["attribution_patching_spearman"]),

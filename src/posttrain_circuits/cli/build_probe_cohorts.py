@@ -13,11 +13,43 @@ from posttrain_circuits.circuits.probe_cohorts import (
     write_probe_cohort_manifest,
 )
 from posttrain_circuits.cli._common import print_json
-from posttrain_circuits.core.hashing import sha256_file
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 
 
 def _jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _eligible_candidates(
+    rows: list[dict[str, Any]],
+    scores: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    selected = []
+    excluded = []
+    for row in rows:
+        example_id = str(row.get("example_id", ""))
+        score = scores.get(example_id)
+        if score is None:
+            raise ValueError(f"probe candidate {example_id!r} has no score")
+        initial = bool(score.get("initial_correct"))
+        learned = bool(score.get("learnable_after_post_training"))
+        if initial or learned:
+            selected.append(row)
+        else:
+            excluded.append(
+                {
+                    "example_id": example_id,
+                    "reason": "initially_unsolved_and_not_learned_by_frozen_calibration",
+                }
+            )
+    audit: dict[str, Any] = {
+        "candidate_count": len(rows),
+        "selected_count": len(selected),
+        "excluded_count": len(excluded),
+        "excluded": excluded,
+    }
+    audit["sha256"] = sha256_value(audit)
+    return selected, audit
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -53,6 +85,9 @@ def main(argv: list[str] | None = None) -> None:
         scores = {str(key): dict(value) for key, value in score_rows.items()}
     else:
         raise TypeError("probe scores must be a mapping or a list of score rows")
+    candidate_audit = {}
+    for subset, rows in split_rows.items():
+        split_rows[subset], candidate_audit[subset] = _eligible_candidates(rows, scores)
     manifest = build_probe_cohort_manifest(
         split_rows,
         scores,
@@ -72,6 +107,7 @@ def main(argv: list[str] | None = None) -> None:
             }
             for subset, source in source_names.items()
         },
+        candidate_selection_audit=candidate_audit,
     )
     write_probe_cohort_manifest(args.output, manifest)
     print_json({"output": str(args.output), "manifest": manifest})

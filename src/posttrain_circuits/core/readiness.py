@@ -147,7 +147,7 @@ def require_factorial_prerequisites(config: dict[str, Any]) -> dict[str, Any]:
     """Refuse a production factorial cell until both pre-training gates pass."""
 
     safety = config["production_safety"]
-    checkpoint_hash = str(config["model"]["model_revision"])
+    checkpoint_hash = str(safety.get("initial_checkpoint_hash", config["model"]["model_revision"]))
     evidence: dict[str, Any] = {}
     if is_production_scale(config):
         readiness = validate_readiness_report(

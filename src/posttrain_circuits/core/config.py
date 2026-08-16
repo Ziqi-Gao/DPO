@@ -165,6 +165,18 @@ def validate_production_training_config(config: dict[str, Any]) -> None:
         failures.append("local/tiny model")
     if teacher.startswith("local/") or "tiny" in teacher.lower():
         failures.append("local/tiny teacher")
+    allowed_model_teacher_pairs = {
+        (
+            "Qwen/Qwen2.5-1.5B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
+        ),
+        (
+            "google/gemma-2-2b-it",
+            "google/gemma-2-9b-it",
+        ),
+    }
+    if (model, teacher) not in allowed_model_teacher_pairs:
+        failures.append(f"wrong production model/teacher pair: {model!r} / {teacher!r}")
     if task != "proofgraph":
         failures.append(f"task={task!r}")
     if str(trainer.get("backend")) != "accelerate":
@@ -177,6 +189,9 @@ def validate_production_training_config(config: dict[str, Any]) -> None:
         config.get("production_safety", {}).get("max_smoke_tokens", 1_000_000)
     ):
         failures.append("smoke-sized token_budget")
+    evaluation_every = int(trainer.get("evaluation_every", 0))
+    if evaluation_every < 1 or evaluation_every > int(trainer.get("max_steps", 0)):
+        failures.append("invalid formal evaluation interval")
     if not str(config.get("task", {}).get("validation_split_path", "")).strip():
         failures.append("missing frozen validation_split_path")
     if profile.get("full_parameter_training") is not True:

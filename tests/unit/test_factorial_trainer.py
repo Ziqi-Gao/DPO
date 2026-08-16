@@ -235,3 +235,50 @@ def test_formal_training_requires_evaluation_callback_before_updates(
             config=TrainerConfig(max_steps=1, require_evaluation_metrics=True),
             run_dir=tmp_path / "formal",
         )
+
+
+@pytest.mark.unit
+def test_formal_evaluation_runs_at_frozen_intervals_and_final_step(
+    tmp_path,
+    tokenizer,
+    tiny_model,
+) -> None:  # type: ignore[no-untyped-def]
+    example = build_smoke_examples(1, seed=12)[0]
+    positive = make_trajectory(
+        example,
+        tokenizer,
+        successful=True,
+        policy_version=0,
+        seed=6,
+        behavior_policy_id="test",
+    )
+    calls: list[int] = []
+    optimizer = torch.optim.AdamW(tiny_model.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
+    trainer = FactorialTrainer(
+        model=tiny_model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        prompt_scheduler=PromptScheduler([example.example_id], ["prompt"], 1),
+        state_source=SequenceStateSource([[positive]]),
+        supervisor=VerifiedReplaySupervisor(tokenizer.pad_token_id),
+        config=TrainerConfig(
+            max_steps=5,
+            evaluation_every=2,
+            require_evaluation_metrics=True,
+        ),
+        run_dir=tmp_path / "scheduled-eval",
+        evaluation_fn=lambda _: (
+            calls.append(trainer.global_step)
+            or {
+                "validation_accuracy": 0.5,
+                "exact_proof_accuracy": 0.25,
+                "format_validity": 1.0,
+            }
+        ),
+    )
+    history = trainer.train()
+    assert calls == [2, 4, 5]
+    assert history[0]["validation_accuracy"] is None
+    assert history[1]["validation_accuracy"] == 0.5
+    assert history[-1]["validation_accuracy"] == 0.5

@@ -24,6 +24,9 @@ def main(argv: list[str] | None = None) -> None:
     if expected != sha256_value(g0) or g0.get("passed") is not True:
         raise RuntimeError("pilot launch requires a hash-valid G0 artifact with passed=true")
     g0["sha256"] = expected
+    git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    if g0.get("git_commit") != git_commit:
+        raise RuntimeError("pilot launch requires the exact Git commit validated by G0")
     config = compose_config(args.overrides)
     payload: dict[str, Any] = {
         "phase": "single_seed_qwen_core_pilot",
@@ -34,7 +37,7 @@ def main(argv: list[str] | None = None) -> None:
         "anchors": config["pilot"]["anchors"],
         "g0_path": str(args.g0.resolve()),
         "g0_sha256": sha256_file(args.g0),
-        "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "git_commit": git_commit,
         "prereg_commit": subprocess.check_output(
             ["git", "log", "-n", "1", "--format=%H", "--", "prereg/core_v1.yaml"],
             text=True,

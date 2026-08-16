@@ -7,6 +7,8 @@ import torch
 
 from posttrain_circuits.core.types import PromptBatch
 from posttrain_circuits.rollout.generation import hf_generate_trajectories
+from posttrain_circuits.teacher.demo_generation import HfTeacherCandidateGenerator
+from posttrain_circuits.utils.smoke import build_smoke_examples
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 
@@ -71,3 +73,33 @@ def test_generation_keeps_eos_and_removes_post_eos_padding(monkeypatch) -> None:
     assert records[0].response_ids == [4, eos]
     assert records[1].response_ids == [5, 6, eos]
     assert all(len(row.response_ids) == len(row.behavior_logprobs) for row in records)
+
+
+@pytest.mark.unit
+def test_teacher_generation_uses_supported_rng_context_with_real_qwen(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    tokenizer = build_tiny_tokenizer()
+    model = build_tiny_qwen(31).eval()
+    original_generate = model.generate
+
+    def checked_generate(*args, **kwargs):  # type: ignore[no-untyped-def]
+        assert "generator" not in kwargs
+        return original_generate(*args, **kwargs)
+
+    monkeypatch.setattr(model, "generate", checked_generate)
+    generate = HfTeacherCandidateGenerator(model, tokenizer, max_new_tokens=4)
+    example = build_smoke_examples(1, seed=33)[0]
+    first = generate(
+        example=example,
+        candidate_index=0,
+        generation_seed=123,
+        temperature=1.0,
+        top_p=1.0,
+    )
+    second = generate(
+        example=example,
+        candidate_index=0,
+        generation_seed=123,
+        temperature=1.0,
+        top_p=1.0,
+    )
+    assert first == second
