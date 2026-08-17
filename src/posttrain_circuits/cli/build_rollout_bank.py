@@ -12,6 +12,7 @@ from posttrain_circuits.cli._common import (
     print_json,
 )
 from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.scientific_versions import ROLLOUT_GENERATION_VERSION
 from posttrain_circuits.core.types import PromptBatch, TrajectoryRecord
 from posttrain_circuits.data.splits import build_split
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
@@ -130,6 +131,7 @@ def main(argv: list[str] | None = None) -> None:
         top_k=0,
         extra_metadata={
             "store_kind": "rollout_bank",
+            "rollout_generation_version": ROLLOUT_GENERATION_VERSION,
             "tokenizer_hash": tokenizer_hash,
             "resolved_tokenizer_commit": resolved_tokenizer_commit,
         },

@@ -13,6 +13,7 @@ from safetensors.torch import load_file, save_file
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
 from posttrain_circuits.core.scientific_versions import (
+    ROLLOUT_GENERATION_VERSION,
     TRAJECTORY_STORE_VERSION,
     require_core_v2_artifact,
     scientific_compatibility_fields,
@@ -169,6 +170,13 @@ class TrajectoryStore:
         if manifest.get("format_version") != TRAJECTORY_STORE_VERSION:
             raise ValueError("pre-core-v2 trajectory stores are scientific-history only")
         require_core_v2_artifact(manifest)
+        if manifest.get("store_kind") in {"rollout_bank", "teacher_scored_rollout_bank"}:
+            observed_generation_version = manifest.get("rollout_generation_version")
+            if observed_generation_version != ROLLOUT_GENERATION_VERSION:
+                raise ValueError(
+                    "rollout bank predates the EOS/padding/RNG repair: "
+                    f"expected={ROLLOUT_GENERATION_VERSION}, observed={observed_generation_version}"
+                )
         for name, expected in manifest["files"].items():
             actual = sha256_file(self.root / name)
             if actual != expected:

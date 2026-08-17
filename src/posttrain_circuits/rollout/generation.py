@@ -30,6 +30,18 @@ def generation_rng(seed: int, device: torch.device) -> Iterator[None]:
         yield
 
 
+@contextmanager
+def _temporary_left_padding(tokenizer: Any) -> Iterator[None]:
+    """Left-pad decoder-only generation without persistently mutating the tokenizer."""
+
+    original_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+    try:
+        yield
+    finally:
+        tokenizer.padding_side = original_padding_side
+
+
 def _effective_prompt_ids(encoded: Any, row: int) -> list[int]:
     mask = encoded.attention_mask[row].to(dtype=torch.bool)
     return [int(value) for value in encoded.input_ids[row][mask].detach().cpu().tolist()]
@@ -56,7 +68,20 @@ def _trim_generated_row(
     return response_ids, logprobs
 
 
-def hf_generate_trajectories(
+def _trajectory_sampling_seed(
+    base_seed: int,
+    policy_version: int,
+    prompt_id: str,
+    prompt_text: str,
+    group_index: int,
+) -> int:
+    """Derive a batch-composition-invariant RNG stream for one sampled trajectory."""
+
+    digest = sha256_value([base_seed, policy_version, prompt_id, prompt_text, group_index])
+    return int(digest[:16], 16)
+
+
+def _hf_generate_trajectories_left_padded(
     model: Any,
     tokenizer: Any,
     prompt_batch: PromptBatch,
@@ -92,13 +117,13 @@ def hf_generate_trajectories(
     }
     if temperature > 0:
         generation_kwargs.update(temperature=temperature, top_p=top_p)
-    with generation_rng(seed, device), torch.no_grad():
-        sequences = model.generate(**encoded, **generation_kwargs)
     records: list[TrajectoryRecord] = []
     prompt_counts = Counter(prompt_batch.prompt_ids)
-    prompt_indices: dict[str, int] = defaultdict(int)
-    prompt_width = encoded.input_ids.shape[1]
-    generated_ids = sequences.sequences[:, prompt_width:]
+    next_prompt_index: dict[str, int] = defaultdict(int)
+    group_indices: list[int] = []
+    for prompt_id in prompt_batch.prompt_ids:
+        group_indices.append(next_prompt_index[prompt_id])
+        next_prompt_index[prompt_id] += 1
     raw_eos = getattr(model.generation_config, "eos_token_id", tokenizer.eos_token_id)
     if raw_eos is None:
         eos_token_ids: set[int] = set()
@@ -106,19 +131,64 @@ def hf_generate_trajectories(
         eos_token_ids = {raw_eos}
     else:
         eos_token_ids = {int(value) for value in raw_eos}
+    generated_rows: list[tuple[list[int], list[float]]] = []
+    if temperature > 0:
+        for row, (prompt_id, prompt_text, group_index) in enumerate(
+            zip(
+                prompt_batch.prompt_ids,
+                prompt_batch.prompt_texts,
+                group_indices,
+                strict=True,
+            )
+        ):
+            single_encoded = tokenizer(
+                prompt_text,
+                return_tensors="pt",
+                padding=False,
+                add_special_tokens=True,
+            ).to(device)
+            if _effective_prompt_ids(single_encoded, 0) != individual_prompt_ids[row]:
+                raise RuntimeError(f"singleton tokenizer changed prompt token bytes: prompt_id={prompt_id}")
+            row_seed = _trajectory_sampling_seed(
+                seed,
+                policy_version,
+                prompt_id,
+                prompt_text,
+                group_index,
+            )
+            with generation_rng(row_seed, device), torch.no_grad():
+                row_sequences = model.generate(**single_encoded, **generation_kwargs)
+            row_generated_ids = row_sequences.sequences[:, single_encoded.input_ids.shape[1] :]
+            generated_rows.append(
+                _trim_generated_row(
+                    0,
+                    row_generated_ids,
+                    row_sequences.scores,
+                    eos_token_ids=eos_token_ids,
+                    pad_token_id=tokenizer.pad_token_id,
+                )
+            )
+    else:
+        with generation_rng(seed, device), torch.no_grad():
+            sequences = model.generate(**encoded, **generation_kwargs)
+        prompt_width = encoded.input_ids.shape[1]
+        generated_ids = sequences.sequences[:, prompt_width:]
+        generated_rows = [
+            _trim_generated_row(
+                row,
+                generated_ids,
+                sequences.scores,
+                eos_token_ids=eos_token_ids,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+            for row in range(len(prompt_batch.prompt_ids))
+        ]
     for row, prompt_id in enumerate(prompt_batch.prompt_ids):
-        response_ids, logprobs = _trim_generated_row(
-            row,
-            generated_ids,
-            sequences.scores,
-            eos_token_ids=eos_token_ids,
-            pad_token_id=tokenizer.pad_token_id,
-        )
+        response_ids, logprobs = generated_rows[row]
         if not (len(response_ids) == len(logprobs)):
             raise RuntimeError("generated response IDs and behavior logprobs are misaligned")
         group_size = int(prompt_counts[prompt_id])
-        group_index = prompt_indices[prompt_id]
-        prompt_indices[prompt_id] += 1
+        group_index = group_indices[row]
         group_id = (
             "generation-group-" + sha256_value([prompt_id, policy_version, seed])[:16]
             if group_size > 1
@@ -132,7 +202,7 @@ def hf_generate_trajectories(
                 prompt_text=prompt_batch.prompt_texts[row],
                 input_ids=individual_prompt_ids[row],
                 response_ids=response_ids,
-                response_text=tokenizer.decode(response_ids, skip_special_tokens=False),
+                response_text=tokenizer.decode(response_ids, skip_special_tokens=True),
                 response_token_mask=[True] * len(response_ids),
                 behavior_policy_id=policy_id,
                 behavior_policy_revision=policy_revision,
@@ -148,6 +218,34 @@ def hf_generate_trajectories(
             )
         )
     return records
+
+
+def hf_generate_trajectories(
+    model: Any,
+    tokenizer: Any,
+    prompt_batch: PromptBatch,
+    policy_version: int,
+    seed: int,
+    *,
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    policy_id: str,
+    policy_revision: str,
+) -> list[TrajectoryRecord]:
+    with _temporary_left_padding(tokenizer):
+        return _hf_generate_trajectories_left_padded(
+            model,
+            tokenizer,
+            prompt_batch,
+            policy_version,
+            seed,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            policy_id=policy_id,
+            policy_revision=policy_revision,
+        )
 
 
 def build_proofgraph_hf_generator(

@@ -11,6 +11,7 @@ from posttrain_circuits.cli._common import (
     print_json,
 )
 from posttrain_circuits.core.config import compose_config, is_production_scale
+from posttrain_circuits.core.scientific_versions import ROLLOUT_GENERATION_VERSION
 from posttrain_circuits.core.types import TrajectoryBatch
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.models.loading import (
@@ -130,6 +131,9 @@ def main(argv: list[str] | None = None) -> None:
         top_k=top_k,
         extra_metadata={
             "store_kind": "teacher_scored_rollout_bank",
+            "rollout_generation_version": str(
+                source_manifest.get("rollout_generation_version", ROLLOUT_GENERATION_VERSION)
+            ),
             "source_bank_hash": str(source_manifest["sha256"]),
             "teacher_id": teacher_id,
             "teacher_revision": teacher_revision,

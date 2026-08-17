@@ -14,6 +14,7 @@ CIRCUIT_PROBE_SCHEMA_VERSION = "circuit-probe-v2-stage-sequence"
 DATASET_SCHEMA_VERSION = "proofgraph-dataset-v2-paired"
 PROBE_COHORT_SCHEMA_VERSION = "probe-cohort-v2-paired"
 TRAJECTORY_STORE_VERSION = 2
+ROLLOUT_GENERATION_VERSION = "hf-rollout-v2-leftpad-eosclean-per-trajectory-rng"
 
 
 def scientific_compatibility_fields() -> dict[str, str]:
