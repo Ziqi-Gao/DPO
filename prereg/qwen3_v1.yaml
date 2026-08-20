@@ -2,7 +2,7 @@ version: qwen3_v1
 status: frozen_after_CPU_acceptance_before_Qwen3_GPU_preflight
 inherits_scientific_design_from: core_v2
 does_not_modify: prereg/core_v2.yaml
-frozen_implementation_commit: 8e193d7c993ee017e88106e5ab1908a63390de0d
+frozen_implementation_commit: 806b54ccb9ce2eacf9be9fd759a71358212635e8
 
 active_models:
   primary_student:
