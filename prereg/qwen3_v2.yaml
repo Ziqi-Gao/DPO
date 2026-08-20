@@ -1,8 +1,8 @@
 version: qwen3_v2
-status: draft_pending_two_phase_freeze
+status: frozen_for_independent_review
 inherits_scientific_design_from: qwen3_v1
 does_not_modify: [prereg/core_v2.yaml, prereg/qwen3_v1.yaml]
-frozen_implementation_commit: PENDING_TWO_PHASE_FREEZE
+frozen_implementation_commit: b2d505b297dae1d56311616e9a68fb7df14b7bee
 
 active_models:
   primary_student: {id: Qwen/Qwen3-1.7B, revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e}
