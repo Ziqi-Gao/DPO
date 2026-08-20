@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from posttrain_circuits.core.config import validate_model_revision
 from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.models.prompt_protocol import chat_template_sha256, prompt_protocol_name
 
 _DTYPES: dict[str, torch.dtype] = {
     "float32": torch.float32,
@@ -30,6 +32,8 @@ class LoadedModel:
     requested_tokenizer_revision: str
     resolved_tokenizer_commit: str
     tokenizer_hash: str
+    chat_template_sha256: str
+    prompt_protocol: str
 
 
 def move_model_to_local_cuda(model: Any) -> Any:
@@ -70,12 +74,38 @@ def tokenizer_fingerprint(tokenizer: Any) -> str:
             "unk_token_id",
         )
     }
+    backend = getattr(tokenizer, "backend_tokenizer", None)
+    backend_serialized = backend.to_str() if backend is not None else ""
     return sha256_value(
         {
+            "tokenizer_class": type(tokenizer).__name__,
             "vocabulary": sorted((str(token), int(index)) for token, index in vocabulary.items()),
             "special_token_ids": special,
+            "chat_template_sha256": chat_template_sha256(tokenizer),
+            "backend_tokenizer_sha256": hashlib.sha256(backend_serialized.encode("utf-8")).hexdigest(),
         }
     )
+
+
+def _validate_tokenizer_protocol(tokenizer: Any, config: dict[str, Any]) -> tuple[str, str]:
+    fingerprint = tokenizer_fingerprint(tokenizer)
+    template_hash = chat_template_sha256(tokenizer)
+    protocol = prompt_protocol_name(config)
+    expected_fingerprint = str(config.get("tokenizer_fingerprint", ""))
+    if expected_fingerprint and fingerprint != expected_fingerprint:
+        raise ValueError(
+            "tokenizer fingerprint differs from the pinned protocol: "
+            f"expected={expected_fingerprint}, observed={fingerprint}"
+        )
+    prompt_config = config.get("prompt_protocol")
+    if isinstance(prompt_config, dict):
+        expected_template = str(prompt_config.get("chat_template_sha256", ""))
+        if expected_template and template_hash != expected_template:
+            raise ValueError(
+                "chat template differs from the pinned protocol: "
+                f"expected={expected_template}, observed={template_hash}"
+            )
+    return fingerprint, protocol
 
 
 def assert_tokenizer_compatible(student: Any, teacher: Any) -> str:
@@ -138,6 +168,7 @@ def load_model_and_tokenizer(
         if tokenizer.eos_token_id is None:
             raise ValueError("tokenizer requires either a pad token or EOS fallback")
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer_hash, protocol = _validate_tokenizer_protocol(tokenizer, config)
     model = AutoModelForCausalLM.from_pretrained(
         str(config["model_name_or_path"]),
         revision=model_revision,
@@ -167,5 +198,7 @@ def load_model_and_tokenizer(
             tokenizer,
             tokenizer_revision,
         ),
-        tokenizer_hash=tokenizer_fingerprint(tokenizer),
+        tokenizer_hash=tokenizer_hash,
+        chat_template_sha256=chat_template_sha256(tokenizer),
+        prompt_protocol=protocol,
     )

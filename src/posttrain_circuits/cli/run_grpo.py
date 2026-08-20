@@ -28,6 +28,7 @@ from posttrain_circuits.core.provenance import (
 from posttrain_circuits.core.seeding import RNGState
 from posttrain_circuits.data.splits import build_split, load_frozen_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.rewards.random_matched import validate_random_reward_calibration
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
@@ -223,6 +224,13 @@ def main(argv: list[str] | None = None) -> None:
         beta=float(config["supervision"]["beta"]),
         num_generations=int(config["supervision"]["num_generations"]),
         temperature=float(config["supervision"]["temperature"]),
+        top_p=float(config["supervision"].get("top_p", 1.0)),
+        top_k=(
+            int(config["supervision"]["top_k"]) if config["supervision"].get("top_k") is not None else None
+        ),
+        min_p=(
+            float(config["supervision"]["min_p"]) if config["supervision"].get("min_p") is not None else None
+        ),
         loss_type=str(config["supervision"]["loss_type"]),
         scale_rewards=config["supervision"]["scale_rewards"],
         gradient_accumulation_steps=int(
@@ -319,6 +327,8 @@ def main(argv: list[str] | None = None) -> None:
         reward_name=reward_name,
         seed=int(config["seed"]),
         matched_positive_rate=matched_positive_rate,
+        tokenizer=tokenizer,
+        model_config=model_config,
     )
     prompt_hash = sha256_value(rows)
     probe_input_ids: torch.Tensor | None = None
@@ -331,11 +341,17 @@ def main(argv: list[str] | None = None) -> None:
             validation_examples,
             tokenizer,
             max_completion_length=int(config["supervision"]["max_completion_length"]),
+            model_config=model_config,
         )
         initial_validation_metrics = evaluator(model)
         probe_examples = validation_examples[: min(16, len(validation_examples))]
         encoded_probe = tokenizer(
-            [ProofGraphTask().render(example) for example in probe_examples],
+            [
+                format_model_prompt(
+                    ProofGraphTask().render(example), tokenizer, model_config
+                ).model_facing_prompt
+                for example in probe_examples
+            ],
             add_special_tokens=False,
             return_tensors="pt",
             padding=True,
@@ -392,6 +408,14 @@ def main(argv: list[str] | None = None) -> None:
         },
         rollout_bank_hash=source_hash,
         prompt_schedule_hash=prompt_hash,
+        raw_prompt_schedule_hash=sha256_value([ProofGraphTask().render(example) for example in examples]),
+        model_facing_prompt_schedule_hash=prompt_hash,
+        prompt_protocol=(loaded.prompt_protocol if not is_tiny else "legacy_raw_v1"),
+        enable_thinking=False,
+        chat_template_sha256=(loaded.chat_template_sha256 if not is_tiny else "legacy-unrecorded"),
+        tokenizer_fingerprint=(loaded.tokenizer_hash if not is_tiny else "legacy-unrecorded"),
+        protocol_track=str(config.get("protocol_track", "core_v2")),
+        artifact_namespace=str(model_config.get("artifact_namespace", "legacy")),
     )
     try:
         from datasets import Dataset
@@ -483,6 +507,7 @@ def main(argv: list[str] | None = None) -> None:
             validation_examples,
             tokenizer,
             max_completion_length=int(config["supervision"]["max_completion_length"]),
+            model_config=model_config,
         )(trainer.model)
     output_kl = None
     if (
@@ -533,7 +558,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         evidence = {
             "format_version": 2,
-            "prereg_version": "core_v2",
+            "prereg_version": str(config.get("protocol_track", "core_v2")),
             "generator_version": ProofGraphTask.generator_version,
             "label_semantics": ProofGraphTask.label_semantics,
             "backend": "trl.GRPOTrainer",

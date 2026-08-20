@@ -84,9 +84,14 @@ def _validate_hf_structure(
     query_heads = int(config.num_attention_heads)
     kv_heads = int(config.num_key_value_heads)
     mapping = q_to_kv_head_mapping(query_heads, kv_heads)
-    head_width = int(config.hidden_size) // query_heads
-    if head_width * query_heads != int(config.hidden_size):
-        raise RuntimeError("hidden size is not divisible by query heads")
+    configured_head_dim = getattr(config, "head_dim", None)
+    head_width = (
+        int(configured_head_dim)
+        if configured_head_dim is not None and int(configured_head_dim) > 0
+        else int(config.hidden_size) // query_heads
+    )
+    if head_width < 1:
+        raise RuntimeError("attention head dimension must be positive")
     for index, layer in enumerate(layers):
         attention = layer.self_attn
         expected = {
@@ -145,6 +150,7 @@ def check_hf_identity_compatibility(
         baseline,
     )
     identity_passed = max(residual_error, mlp_error) <= tolerance
+    qk_norm = type(model).__name__ == "Qwen3ForCausalLM"
     report = CompatibilityReport(
         architecture=type(model).__name__,
         layer_count=len(layers),
@@ -157,6 +163,20 @@ def check_hf_identity_compatibility(
         hook_positions={
             "residual_stream": tuple(f"model.layers.{index}:output" for index in range(len(layers))),
             "mlp_output": tuple(f"model.layers.{index}.mlp:output" for index in range(len(layers))),
+            **(
+                {
+                    "query_projection": tuple(
+                        f"model.layers.{index}.self_attn.q_proj:output:pre_q_norm_pre_rope"
+                        for index in range(len(layers))
+                    ),
+                    "key_projection": tuple(
+                        f"model.layers.{index}.self_attn.k_proj:output:pre_k_norm_pre_rope"
+                        for index in range(len(layers))
+                    ),
+                }
+                if qk_norm
+                else {}
+            ),
         },
         residual_identity_error=residual_error,
         mlp_identity_error=mlp_error,
@@ -176,26 +196,42 @@ def check_hf_identity_compatibility(
 def build_transformerlens_qwen_from_hf(
     hf_model: Any,
 ) -> Any:
-    """Convert an already-loaded Qwen2 HF model without Hub access."""
+    """Convert an already-loaded Qwen2 or Qwen3 HF model without Hub access."""
 
-    if type(hf_model).__name__ != "Qwen2ForCausalLM":
-        raise ValueError("offline TransformerLens conversion currently supports Qwen2ForCausalLM")
+    architecture = type(hf_model).__name__
+    if architecture not in {"Qwen2ForCausalLM", "Qwen3ForCausalLM"}:
+        raise ValueError("offline TransformerLens conversion supports Qwen2ForCausalLM/Qwen3ForCausalLM")
     try:
         from transformer_lens import (
             HookedTransformer,
             HookedTransformerConfig,
         )
-        from transformer_lens.pretrained.weight_conversions.qwen2 import (
-            convert_qwen2_weights,
-        )
+
+        if architecture == "Qwen3ForCausalLM":
+            from transformer_lens.pretrained.weight_conversions.qwen3 import (
+                convert_qwen3_weights as convert_weights,
+            )
+        else:
+            from transformer_lens.pretrained.weight_conversions.qwen2 import (
+                convert_qwen2_weights as convert_weights,
+            )
     except ImportError as error:
         raise RuntimeError("TransformerLens compatibility requires the 'circuits' extra") from error
     config = hf_model.config
-    head_width = int(config.hidden_size) // int(config.num_attention_heads)
+    configured_head_dim = getattr(config, "head_dim", None)
+    head_width = (
+        int(configured_head_dim)
+        if configured_head_dim is not None and int(configured_head_dim) > 0
+        else int(config.hidden_size) // int(config.num_attention_heads)
+    )
     tl_config = HookedTransformerConfig(
         n_layers=int(config.num_hidden_layers),
         d_model=int(config.hidden_size),
-        n_ctx=int(config.max_position_embeddings),
+        n_ctx=(
+            min(2048, int(config.max_position_embeddings))
+            if architecture == "Qwen3ForCausalLM"
+            else int(config.max_position_embeddings)
+        ),
         d_head=head_width,
         n_heads=int(config.num_attention_heads),
         n_key_value_heads=int(config.num_key_value_heads),
@@ -210,11 +246,12 @@ def build_transformerlens_qwen_from_hf(
         rotary_base=int(config.rope_theta),
         final_rms=True,
         gated_mlp=True,
-        original_architecture="Qwen2ForCausalLM",
+        original_architecture=architecture,
         init_weights=False,
         device="cpu",
         dtype=torch.float32,
         default_prepend_bos=False,
+        use_qk_norm=architecture == "Qwen3ForCausalLM",
     )
     tl_model = HookedTransformer(
         tl_config,
@@ -222,7 +259,7 @@ def build_transformerlens_qwen_from_hf(
         move_to_device=True,
     ).eval()
     tl_model.load_and_process_state_dict(
-        convert_qwen2_weights(hf_model, tl_config),
+        convert_weights(hf_model, tl_config),
         fold_ln=False,
         center_writing_weights=False,
         center_unembed=False,

@@ -7,6 +7,7 @@ from collections.abc import Callable
 import torch
 from transformers import PreTrainedTokenizerBase
 
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.metrics import aggregate_verification
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
@@ -17,6 +18,7 @@ def build_proofgraph_evaluator(
     tokenizer: PreTrainedTokenizerBase,
     *,
     max_completion_length: int,
+    model_config: dict[str, object] | None = None,
 ) -> Callable[[torch.nn.Module], dict[str, float]]:
     if not examples:
         raise ValueError("evaluation requires at least one ProofGraph example")
@@ -32,7 +34,9 @@ def build_proofgraph_evaluator(
         results = []
         try:
             for example in examples:
-                prompt = task.render(example)
+                prompt = format_model_prompt(
+                    task.render(example), tokenizer, model_config
+                ).model_facing_prompt
                 encoded = tokenizer(
                     prompt,
                     add_special_tokens=False,

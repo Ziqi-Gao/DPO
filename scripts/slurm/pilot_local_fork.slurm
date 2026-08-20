@@ -8,15 +8,21 @@
 #SBATCH --signal=B:TERM@300
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+require_protocol_launch_environment
+model_config=${MODEL_CONFIG:?Set MODEL_CONFIG}
+teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
+pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 
 run_dir=${PILOT_RUN_DIR:?Set PILOT_RUN_DIR}
 checkpoint="${run_dir}/runs/canonical_sft/seed-42/checkpoints/step-00000120.pt"
 inputs="${run_dir}/local_fork/inputs"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_local_fork_inputs \
-  pilot=qwen_core model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
+  output_root="${OUTPUT_ROOT}" \
   --trajectory-store "${PILOT_COMMON_BANK:?Set PILOT_COMMON_BANK}" --output "${inputs}"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.create_fork_bundle \
-  pilot=qwen_core experiment=local_fork model=qwen25_1p5b teacher=qwen25_teacher_7b \
+  pilot="${pilot_config}" experiment=local_fork model="${model_config}" teacher="${teacher_config}" \
+  output_root="${OUTPUT_ROOT}" \
   task=proofgraph_main task.validation_split_path="${PILOT_VALIDATION_SPLIT:?}" \
   --checkpoint "${checkpoint}" --prompts "${inputs}/prompts.json" \
   --trajectory-store "${PILOT_COMMON_BANK}" --probe-set "${inputs}/probe_set.json" \

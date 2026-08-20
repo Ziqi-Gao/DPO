@@ -15,6 +15,7 @@ from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 from posttrain_circuits.data.splits import load_frozen_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.metrics import aggregate_verification
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample, VerificationResult
@@ -27,6 +28,7 @@ def _score_examples(
     examples: list[TaskExample],
     *,
     max_new_tokens: int,
+    model_config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, bool], list[VerificationResult]]:
     task = ProofGraphTask()
     device = next(model.parameters()).device
@@ -34,9 +36,12 @@ def _score_examples(
     scores = {}
     model.eval()
     for example in examples:
-        ids = tokenizer(task.render(example), add_special_tokens=False, return_tensors="pt").input_ids.to(
-            device
-        )
+        prompt = format_model_prompt(task.render(example), tokenizer, model_config)
+        ids = tokenizer(
+            prompt.model_facing_prompt,
+            add_special_tokens=False,
+            return_tensors="pt",
+        ).input_ids.to(device)
         generated = model.generate(
             input_ids=ids,
             max_new_tokens=max_new_tokens,
@@ -87,18 +92,34 @@ def main(argv: list[str] | None = None) -> None:
     load_checkpoint_into_hf_model(model, args.initial_checkpoint, expected_sha256=initial_hash)
     max_new_tokens = int(config["anti_shortcut"]["max_completion_length"])
     initial_probe, _ = _score_examples(
-        model, loaded.tokenizer, [*discovery, *validation], max_new_tokens=max_new_tokens
+        model,
+        loaded.tokenizer,
+        [*discovery, *validation],
+        max_new_tokens=max_new_tokens,
+        model_config=config["model"],
     )
     _, initial_validation_results = _score_examples(
-        model, loaded.tokenizer, task_validation, max_new_tokens=max_new_tokens
+        model,
+        loaded.tokenizer,
+        task_validation,
+        max_new_tokens=max_new_tokens,
+        model_config=config["model"],
     )
     calibration_hash = sha256_file(args.calibration_checkpoint)
     load_checkpoint_into_hf_model(model, args.calibration_checkpoint, expected_sha256=calibration_hash)
     calibrated_probe, _ = _score_examples(
-        model, loaded.tokenizer, [*discovery, *validation], max_new_tokens=max_new_tokens
+        model,
+        loaded.tokenizer,
+        [*discovery, *validation],
+        max_new_tokens=max_new_tokens,
+        model_config=config["model"],
     )
     _, calibrated_validation_results = _score_examples(
-        model, loaded.tokenizer, task_validation, max_new_tokens=max_new_tokens
+        model,
+        loaded.tokenizer,
+        task_validation,
+        max_new_tokens=max_new_tokens,
+        model_config=config["model"],
     )
     rows = {
         example_id: {
@@ -116,6 +137,12 @@ def main(argv: list[str] | None = None) -> None:
         "calibrated_validation_metrics": aggregate_verification(calibrated_validation_results),
         "initial_checkpoint_sha256": initial_hash,
         "initial_checkpoint_identity": str(config["model"]["model_revision"]),
+        "protocol_track": str(config.get("protocol_track", "core_v2")),
+        "artifact_namespace": str(config["model"].get("artifact_namespace", "legacy")),
+        "prompt_protocol": loaded.prompt_protocol,
+        "enable_thinking": False,
+        "chat_template_sha256": loaded.chat_template_sha256,
+        "tokenizer_fingerprint": loaded.tokenizer_hash,
         "calibration_checkpoint_sha256": calibration_hash,
         "source_split_hashes": {
             "discovery": discovery_manifest["sha256"],

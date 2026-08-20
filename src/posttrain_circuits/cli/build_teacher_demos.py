@@ -33,8 +33,10 @@ class SmokeProofTeacher:
         generation_seed: int,
         temperature: float,
         top_p: float,
+        top_k: int,
+        min_p: float,
     ) -> str:
-        del generation_seed, temperature, top_p
+        del generation_seed, temperature, top_p, top_k, min_p
         if candidate_index == 0:
             return self.task.canonical_target(example)
         return f"<proof>\n\n</proof>\n<answer>{1 - example.label}</answer>"
@@ -69,6 +71,7 @@ def main(argv: list[str] | None = None) -> None:
         candidate_generator = HfTeacherCandidateGenerator(
             move_model_to_local_cuda(loaded_teacher.model),
             tokenizer,
+            model_config=teacher_config,
         )
         teacher_id = loaded_teacher.model_id
         teacher_revision = loaded_teacher.requested_model_revision
@@ -86,6 +89,8 @@ def main(argv: list[str] | None = None) -> None:
         generation_seed=int(teacher_config["generation_seed"]),
         temperature=float(teacher_config["temperature"]),
         top_p=float(teacher_config["top_p"]),
+        top_k=int(teacher_config.get("top_k", 0)),
+        min_p=float(teacher_config.get("min_p", 0.0)),
         candidates_per_prompt=int(state_config["num_candidates"]),
     )
     result = generate_teacher_demonstrations(
@@ -93,6 +98,7 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer,
         candidate_generator,
         generation_config,
+        model_config=teacher_config,
     )
     manifest = write_teacher_demo_store(output, result)
     print_json({"output": str(output), "manifest": manifest})

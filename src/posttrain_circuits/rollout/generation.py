@@ -13,6 +13,11 @@ import torch
 
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.types import PromptBatch, TrajectoryRecord
+from posttrain_circuits.models.loading import tokenizer_fingerprint
+from posttrain_circuits.models.prompt_protocol import (
+    LEGACY_PROMPT_PROTOCOL,
+    format_model_prompts,
+)
 
 
 @contextmanager
@@ -93,14 +98,28 @@ def _hf_generate_trajectories_left_padded(
     top_p: float,
     policy_id: str,
     policy_revision: str,
+    top_k: int = 0,
+    min_p: float = 0.0,
+    model_config: dict[str, Any] | None = None,
 ) -> list[TrajectoryRecord]:
     device = next(model.parameters()).device
+    formatted_prompts = format_model_prompts(
+        prompt_batch.prompt_texts,
+        tokenizer,
+        model_config,
+    )
+    tokenizer_hash = tokenizer_fingerprint(tokenizer)
+    model_facing_texts = [prompt.model_facing_prompt for prompt in formatted_prompts]
+    add_special_tokens = formatted_prompts[0].prompt_protocol == LEGACY_PROMPT_PROTOCOL
     encoded = tokenizer(
-        list(prompt_batch.prompt_texts), return_tensors="pt", padding=True, add_special_tokens=True
+        model_facing_texts,
+        return_tensors="pt",
+        padding=True,
+        add_special_tokens=add_special_tokens,
     ).to(device)
     individual_prompt_ids = [
-        [int(value) for value in tokenizer(text, add_special_tokens=True)["input_ids"]]
-        for text in prompt_batch.prompt_texts
+        [int(value) for value in tokenizer(text, add_special_tokens=add_special_tokens)["input_ids"]]
+        for text in model_facing_texts
     ]
     for row, expected in enumerate(individual_prompt_ids):
         batched = _effective_prompt_ids(encoded, row)
@@ -116,7 +135,7 @@ def _hf_generate_trajectories_left_padded(
         "pad_token_id": tokenizer.pad_token_id,
     }
     if temperature > 0:
-        generation_kwargs.update(temperature=temperature, top_p=top_p)
+        generation_kwargs.update(temperature=temperature, top_p=top_p, top_k=top_k, min_p=min_p)
     records: list[TrajectoryRecord] = []
     prompt_counts = Counter(prompt_batch.prompt_ids)
     next_prompt_index: dict[str, int] = defaultdict(int)
@@ -136,7 +155,7 @@ def _hf_generate_trajectories_left_padded(
         for row, (prompt_id, prompt_text, group_index) in enumerate(
             zip(
                 prompt_batch.prompt_ids,
-                prompt_batch.prompt_texts,
+                model_facing_texts,
                 group_indices,
                 strict=True,
             )
@@ -145,7 +164,7 @@ def _hf_generate_trajectories_left_padded(
                 prompt_text,
                 return_tensors="pt",
                 padding=False,
-                add_special_tokens=True,
+                add_special_tokens=add_special_tokens,
             ).to(device)
             if _effective_prompt_ids(single_encoded, 0) != individual_prompt_ids[row]:
                 raise RuntimeError(f"singleton tokenizer changed prompt token bytes: prompt_id={prompt_id}")
@@ -194,12 +213,13 @@ def _hf_generate_trajectories_left_padded(
             if group_size > 1
             else ""
         )
+        formatted = formatted_prompts[row]
         records.append(
             TrajectoryRecord(
                 trajectory_id=f"traj-{sha256_value([prompt_id, policy_version, seed, row])[:16]}",
                 prompt_id=prompt_id,
                 split="train",
-                prompt_text=prompt_batch.prompt_texts[row],
+                prompt_text=formatted.model_facing_prompt,
                 input_ids=individual_prompt_ids[row],
                 response_ids=response_ids,
                 response_text=tokenizer.decode(response_ids, skip_special_tokens=True),
@@ -215,6 +235,15 @@ def _hf_generate_trajectories_left_padded(
                 generation_group_index=group_index,
                 prompt_group_size=group_size,
                 created_at=datetime.now(UTC).isoformat(),
+                raw_prompt_text=formatted.raw_prompt,
+                prompt_protocol=formatted.prompt_protocol,
+                enable_thinking=formatted.enable_thinking,
+                chat_template_sha256=formatted.chat_template_sha256,
+                raw_prompt_sha256=formatted.raw_prompt_sha256,
+                model_facing_prompt_sha256=formatted.model_facing_prompt_sha256,
+                tokenizer_fingerprint=tokenizer_hash,
+                top_k=top_k,
+                min_p=min_p,
             )
         )
     return records
@@ -232,6 +261,9 @@ def hf_generate_trajectories(
     top_p: float,
     policy_id: str,
     policy_revision: str,
+    top_k: int = 0,
+    min_p: float = 0.0,
+    model_config: dict[str, Any] | None = None,
 ) -> list[TrajectoryRecord]:
     with _temporary_left_padding(tokenizer):
         return _hf_generate_trajectories_left_padded(
@@ -245,6 +277,9 @@ def hf_generate_trajectories(
             top_p=top_p,
             policy_id=policy_id,
             policy_revision=policy_revision,
+            top_k=top_k,
+            min_p=min_p,
+            model_config=model_config,
         )
 
 
@@ -257,6 +292,9 @@ def build_proofgraph_hf_generator(
     top_p: float,
     policy_id: str,
     initial_policy_revision: str,
+    top_k: int = 0,
+    min_p: float = 0.0,
+    model_config: dict[str, Any] | None = None,
 ):
     """Bind HF generation to exact ProofGraph verification for online training."""
     from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
@@ -280,6 +318,9 @@ def build_proofgraph_hf_generator(
             top_p=top_p,
             policy_id=policy_id,
             policy_revision=(f"{initial_policy_revision}@policy-{policy_version}"),
+            top_k=top_k,
+            min_p=min_p,
+            model_config=model_config,
         )
         for record in records:
             example = examples_by_id[record.prompt_id]

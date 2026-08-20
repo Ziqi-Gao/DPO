@@ -49,7 +49,7 @@ from posttrain_circuits.circuits.plots import (
     write_attribution_patching_calibration,
 )
 from posttrain_circuits.circuits.tiny_eap_ig import TinyEapIgBackend
-from posttrain_circuits.utils.tiny_model import build_tiny_qwen
+from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_qwen3
 
 
 @pytest.mark.unit
@@ -102,6 +102,41 @@ def test_genuine_hf_transformerlens_parity_and_extraction_gate(
             tokens,
             tolerance=1e-6,
         )
+
+
+@pytest.mark.unit
+def test_tiny_qwen3_hf_transformerlens_parity_head_dim_gqa_and_qk_hook_semantics() -> None:
+    hf_model = build_tiny_qwen3(71).eval()
+    assert hf_model.config.head_dim == 8
+    assert hf_model.config.hidden_size // hf_model.config.num_attention_heads == 6
+    tokens = torch.tensor([[2, 4, 5]])
+    identity = check_hf_identity_compatibility(hf_model, tokens)
+    assert identity.architecture == "Qwen3ForCausalLM"
+    assert identity.q_to_kv_mapping == (0, 0, 1, 1)
+    assert identity.hook_positions["query_projection"] == (
+        "model.layers.0.self_attn.q_proj:output:pre_q_norm_pre_rope",
+    )
+    assert identity.hook_positions["key_projection"] == (
+        "model.layers.0.self_attn.k_proj:output:pre_k_norm_pre_rope",
+    )
+    metadata = component_metadata(hf_model)
+    assert metadata["layer.0.q_head.3"]["head_width"] == 8
+    assert metadata["layer.0.q_head.3"]["semantic_position"] == (
+        "q_projection_output_pre_q_norm_pre_rope:kv_head=1"
+    )
+    assert metadata["layer.0.k_head.1"]["semantic_position"] == ("k_projection_output_pre_k_norm_pre_rope")
+    tl_model = build_transformerlens_qwen_from_hf(hf_model)
+    assert tl_model.cfg.original_architecture == "Qwen3ForCausalLM"
+    assert tl_model.cfg.d_head == 8
+    assert tl_model.cfg.n_key_value_heads == 2
+    assert tl_model.cfg.use_qk_norm is True
+    report = require_transformerlens_parity(
+        hf_model,
+        tl_model,
+        tokens,
+        tolerance=1e-6,
+    )
+    assert report.transformerlens_parity_passed is True
 
 
 @pytest.mark.unit

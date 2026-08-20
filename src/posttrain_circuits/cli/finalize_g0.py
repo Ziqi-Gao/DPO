@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from posttrain_circuits.core.scientific_versions import (
     require_core_v2_artifact,
     scientific_compatibility_fields,
 )
+from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.tasks.proofgraph.label_leakage import validate_label_leakage_artifact
 from posttrain_circuits.teacher.evaluation import validate_teacher_readiness_artifact
 
@@ -57,7 +59,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
     base = _read(args.base_scores)
-    teacher = _read(args.teacher_store_manifest)
+    teacher = TrajectoryStore(args.teacher_store_manifest.parent).check_integrity()
     require_core_v2_artifact(teacher)
     initial_checkpoint_hash = sha256_file(args.initial_checkpoint)
     label_leakage = validate_label_leakage_artifact(_read(args.label_leakage))
@@ -174,12 +176,49 @@ def main(argv: list[str] | None = None) -> None:
     checks["gpu_preflight_binding"] = (
         gpu_preflight.get("git_commit") == git_commit
         and gpu_preflight.get("model_revision") == config["model"]["model_revision"]
+        and gpu_preflight.get("teacher_revision") == config["teacher"]["model_revision"]
     )
-    prereg_commit = require_git_output(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"])
+    prereg_path = str(config.get("prereg_path", "prereg/core_v2.yaml"))
+    prereg_commit = require_git_output(["log", "-n", "1", "--format=%H", "--", prereg_path])
+    if config.get("protocol_track") == "qwen3_v1":
+        qwen3_bindings = {
+            "protocol_track": "qwen3_v1",
+            "artifact_namespace": "qwen3-v1",
+            "prompt_protocol": "qwen3_non_thinking_v1",
+            "enable_thinking": False,
+            "chat_template_sha256": config["model"]["prompt_protocol"]["chat_template_sha256"],
+            "tokenizer_fingerprint": config["model"]["tokenizer_fingerprint"],
+        }
+        bound_artifacts = {
+            "base_scores": base,
+            "teacher_store": teacher,
+            "probe_manifest": probes,
+            "gpu_preflight": gpu_preflight,
+        }
+        checks["qwen3_protocol_bindings"] = all(
+            all(artifact.get(key) == value for key, value in qwen3_bindings.items())
+            for artifact in bound_artifacts.values()
+        )
+        query_hooks = compatibility.get("hook_positions", {}).get("query_projection", [])
+        key_hooks = compatibility.get("hook_positions", {}).get("key_projection", [])
+        checks["qwen3_qk_norm_hook_semantics"] = (
+            bool(query_hooks and key_hooks)
+            and all("pre_q_norm_pre_rope" in value for value in query_hooks)
+            and all("pre_k_norm_pre_rope" in value for value in key_hooks)
+        )
     payload: dict[str, Any] = {
         "format_version": 2,
         **scientific_compatibility_fields(),
         "phase": "G0",
+        "protocol_track": str(config.get("protocol_track", "core_v2")),
+        "protocol_prereg_version": str(config.get("protocol_track", "core_v2")),
+        "artifact_namespace": str(config["model"].get("artifact_namespace", "legacy")),
+        "prompt_protocol": str(config["model"].get("prompt_protocol", {}).get("name", "legacy_raw_v1")),
+        "enable_thinking": False,
+        "chat_template_sha256": str(
+            config["model"].get("prompt_protocol", {}).get("chat_template_sha256", "legacy-unrecorded")
+        ),
+        "tokenizer_fingerprint": str(config["model"].get("tokenizer_fingerprint", "legacy-unrecorded")),
         "passed": all(checks.values()),
         "checks": checks,
         "metrics": {
@@ -209,7 +248,25 @@ def main(argv: list[str] | None = None) -> None:
         "job_ids": [args.job_id],
         "git_commit": git_commit,
         "prereg_commit": prereg_commit,
+        "prereg_path": prereg_path,
+        "prereg_sha256": sha256_file(Path(prereg_path)),
         "resolved_config_sha256": sha256_value(config),
+        "model_revision": str(config["model"]["model_revision"]),
+        "teacher_revision": str(config["teacher"]["model_revision"]),
+        "launch_environment": {
+            name: os.environ.get(name)
+            for name in (
+                "MODEL_CONFIG",
+                "TEACHER_CONFIG",
+                "PRODUCTION_CONFIG",
+                "G0_CONFIG",
+                "PILOT_CONFIG",
+                "PROJECT_ROOT",
+                "PYTHON_BIN",
+                "ACCELERATE_BIN",
+                "OUTPUT_ROOT",
+            )
+        },
         "artifact_hashes": {
             str(path): sha256_file(path)
             for path in (

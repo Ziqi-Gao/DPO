@@ -14,3 +14,10 @@ cd "${PROJECT_ROOT}"
 export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 
+require_protocol_launch_environment() {
+  local name
+  for name in MODEL_CONFIG TEACHER_CONFIG PRODUCTION_CONFIG G0_CONFIG PILOT_CONFIG \
+    PROJECT_ROOT PYTHON_BIN ACCELERATE_BIN OUTPUT_ROOT; do
+    [[ -n "${!name:-}" ]] || { echo "Set ${name} explicitly" >&2; return 2; }
+  done
+}

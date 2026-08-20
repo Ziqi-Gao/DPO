@@ -9,12 +9,19 @@
 #SBATCH --array=0-7%1
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+require_protocol_launch_environment
+: "${PRODUCTION_CONFIG:?Set PRODUCTION_CONFIG}"
+: "${G0_CONFIG:?Set G0_CONFIG}"
+model_config=${MODEL_CONFIG:?Set MODEL_CONFIG}
+teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
+pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 
 cells=(offline_hard online_hard offline_soft online_soft_opd offline_verified_replay online_verified_replay canonical_sft canonical_grpo)
 cell=${cells[$SLURM_ARRAY_TASK_ID]}
 seed=42
 output="${PILOT_RUN_DIR:?Set PILOT_RUN_DIR}/runs/${cell}/seed-${seed}"
-common=(pilot=qwen_core model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main seed=42
+common=(pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main seed=42
+  output_root="${OUTPUT_ROOT}"
   task.validation_split_path="${PILOT_VALIDATION_SPLIT:?Set PILOT_VALIDATION_SPLIT}"
   anti_shortcut.report_path="${PILOT_ANTI_SHORTCUT:?Set PILOT_ANTI_SHORTCUT}"
   production_safety.probe_cohort_manifest="${PILOT_PROBE_MANIFEST:?Set PILOT_PROBE_MANIFEST}"

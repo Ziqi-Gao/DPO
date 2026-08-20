@@ -428,6 +428,16 @@ class FactorialTrainer:
             except ImportError:
                 optimizer_state = self.optimizer.state_dict()
             scheduler_state = self.scheduler.state_dict()
+            prompt_scheduler_states: list[dict[str, Any]] = [self.prompt_scheduler.state_dict()]
+            state_source_states: list[dict[str, Any]] = [self.state_source.state_dict()]
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                world_size = torch.distributed.get_world_size()
+                prompt_scheduler_states = [{} for _ in range(world_size)]
+                state_source_states = [{} for _ in range(world_size)]
+                torch.distributed.all_gather_object(
+                    prompt_scheduler_states, self.prompt_scheduler.state_dict()
+                )
+                torch.distributed.all_gather_object(state_source_states, self.state_source.state_dict())
             scaler = getattr(self._accelerator, "scaler", None)
             if self.is_main_process:
                 atomic_torch_save(
@@ -441,8 +451,10 @@ class FactorialTrainer:
                         "scaler": scaler.state_dict() if scaler is not None else None,
                         "accelerate_state_dir": str(state_dir.resolve()),
                         "rng": RNGState.capture().as_dict(),
-                        "prompt_scheduler": self.prompt_scheduler.state_dict(),
-                        "state_source": self.state_source.state_dict(),
+                        "prompt_scheduler": prompt_scheduler_states[0],
+                        "prompt_scheduler_by_rank": prompt_scheduler_states,
+                        "state_source": state_source_states[0],
+                        "state_source_by_rank": state_source_states,
                         "trainer_state": {
                             "cumulative_counts": self.cumulative_counts,
                             "accumulation_micro_step": self._accumulation_micro_step,
@@ -491,8 +503,15 @@ class FactorialTrainer:
                 raise ValueError("Accelerate resume requires an Accelerate/FSDP checkpoint export")
             self._accelerator.load_state(str(payload["accelerate_state_dir"]))
             self._accelerator.wait_for_everyone()
-            self.prompt_scheduler.load_state_dict(payload["prompt_scheduler"])
-            self.state_source.load_state_dict(payload["state_source"])
+            rank = int(getattr(self._accelerator, "process_index", 0))
+            prompt_states = payload.get("prompt_scheduler_by_rank")
+            source_states = payload.get("state_source_by_rank")
+            prompt_state = (
+                prompt_states[rank] if isinstance(prompt_states, list) else payload["prompt_scheduler"]
+            )
+            source_state = source_states[rank] if isinstance(source_states, list) else payload["state_source"]
+            self.prompt_scheduler.load_state_dict(prompt_state)
+            self.state_source.load_state_dict(source_state)
             self.global_step = int(payload["global_step"])
             self.online_rollout_round = int(payload["online_rollout_round"])
             self.cumulative_counts.update(payload.get("trainer_state", {}).get("cumulative_counts", {}))

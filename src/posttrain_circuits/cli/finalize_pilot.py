@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.analysis.factorial import match_validation_accuracy
+from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_manifest
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import require_git_output
+from posttrain_circuits.core.provenance import require_git_output, validate_run_manifest_payload
 from posttrain_circuits.core.readiness import validate_readiness_report
+from posttrain_circuits.data.splits import load_frozen_split
+from posttrain_circuits.data.trajectory_store import TrajectoryStore
 
 CELLS = (
     "offline_hard",
@@ -116,14 +119,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     g0 = _read(args.g0)
-    bank = _read(args.bank_manifest)
-    probes = _read(args.probe_manifest)
-    validation = _read(args.validation_manifest)
+    bank = TrajectoryStore(args.bank_manifest.parent).check_integrity()
+    probes = validate_probe_cohort_manifest(args.probe_manifest)
+    _, validation = load_frozen_split(
+        args.validation_manifest.parent,
+        expected_split="validation",
+    )
     manifests: dict[str, dict[str, Any]] = {}
     rows_by_cell: dict[str, list[dict[str, Any]]] = {}
     for cell in CELLS:
         root = args.run_dir / "runs" / cell / "seed-42"
-        manifests[cell] = _read(root / "manifest.json")
+        manifests[cell] = validate_run_manifest_payload(_read(root / "manifest.json"))
         rows_by_cell[cell] = _rows(root / "metrics.jsonl")
     local_fork = _read(args.run_dir / "local_fork" / "results.json")
     resume = _read(args.run_dir / "distributed_resume.json")
@@ -131,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
     dynamics = [_read(path) for path in dynamics_paths]
     exact_paths = sorted((args.run_dir / "circuits" / "final").glob("*/*/exact_patching.json"))
     exact = [_read(path) for path in exact_paths]
+    auxiliary_artifacts = [local_fork, resume, *dynamics, *exact]
     expected_initial_hash = str(probes.get("initial_student_checkpoint_hash", ""))
     readiness_path = args.g0.parent / "readiness" / "readiness.json"
     readiness = validate_readiness_report(
@@ -151,18 +158,16 @@ def main(argv: list[str] | None = None) -> None:
         ]
         anchor_accuracies[cell] = values[-1] if values else float("nan")
     transition_rows = [transition for artifact in dynamics for transition in artifact.get("transitions", [])]
-    random_margins = [
-        float(row["selected_vs_matched_random_cpr_margin"])
-        for row in exact
-        if row.get("selected_vs_matched_random_cpr_margin") is not None
-    ]
     validation_hash = str(validation.get("sha256", ""))
     matched = _matched_summary(rows_by_cell, validation_hash)
     checks = {
         "g0_passed_and_hash_valid": g0.get("passed") is True and _hash_valid(g0),
         "g0_git_binding": g0.get("git_commit") == require_git_output(["rev-parse", "HEAD"]),
+        "g0_all_registered_checks": bool(g0.get("checks"))
+        and all(value is True for value in g0.get("checks", {}).values()),
         "full_readiness_report": readiness.get("ready") is True,
         "all_training_cells_present": len(manifests) == len(CELLS),
+        "all_input_artifacts_hash_valid": all(_hash_valid(row) for row in auxiliary_artifacts),
         "all_artifacts_finite": all(_finite(rows) for rows in rows_by_cell.values())
         and all(_finite(row) for row in dynamics)
         and all(_finite(row) for row in exact),
@@ -179,11 +184,26 @@ def main(argv: list[str] | None = None) -> None:
         "local_fork_output_kl_matched": local_fork.get("valid_for_primary_analysis") is True,
         "distributed_resume": resume.get("passed") is True and int(resume.get("world_size", 0)) == 4,
         "circuit_artifact_count": len(dynamics) == 12 and len(exact) == 12,
-        "circuit_exceeds_noise": bool(transition_rows)
-        and any(float(row.get("excess_churn", float("-inf"))) > 0 for row in transition_rows),
-        "circuit_beats_random": bool(random_margins) and any(value > 0 for value in random_margins),
-        "mask_transfer_present": bool(transition_rows)
-        and all(bool(row.get("cross_checkpoint_mask_transfer")) for row in transition_rows),
+        "circuit_noise_floor_protocol_complete": bool(transition_rows)
+        and all(
+            all(
+                key in row
+                for key in (
+                    "excess_churn",
+                    "full_score_spearman_stability",
+                    "weighted_overlap",
+                    "cross_checkpoint_mask_transfer",
+                )
+            )
+            for row in transition_rows
+        ),
+        "exact_patching_protocol_complete": bool(exact)
+        and all(
+            "heldout_exact_patching_effects" in row
+            and "selected_vs_matched_random_cpr_margin" in row
+            and "attribution_patching_spearman" in row
+            for row in exact
+        ),
         "probe_cohorts_frozen": probes.get("frozen_before_training") is True,
         "formal_validation_bound": bool(validation_hash)
         and all(
@@ -197,6 +217,16 @@ def main(argv: list[str] | None = None) -> None:
         ),
         "matched_accuracy_summaries_complete": len(matched) == len(MATCHED_PAIRS)
         and all(bool(summary.get("valid")) or bool(summary.get("reason")) for summary in matched.values()),
+        "qwen3_protocol_bound": all(
+            row.get("protocol_track") == "qwen3_v1"
+            and row.get("artifact_namespace") == "qwen3-v1"
+            and row.get("prompt_protocol") == "qwen3_non_thinking_v1"
+            and row.get("enable_thinking") is False
+            and row.get("prereg_version") == "qwen3_v1"
+            for row in manifests.values()
+        )
+        if g0.get("protocol_track") == "qwen3_v1"
+        else True,
     }
     output_kl = {
         cell: _curve(rows, "output_kl_from_initial")

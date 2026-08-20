@@ -1,0 +1,55 @@
+groups:
+  model: qwen3_1p7b
+  teacher: qwen3_teacher_8b
+  task: proofgraph_main
+overrides:
+  output_root: outputs/qwen3-v1
+  protocol_track: qwen3_v1
+  prereg_path: prereg/qwen3_v1.yaml
+  seed: 42
+  trainer:
+    backend: accelerate
+    max_steps: 120
+    token_budget: 2000000
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    checkpoint_every: 120
+    evaluation_every: 20
+    validation_examples: 128
+  state_source:
+    store_path: outputs/qwen3-v1/rollout_banks/common_mu
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+  supervision:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+  task:
+    num_examples: 4096
+    validation_split_path: outputs/qwen3-v1/datasets/proofgraph-validation
+  anti_shortcut:
+    report_path: outputs/qwen3-v1/g0/anti_shortcut.json
+  circuit:
+    discovery_pair_count: 8
+    validation_pair_count: 8
+    mib_bootstrap_replicates: 5
+    prompt_bootstrap_samples: 200
+  production_safety:
+    readiness_report: outputs/qwen3-v1/readiness/readiness.json
+    probe_cohort_manifest: outputs/qwen3-v1/probes/proofgraph/manifest.json
+profile_kind: single_seed_qwen3_pipeline_pilot
+protocol_track: qwen3_v1
+artifact_namespace: qwen3-v1
+full_parameter_training: true
+seeds: [42]
+factorial_cells:
+  - offline_hard
+  - online_hard
+  - offline_soft
+  - online_soft_opd
+  - offline_verified_replay
+  - online_verified_replay
+anchors: [canonical_sft, canonical_grpo]

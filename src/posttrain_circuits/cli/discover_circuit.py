@@ -117,6 +117,7 @@ def _select_tokenizer_aligned_pairs(
     tokenizer: Any,
     tokenizer_id: str,
     tokenizer_revision: str,
+    model_config: dict[str, Any] | None = None,
 ) -> tuple[list[CounterfactualPair], dict[str, Any]]:
     """Deterministically skip tokenizer-incompatible pairs within a frozen candidate order."""
 
@@ -130,6 +131,7 @@ def _select_tokenizer_aligned_pairs(
                 tokenizer,
                 tokenizer_id=tokenizer_id,
                 tokenizer_revision=tokenizer_revision,
+                model_config=model_config,
             )
         except ValueError as error:
             rejected.append(
@@ -279,6 +281,7 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer=tokenizer,
         tokenizer_id=tokenizer_id,
         tokenizer_revision=tokenizer_revision,
+        model_config=config["model"],
     )
     validation_pairs, validation_alignment = _select_tokenizer_aligned_pairs(
         validation_candidates,
@@ -287,6 +290,7 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer=tokenizer,
         tokenizer_id=tokenizer_id,
         tokenizer_revision=tokenizer_revision,
+        model_config=config["model"],
     )
 
     semantic_specs = [
@@ -305,6 +309,7 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer,
         tokenizer_id=tokenizer_id,
         tokenizer_revision=tokenizer_revision,
+        model_config=config["model"],
     )
     tokenized_manifest = tokenized_probe_manifest(
         tokenized_specs, semantic_manifest_hash=str(semantic_manifest["sha256"])

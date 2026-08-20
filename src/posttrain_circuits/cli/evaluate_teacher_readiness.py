@@ -31,45 +31,75 @@ from posttrain_circuits.teacher.evaluation import (
 )
 
 
-def _prefix_score(model: object, spec: CircuitProbeSpec, *, side: str, top_k: int) -> TeacherPrefixScore:
-    if side == "clean":
-        input_ids = spec.clean_input_ids
-        target_ids = spec.clean_target_ids
-        positions = spec.clean_metric_positions
-        context = spec.clean_context
-        prefix_kind = "canonical"
-    else:
-        input_ids = spec.corrupt_input_ids
-        target_ids = spec.corrupt_target_ids
-        positions = spec.corrupt_metric_positions
-        context = spec.corrupt_context
-        prefix_kind = "corrupted_or_initial_student"
+def _selected_log_probs(
+    model: object,
+    input_ids: tuple[int, ...],
+    positions: tuple[int, ...],
+) -> torch.Tensor:
     device = next(model.parameters()).device  # type: ignore[attr-defined]
     tensor = torch.tensor([input_ids], dtype=torch.long, device=device)
     with torch.no_grad():
         logits = model(input_ids=tensor).logits[0]  # type: ignore[operator]
-    selected = logits[torch.tensor(positions, device=device)].float()
-    targets = torch.tensor(target_ids, dtype=torch.long, device=device)
-    top1 = bool(torch.equal(selected.argmax(-1), targets))
-    width = min(top_k, selected.shape[-1])
-    probabilities = selected.softmax(-1)
-    top_values, top_ids = probabilities.topk(width, dim=-1)
-    coverage = bool((top_ids == targets[:, None]).any(dim=-1).all())
-    minimum_mass = float(top_values.sum(-1).min().cpu())
-    context_length = (
-        len(spec.clean_input_ids if side == "clean" else spec.corrupt_input_ids) - len(target_ids) + 1
-    )
-    expected_positions = tuple(range(context_length - 1, context_length - 1 + len(target_ids)))
-    return TeacherPrefixScore(
-        probe_id=spec.probe_id,
-        stage=spec.stage,
-        prefix_kind=prefix_kind,
-        target_ids=tuple(target_ids),
-        top1_correct=top1,
-        target_in_topk=coverage,
-        minimum_topk_mass=minimum_mass,
-        causal_shift_valid=tuple(positions) == expected_positions and bool(context),
-    )
+    return logits[torch.tensor(positions, device=device)].float().log_softmax(-1)
+
+
+def _prefix_scores(model: object, spec: CircuitProbeSpec, *, top_k: int) -> tuple[TeacherPrefixScore, ...]:
+    clean_log_probs = _selected_log_probs(model, spec.clean_input_ids, spec.clean_metric_positions)
+    corrupt_log_probs = _selected_log_probs(model, spec.corrupt_input_ids, spec.corrupt_metric_positions)
+    rows = []
+    for side, selected, counterfactual_selected in (
+        ("clean", clean_log_probs, corrupt_log_probs),
+        ("corrupt", corrupt_log_probs, clean_log_probs),
+    ):
+        if side == "clean":
+            input_ids = spec.clean_input_ids
+            target_ids = spec.clean_target_ids
+            alternative_ids = spec.corrupt_target_ids
+            positions = spec.clean_metric_positions
+            context = spec.clean_context
+            prefix_kind = "canonical"
+        else:
+            input_ids = spec.corrupt_input_ids
+            target_ids = spec.corrupt_target_ids
+            alternative_ids = spec.clean_target_ids
+            positions = spec.corrupt_metric_positions
+            context = spec.corrupt_context
+            prefix_kind = "corrupted_or_initial_student"
+        device = selected.device
+        targets = torch.tensor(target_ids, dtype=torch.long, device=device)
+        alternatives = torch.tensor(alternative_ids, dtype=torch.long, device=device)
+        target_log_probability = float(selected.gather(-1, targets[:, None]).sum().detach().cpu())
+        alternative_log_probability = float(selected.gather(-1, alternatives[:, None]).sum().detach().cpu())
+        counterfactual_target_log_probability = float(
+            counterfactual_selected.gather(-1, targets[:, None]).sum().detach().cpu()
+        )
+        causal_shift = target_log_probability - counterfactual_target_log_probability
+        top1 = bool(torch.equal(selected.argmax(-1), targets))
+        width = min(top_k, selected.shape[-1])
+        probabilities = selected.exp()
+        top_values, top_ids = probabilities.topk(width, dim=-1)
+        coverage = bool((top_ids == targets[:, None]).any(dim=-1).all())
+        minimum_mass = float(top_values.sum(-1).min().cpu())
+        context_length = len(input_ids) - len(target_ids) + 1
+        expected_positions = tuple(range(context_length - 1, context_length - 1 + len(target_ids)))
+        structural_shift_valid = tuple(positions) == expected_positions and bool(context)
+        rows.append(
+            TeacherPrefixScore(
+                probe_id=spec.probe_id,
+                stage=spec.stage,
+                prefix_kind=prefix_kind,
+                target_ids=tuple(target_ids),
+                top1_correct=top1,
+                target_in_topk=coverage,
+                minimum_topk_mass=minimum_mass,
+                causal_shift_valid=structural_shift_valid and causal_shift > 0.0,
+                target_log_probability=target_log_probability,
+                alternative_log_probability=alternative_log_probability,
+                target_logprob_margin=target_log_probability - alternative_log_probability,
+                causal_shift_logprob=causal_shift,
+            )
+        )
+    return tuple(rows)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -101,6 +131,7 @@ def main(argv: list[str] | None = None) -> None:
         model,
         loaded.tokenizer,
         max_new_tokens=int(config["trainer"]["max_completion_length"]),
+        model_config=config["teacher"],
     )
     generated = {
         example.example_id: generator(
@@ -109,6 +140,8 @@ def main(argv: list[str] | None = None) -> None:
             generation_seed=int(config["seed"]) + index,
             temperature=0.0,
             top_p=1.0,
+            top_k=0,
+            min_p=0.0,
         )
         for index, example in enumerate(examples)
     }
@@ -126,6 +159,7 @@ def main(argv: list[str] | None = None) -> None:
                 loaded.tokenizer,
                 tokenizer_id=loaded.tokenizer_id,
                 tokenizer_revision=loaded.requested_tokenizer_revision,
+                model_config=config["teacher"],
             )
         except ValueError:
             continue
@@ -139,16 +173,17 @@ def main(argv: list[str] | None = None) -> None:
         loaded.tokenizer,
         tokenizer_id=loaded.tokenizer_id,
         tokenizer_revision=loaded.requested_tokenizer_revision,
+        model_config=config["teacher"],
     )
     tokenized_manifest = tokenized_probe_manifest(
         tokenized,
         semantic_manifest_hash=semantic["sha256"],
     )
     prefix_scores = [
-        _prefix_score(model, spec, side=side, top_k=args.top_k)
+        score
         for spec in tokenized
         if spec.stage in {"first_rule_selection", "intermediate_conclusion"}
-        for side in ("clean", "corrupt")
+        for score in _prefix_scores(model, spec, top_k=args.top_k)
     ]
     threshold_cfg = config["teacher_readiness"]
     thresholds = TeacherReadinessThresholds(

@@ -10,6 +10,11 @@ export PROJECT_ROOT=${PROJECT_ROOT:-${project_root}}
 export PYTHON_BIN=${PYTHON_BIN:-${project_root}/.venv/bin/python}
 export ACCELERATE_BIN=${ACCELERATE_BIN:-${project_root}/.venv/bin/accelerate}
 export OUTPUT_ROOT=${OUTPUT_ROOT:-outputs}
+export MODEL_CONFIG=${MODEL_CONFIG:-qwen25_1p5b}
+export TEACHER_CONFIG=${TEACHER_CONFIG:-qwen25_teacher_7b}
+export PRODUCTION_CONFIG=${PRODUCTION_CONFIG:-qwen_primary}
+export G0_CONFIG=${G0_CONFIG:-qwen_eap_separation}
+export PILOT_CONFIG=${PILOT_CONFIG:-qwen_core}
 export HF_HOME=${HF_HOME:-$(dirname "${project_root}")/.cache/huggingface}
 export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 g0_json=${G0_JSON:?Set G0_JSON to a passed g0.json}
@@ -17,7 +22,8 @@ run_id=${PILOT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 run_dir=${PILOT_RUN_DIR:-${OUTPUT_ROOT}/pilot/${run_id}}
 mkdir -p "${run_dir}/logs"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.prepare_pilot \
-  pilot=qwen_core experiment=offline_hard --g0 "${g0_json}" \
+  pilot="${PILOT_CONFIG}" model="${MODEL_CONFIG}" teacher="${TEACHER_CONFIG}" \
+  experiment=offline_hard output_root="${OUTPUT_ROOT}" --g0 "${g0_json}" \
   --output "${run_dir}/pilot_manifest.json"
 
 g0_root=$(dirname "${g0_json}")
@@ -42,7 +48,7 @@ for cell in offline_hard online_hard offline_soft online_soft_opd \
     extra+=(state_source.store_path="${PILOT_TEACHER_DEMOS}")
   fi
   "${PYTHON_BIN}" -m posttrain_circuits.cli.assert_production_config \
-    pilot=qwen_core experiment="${cell}" model=qwen25_1p5b teacher=qwen25_teacher_7b \
+    pilot="${PILOT_CONFIG}" experiment="${cell}" model="${MODEL_CONFIG}" teacher="${TEACHER_CONFIG}" \
     task=proofgraph_main task.validation_split_path="${PILOT_VALIDATION_SPLIT}" \
     production_safety.initial_checkpoint_path="${PILOT_INITIAL_CHECKPOINT}" \
     production_safety.initial_checkpoint_hash="${PILOT_INITIAL_CHECKPOINT_SHA256}" \

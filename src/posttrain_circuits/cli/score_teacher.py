@@ -73,9 +73,30 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("production teacher scoring requires --bank")
         source_store = TrajectoryStore(args.bank)
         source_manifest = source_store.check_integrity()
+        if config.get("protocol_track") == "qwen3_v1":
+            expected_source = {
+                "protocol_track": "qwen3_v1",
+                "artifact_namespace": "qwen3-v1",
+                "prompt_protocol": "qwen3_non_thinking_v1",
+                "enable_thinking": False,
+                "chat_template_sha256": config["model"]["prompt_protocol"]["chat_template_sha256"],
+                "tokenizer_hash": config["model"]["tokenizer_fingerprint"],
+            }
+            mismatches = {
+                key: {"expected": value, "observed": source_manifest.get(key)}
+                for key, value in expected_source.items()
+                if source_manifest.get(key) != value
+            }
+            if source_manifest.get("behavior_policy", {}).get("id") != config["model"]["model_name_or_path"]:
+                mismatches["behavior_policy.id"] = {
+                    "expected": config["model"]["model_name_or_path"],
+                    "observed": source_manifest.get("behavior_policy", {}).get("id"),
+                }
+            if mismatches:
+                raise ValueError(f"Qwen3 refused stale/cross-model rollout bank: {mismatches}")
         records = source_store.read()
         loaded = load_model_and_tokenizer(
-            config["model"],
+            config["teacher"],
             for_training=False,
         )
         source_tokenizer_hash = source_manifest.get("tokenizer_hash")
@@ -139,11 +160,17 @@ def main(argv: list[str] | None = None) -> None:
             "teacher_revision": teacher_revision,
             "resolved_teacher_commit": teacher_commit,
             "tokenizer_hash": tokenizer_hash,
+            "tokenizer_fingerprint": tokenizer_hash,
             "teacher_topk_mass": {
                 "minimum": min(retained_mass),
                 "mean": sum(retained_mass) / len(retained_mass),
                 "positions": len(retained_mass),
             },
+            "protocol_track": str(source_manifest.get("protocol_track", "core_v2")),
+            "artifact_namespace": str(source_manifest.get("artifact_namespace", "legacy")),
+            "prompt_protocol": str(source_manifest.get("prompt_protocol", "legacy_raw_v1")),
+            "enable_thinking": bool(source_manifest.get("enable_thinking", False)),
+            "chat_template_sha256": str(source_manifest.get("chat_template_sha256", "legacy-unrecorded")),
         },
     )
     print_json(

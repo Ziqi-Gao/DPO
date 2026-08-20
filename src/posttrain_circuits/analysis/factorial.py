@@ -113,7 +113,7 @@ class FactorialModelResult:
 def fit_factorial_interaction(
     observations: list[FactorialObservation],
 ) -> FactorialModelResult:
-    """Fit state-source x supervision OLS with seed-clustered or HC3 inference."""
+    """Fit the factorial estimand without pretending three seeds support cluster asymptotics."""
     import pandas as pd
     import statsmodels.formula.api as smf
 
@@ -152,9 +152,18 @@ def fit_factorial_interaction(
         f"C(state_source, Treatment(reference='{state_reference}')) * "
         f"C(supervision, Treatment(reference='{supervision_reference}'))"
     )
-    model = smf.ols(formula, data=frame)
     seed_count = int(frame["training_seed"].nunique())
-    if seed_count >= 3:
+    descriptive_only = seed_count < 5
+    if descriptive_only:
+        fit_frame = (
+            frame.groupby(["training_seed", "state_source", "supervision"], as_index=False)["outcome"]
+            .mean()
+            .copy()
+        )
+        result = smf.ols(formula, data=fit_frame).fit()
+        covariance_type = "descriptive_seed_level_no_asymptotic_inference"
+    else:
+        model = smf.ols(formula, data=frame)
         result = model.fit(
             cov_type="cluster",
             cov_kwds={
@@ -163,27 +172,33 @@ def fit_factorial_interaction(
             },
         )
         covariance_type = "cluster(training_seed)"
-    else:
-        result = model.fit(cov_type="HC3")
-        covariance_type = "HC3"
 
     terms = list(result.params.index)
-    p_values = [float(result.pvalues[term]) for term in terms if term != "Intercept"]
-    adjusted = iter(benjamini_hochberg(p_values))
-    confidence = result.conf_int(alpha=0.05)
+    if descriptive_only:
+        adjusted = iter([float("nan")] * max(0, len(terms) - 1))
+        confidence = None
+    else:
+        p_values = [float(result.pvalues[term]) for term in terms if term != "Intercept"]
+        adjusted = iter(benjamini_hochberg(p_values))
+        confidence = result.conf_int(alpha=0.05)
     coefficients = []
     for term in terms:
-        fdr_p_value = float(result.pvalues[term]) if term == "Intercept" else float(next(adjusted))
+        p_value = float("nan") if descriptive_only else float(result.pvalues[term])
+        fdr_p_value = (
+            float("nan")
+            if descriptive_only
+            else (float(result.pvalues[term]) if term == "Intercept" else float(next(adjusted)))
+        )
         coefficients.append(
             FactorialCoefficient(
                 term=term,
                 estimate=float(result.params[term]),
-                standard_error=float(result.bse[term]),
-                statistic=float(result.tvalues[term]),
-                p_value=float(result.pvalues[term]),
+                standard_error=(float("nan") if descriptive_only else float(result.bse[term])),
+                statistic=(float("nan") if descriptive_only else float(result.tvalues[term])),
+                p_value=p_value,
                 fdr_p_value=fdr_p_value,
-                ci_lower=float(confidence.loc[term, 0]),
-                ci_upper=float(confidence.loc[term, 1]),
+                ci_lower=(float("nan") if confidence is None else float(confidence.loc[term, 0])),
+                ci_upper=(float("nan") if confidence is None else float(confidence.loc[term, 1])),
             )
         )
     return FactorialModelResult(

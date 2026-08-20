@@ -41,3 +41,6 @@ teacher_readiness:
   minimum_teacher_first_rule_top1_accuracy: 0.80
   minimum_teacher_intermediate_top1_accuracy: 0.80
   minimum_teacher_topk_mass: 0.90
+  minimum_teacher_topk_target_coverage: 0.90
+  minimum_corrupted_prefix_recovery_accuracy: 0.70
+  minimum_causal_shift_logprob: 0.0

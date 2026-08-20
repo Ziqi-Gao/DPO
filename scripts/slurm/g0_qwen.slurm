@@ -8,7 +8,13 @@
 #SBATCH --signal=B:TERM@300
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+require_protocol_launch_environment
 
+model_config=${MODEL_CONFIG:?Set MODEL_CONFIG}
+teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
+: "${PRODUCTION_CONFIG:?Set PRODUCTION_CONFIG}"
+g0_config=${G0_CONFIG:?Set G0_CONFIG}
+pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 run_dir=${G0_RUN_DIR:?Set G0_RUN_DIR}
 data_root="${run_dir}/datasets"
 initial_checkpoint="${run_dir}/checkpoints/initial.pt"
@@ -25,17 +31,19 @@ mkdir -p "${run_dir}/logs" "${run_dir}/checkpoints" "${run_dir}/probes" "${run_d
 
 for split in validation circuit_discovery circuit_validation; do
   "${PYTHON_BIN}" -m posttrain_circuits.cli.generate_task \
-    g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
     split="${split}" --output "${data_root}/${split}" --confirm-production
 done
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.export_initial_checkpoint \
-  g0=qwen_eap_separation model=qwen25_1p5b --output "${initial_checkpoint}" --confirm-production
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" \
+  --output "${initial_checkpoint}" --confirm-production
 initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "${initial_checkpoint}")
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_teacher_demos \
-  pilot=qwen_core experiment=canonical_sft model=qwen25_1p5b teacher=qwen25_teacher_7b \
-  task=proofgraph_main task.num_examples=256 state_source.store_path="${demo_store}" \
+  pilot="${pilot_config}" experiment=canonical_sft model="${model_config}" teacher="${teacher_config}" \
+  task=proofgraph_main task.num_examples=256 task.validation_split_path="${data_root}/validation" \
+  state_source.store_path="${demo_store}" \
   --output "${demo_store}" --confirm-production
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.audit_label_leakage \
@@ -43,13 +51,13 @@ initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.
   --output "${run_dir}/label_leakage.json"
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_teacher_readiness \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   --validation-split "${data_root}/validation" --output "${run_dir}/teacher_readiness.json" \
   --confirm-production
 
 "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
-  -m posttrain_circuits.cli.train pilot=qwen_core experiment=canonical_sft \
-  model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  -m posttrain_circuits.cli.train pilot="${pilot_config}" experiment=canonical_sft \
+  model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   task.validation_split_path="${data_root}/validation" \
   production_safety.initial_checkpoint_path="${initial_checkpoint}" \
   production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
@@ -57,7 +65,7 @@ initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.
   --output "${calibration_run}" --confirm-production
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.score_probe_candidates \
-  g0=qwen_eap_separation model=qwen25_1p5b task=proofgraph_main \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   --initial-checkpoint "${initial_checkpoint}" --calibration-checkpoint "${calibration_checkpoint}" \
   --discovery-split "${data_root}/circuit_discovery" \
   --validation-split "${data_root}/circuit_validation" \
@@ -71,14 +79,14 @@ learnability_hash=$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sy
   --learnability-evidence-hash "${learnability_hash}" --limit-per-split 128 --output "${probe_root}"
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_rollout_bank \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   task.num_examples=256 --output "${bank_root}" --confirm-production
 "${PYTHON_BIN}" -m posttrain_circuits.cli.score_teacher \
-  experiment=offline_soft model=qwen25_teacher_7b task=proofgraph_main \
+  experiment=offline_soft model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   --bank "${bank_root}" --output "${teacher_bank}" --confirm-production
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_anti_shortcut \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   production_safety.initial_checkpoint_path="${initial_checkpoint}" \
   production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
   --output "${run_dir}/anti_shortcut.json" --confirm-production
@@ -86,13 +94,13 @@ learnability_hash=$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sy
 for stage in final_answer first_rule_selection; do
   stage_root="${circuit_root}/${stage}"
   "${PYTHON_BIN}" -m posttrain_circuits.cli.discover_circuit \
-    g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
     --stage "${stage}" --checkpoint "${initial_checkpoint}" \
     --probe-cohort-manifest "${probe_root}/manifest.json" \
     --initial-checkpoint "${initial_checkpoint}" --cohort base_capable \
     --output "${stage_root}/circuit.json" --confirm-production
   "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_circuit \
-    g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
     --circuit-artifact "${stage_root}/circuit.json" --checkpoint "${initial_checkpoint}" \
     --initial-checkpoint "${initial_checkpoint}" \
     --probe-cohort-manifest "${probe_root}/manifest.json" --cohort base_capable \
@@ -101,8 +109,8 @@ done
 
 for replica in a b; do
   "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
-    -m posttrain_circuits.cli.train pilot=qwen_core experiment=canonical_sft \
-    model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    -m posttrain_circuits.cli.train pilot="${pilot_config}" experiment=canonical_sft \
+    model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
     task.validation_split_path="${data_root}/validation" \
     production_safety.initial_checkpoint_path="${initial_checkpoint}" \
     production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
@@ -116,7 +124,7 @@ done
   --world-size 4 --output "${run_dir}/distributed_resume.json"
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.finalize_g0 \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   --base-scores "${probe_scores}" --teacher-store-manifest "${teacher_bank}/manifest.json" \
   --teacher-readiness "${run_dir}/teacher_readiness.json" \
   --label-leakage "${run_dir}/label_leakage.json" \

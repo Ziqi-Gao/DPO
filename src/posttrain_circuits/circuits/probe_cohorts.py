@@ -62,6 +62,7 @@ def build_probe_cohort_manifest(
     prereg_commit: str = "test-unfrozen",
     source_artifacts: dict[str, dict[str, str]] | None = None,
     candidate_selection_audit: dict[str, Any] | None = None,
+    protocol_bindings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Partition every frozen discovery/validation probe before training.
 
@@ -140,6 +141,7 @@ def build_probe_cohort_manifest(
         "candidate_selection_audit": candidate_selection_audit or {},
         "source_split_hashes": source_split_hashes,
         "cohorts": manifests,
+        **(protocol_bindings or {}),
     }
     payload["sha256"] = sha256_value(payload)
     return payload
@@ -171,6 +173,22 @@ def validate_probe_cohort_manifest(
         raise ValueError("pre-core-v2 probe cohort manifests are not accepted")
     if payload.get("frozen_before_training") is not True:
         raise ValueError("probe cohorts were not frozen before training")
+    if payload.get("protocol_track") == "qwen3_v1":
+        qwen3_expected = {
+            "artifact_namespace": "qwen3-v1",
+            "prompt_protocol": "qwen3_non_thinking_v1",
+            "enable_thinking": False,
+        }
+        mismatches = {
+            key: {"expected": value, "observed": payload.get(key)}
+            for key, value in qwen3_expected.items()
+            if payload.get(key) != value
+        }
+        for key in ("chat_template_sha256", "tokenizer_fingerprint"):
+            if len(str(payload.get(key, ""))) != 64:
+                mismatches[key] = {"expected": "64-hex binding", "observed": payload.get(key)}
+        if mismatches:
+            raise ValueError(f"Qwen3 probe cohort protocol binding mismatch: {mismatches}")
     if (
         not str(payload.get("git_commit", "")).strip()
         or not str(payload.get("prereg_commit", "")).strip()

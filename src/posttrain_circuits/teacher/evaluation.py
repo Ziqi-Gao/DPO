@@ -18,6 +18,9 @@ class TeacherReadinessThresholds:
     minimum_teacher_first_rule_top1_accuracy: float = 0.80
     minimum_teacher_intermediate_top1_accuracy: float = 0.80
     minimum_teacher_topk_mass: float = 0.90
+    minimum_teacher_topk_target_coverage: float = 0.90
+    minimum_corrupted_prefix_recovery_accuracy: float = 0.70
+    minimum_causal_shift_logprob: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,10 @@ class TeacherPrefixScore:
     target_in_topk: bool
     minimum_topk_mass: float
     causal_shift_valid: bool
+    target_log_probability: float = 0.0
+    alternative_log_probability: float = 0.0
+    target_logprob_margin: float = 0.0
+    causal_shift_logprob: float = 0.0
 
 
 def evaluate_teacher_readiness(
@@ -96,6 +103,7 @@ def evaluate_teacher_readiness(
     topk_coverage = sum(score.target_in_topk for score in all_scores) / len(all_scores) if all_scores else 0.0
     minimum_mass = min((score.minimum_topk_mass for score in all_scores), default=0.0)
     recovery = sum(score.top1_correct for score in corrupted) / len(corrupted) if corrupted else 0.0
+    minimum_causal_shift = min((score.causal_shift_logprob for score in all_scores), default=float("-inf"))
     metrics = {
         "answer_accuracy": answer_correct / len(examples),
         "exact_proof_accuracy": exact_proof_correct / len(examples),
@@ -105,6 +113,7 @@ def evaluate_teacher_readiness(
         "topk_target_coverage": topk_coverage,
         "minimum_topk_mass": minimum_mass,
         "corrupted_prefix_recovery_accuracy": recovery,
+        "minimum_causal_shift_logprob": minimum_causal_shift,
     }
     checks = {
         "answer_accuracy": metrics["answer_accuracy"] >= thresholds.minimum_teacher_answer_accuracy,
@@ -115,7 +124,13 @@ def evaluate_teacher_readiness(
         "intermediate_top1_accuracy": metrics["intermediate_top1_accuracy"]
         >= thresholds.minimum_teacher_intermediate_top1_accuracy,
         "topk_mass": metrics["minimum_topk_mass"] >= thresholds.minimum_teacher_topk_mass,
-        "causal_shift": bool(all_scores) and all(score.causal_shift_valid for score in all_scores),
+        "topk_target_coverage": metrics["topk_target_coverage"]
+        >= thresholds.minimum_teacher_topk_target_coverage,
+        "corrupted_prefix_recovery": metrics["corrupted_prefix_recovery_accuracy"]
+        >= thresholds.minimum_corrupted_prefix_recovery_accuracy,
+        "causal_shift": bool(all_scores)
+        and all(score.causal_shift_valid for score in all_scores)
+        and metrics["minimum_causal_shift_logprob"] >= thresholds.minimum_causal_shift_logprob,
     }
     likely_next_action = None
     if not all(checks.values()):

@@ -266,6 +266,87 @@ def test_teacher_correctness_and_mass_are_independent_hash_bound_gates() -> None
 
 
 @pytest.mark.unit
+def test_teacher_gate_requires_topk_coverage_corrupt_recovery_and_positive_causal_shift() -> None:
+    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+
+    task = ProofGraphTask()
+    examples = list(task.generate_pair(778, {"depth": 2}))
+    responses = {example.example_id: task.canonical_target(example) for example in examples}
+    bindings = {
+        "teacher_model_revision": "teacher-commit",
+        "tokenizer_revision": "tokenizer-commit",
+        "dataset_hash": "dataset-hash",
+        "prefix_probe_hash": "prefix-hash",
+        "code_commit": "code-commit",
+        "prereg_commit": "prereg-commit",
+    }
+
+    def scores(*, coverage: bool, recovery: bool, shift: float) -> list[TeacherPrefixScore]:
+        rows = []
+        for stage in ("first_rule_selection", "intermediate_conclusion"):
+            rows.extend(
+                [
+                    TeacherPrefixScore(
+                        probe_id=f"canonical-{stage}",
+                        stage=stage,
+                        prefix_kind="canonical",
+                        target_ids=(1,),
+                        top1_correct=True,
+                        target_in_topk=coverage,
+                        minimum_topk_mass=1.0,
+                        causal_shift_valid=shift > 0.0,
+                        causal_shift_logprob=shift,
+                    ),
+                    TeacherPrefixScore(
+                        probe_id=f"corrupt-{stage}",
+                        stage=stage,
+                        prefix_kind="corrupted_or_initial_student",
+                        target_ids=(1,),
+                        top1_correct=recovery,
+                        target_in_topk=coverage,
+                        minimum_topk_mass=1.0,
+                        causal_shift_valid=shift > 0.0,
+                        causal_shift_logprob=shift,
+                    ),
+                ]
+            )
+        return rows
+
+    thresholds = TeacherReadinessThresholds(
+        minimum_teacher_answer_accuracy=1.0,
+        minimum_teacher_exact_proof_accuracy=1.0,
+        minimum_teacher_first_rule_top1_accuracy=1.0,
+        minimum_teacher_intermediate_top1_accuracy=1.0,
+        minimum_teacher_topk_mass=1.0,
+        minimum_teacher_topk_target_coverage=1.0,
+        minimum_corrupted_prefix_recovery_accuracy=1.0,
+        minimum_causal_shift_logprob=0.01,
+    )
+    passing = evaluate_teacher_readiness(
+        examples,
+        responses,
+        scores(coverage=True, recovery=True, shift=0.1),
+        thresholds,
+        bindings=bindings,
+    )
+    assert passing["passed"] is True
+    for mutation, check in (
+        ({"coverage": False, "recovery": True, "shift": 0.1}, "topk_target_coverage"),
+        ({"coverage": True, "recovery": False, "shift": 0.1}, "corrupted_prefix_recovery"),
+        ({"coverage": True, "recovery": True, "shift": 0.0}, "causal_shift"),
+    ):
+        failed = evaluate_teacher_readiness(
+            examples,
+            responses,
+            scores(**mutation),
+            thresholds,
+            bindings=bindings,
+        )
+        assert failed["checks"][check] is False
+        assert failed["passed"] is False
+
+
+@pytest.mark.unit
 def test_trl_global_generation_batch_contract() -> None:
     settings = GrpoSettings(
         per_device_train_batch_size=2,

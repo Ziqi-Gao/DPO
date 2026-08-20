@@ -10,6 +10,11 @@ export PROJECT_ROOT=${PROJECT_ROOT:-${project_root}}
 export PYTHON_BIN=${PYTHON_BIN:-${project_root}/.venv/bin/python}
 export ACCELERATE_BIN=${ACCELERATE_BIN:-${project_root}/.venv/bin/accelerate}
 export OUTPUT_ROOT=${OUTPUT_ROOT:-outputs}
+export MODEL_CONFIG=${MODEL_CONFIG:-qwen25_1p5b}
+export TEACHER_CONFIG=${TEACHER_CONFIG:-qwen25_teacher_7b}
+export PRODUCTION_CONFIG=${PRODUCTION_CONFIG:-qwen_primary}
+export G0_CONFIG=${G0_CONFIG:-qwen_eap_separation}
+export PILOT_CONFIG=${PILOT_CONFIG:-qwen_core}
 export HF_HOME=${HF_HOME:-$(dirname "${project_root}")/.cache/huggingface}
 export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 run_id=${G0_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
@@ -19,7 +24,8 @@ gpu_preflight_json=${GPU_PREFLIGHT_JSON:?Set GPU_PREFLIGHT_JSON to a passed, has
 export GPU_PREFLIGHT_JSON="${gpu_preflight_json}"
 
 if ! "${PYTHON_BIN:-.venv/bin/python}" -m posttrain_circuits.cli.preflight_g0 \
-  g0=qwen_eap_separation model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  g0="${G0_CONFIG}" model="${MODEL_CONFIG}" teacher="${TEACHER_CONFIG}" task=proofgraph_main \
+  output_root="${OUTPUT_ROOT}" \
   --gpu-preflight "${gpu_preflight_json}" --output "${run_dir}/preflight.json"; then
   cp "${run_dir}/preflight.json" "${run_dir}/g0.json"
   cp "${run_dir}/preflight.md" "${run_dir}/g0.md"
@@ -29,7 +35,8 @@ fi
 partition=${SLURM_GPU_PARTITION:-${SLURM_PARTITION:?Set SLURM_PARTITION}}
 walltime=${SLURM_G0_TIME:-12:00:00}
 submission=$(sbatch --parsable --account="${SLURM_ACCOUNT:?Set SLURM_ACCOUNT}" \
-  --partition="${partition}" --time="${walltime}" --export=ALL,G0_RUN_DIR="${run_dir}" \
+  --partition="${partition}" --time="${walltime}" \
+  --job-name="${SLURM_G0_JOB_NAME:-opd-g0-qwen}" --export=ALL,G0_RUN_DIR="${run_dir}" \
   --output="${run_dir}/logs/g0-%j.out" --error="${run_dir}/logs/g0-%j.err" \
   scripts/slurm/g0_qwen.slurm)
 job_id=${submission%%;*}

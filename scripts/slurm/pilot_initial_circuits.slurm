@@ -8,17 +8,23 @@
 #SBATCH --array=0-1%4
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+require_protocol_launch_environment
+model_config=${MODEL_CONFIG:?Set MODEL_CONFIG}
+teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
+pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 
 cohorts=(base_capable challenge)
 cohort=${cohorts[$SLURM_ARRAY_TASK_ID]}
 root="${PILOT_RUN_DIR:?}/circuits/initial/${cohort}"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.discover_circuit \
-  pilot=qwen_core model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
+  output_root="${OUTPUT_ROOT}" \
   --checkpoint "${PILOT_INITIAL_CHECKPOINT:?}" --initial-checkpoint "${PILOT_INITIAL_CHECKPOINT}" \
   --probe-cohort-manifest "${PILOT_PROBE_MANIFEST:?}" --cohort "${cohort}" \
   --output "${root}/circuit.json" --confirm-production
 "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_circuit \
-  pilot=qwen_core model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+  pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
+  output_root="${OUTPUT_ROOT}" \
   --circuit-artifact "${root}/circuit.json" --checkpoint "${PILOT_INITIAL_CHECKPOINT}" \
   --initial-checkpoint "${PILOT_INITIAL_CHECKPOINT}" \
   --probe-cohort-manifest "${PILOT_PROBE_MANIFEST}" --cohort "${cohort}" \

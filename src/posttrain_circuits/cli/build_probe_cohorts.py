@@ -78,6 +78,10 @@ def main(argv: list[str] | None = None) -> None:
         for subset, source in source_names.items()
     }
     scores_payload = json.loads(args.scores.read_text(encoding="utf-8"))
+    score_digest = scores_payload.get("sha256")
+    score_content = {key: value for key, value in scores_payload.items() if key != "sha256"}
+    if score_digest != sha256_value(score_content):
+        raise ValueError("probe score artifact hash mismatch")
     score_rows = scores_payload.get("scores", scores_payload)
     if isinstance(score_rows, list):
         scores = {str(row["example_id"]): row for row in score_rows}
@@ -88,6 +92,8 @@ def main(argv: list[str] | None = None) -> None:
     candidate_audit = {}
     for subset, rows in split_rows.items():
         split_rows[subset], candidate_audit[subset] = _eligible_candidates(rows, scores)
+    protocol_track = str(scores_payload.get("protocol_track", "core_v2"))
+    prereg_path = "prereg/qwen3_v1.yaml" if protocol_track == "qwen3_v1" else "prereg/core_v2.yaml"
     manifest = build_probe_cohort_manifest(
         split_rows,
         scores,
@@ -96,7 +102,7 @@ def main(argv: list[str] | None = None) -> None:
         scoring_manifest_hash=sha256_file(args.scores),
         learnability_evidence_hash=args.learnability_evidence_hash,
         git_commit=require_git_output(["rev-parse", "HEAD"]),
-        prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"]),
+        prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", prereg_path]),
         source_artifacts={
             subset: {
                 "path": str((args.splits_root / source).resolve()),
@@ -105,6 +111,18 @@ def main(argv: list[str] | None = None) -> None:
             for subset, source in source_names.items()
         },
         candidate_selection_audit=candidate_audit,
+        protocol_bindings={
+            key: scores_payload[key]
+            for key in (
+                "protocol_track",
+                "artifact_namespace",
+                "prompt_protocol",
+                "enable_thinking",
+                "chat_template_sha256",
+                "tokenizer_fingerprint",
+            )
+            if key in scores_payload
+        },
     )
     write_probe_cohort_manifest(args.output, manifest)
     print_json({"output": str(args.output), "manifest": manifest})

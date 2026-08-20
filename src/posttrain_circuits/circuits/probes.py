@@ -10,6 +10,7 @@ import torch
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.types import CounterfactualPair
 from posttrain_circuits.models.loading import tokenizer_fingerprint
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.tasks.proofgraph.generator import GENERATOR_VERSION, LABEL_SEMANTICS
 from posttrain_circuits.tasks.proofgraph.renderer import render_proof_literal, render_step
 
@@ -32,6 +33,10 @@ class SemanticCircuitProbeSpec:
     corrupt_context: str
     clean_target: str
     corrupt_target: str
+    clean_raw_prompt: str
+    corrupt_raw_prompt: str
+    clean_response_prefix: str
+    corrupt_response_prefix: str
     corruption_type: str
     corruption_class: str
     changed_semantic_field: str
@@ -75,6 +80,13 @@ class CircuitProbeSpec:
     tokenizer_id: str
     tokenizer_revision: str
     tokenizer_hash: str
+    prompt_protocol: str
+    enable_thinking: bool
+    chat_template_sha256: str
+    clean_raw_prompt_sha256: str
+    corrupt_raw_prompt_sha256: str
+    clean_model_facing_prompt_sha256: str
+    corrupt_model_facing_prompt_sha256: str
     alignment_checks: tuple[tuple[str, bool], ...]
     tokenized_pair_hash: str
     schema_version: str = CIRCUIT_PROBE_SCHEMA_VERSION
@@ -108,14 +120,15 @@ class CircuitProbeSpec:
             raise ValueError("final-answer probes must target answer bits")
 
 
-def _stage_context(pair: CounterfactualPair, stage: str, *, clean: bool) -> tuple[str, str]:
+def _stage_context(pair: CounterfactualPair, stage: str, *, clean: bool) -> tuple[str, str, str]:
     example = pair.clean_example if clean else pair.corrupt_example
     prompt = pair.clean_prompt if clean else pair.corrupt_prompt
     proof = example.canonical_proof
     if not proof:
         raise ValueError("every signed circuit probe requires a nonempty canonical proof")
     if stage == "first_rule_selection":
-        return f"{prompt}\n\n<proof>\nS01: ", proof[0].rule_id
+        prefix = "\n\n<proof>\nS01: "
+        return f"{prompt}{prefix}", proof[0].rule_id, prefix
     if stage == "intermediate_conclusion":
         first = proof[0]
         expected = example.query if example.label == 1 else example.query.flipped()
@@ -123,10 +136,11 @@ def _stage_context(pair: CounterfactualPair, stage: str, *, clean: bool) -> tupl
             raise ValueError("intermediate-conclusion probes require proof depth above one")
         citations = ",".join(first.citations)
         context = f"{prompt}\n\n<proof>\n{first.step_id}: {first.rule_id}({citations}) -> "
-        return context, render_proof_literal(first)
+        return context, render_proof_literal(first), context[len(prompt) :]
     if stage == "final_answer":
         body = "\n".join(render_step(step) for step in proof)
-        return f"{prompt}\n\n<proof>\n{body}\n</proof>\n<answer>", str(example.label)
+        context = f"{prompt}\n\n<proof>\n{body}\n</proof>\n<answer>"
+        return context, str(example.label), context[len(prompt) :]
     raise ValueError(f"unknown circuit stage {stage!r}")
 
 
@@ -159,8 +173,8 @@ def build_semantic_probe_specs(
             }
         )
         for stage in PROBE_STAGES:
-            clean_context, clean_target = _stage_context(pair, stage, clean=True)
-            corrupt_context, corrupt_target = _stage_context(pair, stage, clean=False)
+            clean_context, clean_target, clean_prefix = _stage_context(pair, stage, clean=True)
+            corrupt_context, corrupt_target, corrupt_prefix = _stage_context(pair, stage, clean=False)
             if clean_target == corrupt_target:
                 raise ValueError(f"stage {stage} did not change its behavioral target")
             specs.append(
@@ -173,6 +187,10 @@ def build_semantic_probe_specs(
                     corrupt_context=corrupt_context,
                     clean_target=clean_target,
                     corrupt_target=corrupt_target,
+                    clean_raw_prompt=pair.clean_prompt,
+                    corrupt_raw_prompt=pair.corrupt_prompt,
+                    clean_response_prefix=clean_prefix,
+                    corrupt_response_prefix=corrupt_prefix,
                     corruption_type=pair.corruption_type,
                     corruption_class=corruption_class,
                     changed_semantic_field=pair.changed_semantic_field,
@@ -265,6 +283,7 @@ def tokenize_probe_specs(
     *,
     tokenizer_id: str,
     tokenizer_revision: str,
+    model_config: dict[str, Any] | None = None,
 ) -> list[CircuitProbeSpec]:
     content = {key: value for key, value in semantic_manifest.items() if key != "sha256"}
     if semantic_manifest.get("sha256") != sha256_value(content):
@@ -273,19 +292,21 @@ def tokenize_probe_specs(
     tokenized = []
     for row in semantic_manifest["probes"]:
         semantic = SemanticCircuitProbeSpec(**row)
+        clean_formatted = format_model_prompt(semantic.clean_raw_prompt, tokenizer, model_config)
+        corrupt_formatted = format_model_prompt(semantic.corrupt_raw_prompt, tokenizer, model_config)
+        clean_context = clean_formatted.model_facing_prompt + semantic.clean_response_prefix
+        corrupt_context = corrupt_formatted.model_facing_prompt + semantic.corrupt_response_prefix
         clean_ids, clean_targets, clean_positions, clean_text = _teacher_forced_encoding(
-            tokenizer, semantic.clean_context, semantic.clean_target
+            tokenizer, clean_context, semantic.clean_target
         )
         corrupt_ids, corrupt_targets, corrupt_positions, corrupt_text = _teacher_forced_encoding(
-            tokenizer, semantic.corrupt_context, semantic.corrupt_target
+            tokenizer, corrupt_context, semantic.corrupt_target
         )
-        clean_query_spans = _token_spans(tokenizer, semantic.clean_context, (semantic.query_text,))
-        corrupt_query_spans = _token_spans(tokenizer, semantic.corrupt_context, (semantic.query_text,))
-        clean_identifier_spans = _token_spans(
-            tokenizer, semantic.clean_context, semantic.fact_ids + semantic.rule_ids
-        )
+        clean_query_spans = _token_spans(tokenizer, clean_context, (semantic.query_text,))
+        corrupt_query_spans = _token_spans(tokenizer, corrupt_context, (semantic.query_text,))
+        clean_identifier_spans = _token_spans(tokenizer, clean_context, semantic.fact_ids + semantic.rule_ids)
         corrupt_identifier_spans = _token_spans(
-            tokenizer, semantic.corrupt_context, semantic.fact_ids + semantic.rule_ids
+            tokenizer, corrupt_context, semantic.fact_ids + semantic.rule_ids
         )
         clean_identifier_positions = tuple(
             sorted({index for span in clean_identifier_spans for index in span})
@@ -301,8 +322,8 @@ def tokenize_probe_specs(
             ("metric_positions_aligned", clean_positions == corrupt_positions),
             (
                 "output_prefix_shape_aligned",
-                len(tokenizer.encode(semantic.clean_context, add_special_tokens=False))
-                == len(tokenizer.encode(semantic.corrupt_context, add_special_tokens=False)),
+                len(tokenizer.encode(clean_context, add_special_tokens=False))
+                == len(tokenizer.encode(corrupt_context, add_special_tokens=False)),
             ),
         )
         base = {
@@ -310,8 +331,8 @@ def tokenize_probe_specs(
             "semantic_pair_group_id": semantic.semantic_pair_group_id,
             "subset": semantic.subset,
             "stage": semantic.stage,
-            "clean_context": semantic.clean_context,
-            "corrupt_context": semantic.corrupt_context,
+            "clean_context": clean_context,
+            "corrupt_context": corrupt_context,
             "clean_model_input": clean_text,
             "corrupt_model_input": corrupt_text,
             "clean_target": semantic.clean_target,
@@ -333,6 +354,13 @@ def tokenize_probe_specs(
             "tokenizer_id": tokenizer_id,
             "tokenizer_revision": tokenizer_revision,
             "tokenizer_hash": tokenizer_hash,
+            "prompt_protocol": clean_formatted.prompt_protocol,
+            "enable_thinking": clean_formatted.enable_thinking,
+            "chat_template_sha256": clean_formatted.chat_template_sha256,
+            "clean_raw_prompt_sha256": clean_formatted.raw_prompt_sha256,
+            "corrupt_raw_prompt_sha256": corrupt_formatted.raw_prompt_sha256,
+            "clean_model_facing_prompt_sha256": clean_formatted.model_facing_prompt_sha256,
+            "corrupt_model_facing_prompt_sha256": corrupt_formatted.model_facing_prompt_sha256,
             "alignment_checks": checks,
         }
         pair_hash = sha256_value(base)
@@ -360,6 +388,9 @@ def tokenized_probe_manifest(
         "tokenizer_id": specs[0].tokenizer_id,
         "tokenizer_revision": specs[0].tokenizer_revision,
         "tokenizer_hash": specs[0].tokenizer_hash,
+        "prompt_protocol": specs[0].prompt_protocol,
+        "enable_thinking": specs[0].enable_thinking,
+        "chat_template_sha256": specs[0].chat_template_sha256,
         "probe_count": len(rows),
         "stages": list(PROBE_STAGES),
         "subsets": sorted({spec.subset for spec in specs}),

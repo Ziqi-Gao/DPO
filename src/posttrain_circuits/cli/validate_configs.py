@@ -32,27 +32,43 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     rows = []
-    for experiment, (state_source, supervision) in FACTORIAL_CELLS.items():
-        config = compose_config(
-            [f"experiment={experiment}"],
-            config_root=args.config_root,
-        )
-        actual = (
-            config["state_source"]["name"],
-            config["supervision"]["name"],
-        )
-        if actual != (state_source, supervision):
-            raise RuntimeError(
-                f"{experiment} resolved {actual}, expected {(state_source, supervision)}",
+    tracks = {
+        "qwen2p5_core_v2": [],
+        "qwen3_v1": [
+            "production=qwen3_primary",
+            "model=qwen3_1p7b",
+            "teacher=qwen3_teacher_8b",
+            "g0=qwen3_eap_separation",
+            "pilot=qwen3_core",
+        ],
+    }
+    for track, track_overrides in tracks.items():
+        for experiment, (state_source, supervision) in FACTORIAL_CELLS.items():
+            config = compose_config(
+                [*track_overrides, f"experiment={experiment}"],
+                config_root=args.config_root,
             )
-        rows.append(
-            {
-                "experiment": experiment,
-                "state_source": actual[0],
-                "supervision": actual[1],
-                "resolved_config_sha256": sha256_value(config),
-            }
-        )
+            actual = (
+                config["state_source"]["name"],
+                config["supervision"]["name"],
+            )
+            if actual != (state_source, supervision):
+                raise RuntimeError(
+                    f"{track}/{experiment} resolved {actual}, expected {(state_source, supervision)}",
+                )
+            rows.append(
+                {
+                    "track": track,
+                    "experiment": experiment,
+                    "state_source": actual[0],
+                    "supervision": actual[1],
+                    "model": config["model"].get("model_name_or_path", config["model"].get("model_id")),
+                    "teacher": config["teacher"].get(
+                        "model_name_or_path", config["teacher"].get("teacher_id")
+                    ),
+                    "resolved_config_sha256": sha256_value(config),
+                }
+            )
     report = {
         "status": "passed",
         "cell_count": len(rows),

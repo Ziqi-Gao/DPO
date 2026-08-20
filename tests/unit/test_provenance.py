@@ -69,8 +69,18 @@ def test_formal_run_requires_clean_frozen_preregistration() -> None:
         prereg_git_commit="prereg-commit",
         prereg_sha256="prereg-sha",
         prereg_dirty=False,
+        dirty_working_tree=False,
     )
     frozen.validate(require_git=True)
+
+    source_dirty = _manifest(
+        prereg_git_commit="prereg-commit",
+        prereg_sha256="prereg-sha",
+        prereg_dirty=False,
+        dirty_working_tree=True,
+    )
+    with pytest.raises(RuntimeError, match="source working tree is dirty"):
+        source_dirty.validate(require_git=True)
 
 
 @pytest.mark.unit

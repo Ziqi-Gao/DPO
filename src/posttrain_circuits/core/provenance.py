@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import os
 import platform
 import subprocess
 from dataclasses import asdict, dataclass, field
@@ -14,11 +15,27 @@ from typing import Any
 import torch
 import yaml
 
-from posttrain_circuits.core.hashing import sha256_file
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
 
 PREREG_PATH = Path("prereg/core_v2.yaml")
 PREREG_VERSION = "core_v2"
+
+_LAUNCH_ENVIRONMENT_FIELDS = (
+    "MODEL_CONFIG",
+    "TEACHER_CONFIG",
+    "PRODUCTION_CONFIG",
+    "G0_CONFIG",
+    "PILOT_CONFIG",
+    "PROJECT_ROOT",
+    "PYTHON_BIN",
+    "ACCELERATE_BIN",
+    "OUTPUT_ROOT",
+)
+
+
+def _launch_environment() -> dict[str, str | None]:
+    return {name: os.environ.get(name) for name in _LAUNCH_ENVIRONMENT_FIELDS}
 
 
 def git_output(args: list[str]) -> str | None:
@@ -67,16 +84,16 @@ def dependency_versions() -> dict[str, str]:
     return dict(sorted(versions.items()))
 
 
-def _prereg_commit() -> str:
-    return _git(["log", "-n", "1", "--format=%H", "--", str(PREREG_PATH)]) or "unavailable"
+def _prereg_commit(path: Path = PREREG_PATH) -> str:
+    return _git(["log", "-n", "1", "--format=%H", "--", str(path)]) or "unavailable"
 
 
-def _prereg_sha256() -> str:
-    return sha256_file(PREREG_PATH) if PREREG_PATH.is_file() else "unavailable"
+def _prereg_sha256(path: Path = PREREG_PATH) -> str:
+    return sha256_file(path) if path.is_file() else "unavailable"
 
 
-def _prereg_dirty() -> bool:
-    return bool(_git(["status", "--porcelain", "--", str(PREREG_PATH)]) or "")
+def _prereg_dirty(path: Path = PREREG_PATH) -> bool:
+    return bool(_git(["status", "--porcelain", "--", str(path)]) or "")
 
 
 @dataclass
@@ -93,6 +110,14 @@ class RunManifest:
     dataset_hashes: dict[str, str]
     rollout_bank_hash: str
     prompt_schedule_hash: str
+    raw_prompt_schedule_hash: str = "legacy-unrecorded"
+    model_facing_prompt_schedule_hash: str = "legacy-unrecorded"
+    prompt_protocol: str = "legacy_raw_v1"
+    enable_thinking: bool = False
+    chat_template_sha256: str = "legacy-unrecorded"
+    tokenizer_fingerprint: str = "legacy-unrecorded"
+    protocol_track: str = "core_v2"
+    artifact_namespace: str = "legacy"
     teacher_id: str | None = None
     teacher_revision: str | None = None
     resolved_teacher_commit: str | None = None
@@ -104,10 +129,20 @@ class RunManifest:
     dirty_working_tree: bool = field(default_factory=lambda: bool(_git(["status", "--porcelain"]) or ""))
     package_versions: dict[str, str] = field(default_factory=dict)
     environment: dict[str, Any] = field(default_factory=dict)
+    launch_environment: dict[str, str | None] = field(default_factory=_launch_environment)
     prereg_git_commit: str = field(default_factory=_prereg_commit)
     prereg_sha256: str = field(default_factory=_prereg_sha256)
     prereg_dirty: bool = field(default_factory=_prereg_dirty)
     prereg_version: str = PREREG_VERSION
+    prereg_path: str = str(PREREG_PATH)
+
+    def bind_preregistration(self, path: Path, *, version: str) -> None:
+        self.prereg_path = str(path)
+        self.prereg_version = version
+        self.prereg_git_commit = _prereg_commit(path)
+        self.prereg_sha256 = _prereg_sha256(path)
+        self.prereg_dirty = _prereg_dirty(path)
+        self.dirty_working_tree = bool(_git(["status", "--porcelain"]) or "")
 
     def validate(self, *, require_git: bool) -> None:
         required_text = {
@@ -138,8 +173,41 @@ class RunManifest:
             raise RuntimeError(
                 "formal run refused because prereg/core_v2.yaml differs from its frozen Git commit"
             )
-        if self.prereg_version != PREREG_VERSION:
-            raise RuntimeError("formal run refused because its preregistration is not core_v2")
+        if require_git and self.dirty_working_tree:
+            raise RuntimeError("formal run refused because the source working tree is dirty")
+        if self.prereg_version not in {PREREG_VERSION, "qwen3_v1"}:
+            raise RuntimeError("formal run refused because its preregistration version is unknown")
+        if self.protocol_track == "qwen3_v1":
+            required_qwen3 = {
+                "prereg_version": self.prereg_version == "qwen3_v1",
+                "prereg_path": self.prereg_path == "prereg/qwen3_v1.yaml",
+                "prompt_protocol": self.prompt_protocol == "qwen3_non_thinking_v1",
+                "thinking_disabled": self.enable_thinking is False,
+                "chat_template": len(self.chat_template_sha256) == 64,
+                "tokenizer_fingerprint": len(self.tokenizer_fingerprint) == 64,
+                "raw_prompt_hash": len(self.raw_prompt_schedule_hash) == 64,
+                "model_facing_prompt_hash": len(self.model_facing_prompt_schedule_hash) == 64,
+                "namespace": self.artifact_namespace == "qwen3-v1",
+                "launch_environment": all(
+                    self.launch_environment.get(name) for name in _LAUNCH_ENVIRONMENT_FIELDS
+                ),
+            }
+            failures = [name for name, passed in required_qwen3.items() if not passed]
+            if failures:
+                raise RuntimeError(f"Qwen3 manifest protocol bindings are incomplete: {failures}")
+
+
+def run_manifest_payload(manifest: RunManifest) -> dict[str, Any]:
+    payload = asdict(manifest)
+    payload["sha256"] = sha256_value(payload)
+    return payload
+
+
+def validate_run_manifest_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    content = {key: value for key, value in payload.items() if key != "sha256"}
+    if payload.get("sha256") != sha256_value(content):
+        raise ValueError("run manifest SHA-256 mismatch")
+    return payload
 
 
 def initialize_run_directory(
@@ -149,6 +217,9 @@ def initialize_run_directory(
     *,
     require_git: bool = False,
 ) -> None:
+    prereg_path = Path(str(resolved_config.get("prereg_path", PREREG_PATH)))
+    prereg_version = "qwen3_v1" if resolved_config.get("protocol_track") == "qwen3_v1" else PREREG_VERSION
+    manifest.bind_preregistration(prereg_path, version=prereg_version)
     manifest.package_versions = dependency_versions()
     manifest.environment = {
         "python": platform.python_version(),
@@ -165,7 +236,7 @@ def initialize_run_directory(
     (run_dir / "resolved_config.yaml").write_text(
         yaml.safe_dump(resolved_config, sort_keys=True), encoding="utf-8"
     )
-    atomic_write_json(run_dir / "manifest.json", asdict(manifest))
+    atomic_write_json(run_dir / "manifest.json", run_manifest_payload(manifest))
     atomic_write_json(run_dir / "environment.json", manifest.environment)
     (run_dir / "metrics.jsonl").touch()
     diff = _git(["diff", "--binary"]) or ""
@@ -174,7 +245,7 @@ def initialize_run_directory(
 
 def finalize_run_directory(run_dir: Path, manifest: RunManifest) -> None:
     manifest.end_time = datetime.now(UTC).isoformat()
-    atomic_write_json(run_dir / "manifest.json", asdict(manifest))
+    atomic_write_json(run_dir / "manifest.json", run_manifest_payload(manifest))
 
 
 def append_metric(path: Path, metric: dict[str, Any]) -> None:

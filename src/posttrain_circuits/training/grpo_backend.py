@@ -11,6 +11,9 @@ class GrpoSettings:
     beta: float = 0.0
     num_generations: int = 8
     temperature: float = 1.0
+    top_p: float = 1.0
+    top_k: int | None = None
+    min_p: float | None = None
     max_completion_length: int = 128
     loss_type: str = "dapo"
     scale_rewards: bool | str = False
@@ -85,6 +88,9 @@ class TrlGrpoBackend:
             beta=self.settings.beta,
             num_generations=self.settings.num_generations,
             temperature=self.settings.temperature,
+            top_p=self.settings.top_p,
+            top_k=self.settings.top_k,
+            min_p=self.settings.min_p,
             max_completion_length=self.settings.max_completion_length,
             loss_type=self.settings.loss_type,
             scale_rewards=scale_rewards,

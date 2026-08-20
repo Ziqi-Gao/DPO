@@ -7,7 +7,13 @@ from pathlib import Path
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import Whitespace
-from transformers import PreTrainedTokenizerFast, Qwen2Config, Qwen2ForCausalLM
+from transformers import (
+    PreTrainedTokenizerFast,
+    Qwen2Config,
+    Qwen2ForCausalLM,
+    Qwen3Config,
+    Qwen3ForCausalLM,
+)
 
 
 def tiny_vocabulary() -> dict[str, int]:
@@ -93,3 +99,28 @@ def build_tiny_qwen(seed: int = 0) -> Qwen2ForCausalLM:
         attention_dropout=0.0,
     )
     return Qwen2ForCausalLM(config)
+
+
+def build_tiny_qwen3(seed: int = 0) -> Qwen3ForCausalLM:
+    """Random Qwen3 fixture with head_dim deliberately unequal to hidden_size / heads."""
+
+    import torch
+
+    torch.manual_seed(seed)
+    config = Qwen3Config(
+        vocab_size=len(tiny_vocabulary()),
+        hidden_size=24,
+        head_dim=8,
+        intermediate_size=48,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        max_position_embeddings=128,
+        bos_token_id=2,
+        eos_token_id=3,
+        pad_token_id=0,
+        use_cache=False,
+        attention_dropout=0.0,
+        tie_word_embeddings=False,
+    )
+    return Qwen3ForCausalLM(config)

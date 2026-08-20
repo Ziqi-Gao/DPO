@@ -32,6 +32,13 @@ gates instead of the full readiness decision.
 | Noise floor | Metrics library only | Bootstrap indices/vectors/raw hashes retained; formal dynamics CLI added | repaired |
 | Distributed resume | Shared files written by all ranks | main-only metadata, barriers, Accelerate save/load and full export | target-stack validation required in G0 |
 | Preregistration | v0 had a direction-dependent gate | v0 retained; active v1 removes direction as a gate | repaired |
+| Qwen3 prompt protocol | Model paths could format raw prompts independently | One hash-bound non-thinking formatter is consumed by rollout, teacher, training, validation and circuits | CPU-validated; real-tokenizer gate pending GPU |
+| Qwen3 circuit adapter | Qwen2-only architecture assumptions | Native TransformerLens Qwen3 conversion, config `head_dim`, GQA/QK-norm semantics and exact pre-norm hooks | tiny HF↔TL parity passed; real parity required in G0 |
+| Teacher readiness | Coverage/recovery were metrics but not gates; causal shift was structural only | Top-k coverage, corrupted-prefix recovery and clean/corrupt target-logprob shift are independent fail-closed gates | repaired and adversarially tested |
+| Four-rank schedules | Each rank could replay the complete prompt order | Deterministic disjoint rank shards and rank-bound resume state | repaired and adversarially tested |
+| Pilot finalization | One positive circuit effect could suffice | All hash-bound artifacts, noise-floor fields, transfer and held-out exact-patching protocol are required | repaired and tamper-tested |
+| Formal Git state | Only prereg dirtiness blocked formal runs | Any source-tree dirtiness blocks formal execution | repaired and adversarially tested |
+| Three-seed inference | Cluster covariance was allowed with three clusters | Three-seed output is descriptive seed-level aggregation; cluster inference starts at five seeds | repaired |
 
 ## D–F. Severity findings
 
@@ -40,7 +47,8 @@ gates instead of the full readiness decision.
 - P0: checkpoint label without loaded weights; strict checkpoint load and parity now precede discovery.
 - P0: partial readiness bypass; production trainer/submission now require full readiness GO.
 - P1: zero-capability anti-shortcut pass, missing bootstrap provenance, overwritten multi-seed
-  aggregation, direction-dependent escalation, and multi-rank writes; repaired.
+  aggregation, direction-dependent escalation, multi-rank duplication, incomplete teacher gates,
+  partial pilot finalization, dirty-source acceptance, and invalid three-cluster inference; repaired.
 - Remaining environment-dependent validation is explicitly performed by G0, never inferred from CPU
   tests.
 
@@ -59,3 +67,10 @@ cryptographically gated on G0 PASS, and the three-seed factorial remains forbidd
 CPU behavior and static production routing are directly tested. HF↔TransformerLens parity,
 four-GPU next-step resume identity, Qwen capability thresholds, and causal separation are empirical
 G0 results; they must not be claimed until the corresponding production artifacts pass.
+
+For the `qwen3_v1` track, CPU acceptance additionally fixes the exact student/teacher revisions,
+chat-template SHA-256, tokenizer fingerprint, non-thinking prompt bytes, explicit sampling fields,
+native Qwen3 head dimension/GQA/QK-normalization behavior, rank sharding, cross-model artifact
+rejection, and complete prereg/launch provenance. Full snapshots, simultaneous-load memory,
+four-rank FSDP resume, and real-model HF↔TransformerLens parity remain empirical gates; no waiver is
+permitted.

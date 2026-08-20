@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.rewards.format_only import FormatOnlyReward
 from posttrain_circuits.rewards.proofgraph_reward import ProofGraphExactReward
 from posttrain_circuits.rewards.random_matched import MatchedRandomReward
@@ -30,10 +31,19 @@ def build_grpo_rows_and_reward(
     reward_name: str,
     seed: int,
     matched_positive_rate: float | None = None,
+    tokenizer: Any | None = None,
+    model_config: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, str]], Callable[..., list[float]]]:
     task = ProofGraphTask()
-    rows = [{"prompt": task.render(example)} for example in examples]
-    examples_by_prompt = {task.render(example): example for example in examples}
+    raw_prompts = [task.render(example) for example in examples]
+    if tokenizer is None:
+        formatted_prompts = raw_prompts
+    else:
+        formatted_prompts = [
+            format_model_prompt(prompt, tokenizer, model_config).model_facing_prompt for prompt in raw_prompts
+        ]
+    rows = [{"prompt": prompt} for prompt in formatted_prompts]
+    examples_by_prompt = dict(zip(formatted_prompts, examples, strict=True))
     exact = ProofGraphExactReward(examples_by_prompt)
     format_reward = FormatOnlyReward()
     random_reward = MatchedRandomReward(seed, matched_positive_rate)

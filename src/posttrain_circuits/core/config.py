@@ -8,6 +8,12 @@ from typing import Any
 
 import yaml
 
+QWEN3_STUDENT = "Qwen/Qwen3-1.7B"
+QWEN3_TEACHER = "Qwen/Qwen3-8B"
+QWEN3_STUDENT_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+QWEN3_TEACHER_REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
+QWEN3_CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+
 
 def _merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(base)
@@ -128,6 +134,48 @@ def validate_model_revision(model: dict[str, Any]) -> None:
                 f"official configuration rejects unpinned {key}={model[key]!r}; "
                 "set allow_unpinned_revision=true explicitly to override"
             )
+    model_id = str(model["model_name_or_path"])
+    if model_id in {QWEN3_STUDENT, QWEN3_TEACHER}:
+        expected_revision = QWEN3_STUDENT_REVISION if model_id == QWEN3_STUDENT else QWEN3_TEACHER_REVISION
+        if model["model_revision"] != expected_revision or model["tokenizer_revision"] != expected_revision:
+            raise ValueError(f"Qwen3 model/tokenizer revisions must both equal {expected_revision}")
+        if model.get("tokenizer_name_or_path") != model_id:
+            raise ValueError("Qwen3 tokenizer must come from the same pinned model repository")
+        protocol = model.get("prompt_protocol")
+        if not isinstance(protocol, dict):
+            raise ValueError("Qwen3 requires an explicit prompt_protocol mapping")
+        expected_protocol = {
+            "name": "qwen3_non_thinking_v1",
+            "enable_thinking": False,
+            "messages": "single_user",
+            "add_generation_prompt": True,
+            "chat_template_sha256": QWEN3_CHAT_TEMPLATE_SHA256,
+        }
+        if {key: protocol.get(key) for key in expected_protocol} != expected_protocol:
+            raise ValueError("Qwen3 prompt protocol differs from qwen3_non_thinking_v1")
+        sampling = model.get("sampling_protocol")
+        expected_sampling = {
+            "name": "qwen3_non_thinking_sampling_v1",
+            "do_sample": True,
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "top_k": 20,
+            "min_p": 0.0,
+        }
+        if (
+            not isinstance(sampling, dict)
+            or {key: sampling.get(key) for key in expected_sampling} != expected_sampling
+        ):
+            raise ValueError("Qwen3 sampling protocol is not fully pinned")
+        if model.get("trust_remote_code") is not False:
+            raise ValueError("Qwen3 controlled runs require trust_remote_code=false")
+        if model.get("torch_dtype") != "bfloat16" or model.get("attn_implementation") != "sdpa":
+            raise ValueError("Qwen3 controlled runs require BF16 and SDPA")
+        expected_training = model_id == QWEN3_STUDENT
+        if bool(model.get("gradient_checkpointing")) != expected_training:
+            raise ValueError("Qwen3 student/teacher gradient-checkpointing role mismatch")
+        if bool(model.get("use_cache")) == expected_training:
+            raise ValueError("Qwen3 student must disable cache and teacher must enable cache")
 
 
 def validate_config(config: dict[str, Any]) -> None:
@@ -150,6 +198,47 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("offline factorial cells must use the fixed common bank")
     if "production_profile" in config or "pilot_profile" in config:
         validate_production_training_config(config)
+    if config.get("protocol_track") == "qwen3_v1":
+        _validate_qwen3_track(config)
+
+
+def _validate_qwen3_track(config: dict[str, Any]) -> None:
+    model = config.get("model", {})
+    teacher = config.get("teacher", {})
+    validate_model_revision(model)
+    validate_model_revision(teacher)
+    pair = (model.get("model_name_or_path"), teacher.get("model_name_or_path"))
+    if pair != (QWEN3_STUDENT, QWEN3_TEACHER):
+        raise ValueError(f"qwen3_v1 requires the exact registered model pair, observed={pair}")
+    if str(config.get("prereg_path")) != "prereg/qwen3_v1.yaml":
+        raise ValueError("qwen3_v1 must bind prereg/qwen3_v1.yaml")
+    output_root = str(config.get("output_root", ""))
+    if "qwen3-v1" not in Path(output_root).parts:
+        raise ValueError("qwen3_v1 output_root must use the qwen3-v1 artifact namespace")
+    bound_paths = {
+        "state_source.store_path": config.get("state_source", {}).get("store_path"),
+        "task.validation_split_path": config.get("task", {}).get("validation_split_path"),
+        "anti_shortcut.report_path": config.get("anti_shortcut", {}).get("report_path"),
+        "production_safety.readiness_report": config.get("production_safety", {}).get("readiness_report"),
+        "production_safety.probe_cohort_manifest": config.get("production_safety", {}).get(
+            "probe_cohort_manifest"
+        ),
+        "production_safety.initial_checkpoint_path": config.get("production_safety", {}).get(
+            "initial_checkpoint_path"
+        ),
+    }
+    wrong_paths = [
+        name
+        for name, value in bound_paths.items()
+        if value is not None and str(value).strip() and "qwen3-v1" not in Path(str(value)).parts
+    ]
+    if wrong_paths:
+        raise ValueError(f"qwen3_v1 artifact paths escape their namespace: {wrong_paths}")
+    for section_name in ("state_source", "supervision"):
+        section = config.get(section_name, {})
+        for key, expected in (("temperature", 0.7), ("top_p", 0.8), ("top_k", 20), ("min_p", 0.0)):
+            if key in section and section[key] != expected:
+                raise ValueError(f"qwen3_v1 {section_name}.{key} must equal {expected}")
 
 
 def validate_production_training_config(config: dict[str, Any]) -> None:
@@ -170,6 +259,7 @@ def validate_production_training_config(config: dict[str, Any]) -> None:
             "Qwen/Qwen2.5-1.5B-Instruct",
             "Qwen/Qwen2.5-7B-Instruct",
         ),
+        (QWEN3_STUDENT, QWEN3_TEACHER),
         (
             "google/gemma-2-2b-it",
             "google/gemma-2-9b-it",

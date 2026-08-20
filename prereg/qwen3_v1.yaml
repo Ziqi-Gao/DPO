@@ -1,0 +1,194 @@
+version: qwen3_v1
+status: draft_pending_implementation_commit_binding
+inherits_scientific_design_from: core_v2
+does_not_modify: prereg/core_v2.yaml
+frozen_implementation_commit: TO_BE_FROZEN_AFTER_CPU_ACCEPTANCE
+
+active_models:
+  primary_student:
+    id: Qwen/Qwen3-1.7B
+    revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+  primary_teacher:
+    id: Qwen/Qwen3-8B
+    revision: b968826d9c46dd6066d109eabc6255188de91218
+  trust_remote_code: false
+  transformers_version: 4.56.2
+  tokenizer_fingerprint: 03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d
+  chat_template_sha256: a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8
+
+prompt_protocol:
+  name: qwen3_non_thinking_v1
+  messages: [{role: user, content: raw_ProofGraph_prompt_bytes}]
+  formatter: tokenizer.apply_chat_template
+  add_generation_prompt: true
+  enable_thinking: false
+  all_model_facing_paths_share_identical_bytes: true
+  required_manifest_fields:
+    - prompt_protocol
+    - enable_thinking
+    - chat_template_sha256
+    - tokenizer_fingerprint
+    - raw_prompt_sha256
+    - model_facing_prompt_sha256
+
+sampling_protocol:
+  name: qwen3_non_thinking_sampling_v1
+  interpretation: new_Qwen3_protocol_not_a_single_variable_comparison_to_Qwen2p5
+  do_sample: true
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  min_p: 0.0
+  rollout_max_new_tokens: 128
+  teacher_demo_max_new_tokens: 128
+  anti_shortcut_max_new_tokens: 256
+  canonical_GRPO_max_completion_length: 256
+  pilot_training_token_budget: 2000000
+  full_registered_training_token_budget: 64000000
+
+primary_endpoints:
+  - heldout_exact_patching_necessity_and_sufficiency_on_base_capable_probes
+  - heldout_exact_patching_acquisition_on_challenge_probes
+  - stage_specific_process_and_final_answer_causal_effects
+  - excess_churn_after_same_checkpoint_estimator_noise_subtraction
+  - CPR_and_CMD_over_the_preregistered_sparsity_grid
+
+primary_counterfactual_ablation_protocol:
+  discovery: EAP-IG_candidates_on_frozen_discovery_subsets_only
+  validation: heldout_exact_activation_and_selected_path_patching
+  primary_corruption: active_support_path_swap
+  corruption_class: semantic_target_changing
+  primary_baseline: counterfactual_replacement
+  controls: [mean_replacement, zero_ablation, layer_size_activation_matched_random_masks]
+  cohorts: [base_capable_preservation, challenge_acquisition]
+  qwen3_qk_patch_location: projection_output_before_QK_norm_and_before_RoPE
+  parity_waiver_allowed: false
+
+faithfulness_sparsity_grid: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
+
+matched_accuracy_rules:
+  source: frozen_formal_validation_split_only
+  maximum_absolute_gap: 0.02
+  interpolation: within_adjacent_observed_checkpoints_only
+  extrapolation: forbidden
+  required_output: [lower_checkpoint, upper_checkpoint, interpolation_weight, validation_artifact_hash]
+
+local_fork_output_KL_matching_rule:
+  divergence: KL(output_new || output_fork)
+  probe_set: fixed_hash_pinned_multi_prompt_pretraining_probe_set
+  target: hard_teacher_KL_at_each_nominal_horizon
+  relative_tolerance: 0.25
+  maximum_calibration_rounds: 2
+  nominal_horizons: [1, 5, 20]
+  primary_axis: matched_output_KL
+  secondary_axes: [update_count, parameter_update_norm]
+  out_of_tolerance_action: invalidate_cell_and_exit_nonzero
+
+teacher_readiness_gate:
+  minimum_teacher_answer_accuracy: 0.90
+  minimum_teacher_exact_proof_accuracy: 0.85
+  minimum_teacher_first_rule_top1_accuracy: 0.80
+  minimum_teacher_intermediate_top1_accuracy: 0.80
+  minimum_teacher_topk_mass: 0.90
+  minimum_teacher_topk_target_coverage: 0.90
+  minimum_corrupted_prefix_recovery_accuracy: 0.70
+  minimum_causal_shift_logprob: 0.0
+  causal_shift_definition: correct_target_logprob(clean_or_corrupt_prefix)_minus_same_target_logprob(counterfactual_prefix)
+
+anti_shortcut_gate:
+  transformations: [entity_symbol_renaming, fact_order_permutation, rule_order_permutation, surface_template_paraphrase, distractor_count_OOD]
+  semantics_preserving_required: true
+  shortcut_gap: IID_accuracy_minus_transformed_accuracy
+  maximum_shortcut_gap: 0.05
+  minimum_iid_accuracy: 0.10
+  minimum_transformed_accuracy: 0.08
+  minimum_per_transformation_accuracy: 0.05
+  zero_zero_result: fail
+  required_before_G0_or_training: true
+
+estimator_noise_floor:
+  method: independent_same_checkpoint_discovery_bootstrap_reruns
+  retain: [resample_indices, full_score_vectors, thresholded_masks, raw_graph_hashes]
+  required_report:
+    - excess_churn
+    - full_score_spearman_stability
+    - weighted_overlap
+    - cross_checkpoint_mask_transfer
+    - heldout_exact_patching_effects
+  thresholded_Jaccard_role: diagnostic_only_never_sole_evidence
+
+artifact_protocol:
+  namespace: outputs/qwen3-v1
+  reuse_from_Qwen2p5_forbidden:
+    - initial_checkpoint
+    - rollout_bank
+    - teacher_demos_or_topk
+    - readiness
+    - capability_cohorts
+    - tokenized_probes
+    - circuits_or_exact_patching
+    - resume_state
+    - local_fork
+    - G0_or_pilot_results
+  reusable: ProofGraph_semantic_generation_seeds_only_with_new_model_protocol_bound_manifests
+  every_production_manifest_records:
+    - resolved_configs
+    - model_and_tokenizer_revisions
+    - prompt_protocol_and_hashes
+    - prereg_file_sha256_and_git_commit
+    - source_git_commit
+  stale_or_cross_model_action: fail_closed
+
+G0_gate:
+  required:
+    - clean_source_tree_and_committed_qwen3_v1_prereg
+    - four_GPU_CUDA_and_NCCL_preflight
+    - pinned_offline_student_and_teacher_snapshots
+    - simultaneous_student_teacher_load
+    - real_soft_teacher_forward_backward
+    - four_rank_nonduplicate_prompt_shards
+    - FSDP_save_resume
+    - nontrivial_student_capability
+    - teacher_answer_proof_step_topk_recovery_and_causal_shift
+    - anti_shortcut
+    - frozen_base_capable_and_challenge_cohorts
+    - HF_TransformerLens_Qwen3_GQA_QKnorm_parity
+    - EAP_IG_bootstrap_stability_and_exact_patching
+    - identity_and_full_corruption_sanity
+    - artifact_hash_reconstruction
+  pass_only_if_all_required_valid: true
+
+inherited_1p5b_to_3b_escalation_rule:
+  status: historical_core_v2_rule_not_triggered_by_Qwen3_replacement
+  decision_point: after_valid_1p5b_core_analysis
+  required: [valid_artifacts, stable_estimates, heldout_causal_evidence_above_noise_and_random_controls, positive_expected_information_value]
+  observed_effect_direction: never_a_gate
+
+confirmatory_contrasts:
+  - online_hard_minus_offline_hard
+  - online_soft_OPD_minus_offline_soft
+  - online_verified_replay_minus_offline_verified_replay
+  - online_soft_OPD_minus_online_hard
+  - online_verified_replay_minus_canonical_GRPO
+  - matched_accuracy_versions_of_the_above
+  - matched_output_KL_local_fork_versions_of_the_above
+
+three_seed_inference:
+  ordinary_cluster_robust_inference_with_three_seed_clusters: forbidden
+  primary_reporting: seed_level_cell_means_and_seed_specific_contrasts
+  inferential_status_at_three_seeds: descriptive
+  cluster_robust_threshold: at_least_five_training_seeds
+  full_three_seed_factorial_authorized_now: false
+
+secondary_exploratory_analyses:
+  - natural_rollout_sensitivity
+  - edge_lifecycle_and_compensation
+  - Track_B_long_CoT
+  - delta_transplant
+  - five_seed_expansion
+  - Edge_Pruning
+nonblocking_dependencies: [OLMo, Edge_Pruning, Track_B_long_CoT, delta_transplant, five_seed_expansion]
+
+execution_authorization:
+  allowed: [short_four_GPU_Qwen3_preflight, Qwen3_G0, seed_42_Qwen3_pilot_after_hash_valid_G0_pass]
+  forbidden_without_new_authorization: [full_three_seed_factorial, Gemma_replication]

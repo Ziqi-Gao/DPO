@@ -108,7 +108,13 @@ def component_specs(model: Any) -> dict[str, ComponentSpec]:
     query_heads = int(config.num_attention_heads)
     kv_heads = int(config.num_key_value_heads)
     mapping = q_to_kv_head_mapping(query_heads, kv_heads)
-    head_width = int(config.hidden_size) // query_heads
+    configured_head_dim = getattr(config, "head_dim", None)
+    head_width = (
+        int(configured_head_dim)
+        if configured_head_dim is not None and int(configured_head_dim) > 0
+        else int(config.hidden_size) // query_heads
+    )
+    uses_qk_norm = type(model).__name__ == "Qwen3ForCausalLM"
     specs: dict[str, ComponentSpec] = {}
     for layer_index, layer in enumerate(model.model.layers):
         attention = layer.self_attn
@@ -129,7 +135,11 @@ def component_specs(model: Any) -> dict[str, ComponentSpec]:
                 "output",
                 head_index,
                 head_width,
-                (f"q_projection_output_pre_rope:kv_head={mapping[head_index]}"),
+                (
+                    "q_projection_output_"
+                    + ("pre_q_norm_pre_rope" if uses_qk_norm else "pre_rope")
+                    + f":kv_head={mapping[head_index]}"
+                ),
             )
         for head_index in range(kv_heads):
             for kind in ("k", "v"):
@@ -140,7 +150,10 @@ def component_specs(model: Any) -> dict[str, ComponentSpec]:
                     "output",
                     head_index,
                     head_width,
-                    f"{kind}_projection_output_pre_rope",
+                    (
+                        f"{kind}_projection_output_"
+                        + (f"pre_{kind}_norm_pre_rope" if uses_qk_norm and kind == "k" else "pre_rope")
+                    ),
                 )
         mlp_name = f"layer.{layer_index}.mlp_out"
         specs[mlp_name] = ComponentSpec(

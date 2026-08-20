@@ -7,12 +7,17 @@
 #SBATCH --time=02:00:00
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+require_protocol_launch_environment
+model_config=${MODEL_CONFIG:?Set MODEL_CONFIG}
+teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
+pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 
 checkpoint="${PILOT_RUN_DIR:?}/runs/canonical_sft/seed-42/checkpoints/step-00000120.pt"
 for replica in a b; do
   "${ACCELERATE_BIN}" launch --config_file configs/accelerate/fsdp.yaml \
-    -m posttrain_circuits.cli.train pilot=qwen_core experiment=canonical_sft \
-    model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
+    -m posttrain_circuits.cli.train pilot="${pilot_config}" experiment=canonical_sft \
+    model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
+    output_root="${OUTPUT_ROOT}" \
     task.validation_split_path="${PILOT_VALIDATION_SPLIT:?}" \
     production_safety.initial_checkpoint_path="${PILOT_INITIAL_CHECKPOINT:?}" \
     production_safety.initial_checkpoint_hash="${PILOT_INITIAL_CHECKPOINT_SHA256:?}" \

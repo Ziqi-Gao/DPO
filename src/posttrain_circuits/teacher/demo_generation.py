@@ -13,6 +13,7 @@ from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.types import TrajectoryRecord
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
 from posttrain_circuits.models.loading import tokenizer_fingerprint
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.rollout.generation import generation_rng
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
@@ -27,6 +28,7 @@ class HfTeacherCandidateGenerator:
         tokenizer: PreTrainedTokenizerBase,
         *,
         max_new_tokens: int = 256,
+        model_config: dict[str, Any] | None = None,
     ) -> None:
         if max_new_tokens < 1:
             raise ValueError("teacher generation length must be positive")
@@ -34,6 +36,7 @@ class HfTeacherCandidateGenerator:
         self.tokenizer = tokenizer
         self.task = ProofGraphTask()
         self.max_new_tokens = max_new_tokens
+        self.model_config = model_config
 
     def __call__(
         self,
@@ -43,13 +46,20 @@ class HfTeacherCandidateGenerator:
         generation_seed: int,
         temperature: float,
         top_p: float,
+        top_k: int = 0,
+        min_p: float = 0.0,
     ) -> str:
         del candidate_index
         import torch
 
         device = next(self.model.parameters()).device
-        encoded = self.tokenizer(
+        formatted = format_model_prompt(
             self.task.render(example),
+            self.tokenizer,
+            self.model_config,
+        )
+        encoded = self.tokenizer(
+            formatted.model_facing_prompt,
             add_special_tokens=False,
             return_tensors="pt",
         ).to(device)
@@ -59,6 +69,8 @@ class HfTeacherCandidateGenerator:
                 do_sample=temperature > 0,
                 temperature=max(temperature, 1e-6),
                 top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
                 max_new_tokens=self.max_new_tokens,
                 use_cache=True,
             )
@@ -78,6 +90,8 @@ class TeacherCandidateGenerator(Protocol):
         generation_seed: int,
         temperature: float,
         top_p: float,
+        top_k: int,
+        min_p: float,
     ) -> str: ...
 
 
@@ -90,6 +104,8 @@ class TeacherDemoGenerationConfig:
     temperature: float
     top_p: float
     candidates_per_prompt: int
+    top_k: int = 0
+    min_p: float = 0.0
     verifier_version: str = VERIFIER_VERSION
 
     def __post_init__(self) -> None:
@@ -101,6 +117,8 @@ class TeacherDemoGenerationConfig:
             raise ValueError("temperature must be non-negative")
         if not 0 < self.top_p <= 1:
             raise ValueError("top_p must be in (0, 1]")
+        if self.top_k < 0 or not 0.0 <= self.min_p <= 1.0:
+            raise ValueError("top_k/min_p are outside their valid ranges")
 
 
 @dataclass(frozen=True)
@@ -124,16 +142,21 @@ def generate_teacher_demonstrations(
     tokenizer: PreTrainedTokenizerBase,
     candidate_generator: TeacherCandidateGenerator,
     config: TeacherDemoGenerationConfig,
+    *,
+    model_config: dict[str, Any] | None = None,
 ) -> TeacherDemoGenerationResult:
     """Generate candidates from a teacher and retain only exact verifier successes."""
     if not examples:
         raise ValueError("teacher demonstration generation requires prompts")
     task = ProofGraphTask()
+    tokenizer_hash = tokenizer_fingerprint(tokenizer)
     retained: list[TrajectoryRecord] = []
     prompts_with_success = 0
     for prompt_index, example in enumerate(examples):
         prompt_successes = 0
-        prompt_text = task.render(example)
+        raw_prompt = task.render(example)
+        formatted = format_model_prompt(raw_prompt, tokenizer, model_config)
+        prompt_text = formatted.model_facing_prompt
         input_ids = list(tokenizer.encode(prompt_text, add_special_tokens=False))
         for candidate_index in range(config.candidates_per_prompt):
             candidate_seed = (
@@ -145,6 +168,8 @@ def generate_teacher_demonstrations(
                 generation_seed=candidate_seed,
                 temperature=config.temperature,
                 top_p=config.top_p,
+                top_k=config.top_k,
+                min_p=config.min_p,
             )
             verification = task.verify(example, task.parse_response(response_text))
             if verification.reward != 1.0:
@@ -184,6 +209,15 @@ def generate_teacher_demonstrations(
                 teacher_id=config.teacher_id,
                 teacher_revision=config.teacher_revision,
                 created_at=datetime.now(UTC).isoformat(),
+                raw_prompt_text=raw_prompt,
+                prompt_protocol=formatted.prompt_protocol,
+                enable_thinking=formatted.enable_thinking,
+                chat_template_sha256=formatted.chat_template_sha256,
+                raw_prompt_sha256=formatted.raw_prompt_sha256,
+                model_facing_prompt_sha256=formatted.model_facing_prompt_sha256,
+                tokenizer_fingerprint=tokenizer_hash,
+                top_k=config.top_k,
+                min_p=config.min_p,
             )
             record.validate()
             retained.append(record)
@@ -201,7 +235,7 @@ def generate_teacher_demonstrations(
         prompts_with_success=prompts_with_success,
         total_prompts=len(examples),
         prompt_manifest_hash=prompt_manifest_hash,
-        tokenizer_hash=tokenizer_fingerprint(tokenizer),
+        tokenizer_hash=tokenizer_hash,
         config=config,
     )
 
@@ -223,6 +257,8 @@ def write_teacher_demo_store(
         sampling_configuration={
             "temperature": config.temperature,
             "top_p": config.top_p,
+            "top_k": config.top_k,
+            "min_p": config.min_p,
             "candidates_per_prompt": config.candidates_per_prompt,
             "generation_seed": config.generation_seed,
         },
@@ -232,6 +268,16 @@ def write_teacher_demo_store(
         extra_metadata={
             "store_kind": "teacher_demo",
             "tokenizer_hash": result.tokenizer_hash,
+            "tokenizer_fingerprint": result.tokenizer_hash,
+            "protocol_track": (
+                "qwen3_v1" if result.records[0].prompt_protocol == "qwen3_non_thinking_v1" else "core_v2"
+            ),
+            "artifact_namespace": (
+                "qwen3-v1" if result.records[0].prompt_protocol == "qwen3_non_thinking_v1" else "legacy"
+            ),
+            "prompt_protocol": result.records[0].prompt_protocol,
+            "enable_thinking": result.records[0].enable_thinking,
+            "chat_template_sha256": result.records[0].chat_template_sha256,
             "teacher_demo_generation": {
                 "teacher_id": config.teacher_id,
                 "teacher_revision": config.teacher_revision,
@@ -239,6 +285,8 @@ def write_teacher_demo_store(
                 "generation_seed": config.generation_seed,
                 "temperature": config.temperature,
                 "top_p": config.top_p,
+                "top_k": config.top_k,
+                "min_p": config.min_p,
                 "candidates_per_prompt": config.candidates_per_prompt,
                 "verifier_version": config.verifier_version,
                 "retention_rate": result.retention_rate,

@@ -33,6 +33,12 @@ def main(argv: list[str] | None = None) -> None:
     if g0.get("git_commit") != git_commit:
         raise RuntimeError("pilot launch requires the exact Git commit validated by G0")
     config = compose_config(args.overrides)
+    prereg_path = str(config.get("prereg_path", "prereg/core_v2.yaml"))
+    if config.get("protocol_track") == "qwen3_v1":
+        if g0.get("protocol_track") != "qwen3_v1" or g0.get("artifact_namespace") != "qwen3-v1":
+            raise RuntimeError("Qwen3 pilot launch refuses a cross-protocol G0 artifact")
+        if g0.get("prereg_path") != prereg_path or g0.get("prereg_sha256") != sha256_file(Path(prereg_path)):
+            raise RuntimeError("Qwen3 pilot launch requires the exact frozen qwen3_v1 preregistration")
     payload: dict[str, Any] = {
         "format_version": 2,
         **scientific_compatibility_fields(),
@@ -45,7 +51,11 @@ def main(argv: list[str] | None = None) -> None:
         "g0_path": str(args.g0.resolve()),
         "g0_sha256": sha256_file(args.g0),
         "git_commit": git_commit,
-        "prereg_commit": require_git_output(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"]),
+        "protocol_track": str(config.get("protocol_track", "core_v2")),
+        "artifact_namespace": str(config.get("artifact_namespace", "legacy")),
+        "prereg_path": prereg_path,
+        "prereg_sha256": sha256_file(Path(prereg_path)),
+        "prereg_commit": require_git_output(["log", "-n", "1", "--format=%H", "--", prereg_path]),
         "resolved_config_sha256": sha256_value(config),
         "created_at": utc_now(),
     }

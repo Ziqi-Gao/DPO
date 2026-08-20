@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict
 from pathlib import Path
 
@@ -248,7 +249,11 @@ def test_stage7_three_level_factorial_fdr_and_cli(
         coefficients = result[source_mode]["factorial_interaction"]["coefficients"]
         interaction_terms = [coefficient for coefficient in coefficients if ":" in coefficient["term"]]
         assert interaction_terms
-        assert all(0.0 <= coefficient["fdr_p_value"] <= 1.0 for coefficient in coefficients)
+        assert result[source_mode]["factorial_interaction"]["covariance_type"] == (
+            "descriptive_seed_level_no_asymptotic_inference"
+        )
+        assert all(math.isnan(coefficient["fdr_p_value"]) for coefficient in coefficients)
+        assert all(math.isnan(coefficient["standard_error"]) for coefficient in coefficients)
 
     observations_path = tmp_path / "observations.json"
     observations_path.write_text(

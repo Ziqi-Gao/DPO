@@ -102,8 +102,11 @@ def main(argv: list[str] | None = None) -> None:
                     max_new_tokens=int(config["trainer"]["max_completion_length"]),
                     temperature=float(config["state_source"]["temperature"]),
                     top_p=float(config["state_source"]["top_p"]),
+                    top_k=int(config["state_source"].get("top_k", 0)),
+                    min_p=float(config["state_source"].get("min_p", 0.0)),
                     policy_id=loaded.model_id,
                     policy_revision=loaded.resolved_model_commit,
+                    model_config=model_config,
                 )
             )
         _verify_records(records, examples_by_id)
@@ -123,6 +126,8 @@ def main(argv: list[str] | None = None) -> None:
         sampling_configuration={
             "temperature": float(config["state_source"].get("temperature", 1.0)),
             "top_p": float(config["state_source"].get("top_p", 1.0)),
+            "top_k": int(config["state_source"].get("top_k", 0)),
+            "min_p": float(config["state_source"].get("min_p", 0.0)),
             "max_new_tokens": int(config["trainer"]["max_completion_length"]),
             "num_generations_per_prompt": generations_per_prompt,
         },
@@ -133,7 +138,20 @@ def main(argv: list[str] | None = None) -> None:
             "store_kind": "rollout_bank",
             "rollout_generation_version": ROLLOUT_GENERATION_VERSION,
             "tokenizer_hash": tokenizer_hash,
+            "tokenizer_fingerprint": tokenizer_hash,
             "resolved_tokenizer_commit": resolved_tokenizer_commit,
+            "protocol_track": str(config.get("protocol_track", "core_v2")),
+            "artifact_namespace": str(model_config.get("artifact_namespace", "legacy")),
+            "prompt_protocol": str(
+                model_config.get("prompt_protocol", {}).get("name", "legacy_raw_v1")
+                if isinstance(model_config.get("prompt_protocol"), dict)
+                else model_config.get("prompt_protocol", "legacy_raw_v1")
+            ),
+            "chat_template_sha256": str(
+                model_config.get("prompt_protocol", {}).get("chat_template_sha256", "legacy-unrecorded")
+                if isinstance(model_config.get("prompt_protocol"), dict)
+                else "legacy-unrecorded"
+            ),
         },
     )
     print_json({"output": str(output), "manifest": manifest})

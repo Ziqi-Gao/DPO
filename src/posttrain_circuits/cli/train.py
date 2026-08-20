@@ -30,6 +30,7 @@ from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
     move_model_to_local_cuda,
 )
+from posttrain_circuits.models.prompt_protocol import format_model_prompts
 from posttrain_circuits.rollout.generation import build_proofgraph_hf_generator
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.tasks.proofgraph.renderer import render_example
@@ -53,7 +54,7 @@ def _teacher_demo_prompts(
 ) -> tuple[list[str], list[str]]:
     by_prompt: dict[str, str] = {}
     for record in records:
-        by_prompt.setdefault(record.prompt_id, record.prompt_text)
+        by_prompt.setdefault(record.prompt_id, record.raw_prompt_text or record.prompt_text)
     if not by_prompt:
         raise ValueError("teacher-demo store has no prompts")
     return list(by_prompt), list(by_prompt.values())
@@ -68,6 +69,37 @@ def _production_examples(config: dict[str, Any], split: str, count: int):
         int(task_config.get("seed", config["seed"])),
         dict(task_config),
     )
+
+
+def _require_qwen3_store_binding(
+    manifest: dict[str, Any],
+    *,
+    config: dict[str, Any],
+    expected_behavior_policy: str,
+) -> None:
+    if config.get("protocol_track") != "qwen3_v1":
+        return
+    expected = {
+        "protocol_track": "qwen3_v1",
+        "artifact_namespace": "qwen3-v1",
+        "prompt_protocol": "qwen3_non_thinking_v1",
+        "enable_thinking": False,
+        "chat_template_sha256": config["model"]["prompt_protocol"]["chat_template_sha256"],
+        "tokenizer_hash": config["model"]["tokenizer_fingerprint"],
+    }
+    mismatches = {
+        key: {"expected": value, "observed": manifest.get(key)}
+        for key, value in expected.items()
+        if manifest.get(key) != value
+    }
+    observed_policy = str(manifest.get("behavior_policy", {}).get("id", ""))
+    if observed_policy != expected_behavior_policy:
+        mismatches["behavior_policy.id"] = {
+            "expected": expected_behavior_policy,
+            "observed": observed_policy,
+        }
+    if mismatches:
+        raise ValueError(f"Qwen3 refused stale/cross-model trajectory artifact: {mismatches}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -147,6 +179,16 @@ def main(argv: list[str] | None = None) -> None:
         store_path = Path(str(config["state_source"]["store_path"]))
         teacher_demos, loaded_manifest = read_teacher_demo_store(store_path)
         teacher_demo_manifest = dict(loaded_manifest)
+        _require_qwen3_store_binding(
+            teacher_demo_manifest,
+            config=config,
+            expected_behavior_policy=str(
+                config["teacher"].get(
+                    "model_name_or_path",
+                    config["teacher"].get("teacher_id", ""),
+                )
+            ),
+        )
         if (
             loaded_student is not None
             and teacher_demo_manifest.get("tokenizer_hash") != loaded_student.tokenizer_hash
@@ -174,6 +216,11 @@ def main(argv: list[str] | None = None) -> None:
                 fixed_store = TrajectoryStore(Path(str(config["state_source"]["store_path"])))
                 fixed_bank_manifest = fixed_store.check_integrity()
                 fixed_bank = fixed_store.read()
+                _require_qwen3_store_binding(
+                    fixed_bank_manifest,
+                    config=config,
+                    expected_behavior_policy=str(config["model"]["model_name_or_path"]),
+                )
                 if fixed_bank_manifest.get("tokenizer_hash") != loaded_student.tokenizer_hash:
                     raise ValueError("rollout-bank tokenizer does not match the student tokenizer")
                 prompt_ids, prompt_texts = _teacher_demo_prompts(fixed_bank)
@@ -191,14 +238,23 @@ def main(argv: list[str] | None = None) -> None:
                     max_new_tokens=int(config["trainer"]["max_completion_length"]),
                     temperature=float(config["state_source"]["temperature"]),
                     top_p=float(config["state_source"]["top_p"]),
+                    top_k=int(config["state_source"].get("top_k", 0)),
+                    min_p=float(config["state_source"].get("min_p", 0.0)),
                     policy_id=loaded_student.model_id,
                     initial_policy_revision=(loaded_student.resolved_model_commit),
+                    model_config=config["model"],
                 )
 
-    prompt_scheduler = PromptScheduler(
-        prompt_ids,
-        prompt_texts,
-        min(batch_size, len(prompt_ids)),
+    global_prompt_ids = list(prompt_ids)
+    global_prompt_texts = list(prompt_texts)
+    launch_rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    prompt_scheduler = PromptScheduler.for_distributed_rank(
+        global_prompt_ids,
+        global_prompt_texts,
+        min(batch_size, len(global_prompt_ids)),
+        rank=launch_rank,
+        world_size=world_size,
     )
     state_source = build_state_source(
         config["state_source"],
@@ -264,8 +320,8 @@ def main(argv: list[str] | None = None) -> None:
     dataset_hashes = {
         "train": sha256_value(
             {
-                "prompt_ids": prompt_scheduler.prompt_ids,
-                "prompt_texts": prompt_scheduler.prompt_texts,
+                "prompt_ids": global_prompt_ids,
+                "prompt_texts": global_prompt_texts,
             }
         ),
         "validation": sha256_value([asdict(example) for example in validation_examples]),
@@ -295,11 +351,17 @@ def main(argv: list[str] | None = None) -> None:
                 "seed": seed,
             }
         )
+    model_config = config["model"]
     prompt_schedule_hash = sha256_value(
         {
-            "prompt_ids": prompt_scheduler.prompt_ids,
-            "prompt_texts": prompt_scheduler.prompt_texts,
+            "prompt_ids": global_prompt_ids,
+            "prompt_texts": global_prompt_texts,
         }
+    )
+    formatted_schedule = format_model_prompts(global_prompt_texts, tokenizer, model_config)
+    raw_prompt_schedule_hash = sha256_value([prompt.raw_prompt_sha256 for prompt in formatted_schedule])
+    model_facing_prompt_schedule_hash = sha256_value(
+        [prompt.model_facing_prompt_sha256 for prompt in formatted_schedule]
     )
 
     teacher_id: str | None = None
@@ -320,9 +382,14 @@ def main(argv: list[str] | None = None) -> None:
         teacher_revision = str(teacher_demo_generation["teacher_revision"])
         resolved_teacher_commit = str(teacher_demo_generation["resolved_teacher_commit"])
 
-    model_config = config["model"]
     model_revision = str(model_config["model_revision"])
     tokenizer_revision = str(model_config["tokenizer_revision"])
+    resolved_model_commit_value = (
+        loaded_student.resolved_model_commit if loaded_student is not None else model_revision
+    )
+    resolved_tokenizer_commit_value = (
+        loaded_student.resolved_tokenizer_commit if loaded_student is not None else tokenizer_revision
+    )
     manifest = RunManifest(
         run_id=run_id,
         experiment_cell=cell,
@@ -331,8 +398,8 @@ def main(argv: list[str] | None = None) -> None:
         model_revision=model_revision,
         tokenizer_id=str(model_config["tokenizer_name_or_path"]),
         tokenizer_revision=tokenizer_revision,
-        resolved_model_commit=str(model_config.get("resolved_model_commit", model_revision)),
-        resolved_tokenizer_commit=str(model_config.get("resolved_tokenizer_commit", tokenizer_revision)),
+        resolved_model_commit=resolved_model_commit_value,
+        resolved_tokenizer_commit=resolved_tokenizer_commit_value,
         teacher_id=teacher_id,
         teacher_revision=teacher_revision,
         resolved_teacher_commit=resolved_teacher_commit,
@@ -340,8 +407,19 @@ def main(argv: list[str] | None = None) -> None:
         dataset_hashes=dataset_hashes,
         rollout_bank_hash=source_hash,
         prompt_schedule_hash=prompt_schedule_hash,
+        raw_prompt_schedule_hash=raw_prompt_schedule_hash,
+        model_facing_prompt_schedule_hash=model_facing_prompt_schedule_hash,
+        prompt_protocol=(loaded_student.prompt_protocol if loaded_student is not None else "legacy_raw_v1"),
+        enable_thinking=False,
+        chat_template_sha256=(
+            loaded_student.chat_template_sha256 if loaded_student is not None else "legacy-unrecorded"
+        ),
+        tokenizer_fingerprint=(
+            loaded_student.tokenizer_hash if loaded_student is not None else "legacy-unrecorded"
+        ),
+        protocol_track=str(config.get("protocol_track", "core_v2")),
+        artifact_namespace=str(model_config.get("artifact_namespace", "legacy")),
     )
-    launch_rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
     if launch_rank == 0:
         initialize_run_directory(
             output,
@@ -381,6 +459,13 @@ def main(argv: list[str] | None = None) -> None:
             "dataset_validation": dataset_hashes["validation"],
             "state_source": source_hash,
             "prompt_schedule": prompt_schedule_hash,
+            "prompt_shard": sha256_value(
+                {
+                    "rank": launch_rank,
+                    "world_size": world_size,
+                    "prompt_ids": prompt_scheduler.prompt_ids,
+                }
+            ),
         },
         git_commit=manifest.git_commit,
         dependency_versions=manifest.package_versions,
@@ -388,7 +473,7 @@ def main(argv: list[str] | None = None) -> None:
         probe_input_ids=torch.tensor(
             [
                 tokenizer.encode(
-                    prompt_scheduler.prompt_texts[0],
+                    formatted_schedule[0].model_facing_prompt,
                     add_special_tokens=False,
                 )
             ],
@@ -398,6 +483,7 @@ def main(argv: list[str] | None = None) -> None:
             validation_examples,
             tokenizer,
             max_completion_length=evaluation_completion_length,
+            model_config=config["model"],
         ),
     )
     if args.resume is not None:

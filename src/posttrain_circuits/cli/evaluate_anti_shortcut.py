@@ -15,6 +15,7 @@ from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.core.provenance import require_git_output
 from posttrain_circuits.data.splits import build_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
+from posttrain_circuits.models.prompt_protocol import format_model_prompt
 from posttrain_circuits.tasks.proofgraph.anti_shortcut import (
     build_anti_shortcut_suite,
     evaluate_anti_shortcut_suite,
@@ -23,9 +24,15 @@ from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 
-def _predictor(model: torch.nn.Module, tokenizer: Any, max_new_tokens: int):
+def _predictor(
+    model: torch.nn.Module,
+    tokenizer: Any,
+    max_new_tokens: int,
+    model_config: dict[str, Any] | None = None,
+):
     @torch.no_grad()
     def predict(_example: Any, prompt: str) -> str:
+        prompt = format_model_prompt(prompt, tokenizer, model_config).model_facing_prompt
         encoded = tokenizer(prompt, add_special_tokens=False, return_tensors="pt").input_ids
         encoded = encoded.to(next(model.parameters()).device)
         generate = getattr(model, "generate", None)
@@ -89,7 +96,12 @@ def main(argv: list[str] | None = None) -> None:
     report = evaluate_anti_shortcut_suite(
         examples,
         cases,
-        _predictor(model, tokenizer, int(gate_config["max_completion_length"])),
+        _predictor(
+            model,
+            tokenizer,
+            int(gate_config["max_completion_length"]),
+            model_config,
+        ),
         max_shortcut_gap=float(gate_config["max_shortcut_gap"]),
         model_checkpoint_hash=checkpoint_hash,
         minimum_iid_accuracy=float(gate_config["minimum_iid_accuracy"]),
@@ -97,7 +109,9 @@ def main(argv: list[str] | None = None) -> None:
         minimum_per_transformation_accuracy=float(gate_config["minimum_per_transformation_accuracy"]),
         dataset_hash=sha256_value([asdict(example) for example in examples]),
         code_commit=require_git_output(["rev-parse", "HEAD"]),
-        prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", "prereg/core_v2.yaml"]),
+        prereg_commit=require_git_output(
+            ["log", "-n", "1", "--format=%H", "--", str(config.get("prereg_path", "prereg/core_v2.yaml"))]
+        ),
     )
     atomic_write_json(output, report)
     print_json({"output": str(output), **report})

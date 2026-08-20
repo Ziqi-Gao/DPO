@@ -6,6 +6,7 @@
 #SBATCH --time=02:00:00
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+require_protocol_launch_environment
 
 cells=(offline_soft online_soft_opd online_hard online_verified_replay canonical_grpo canonical_sft)
 cohorts=(base_capable challenge)

@@ -48,6 +48,15 @@ class TrajectoryRecord:
     generation_group_index: int = 0
     prompt_group_size: int = 1
     created_at: str = ""
+    raw_prompt_text: str = ""
+    prompt_protocol: str = "legacy_raw_v1"
+    enable_thinking: bool = False
+    chat_template_sha256: str = "legacy-unrecorded"
+    raw_prompt_sha256: str = "legacy-unrecorded"
+    model_facing_prompt_sha256: str = "legacy-unrecorded"
+    tokenizer_fingerprint: str = "legacy-unrecorded"
+    top_k: int = 0
+    min_p: float = 0.0
 
     def validate(self) -> None:
         response_length = len(self.response_ids)
