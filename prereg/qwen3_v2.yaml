@@ -1,0 +1,213 @@
+version: qwen3_v2
+status: draft_pending_two_phase_freeze
+inherits_scientific_design_from: qwen3_v1
+does_not_modify: [prereg/core_v2.yaml, prereg/qwen3_v1.yaml]
+frozen_implementation_commit: PENDING_TWO_PHASE_FREEZE
+
+active_models:
+  primary_student: {id: Qwen/Qwen3-1.7B, revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e}
+  primary_teacher: {id: Qwen/Qwen3-8B, revision: b968826d9c46dd6066d109eabc6255188de91218}
+  tokenizer_fingerprint: 03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d
+  chat_template_sha256: a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8
+  trust_remote_code: false
+
+prompt_protocol:
+  name: qwen3_non_thinking_v1
+  formatter: tokenizer.apply_chat_template
+  messages: [{role: user, content: raw_ProofGraph_prompt_bytes}]
+  add_generation_prompt: true
+  enable_thinking: false
+sampling_protocol:
+  {do_sample: true, temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0.0}
+
+resource_protocol:
+  four_gpu_node_memory_gib: 192
+  minimum_cgroup_headroom_gib: 32
+  minimum_cgroup_headroom_fraction: 0.20
+  loading_strategy: low_cpu_mem_student_each_rank_then_FSDP_teacher_rank_zero_only
+  preflight_required:
+    - finite_cgroup_limit_and_registered_headroom
+    - four_visible_GPUs_and_NCCL_all_reduce
+    - finite_student_and_teacher_forward
+    - real_soft_teacher_forward_backward
+    - four_rank_nonduplicate_data
+    - FSDP_save_resume
+    - measured_MaxRSS_and_cgroup_peak
+
+token_budget_protocol:
+  unit: global_nonpadding_model_input_tokens_processed
+  pilot_budget: 2000000
+  production_budget: 64000000
+  factorial_rule: exact_cross_rank_sum_reserved_before_each_optimizer_boundary
+  grpo_rule: conservative_per_update_reservation_plus_custom_prompt_completion_mask_count_with_per_optimizer_step_cross_rank_sum
+  boundary: stop_before_an_optimizer_update_that_would_exceed_budget
+  resume: consumed_tokens_are_checkpointed_and_cannot_reset_or_exceed_the_registered_budget
+  max_steps: independent_safety_ceiling;_first_limit_reached_stops_training
+  required_records: [budget, consumed, unit, stop_reason]
+
+formal_binding_protocol:
+  source: composed_config_only
+  fields:
+    - protocol_track
+    - artifact_namespace
+    - model_revision
+    - teacher_revision
+    - tokenizer_revision
+    - tokenizer_fingerprint
+    - chat_template_sha256
+    - prompt_protocol
+    - enable_thinking
+    - dataset_hash
+    - prefix_probe_hash
+    - code_commit
+    - prereg_path
+    - prereg_version
+    - prereg_commit
+    - prereg_sha256
+  mismatch_action: fail_closed_nonzero
+
+artifact_protocol:
+  namespace: outputs/qwen3-v2
+  scientific_reuse_from: [Qwen2p5_forbidden, qwen3_v1_forbidden]
+  reusable_non_scientific_bytes: pinned_model_cache_only
+  regenerated_in_namespace: [initial_checkpoint, rollout_bank, teacher_demos_and_topk, readiness, capability_cohorts, tokenized_probes, circuits_and_exact_patching, resume_state, local_fork, G0, pilot]
+
+G0_gate:
+  required_bound_inputs:
+    - gpu_preflight
+    - base_probe_scores
+    - teacher_demo_store
+    - teacher_readiness
+    - label_leakage
+    - anti_shortcut
+    - capability_cohorts
+    - final_answer_circuit_and_exact_patching
+    - process_circuit_and_exact_patching
+    - HF_TL_compatibility
+    - distributed_resume
+  pass_only_if_every_registered_gate_and_hash_binding_passes: true
+
+pilot:
+  seed: 42
+  claim_scope: full_mechanism_pipeline_feasibility_only_not_confirmatory_primary_endpoint
+  cells: [offline_hard, online_hard, offline_soft, online_soft_opd, offline_verified_replay, online_verified_replay, canonical_sft, canonical_grpo]
+  circuit_scope:
+    cohorts: [base_capable, challenge]
+    stages:
+      - {label: process, probe_stage: first_rule_selection}
+      - {label: final_answer, probe_stage: final_answer}
+    initial_matrix_count: 4
+    final_matrix_count: 32
+  artifact_chain:
+    per_cell_manifest_binds: [metrics_hash, final_checkpoint_hash, cell, seed, resolved_config_hash, prereg, code, dataset, probe, initial_checkpoint, token_budget_usage, Slurm_terminal_evidence]
+    final_report_hashes_every_decision_input: true
+    tamper_or_missing_action: fail_closed_nonzero
+  pass_rule: all_registered_feasibility_gates_pass;_observed_effect_direction_is_never_a_gate
+  authorized_interpretation: pipeline_and_artifact_integrity_feasibility_at_seed_42
+  forbidden_interpretation: confirmatory_primary_endpoint_or_population_inference
+
+supervision_protocol:
+  scheduler_polling: bounded_retry_with_backoff
+  accounting_lag: bounded_retry_with_backoff
+  empty_or_UNKNOWN_state: never_success
+  terminal_state_record_required: true
+  before_each_four_gpu_submit: reject_potential_concurrent_OPD_GPU_job
+
+primary_endpoints:
+  - heldout_exact_patching_necessity_and_sufficiency_on_base_capable_probes
+  - heldout_exact_patching_acquisition_on_challenge_probes
+  - stage_specific_process_and_final_answer_causal_effects
+  - excess_churn_after_same_checkpoint_estimator_noise_subtraction
+  - CPR_and_CMD_over_the_preregistered_sparsity_grid
+
+primary_counterfactual_ablation_protocol:
+  discovery: EAP-IG_candidates_on_frozen_discovery_subsets_only
+  validation: heldout_exact_activation_and_selected_path_patching
+  primary_corruption: active_support_path_swap
+  corruption_class: semantic_target_changing
+  primary_baseline: counterfactual_replacement
+  controls: [mean_replacement, zero_ablation, layer_size_activation_matched_random_masks]
+  qwen3_qk_patch_location: projection_output_before_QK_norm_and_before_RoPE
+  parity_waiver_allowed: false
+
+faithfulness_sparsity_grid: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
+
+matched_accuracy_rules:
+  source: frozen_formal_validation_split_only
+  maximum_absolute_gap: 0.02
+  interpolation: within_adjacent_observed_checkpoints_only
+  extrapolation: forbidden
+  required_output: [lower_checkpoint, upper_checkpoint, interpolation_weight, validation_artifact_hash]
+
+local_fork_output_KL_matching_rule:
+  divergence: KL(output_new || output_fork)
+  probe_set: fixed_hash_pinned_multi_prompt_pretraining_probe_set
+  target: hard_teacher_KL_at_each_nominal_horizon
+  relative_tolerance: 0.25
+  maximum_calibration_rounds: 2
+  nominal_horizons: [1, 5, 20]
+  primary_axis: matched_output_KL
+  secondary_axes: [update_count, parameter_update_norm]
+  out_of_tolerance_action: invalidate_cell_and_exit_nonzero
+
+teacher_readiness_gate:
+  minimum_teacher_answer_accuracy: 0.90
+  minimum_teacher_exact_proof_accuracy: 0.85
+  minimum_teacher_first_rule_top1_accuracy: 0.80
+  minimum_teacher_intermediate_top1_accuracy: 0.80
+  minimum_teacher_topk_mass: 0.90
+  minimum_teacher_topk_target_coverage: 0.90
+  minimum_corrupted_prefix_recovery_accuracy: 0.70
+  minimum_causal_shift_logprob: 0.0
+
+anti_shortcut_gate:
+  transformations: [entity_symbol_renaming, fact_order_permutation, rule_order_permutation, surface_template_paraphrase, distractor_count_OOD]
+  semantics_preserving_required: true
+  shortcut_gap: IID_accuracy_minus_transformed_accuracy
+  maximum_shortcut_gap: 0.05
+  minimum_iid_accuracy: 0.10
+  minimum_transformed_accuracy: 0.08
+  minimum_per_transformation_accuracy: 0.05
+  zero_zero_result: fail
+  required_before_G0_or_training: true
+
+estimator_noise_floor:
+  method: independent_same_checkpoint_discovery_bootstrap_reruns
+  retain: [resample_indices, full_score_vectors, thresholded_masks, raw_graph_hashes]
+  required_report: [excess_churn, full_score_spearman_stability, weighted_overlap, cross_checkpoint_mask_transfer, heldout_exact_patching_effects]
+  thresholded_Jaccard_role: diagnostic_only_never_sole_evidence
+
+model_scale_escalation_rule:
+  historical_rule_name: 1p5B_to_3B
+  status_for_Qwen3_replacement: inherited_decision_logic_without_model_identity_claim
+  required: [valid_artifacts, stable_estimates, heldout_causal_evidence_above_noise_and_random_controls, positive_expected_information_value]
+  observed_effect_direction: never_a_gate
+
+confirmatory_contrasts:
+  - online_hard_minus_offline_hard
+  - online_soft_OPD_minus_offline_soft
+  - online_verified_replay_minus_offline_verified_replay
+  - online_soft_OPD_minus_online_hard
+  - online_verified_replay_minus_canonical_GRPO
+  - matched_accuracy_versions_of_the_above
+  - matched_output_KL_local_fork_versions_of_the_above
+
+three_seed_inference:
+  ordinary_cluster_robust_inference_with_three_seed_clusters: forbidden
+  primary_reporting: seed_level_cell_means_and_seed_specific_contrasts
+  inferential_status_at_three_seeds: descriptive
+  cluster_robust_threshold: at_least_five_training_seeds
+
+secondary_exploratory_analyses:
+  - natural_rollout_sensitivity
+  - edge_lifecycle_and_compensation
+  - Track_B_long_CoT
+  - delta_transplant
+  - five_seed_expansion
+  - Edge_Pruning
+nonblocking_dependencies: [OLMo, Edge_Pruning, Track_B_long_CoT, delta_transplant, five_seed_expansion]
+
+execution_authorization:
+  this_repair_task: CPU_and_static_validation_only
+  GPU_release_requires: independent_total_review
+  forbidden_without_new_authorization: [full_three_seed_factorial, Gemma_replication]

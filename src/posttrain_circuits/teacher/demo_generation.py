@@ -243,6 +243,8 @@ def generate_teacher_demonstrations(
 def write_teacher_demo_store(
     root: Path,
     result: TeacherDemoGenerationResult,
+    *,
+    protocol_bindings: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Write an independent immutable teacher-demo store with complete generation provenance."""
     config = result.config
@@ -266,15 +268,12 @@ def write_teacher_demo_store(
         teacher_version=config.teacher_revision,
         top_k=0,
         extra_metadata={
+            **(protocol_bindings or {}),
             "store_kind": "teacher_demo",
             "tokenizer_hash": result.tokenizer_hash,
             "tokenizer_fingerprint": result.tokenizer_hash,
-            "protocol_track": (
-                "qwen3_v1" if result.records[0].prompt_protocol == "qwen3_non_thinking_v1" else "core_v2"
-            ),
-            "artifact_namespace": (
-                "qwen3-v1" if result.records[0].prompt_protocol == "qwen3_non_thinking_v1" else "legacy"
-            ),
+            "protocol_track": str((protocol_bindings or {}).get("protocol_track", "core_v2")),
+            "artifact_namespace": str((protocol_bindings or {}).get("artifact_namespace", "legacy")),
             "prompt_protocol": result.records[0].prompt_protocol,
             "enable_thinking": result.records[0].enable_thinking,
             "chat_template_sha256": result.records[0].chat_template_sha256,

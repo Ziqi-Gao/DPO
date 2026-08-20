@@ -19,7 +19,7 @@ from posttrain_circuits.cli._common import dry_run_report, print_json
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import PREREG_PATH, _git
+from posttrain_circuits.core.provenance import _git, resolve_preregistration
 from posttrain_circuits.data.splits import load_frozen_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
@@ -189,13 +189,28 @@ def main(argv: list[str] | None = None) -> None:
     thresholds = TeacherReadinessThresholds(
         **{field: float(threshold_cfg[field]) for field in asdict(TeacherReadinessThresholds())}
     )
+    prereg = resolve_preregistration(config)
     bindings = {
+        "protocol_track": str(config["protocol_track"]),
+        "artifact_namespace": str(config["model"]["artifact_namespace"]),
+        "teacher_model_id": loaded.model_id,
         "teacher_model_revision": loaded.resolved_model_commit,
+        "student_model_id": str(config["model"]["model_name_or_path"]),
+        "student_model_revision": str(config["model"]["model_revision"]),
+        "student_tokenizer_revision": str(config["model"]["tokenizer_revision"]),
+        "teacher_tokenizer_revision": loaded.resolved_tokenizer_commit,
         "tokenizer_revision": loaded.resolved_tokenizer_commit,
+        "tokenizer_fingerprint": loaded.tokenizer_hash,
+        "chat_template_sha256": loaded.chat_template_sha256,
+        "prompt_protocol": loaded.prompt_protocol,
+        "enable_thinking": False,
         "dataset_hash": str(dataset_manifest["sha256"]),
         "prefix_probe_hash": str(tokenized_manifest["sha256"]),
         "code_commit": _git(["rev-parse", "HEAD"]) or "unavailable",
-        "prereg_commit": _git(["log", "-n", "1", "--format=%H", "--", str(PREREG_PATH)]) or "unavailable",
+        "prereg_path": str(prereg.path),
+        "prereg_version": prereg.version,
+        "prereg_commit": prereg.git_commit,
+        "prereg_sha256": prereg.sha256,
     }
     artifact = evaluate_teacher_readiness(
         examples,

@@ -11,8 +11,9 @@ from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_mani
 from posttrain_circuits.core.config import is_production_scale
 from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
+from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.core.scientific_versions import (
-    require_core_v2_artifact,
+    require_scientific_artifact,
     scientific_compatibility_fields,
 )
 
@@ -29,7 +30,7 @@ class ReadinessCheck:
 class ReadinessReport:
     checks: list[ReadinessCheck]
     created_at: str
-    bindings: dict[str, str] | None = None
+    bindings: dict[str, Any] | None = None
 
     @property
     def ready(self) -> bool:
@@ -39,7 +40,7 @@ class ReadinessReport:
         root.mkdir(parents=True, exist_ok=True)
         payload = {
             "format_version": 2,
-            **scientific_compatibility_fields(),
+            **scientific_compatibility_fields(str((self.bindings or {}).get("prereg_version", "core_v2"))),
             "ready": self.ready,
             "created_at": self.created_at,
             "checks": [asdict(check) for check in self.checks],
@@ -57,7 +58,7 @@ class ReadinessReport:
 def build_readiness_report(
     evidence: dict[str, tuple[bool, str]],
     *,
-    bindings: dict[str, str] | None = None,
+    bindings: dict[str, Any] | None = None,
 ) -> ReadinessReport:
     required_names = (
         "base_task_accuracy_nontrivial",
@@ -82,6 +83,25 @@ def build_readiness_report(
     return ReadinessReport(checks, utc_now(), bindings)
 
 
+def require_formal_prerequisite_binding(
+    artifact: dict[str, Any],
+    expected: dict[str, Any],
+    *,
+    name: str,
+    nested: bool = False,
+) -> None:
+    observed = artifact.get("bindings") if nested else artifact
+    if not isinstance(observed, dict):
+        raise RuntimeError(f"{name} has no formal binding mapping")
+    mismatches = {
+        key: {"expected": value, "observed": observed.get(key)}
+        for key, value in expected.items()
+        if observed.get(key) != value
+    }
+    if mismatches:
+        raise RuntimeError(f"{name} formal binding mismatch: {mismatches}")
+
+
 def validate_anti_shortcut_report(
     path: Path,
     *,
@@ -93,7 +113,10 @@ def validate_anti_shortcut_report(
     if expected_hash != sha256_value(payload):
         raise ValueError("anti-shortcut report hash mismatch")
     payload["sha256"] = expected_hash
-    require_core_v2_artifact(payload)
+    require_scientific_artifact(
+        payload,
+        expected_prereg_version=str(payload.get("prereg_version", "")),
+    )
     if str(payload.get("model_checkpoint_hash")) != expected_model_checkpoint_hash:
         raise RuntimeError(
             "anti-shortcut evidence is for a different initial student checkpoint: "
@@ -131,7 +154,10 @@ def validate_readiness_report(
     if expected_hash != sha256_value(payload):
         raise ValueError("readiness report hash mismatch")
     payload["sha256"] = expected_hash
-    require_core_v2_artifact(payload)
+    require_scientific_artifact(
+        payload,
+        expected_prereg_version=str(payload.get("prereg_version", "")),
+    )
     checks = payload.get("checks", [])
     names = {str(check.get("name")) for check in checks if isinstance(check, dict)}
     required = {check.name for check in build_readiness_report({}).checks}
@@ -159,11 +185,18 @@ def require_factorial_prerequisites(config: dict[str, Any]) -> dict[str, Any]:
     safety = config["production_safety"]
     checkpoint_hash = str(safety.get("initial_checkpoint_hash", config["model"]["model_revision"]))
     evidence: dict[str, Any] = {}
+    qwen3_formal = (
+        formal_artifact_binding(config)
+        if str(config.get("protocol_track", "")).startswith("qwen3_")
+        else None
+    )
     if is_production_scale(config):
         readiness = validate_readiness_report(
             Path(str(safety["readiness_report"])),
             expected_initial_checkpoint_hash=checkpoint_hash,
         )
+        if qwen3_formal is not None:
+            require_formal_prerequisite_binding(readiness, qwen3_formal, name="full readiness", nested=True)
         evidence["full_readiness"] = {
             "report_hash": readiness["sha256"],
             "bindings": readiness["bindings"],
@@ -174,6 +207,8 @@ def require_factorial_prerequisites(config: dict[str, Any]) -> dict[str, Any]:
             max_shortcut_gap=float(config["anti_shortcut"]["max_shortcut_gap"]),
             expected_model_checkpoint_hash=checkpoint_hash,
         )
+        if qwen3_formal is not None:
+            require_formal_prerequisite_binding(report, qwen3_formal, name="anti-shortcut")
         evidence["anti_shortcut"] = {
             "report_hash": report["sha256"],
             "shortcut_gap": report["shortcut_gap"],
@@ -195,6 +230,8 @@ def require_factorial_prerequisites(config: dict[str, Any]) -> dict[str, Any]:
                 )
     if bool(safety.get("require_frozen_probe_cohorts", True)):
         probes = validate_probe_cohort_manifest(Path(str(safety["probe_cohort_manifest"])))
+        if qwen3_formal is not None:
+            require_formal_prerequisite_binding(probes, qwen3_formal, name="probe cohorts")
         if probes["initial_student_checkpoint_hash"] != checkpoint_hash:
             raise RuntimeError(
                 "probe cohorts are pinned to a different initial student checkpoint: "

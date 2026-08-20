@@ -4,6 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:4
+#SBATCH --mem=192G
 #SBATCH --time=24:00:00
 #SBATCH --signal=B:TERM@300
 #SBATCH --array=0-17
@@ -15,7 +16,7 @@ cell_index=$((SLURM_ARRAY_TASK_ID / ${#seeds[@]}))
 seed_index=$((SLURM_ARRAY_TASK_ID % ${#seeds[@]}))
 cell=${cells[$cell_index]}
 seed=${seeds[$seed_index]}
-"${ACCELERATE_BIN:-accelerate}" launch \
+"${ACCELERATE_BIN:?Set ACCELERATE_BIN}" launch \
   --config_file configs/accelerate/fsdp.yaml \
   -m posttrain_circuits.cli.train \
   experiment="${cell}" \

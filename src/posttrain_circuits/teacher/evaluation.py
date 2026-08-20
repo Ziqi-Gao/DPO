@@ -45,7 +45,7 @@ def evaluate_teacher_readiness(
     prefix_scores: list[TeacherPrefixScore],
     thresholds: TeacherReadinessThresholds,
     *,
-    bindings: dict[str, str],
+    bindings: dict[str, Any],
 ) -> dict[str, Any]:
     """Evaluate full-generation and step correctness as separate conditions."""
 
@@ -61,8 +61,30 @@ def evaluate_teacher_readiness(
         "code_commit",
         "prereg_commit",
     }
-    if set(bindings) < required_bindings or any(not str(bindings[key]) for key in required_bindings):
+    qwen3 = str(bindings.get("protocol_track", "")).startswith("qwen3_")
+    if qwen3:
+        required_bindings |= {
+            "teacher_model_id",
+            "student_model_revision",
+            "student_model_id",
+            "student_tokenizer_revision",
+            "teacher_tokenizer_revision",
+            "tokenizer_fingerprint",
+            "chat_template_sha256",
+            "prompt_protocol",
+            "enable_thinking",
+            "protocol_track",
+            "artifact_namespace",
+            "prereg_path",
+            "prereg_version",
+            "prereg_sha256",
+        }
+    if set(bindings) < required_bindings or any(
+        bindings[key] is None or bindings[key] == "" for key in required_bindings
+    ):
         raise ValueError("teacher readiness bindings are incomplete")
+    if qwen3 and bindings["enable_thinking"] is not False:
+        raise ValueError("teacher readiness requires the frozen non-thinking protocol")
 
     task = ProofGraphTask()
     answer_correct = 0
@@ -138,7 +160,13 @@ def evaluate_teacher_readiness(
         likely_next_action = "train/calibrate the teacher" if not correctness else "reduce task difficulty"
     payload: dict[str, Any] = {
         "format_version": 2,
-        **scientific_compatibility_fields(),
+        **scientific_compatibility_fields(str(bindings.get("prereg_version", "core_v2"))),
+        "protocol_track": str(bindings.get("protocol_track", "core_v2")),
+        "artifact_namespace": str(bindings.get("artifact_namespace", "legacy")),
+        "prompt_protocol": str(bindings.get("prompt_protocol", "legacy_raw_v1")),
+        "enable_thinking": bool(bindings.get("enable_thinking", False)),
+        "chat_template_sha256": str(bindings.get("chat_template_sha256", "legacy-unrecorded")),
+        "tokenizer_fingerprint": str(bindings.get("tokenizer_fingerprint", "legacy-unrecorded")),
         "artifact_kind": "teacher_readiness",
         "passed": all(checks.values()),
         "checks": checks,
@@ -162,9 +190,16 @@ def validate_teacher_readiness_artifact(
     content = {key: value for key, value in artifact.items() if key != "sha256"}
     if expected != sha256_value(content):
         raise ValueError("teacher-readiness artifact hash mismatch")
-    from posttrain_circuits.core.scientific_versions import require_core_v2_artifact
+    from posttrain_circuits.core.scientific_versions import require_scientific_artifact
 
-    require_core_v2_artifact(artifact, require_circuit_schema=True)
+    expected_prereg_version = str(
+        (expected_bindings or {}).get("prereg_version", artifact.get("prereg_version", ""))
+    )
+    require_scientific_artifact(
+        artifact,
+        expected_prereg_version=expected_prereg_version,
+        require_circuit_schema=True,
+    )
     if expected_bindings:
         for key, value in expected_bindings.items():
             if artifact.get("bindings", {}).get(key) != value:

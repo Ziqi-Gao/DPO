@@ -92,8 +92,9 @@ def main(argv: list[str] | None = None) -> None:
     candidate_audit = {}
     for subset, rows in split_rows.items():
         split_rows[subset], candidate_audit[subset] = _eligible_candidates(rows, scores)
-    protocol_track = str(scores_payload.get("protocol_track", "core_v2"))
-    prereg_path = "prereg/qwen3_v1.yaml" if protocol_track == "qwen3_v1" else "prereg/core_v2.yaml"
+    prereg_path = str(scores_payload.get("prereg_path", ""))
+    if not prereg_path:
+        raise ValueError("probe scores do not bind a preregistration path")
     manifest = build_probe_cohort_manifest(
         split_rows,
         scores,
@@ -120,6 +121,14 @@ def main(argv: list[str] | None = None) -> None:
                 "enable_thinking",
                 "chat_template_sha256",
                 "tokenizer_fingerprint",
+                "prereg_path",
+                "prereg_version",
+                "prereg_commit",
+                "prereg_sha256",
+                "code_commit",
+                "model_revision",
+                "teacher_revision",
+                "tokenizer_revision",
             )
             if key in scores_payload
         },

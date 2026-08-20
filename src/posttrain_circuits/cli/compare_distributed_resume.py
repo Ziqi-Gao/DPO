@@ -8,7 +8,10 @@ from pathlib import Path
 
 import torch
 
+from posttrain_circuits.core.config import compose_config
+from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.training.local_fork import state_hash
 
 
@@ -16,7 +19,10 @@ def _last_metric(path: Path) -> dict[str, object]:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     if not rows:
         raise ValueError(f"resume metrics are empty: {path}")
-    return rows[-1]
+    selected = [row for row in rows if any(key.endswith("_loss") for key in row)]
+    if not selected:
+        raise ValueError(f"resume metrics have no optimizer-update loss: {path}")
+    return selected[-1]
 
 
 def _objective_loss(row: dict[str, object]) -> float:
@@ -30,6 +36,7 @@ def _objective_loss(row: dict[str, object]) -> float:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Compare independent distributed resumes")
+    parser.add_argument("overrides", nargs="*")
     parser.add_argument("--checkpoint-a", type=Path, required=True)
     parser.add_argument("--checkpoint-b", type=Path, required=True)
     parser.add_argument("--metrics-a", type=Path, required=True)
@@ -38,6 +45,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--tolerance", type=float, default=1e-6)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
+    config = compose_config(args.overrides)
     left = torch.load(args.checkpoint_a, map_location="cpu", weights_only=False)
     right = torch.load(args.checkpoint_b, map_location="cpu", weights_only=False)
     left_metric = _last_metric(args.metrics_a)
@@ -51,17 +59,21 @@ def main(argv: list[str] | None = None) -> None:
         "policy_version_identical": left["policy_version"] == right["policy_version"],
         "rollout_round_identical": left["online_rollout_round"] == right["online_rollout_round"],
         "next_loss_within_tolerance": loss_error <= args.tolerance,
+        "token_budget_state_identical": left["trainer_state"]["token_budget"]
+        == right["trainer_state"]["token_budget"],
+        "token_budget_within_limit": int(left["trainer_state"]["token_budget"]["consumed"])
+        <= int(left["trainer_state"]["token_budget"]["budget"]),
     }
-    atomic_write_json(
-        args.output,
-        {
-            "passed": all(checks.values()),
-            "world_size": args.world_size,
-            "checks": checks,
-            "next_loss_absolute_error": loss_error,
-            "tolerance": args.tolerance,
-        },
-    )
+    payload = {
+        "passed": all(checks.values()),
+        "world_size": args.world_size,
+        "checks": checks,
+        "next_loss_absolute_error": loss_error,
+        "tolerance": args.tolerance,
+        **formal_artifact_binding(config),
+    }
+    payload["sha256"] = sha256_value(payload)
+    atomic_write_json(args.output, payload)
     if not all(checks.values()):
         raise SystemExit("distributed checkpoint/resume comparison failed")
 

@@ -73,10 +73,10 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("production teacher scoring requires --bank")
         source_store = TrajectoryStore(args.bank)
         source_manifest = source_store.check_integrity()
-        if config.get("protocol_track") == "qwen3_v1":
+        if str(config.get("protocol_track", "")).startswith("qwen3_"):
             expected_source = {
-                "protocol_track": "qwen3_v1",
-                "artifact_namespace": "qwen3-v1",
+                "protocol_track": config["protocol_track"],
+                "artifact_namespace": config["model"]["artifact_namespace"],
                 "prompt_protocol": "qwen3_non_thinking_v1",
                 "enable_thinking": False,
                 "chat_template_sha256": config["model"]["prompt_protocol"]["chat_template_sha256"],
@@ -171,6 +171,19 @@ def main(argv: list[str] | None = None) -> None:
             "prompt_protocol": str(source_manifest.get("prompt_protocol", "legacy_raw_v1")),
             "enable_thinking": bool(source_manifest.get("enable_thinking", False)),
             "chat_template_sha256": str(source_manifest.get("chat_template_sha256", "legacy-unrecorded")),
+            **{
+                key: source_manifest[key]
+                for key in (
+                    "prereg_path",
+                    "prereg_version",
+                    "prereg_commit",
+                    "prereg_sha256",
+                    "code_commit",
+                    "model_revision",
+                    "tokenizer_revision",
+                )
+                if key in source_manifest
+            },
         },
     )
     print_json(

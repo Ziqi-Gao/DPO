@@ -13,10 +13,10 @@ from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_mani
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import require_git_output
+from posttrain_circuits.core.provenance import formal_artifact_binding, require_git_output
 from posttrain_circuits.core.readiness import build_readiness_report, validate_anti_shortcut_report
 from posttrain_circuits.core.scientific_versions import (
-    require_core_v2_artifact,
+    require_scientific_artifact,
     scientific_compatibility_fields,
 )
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
@@ -29,6 +29,56 @@ def _read(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise TypeError(f"G0 artifact is not a mapping: {path}")
     return value
+
+
+def _require_formal_binding(
+    artifact: dict[str, Any],
+    expected: dict[str, Any],
+    *,
+    name: str,
+) -> None:
+    keys = (
+        "protocol_track",
+        "artifact_namespace",
+        "model_revision",
+        "teacher_revision",
+        "tokenizer_revision",
+        "tokenizer_fingerprint",
+        "chat_template_sha256",
+        "prompt_protocol",
+        "enable_thinking",
+        "code_commit",
+        "prereg_path",
+        "prereg_version",
+        "prereg_commit",
+        "prereg_sha256",
+    )
+    mismatches = {
+        key: {"expected": expected[key], "observed": artifact.get(key)}
+        for key in keys
+        if artifact.get(key) != expected[key]
+    }
+    if mismatches:
+        raise ValueError(f"{name} formal binding mismatch: {mismatches}")
+
+
+def _teacher_readiness_formal_binding(artifact: dict[str, Any]) -> dict[str, Any]:
+    bindings = artifact.get("bindings")
+    if not isinstance(bindings, dict):
+        raise ValueError("teacher-readiness artifact has no binding mapping")
+    required = (
+        "student_model_revision",
+        "teacher_model_revision",
+        "student_tokenizer_revision",
+    )
+    missing = [name for name in required if not str(bindings.get(name, "")).strip()]
+    if missing:
+        raise ValueError(f"teacher-readiness artifact lacks normalization fields: {missing}")
+    normalized = dict(bindings)
+    normalized["model_revision"] = normalized.pop("student_model_revision")
+    normalized["teacher_revision"] = normalized.pop("teacher_model_revision")
+    normalized["tokenizer_revision"] = normalized["student_tokenizer_revision"]
+    return normalized
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -58,14 +108,39 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
+    formal_binding = formal_artifact_binding(config)
+    prereg_version = str(config["prereg_version"])
     base = _read(args.base_scores)
     teacher = TrajectoryStore(args.teacher_store_manifest.parent).check_integrity()
-    require_core_v2_artifact(teacher)
+    require_scientific_artifact(
+        teacher,
+        expected_prereg_version=prereg_version,
+    )
     initial_checkpoint_hash = sha256_file(args.initial_checkpoint)
     label_leakage = validate_label_leakage_artifact(_read(args.label_leakage))
+    teacher_readiness_raw = _read(args.teacher_readiness)
+    tokenized_prefix = teacher_readiness_raw.get("tokenized_prefix_manifest", {})
+    if not isinstance(tokenized_prefix, dict) or tokenized_prefix.get("sha256") != sha256_value(
+        {key: value for key, value in tokenized_prefix.items() if key != "sha256"}
+    ):
+        raise ValueError("teacher-readiness tokenized prefix manifest is invalid")
+    readiness_bindings = {
+        **formal_binding,
+        "teacher_model_id": str(config["teacher"]["model_name_or_path"]),
+        "teacher_model_revision": str(config["teacher"]["model_revision"]),
+        "student_model_id": str(config["model"]["model_name_or_path"]),
+        "student_model_revision": str(config["model"]["model_revision"]),
+        "student_tokenizer_revision": str(config["model"]["tokenizer_revision"]),
+        "teacher_tokenizer_revision": str(config["teacher"]["tokenizer_revision"]),
+        "tokenizer_revision": str(config["teacher"]["tokenizer_revision"]),
+        "dataset_hash": str(label_leakage["dataset_hash"]),
+        "prefix_probe_hash": str(teacher_readiness_raw["tokenized_prefix_manifest"]["sha256"]),
+    }
+    readiness_bindings.pop("teacher_revision")
+    readiness_bindings.pop("model_revision")
     teacher_readiness = validate_teacher_readiness_artifact(
-        _read(args.teacher_readiness),
-        expected_bindings={"dataset_hash": str(label_leakage["dataset_hash"])},
+        teacher_readiness_raw,
+        expected_bindings=readiness_bindings,
     )
     anti = validate_anti_shortcut_report(
         args.anti_shortcut,
@@ -81,8 +156,9 @@ def main(argv: list[str] | None = None) -> None:
     process_circuit = _read(args.process_circuit)
     process_exact = _read(args.process_exact_patching)
     for artifact in (final_circuit, final_exact, process_circuit, process_exact):
-        require_core_v2_artifact(
+        require_scientific_artifact(
             artifact,
+            expected_prereg_version=prereg_version,
             require_circuit_schema=True,
             require_hash=True,
         )
@@ -93,6 +169,25 @@ def main(argv: list[str] | None = None) -> None:
     if gpu_digest != sha256_value(gpu_preflight) or gpu_preflight.get("passed") is not True:
         raise ValueError("G0 requires a passed, hash-valid GPU preflight")
     gpu_preflight["sha256"] = gpu_digest
+    if str(config.get("protocol_track", "")).startswith("qwen3_"):
+        teacher_readiness_formal = _teacher_readiness_formal_binding(teacher_readiness)
+        bound_artifacts = {
+            "base_scores": base,
+            "teacher_store": teacher,
+            "teacher_readiness": teacher_readiness_formal,
+            "label_leakage": label_leakage,
+            "anti_shortcut": anti,
+            "probe_manifest": probes,
+            "final_circuit": final_circuit,
+            "final_exact_patching": final_exact,
+            "process_circuit": process_circuit,
+            "process_exact_patching": process_exact,
+            "compatibility": compatibility,
+            "distributed_resume": resume,
+            "gpu_preflight": gpu_preflight,
+        }
+        for artifact_name, artifact in bound_artifacts.items():
+            _require_formal_binding(artifact, formal_binding, name=artifact_name)
     final_noise = estimate_estimator_noise_floor(
         final_circuit.get("bootstrap_score_vectors", []), activation_threshold=0.0
     )
@@ -178,22 +273,16 @@ def main(argv: list[str] | None = None) -> None:
         and gpu_preflight.get("model_revision") == config["model"]["model_revision"]
         and gpu_preflight.get("teacher_revision") == config["teacher"]["model_revision"]
     )
-    prereg_path = str(config.get("prereg_path", "prereg/core_v2.yaml"))
+    prereg_path = str(config["prereg_path"])
     prereg_commit = require_git_output(["log", "-n", "1", "--format=%H", "--", prereg_path])
-    if config.get("protocol_track") == "qwen3_v1":
+    if str(config.get("protocol_track", "")).startswith("qwen3_"):
         qwen3_bindings = {
-            "protocol_track": "qwen3_v1",
-            "artifact_namespace": "qwen3-v1",
+            "protocol_track": config["protocol_track"],
+            "artifact_namespace": config["model"]["artifact_namespace"],
             "prompt_protocol": "qwen3_non_thinking_v1",
             "enable_thinking": False,
             "chat_template_sha256": config["model"]["prompt_protocol"]["chat_template_sha256"],
             "tokenizer_fingerprint": config["model"]["tokenizer_fingerprint"],
-        }
-        bound_artifacts = {
-            "base_scores": base,
-            "teacher_store": teacher,
-            "probe_manifest": probes,
-            "gpu_preflight": gpu_preflight,
         }
         checks["qwen3_protocol_bindings"] = all(
             all(artifact.get(key) == value for key, value in qwen3_bindings.items())
@@ -208,7 +297,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     payload: dict[str, Any] = {
         "format_version": 2,
-        **scientific_compatibility_fields(),
+        **scientific_compatibility_fields(prereg_version),
         "phase": "G0",
         "protocol_track": str(config.get("protocol_track", "core_v2")),
         "protocol_prereg_version": str(config.get("protocol_track", "core_v2")),
@@ -247,12 +336,14 @@ def main(argv: list[str] | None = None) -> None:
         },
         "job_ids": [args.job_id],
         "git_commit": git_commit,
+        "code_commit": git_commit,
         "prereg_commit": prereg_commit,
         "prereg_path": prereg_path,
         "prereg_sha256": sha256_file(Path(prereg_path)),
         "resolved_config_sha256": sha256_value(config),
         "model_revision": str(config["model"]["model_revision"]),
         "teacher_revision": str(config["teacher"]["model_revision"]),
+        "tokenizer_revision": str(config["model"]["tokenizer_revision"]),
         "launch_environment": {
             name: os.environ.get(name)
             for name in (
@@ -356,11 +447,13 @@ def main(argv: list[str] | None = None) -> None:
     readiness = build_readiness_report(
         readiness_evidence,
         bindings={
+            **formal_binding,
             "initial_checkpoint_hash": initial_checkpoint_hash,
             "dataset_hash": str(anti["dataset_hash"]),
             "suite_hash": str(anti["suite_hash"]),
             "code_commit": git_commit,
             "prereg_commit": prereg_commit,
+            "prereg_version": prereg_version,
         },
     )
     readiness.write(args.output.parent / "readiness")

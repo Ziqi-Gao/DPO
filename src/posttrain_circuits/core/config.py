@@ -13,6 +13,16 @@ QWEN3_TEACHER = "Qwen/Qwen3-8B"
 QWEN3_STUDENT_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
 QWEN3_TEACHER_REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
 QWEN3_CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
+QWEN3_TRACKS = {
+    "qwen3_v1": {
+        "prereg_path": "prereg/qwen3_v1.yaml",
+        "artifact_namespace": "qwen3-v1",
+    },
+    "qwen3_v2": {
+        "prereg_path": "prereg/qwen3_v2.yaml",
+        "artifact_namespace": "qwen3-v2",
+    },
+}
 
 
 def _merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
@@ -198,7 +208,7 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("offline factorial cells must use the fixed common bank")
     if "production_profile" in config or "pilot_profile" in config:
         validate_production_training_config(config)
-    if config.get("protocol_track") == "qwen3_v1":
+    if config.get("protocol_track") in QWEN3_TRACKS:
         _validate_qwen3_track(config)
 
 
@@ -208,13 +218,28 @@ def _validate_qwen3_track(config: dict[str, Any]) -> None:
     validate_model_revision(model)
     validate_model_revision(teacher)
     pair = (model.get("model_name_or_path"), teacher.get("model_name_or_path"))
+    track = str(config.get("protocol_track"))
+    binding = QWEN3_TRACKS[track]
     if pair != (QWEN3_STUDENT, QWEN3_TEACHER):
-        raise ValueError(f"qwen3_v1 requires the exact registered model pair, observed={pair}")
-    if str(config.get("prereg_path")) != "prereg/qwen3_v1.yaml":
-        raise ValueError("qwen3_v1 must bind prereg/qwen3_v1.yaml")
+        raise ValueError(f"{track} requires the exact registered model pair, observed={pair}")
+    if str(config.get("prereg_path")) != binding["prereg_path"]:
+        raise ValueError(f"{track} must bind {binding['prereg_path']}")
+    if str(config.get("prereg_version")) != track:
+        raise ValueError(f"{track} must declare prereg_version={track}")
     output_root = str(config.get("output_root", ""))
-    if "qwen3-v1" not in Path(output_root).parts:
-        raise ValueError("qwen3_v1 output_root must use the qwen3-v1 artifact namespace")
+    namespace = str(binding["artifact_namespace"])
+    if namespace not in Path(output_root).parts:
+        raise ValueError(f"{track} output_root must use the {namespace} artifact namespace")
+    for role, model_config in (("student", model), ("teacher", teacher)):
+        if model_config.get("protocol_track") != track:
+            raise ValueError(f"{track} {role} model config has the wrong protocol_track")
+        if model_config.get("artifact_namespace") != namespace:
+            raise ValueError(f"{track} {role} model config has the wrong artifact namespace")
+    if track == "qwen3_v2":
+        if not bool(model.get("low_cpu_mem_usage")) or not bool(teacher.get("low_cpu_mem_usage")):
+            raise ValueError("qwen3_v2 requires low_cpu_mem_usage for student and teacher")
+        if teacher.get("rank_zero_only_training_load") is not True:
+            raise ValueError("qwen3_v2 requires rank-zero-only training teacher loading")
     bound_paths = {
         "state_source.store_path": config.get("state_source", {}).get("store_path"),
         "task.validation_split_path": config.get("task", {}).get("validation_split_path"),
@@ -230,15 +255,15 @@ def _validate_qwen3_track(config: dict[str, Any]) -> None:
     wrong_paths = [
         name
         for name, value in bound_paths.items()
-        if value is not None and str(value).strip() and "qwen3-v1" not in Path(str(value)).parts
+        if value is not None and str(value).strip() and namespace not in Path(str(value)).parts
     ]
     if wrong_paths:
-        raise ValueError(f"qwen3_v1 artifact paths escape their namespace: {wrong_paths}")
+        raise ValueError(f"{track} artifact paths escape their namespace: {wrong_paths}")
     for section_name in ("state_source", "supervision"):
         section = config.get(section_name, {})
         for key, expected in (("temperature", 0.7), ("top_p", 0.8), ("top_k", 20), ("min_p", 0.0)):
             if key in section and section[key] != expected:
-                raise ValueError(f"qwen3_v1 {section_name}.{key} must equal {expected}")
+                raise ValueError(f"{track} {section_name}.{key} must equal {expected}")
 
 
 def validate_production_training_config(config: dict[str, Any]) -> None:

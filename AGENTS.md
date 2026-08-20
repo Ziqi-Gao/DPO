@@ -12,3 +12,5 @@
 - A queued job is not a completed experiment. Monitor `squeue`, `sacct`, and logs through terminal state; diagnose deterministic failures before retrying. Submit the seed-42 pilot only when the hash-valid G0 artifact says `passed: true`.
 - Never launch the full three-seed factorial or Gemma replication unless the user separately authorizes it.
 - Keep this task at no more than four concurrently allocated GPUs. Four-GPU training arrays run one task at a time; one-GPU circuit arrays may run at most four tasks concurrently.
+- Qwen3-v2 four-GPU preflight, G0, pilot training, and resume jobs request `--mem=192G`. The preflight must record the finite cgroup-v1 or cgroup-v2 memory limit, peak/MaxRSS, and at least 32 GiB plus 20% headroom; do not infer node memory from CPU count or Slurm defaults.
+- Source `scripts/production/slurm_supervision.sh` in new supervisors. Bounded scheduler/accounting retries are required, empty or `UNKNOWN` accounting is never success, and a four-GPU submission must stop if another pending or running OPD GPU job could allocate concurrently.

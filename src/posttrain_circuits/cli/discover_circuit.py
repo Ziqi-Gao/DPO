@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ from posttrain_circuits.cli._common import enforce_production_guard, print_json
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.core.types import CounterfactualPair
 from posttrain_circuits.data.splits import deserialize_example
 from posttrain_circuits.tasks.proofgraph.generator import (
@@ -339,7 +341,6 @@ def main(argv: list[str] | None = None) -> None:
 
     artifact_common = {
         "circuit_probe_schema_version": CIRCUIT_PROBE_SCHEMA_VERSION,
-        "prereg_version": "core_v2",
         "generator_version": GENERATOR_VERSION,
         "label_semantics": LABEL_SEMANTICS,
         "probe_stage": args.stage,
@@ -362,6 +363,7 @@ def main(argv: list[str] | None = None) -> None:
         "tokenized_probe_manifest_path": str(tokenized_path.resolve()),
         "semantic_pair_hashes": [probe.semantic_pair_hash for probe in selected],
         "tokenized_pair_hashes": [probe.tokenized_pair_hash for probe in selected],
+        **formal_artifact_binding(config),
     }
     if not local_model:
         assert args.checkpoint is not None and probe_manifest is not None and args.cohort is not None
@@ -380,6 +382,18 @@ def main(argv: list[str] | None = None) -> None:
             seed=seed,
             parity_tolerance=float(config["circuit"]["compatibility_tolerance"]),
         )
+        compatibility_path = output.parent / "mib_raw" / "compatibility.json"
+        compatibility_payload = json.loads(compatibility_path.read_text(encoding="utf-8"))
+        compatibility_payload.update(formal_artifact_binding(config))
+        compatibility_payload["sha256"] = sha256_value(
+            {
+                key: value
+                for key, value in compatibility_payload.items()
+                if key not in {"sha256", "hf_identity_max_error"}
+            }
+        )
+        atomic_write_json(compatibility_path, compatibility_payload)
+        scores.metadata["compatibility_hash"] = compatibility_payload["sha256"]
         raw_bootstrap_vectors = scores.metadata.get("bootstrap_score_vectors", [])
         if not isinstance(raw_bootstrap_vectors, list):
             raise RuntimeError("MIB bootstrap score vectors are malformed")
@@ -427,7 +441,6 @@ def main(argv: list[str] | None = None) -> None:
             resolved_model_commit=str(
                 config["model"].get("resolved_model_commit", config["model"]["model_revision"])
             ),
-            tokenizer_revision=str(config["model"]["tokenizer_revision"]),
             tokenizer_hash=str(tokenized_manifest["tokenizer_hash"]),
             probe_cohort=args.cohort,
             probe_subset="discovery",
@@ -467,7 +480,6 @@ def main(argv: list[str] | None = None) -> None:
             attribution_method=backend.method,
             discovery_pair_count=pair_manifest["pair_count"],
             uncertainty_method="prompt_standard_error",
-            tokenizer_revision=str(config["model"]["tokenizer_revision"]),
             tokenizer_hash=str(tokenized_manifest["tokenizer_hash"]),
             **artifact_common,
         )

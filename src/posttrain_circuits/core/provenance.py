@@ -18,9 +18,6 @@ import yaml
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
 
-PREREG_PATH = Path("prereg/core_v2.yaml")
-PREREG_VERSION = "core_v2"
-
 _LAUNCH_ENVIRONMENT_FIELDS = (
     "MODEL_CONFIG",
     "TEACHER_CONFIG",
@@ -84,16 +81,78 @@ def dependency_versions() -> dict[str, str]:
     return dict(sorted(versions.items()))
 
 
-def _prereg_commit(path: Path = PREREG_PATH) -> str:
+def _prereg_commit(path: Path) -> str:
     return _git(["log", "-n", "1", "--format=%H", "--", str(path)]) or "unavailable"
 
 
-def _prereg_sha256(path: Path = PREREG_PATH) -> str:
+def _prereg_sha256(path: Path) -> str:
     return sha256_file(path) if path.is_file() else "unavailable"
 
 
-def _prereg_dirty(path: Path = PREREG_PATH) -> bool:
+def _prereg_dirty(path: Path) -> bool:
     return bool(_git(["status", "--porcelain", "--", str(path)]) or "")
+
+
+@dataclass(frozen=True)
+class PreregistrationBinding:
+    path: Path
+    version: str
+    git_commit: str
+    sha256: str
+    dirty: bool
+
+
+def resolve_preregistration(config: dict[str, Any]) -> PreregistrationBinding:
+    """Resolve the preregistration exclusively from the composed run config."""
+
+    raw_path = str(config.get("prereg_path", "")).strip()
+    version = str(config.get("prereg_version", "")).strip()
+    if not raw_path or not version:
+        raise ValueError("formal configuration requires prereg_path and prereg_version")
+    path = Path(raw_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"configured preregistration does not exist: {path}")
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(payload, dict) or str(payload.get("version", "")) != version:
+        raise ValueError(
+            "configured preregistration version mismatch: "
+            f"config={version!r}, file={payload.get('version')!r}, path={path}"
+        )
+    return PreregistrationBinding(
+        path=path,
+        version=version,
+        git_commit=_prereg_commit(path),
+        sha256=_prereg_sha256(path),
+        dirty=_prereg_dirty(path),
+    )
+
+
+def formal_artifact_binding(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the complete model/protocol/prereg binding for a formal artifact."""
+
+    prereg = resolve_preregistration(config)
+    model = config.get("model", {})
+    teacher = config.get("teacher", {})
+    prompt = model.get("prompt_protocol", {})
+    protocol_track = str(config.get("protocol_track", prereg.version))
+    if protocol_track.startswith("qwen3_") and require_git_output(["status", "--porcelain"]):
+        raise RuntimeError("Qwen3 formal artifact creation refuses a dirty source checkout")
+    return {
+        "protocol_track": protocol_track,
+        "artifact_namespace": str(model.get("artifact_namespace", "legacy")),
+        "model_revision": str(model.get("model_revision", "unavailable")),
+        "teacher_revision": str(teacher.get("model_revision", "unavailable")),
+        "tokenizer_revision": str(model.get("tokenizer_revision", "unavailable")),
+        "tokenizer_fingerprint": str(model.get("tokenizer_fingerprint", "legacy-unrecorded")),
+        "chat_template_sha256": str(prompt.get("chat_template_sha256", "legacy-unrecorded")),
+        "prompt_protocol": str(prompt.get("name", "legacy_raw_v1")),
+        "enable_thinking": bool(prompt.get("enable_thinking", False)),
+        "code_commit": require_git_output(["rev-parse", "HEAD"]),
+        "prereg_path": str(prereg.path),
+        "prereg_version": prereg.version,
+        "prereg_commit": prereg.git_commit,
+        "prereg_sha256": prereg.sha256,
+    }
 
 
 @dataclass
@@ -118,6 +177,15 @@ class RunManifest:
     tokenizer_fingerprint: str = "legacy-unrecorded"
     protocol_track: str = "core_v2"
     artifact_namespace: str = "legacy"
+    protocol_teacher_revision: str = "unbound"
+    token_budget: int = 1024
+    token_budget_unit: str = "global_nonpadding_model_input_tokens"
+    token_budget_consumed: int = 0
+    training_stop_reason: str | None = None
+    metrics_sha256: str | None = None
+    final_checkpoint_path: str | None = None
+    final_checkpoint_sha256: str | None = None
+    slurm_terminal_evidence_sha256: str | None = None
     teacher_id: str | None = None
     teacher_revision: str | None = None
     resolved_teacher_commit: str | None = None
@@ -130,18 +198,18 @@ class RunManifest:
     package_versions: dict[str, str] = field(default_factory=dict)
     environment: dict[str, Any] = field(default_factory=dict)
     launch_environment: dict[str, str | None] = field(default_factory=_launch_environment)
-    prereg_git_commit: str = field(default_factory=_prereg_commit)
-    prereg_sha256: str = field(default_factory=_prereg_sha256)
-    prereg_dirty: bool = field(default_factory=_prereg_dirty)
-    prereg_version: str = PREREG_VERSION
-    prereg_path: str = str(PREREG_PATH)
+    prereg_git_commit: str = "unbound"
+    prereg_sha256: str = "unbound"
+    prereg_dirty: bool = True
+    prereg_version: str = "unbound"
+    prereg_path: str = "unbound"
 
-    def bind_preregistration(self, path: Path, *, version: str) -> None:
-        self.prereg_path = str(path)
-        self.prereg_version = version
-        self.prereg_git_commit = _prereg_commit(path)
-        self.prereg_sha256 = _prereg_sha256(path)
-        self.prereg_dirty = _prereg_dirty(path)
+    def bind_preregistration(self, binding: PreregistrationBinding) -> None:
+        self.prereg_path = str(binding.path)
+        self.prereg_version = binding.version
+        self.prereg_git_commit = binding.git_commit
+        self.prereg_sha256 = binding.sha256
+        self.prereg_dirty = binding.dirty
         self.dirty_working_tree = bool(_git(["status", "--porcelain"]) or "")
 
     def validate(self, *, require_git: bool) -> None:
@@ -162,32 +230,50 @@ class RunManifest:
             raise ValueError("run manifest requires non-empty dataset hashes")
         if self.teacher_id is not None and (not self.teacher_revision or not self.resolved_teacher_commit):
             raise ValueError("teacher runs require teacher revision and resolved commit")
+        if self.token_budget < 1 or self.token_budget_unit != "global_nonpadding_model_input_tokens":
+            raise ValueError("run manifest requires the registered global token budget and unit")
+        if not 0 <= self.token_budget_consumed <= self.token_budget:
+            raise ValueError("run manifest token consumption is outside its registered budget")
         if require_git and self.git_commit == "unavailable":
             raise RuntimeError(
                 "formal run refused because Git provenance is unavailable; "
                 "initialize the repository and commit the experiment source first"
             )
         if require_git and (self.prereg_git_commit == "unavailable" or self.prereg_sha256 == "unavailable"):
-            raise RuntimeError("formal run refused because prereg/core_v2.yaml has no frozen Git commit")
+            raise RuntimeError(
+                "formal run refused because its configured preregistration has no frozen Git commit"
+            )
         if require_git and self.prereg_dirty:
             raise RuntimeError(
-                "formal run refused because prereg/core_v2.yaml differs from its frozen Git commit"
+                "formal run refused because its configured preregistration differs from its frozen Git commit"
             )
         if require_git and self.dirty_working_tree:
             raise RuntimeError("formal run refused because the source working tree is dirty")
-        if self.prereg_version not in {PREREG_VERSION, "qwen3_v1"}:
-            raise RuntimeError("formal run refused because its preregistration version is unknown")
-        if self.protocol_track == "qwen3_v1":
+        if require_git or self.prereg_path != "unbound":
+            prereg = Path(self.prereg_path)
+            if not prereg.is_file():
+                raise RuntimeError("formal run refused because its bound preregistration is missing")
+            prereg_payload = yaml.safe_load(prereg.read_text(encoding="utf-8")) or {}
+            if str(prereg_payload.get("version", "")) != self.prereg_version:
+                raise RuntimeError("formal run refused because its preregistration version is inconsistent")
+            if sha256_file(prereg) != self.prereg_sha256:
+                raise RuntimeError("formal run refused because its preregistration SHA-256 changed")
+            if require_git and _prereg_commit(prereg) != self.prereg_git_commit:
+                raise RuntimeError("formal run refused because its preregistration Git commit changed")
+        if self.protocol_track in {"qwen3_v1", "qwen3_v2"}:
+            suffix = self.protocol_track.removeprefix("qwen3_")
+            expected_namespace = f"qwen3-{suffix}"
             required_qwen3 = {
-                "prereg_version": self.prereg_version == "qwen3_v1",
-                "prereg_path": self.prereg_path == "prereg/qwen3_v1.yaml",
+                "prereg_version": self.prereg_version == self.protocol_track,
+                "prereg_path": self.prereg_path == f"prereg/{self.protocol_track}.yaml",
                 "prompt_protocol": self.prompt_protocol == "qwen3_non_thinking_v1",
                 "thinking_disabled": self.enable_thinking is False,
                 "chat_template": len(self.chat_template_sha256) == 64,
                 "tokenizer_fingerprint": len(self.tokenizer_fingerprint) == 64,
                 "raw_prompt_hash": len(self.raw_prompt_schedule_hash) == 64,
                 "model_facing_prompt_hash": len(self.model_facing_prompt_schedule_hash) == 64,
-                "namespace": self.artifact_namespace == "qwen3-v1",
+                "namespace": self.artifact_namespace == expected_namespace,
+                "teacher_revision": len(self.protocol_teacher_revision) == 40,
                 "launch_environment": all(
                     self.launch_environment.get(name) for name in _LAUNCH_ENVIRONMENT_FIELDS
                 ),
@@ -217,9 +303,12 @@ def initialize_run_directory(
     *,
     require_git: bool = False,
 ) -> None:
-    prereg_path = Path(str(resolved_config.get("prereg_path", PREREG_PATH)))
-    prereg_version = "qwen3_v1" if resolved_config.get("protocol_track") == "qwen3_v1" else PREREG_VERSION
-    manifest.bind_preregistration(prereg_path, version=prereg_version)
+    if require_git and manifest.git_commit == "unavailable":
+        manifest.validate(require_git=True)
+    if resolved_config.get("prereg_path") and resolved_config.get("prereg_version"):
+        manifest.bind_preregistration(resolve_preregistration(resolved_config))
+    elif require_git:
+        resolve_preregistration(resolved_config)
     manifest.package_versions = dependency_versions()
     manifest.environment = {
         "python": platform.python_version(),

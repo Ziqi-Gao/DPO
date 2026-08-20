@@ -9,7 +9,6 @@ from typing import Any
 
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import PREREG_PATH, PREREG_VERSION
 from posttrain_circuits.core.scientific_versions import require_core_v2_artifact
 from posttrain_circuits.data.splits import assert_split_isolation, load_frozen_split
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
@@ -26,6 +25,8 @@ FACTORIAL_CELLS = (
 )
 OFFLINE_CELLS = ("offline_hard", "offline_soft", "offline_verified_replay")
 PROBE_STAGES = ("first_rule_selection", "intermediate_conclusion", "final_answer")
+PREREG_PATH = Path("prereg/core_v2.yaml")
+PREREG_VERSION = "core_v2"
 
 
 def _read(path: Path) -> dict[str, Any]:

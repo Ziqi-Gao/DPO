@@ -74,3 +74,35 @@ native Qwen3 head dimension/GQA/QK-normalization behavior, rank sharding, cross-
 rejection, and complete prereg/launch provenance. Full snapshots, simultaneous-load memory,
 four-rank FSDP resume, and real-model HF↔TransformerLens parity remain empirical gates; no waiver is
 permitted.
+
+## M. Qwen3-v2 independent-review repair
+
+`qwen3_v1` remains frozen historical evidence. The repair track is the new
+`prereg/qwen3_v2.yaml` / `outputs/qwen3-v2` namespace; no v1 or Qwen2.5 scientific artifact is an
+input. The repair closes the following review findings:
+
+- Every four-GPU Qwen3 job requests 192 GiB explicitly. The preflight reads the finite Slurm
+  cgroup-v1 or cgroup-v2 memory limit and peak, requires at least 32 GiB and 20% headroom, records process MaxRSS, and
+  fails when the registered request is not enforced. Students use low-CPU-memory loading before
+  FSDP; the 8B teacher is loaded and scores on rank zero only.
+- Formal provenance is resolved from the composed config. Teacher readiness and every G0 decision
+  input bind the exact protocol, namespace, model/tokenizer revisions, prompt fingerprint,
+  dataset/prefix probes, code, and preregistration. Cross-prereg and modified artifacts exit
+  nonzero.
+- The token budget is global non-padding model-input tokens. Factorial/SFT reserve the exact
+  cross-rank optimizer window; GRPO uses a preregistered conservative admission bound and reduces
+  actual per-step rank deltas. Budget state is checkpointed, cannot reset on resume, and stops only
+  at optimizer boundaries. `max_steps` remains an independent safety ceiling.
+- A completed cell manifest is not trusted until it binds its metrics, resolved config, final
+  checkpoint, budget usage, and successful Slurm array task. The pilot report reconstructs that
+  chain and hashes every accuracy, output-KL, circuit, dynamics, resume, and terminal-state input.
+- Circuit feasibility covers all eight cells, both cohorts, and both process/final stages: four
+  initial and 32 final matrix rows. The seed-42 report can establish execution and artifact-chain
+  feasibility only. It cannot establish a confirmatory primary endpoint or population inference,
+  and effect direction is never a pass condition.
+- Supervisor polling uses bounded retry/backoff for scheduler errors and accounting lag. Empty or
+  `UNKNOWN` state is never success, and every four-GPU submission refuses a potentially concurrent
+  OPD GPU job.
+
+No Qwen3-v2 GPU result is claimed by this repair. Real cgroup headroom, measured MaxRSS, Qwen
+forward/backward, FSDP resume, and HF↔TransformerLens parity remain independent-review GPU gates.

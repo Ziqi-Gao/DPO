@@ -10,7 +10,7 @@ from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
 from posttrain_circuits.core.scientific_versions import (
     PROBE_COHORT_SCHEMA_VERSION,
-    require_core_v2_artifact,
+    require_scientific_artifact,
     scientific_compatibility_fields,
 )
 
@@ -128,7 +128,7 @@ def build_probe_cohort_manifest(
     payload: dict[str, Any] = {
         "format_version": 2,
         "probe_cohort_schema_version": PROBE_COHORT_SCHEMA_VERSION,
-        **scientific_compatibility_fields(),
+        **scientific_compatibility_fields(str((protocol_bindings or {}).get("prereg_version", "core_v2"))),
         "frozen_before_training": True,
         **required_hashes,
         "selection_rules": {
@@ -168,14 +168,18 @@ def validate_probe_cohort_manifest(
     if expected != sha256_value(payload):
         raise ValueError("probe cohort manifest hash mismatch")
     payload["sha256"] = expected
-    require_core_v2_artifact(payload)
+    require_scientific_artifact(
+        payload,
+        expected_prereg_version=str(payload.get("prereg_version", "")),
+    )
     if payload.get("probe_cohort_schema_version") != PROBE_COHORT_SCHEMA_VERSION:
         raise ValueError("pre-core-v2 probe cohort manifests are not accepted")
     if payload.get("frozen_before_training") is not True:
         raise ValueError("probe cohorts were not frozen before training")
-    if payload.get("protocol_track") == "qwen3_v1":
+    if str(payload.get("protocol_track", "")).startswith("qwen3_"):
+        namespace = str(payload["protocol_track"]).replace("_", "-", 1)
         qwen3_expected = {
-            "artifact_namespace": "qwen3-v1",
+            "artifact_namespace": namespace,
             "prompt_protocol": "qwen3_non_thinking_v1",
             "enable_thinking": False,
         }

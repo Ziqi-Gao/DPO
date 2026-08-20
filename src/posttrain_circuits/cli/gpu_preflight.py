@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import resource
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,81 @@ from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
 )
 from posttrain_circuits.models.prompt_protocol import format_model_prompt
+
+
+def _read_cgroup_value(path: Path) -> int | None:
+    if not path.is_file():
+        return None
+    value = path.read_text(encoding="utf-8").strip()
+    if value == "max":
+        return None
+    parsed = int(value)
+    # cgroup-v1 represents an unlimited memory controller with a value close
+    # to INT64_MAX. That is not evidence of a finite Slurm allocation limit.
+    return None if parsed >= 2**60 else parsed
+
+
+def cgroup_memory_snapshot(
+    *,
+    proc_cgroup: Path = Path("/proc/self/cgroup"),
+    cgroup_root: Path = Path("/sys/fs/cgroup"),
+) -> dict[str, int | None]:
+    """Read the Slurm cgroup-v1 or cgroup-v2 memory controller without host fallbacks."""
+
+    unified_relative: Path | None = None
+    memory_relative: Path | None = None
+    if proc_cgroup.is_file():
+        for line in proc_cgroup.read_text(encoding="utf-8").splitlines():
+            fields = line.split(":", 2)
+            if len(fields) != 3:
+                continue
+            controllers = fields[1].split(",") if fields[1] else []
+            relative = Path(fields[2].lstrip("/"))
+            if fields[0] == "0" and not controllers:
+                unified_relative = relative
+            if "memory" in controllers:
+                memory_relative = relative
+    if unified_relative is not None:
+        root = cgroup_root / unified_relative
+        names = ("memory.max", "memory.current", "memory.peak")
+    elif memory_relative is not None:
+        root = cgroup_root / "memory" / memory_relative
+        names = ("memory.limit_in_bytes", "memory.usage_in_bytes", "memory.max_usage_in_bytes")
+    else:
+        return {"limit_bytes": None, "current_bytes": None, "peak_bytes": None}
+    return {
+        "limit_bytes": _read_cgroup_value(root / names[0]),
+        "current_bytes": _read_cgroup_value(root / names[1]),
+        "peak_bytes": _read_cgroup_value(root / names[2]),
+    }
+
+
+def validate_memory_headroom(
+    snapshot: dict[str, int | None],
+    *,
+    requested_gib: int,
+    minimum_headroom_gib: int,
+    minimum_headroom_fraction: float,
+    observed_process_peak_bytes: int,
+) -> dict[str, Any]:
+    limit = snapshot.get("limit_bytes")
+    cgroup_peak = snapshot.get("peak_bytes")
+    if limit is None or limit <= 0:
+        raise RuntimeError("GPU preflight cannot verify a finite Slurm cgroup memory limit")
+    requested_bytes = requested_gib * 1024**3
+    if limit < requested_bytes:
+        raise RuntimeError(f"Slurm cgroup memory limit {limit} is below registered request {requested_bytes}")
+    observed_peak = max(int(cgroup_peak or 0), observed_process_peak_bytes)
+    headroom = limit - observed_peak
+    minimum = max(int(minimum_headroom_gib * 1024**3), int(limit * minimum_headroom_fraction))
+    return {
+        **snapshot,
+        "requested_bytes": requested_bytes,
+        "observed_peak_bytes": observed_peak,
+        "headroom_bytes": headroom,
+        "minimum_required_headroom_bytes": minimum,
+        "passed": observed_peak > 0 and headroom >= minimum,
+    }
 
 
 def _parameter_checksum(model: torch.nn.Module, device: torch.device) -> torch.Tensor:
@@ -49,17 +125,29 @@ def _qwen3_training_path(
     )
 
     student_bundle = load_model_and_tokenizer(config["model"], for_training=True)
-    teacher_bundle = load_model_and_tokenizer(config["teacher"], for_training=False)
-    tokenizer_hash = assert_tokenizer_compatible(
-        student_bundle.tokenizer,
-        teacher_bundle.tokenizer,
-    )
-    teacher = teacher_bundle.model.to(device)
+    vocab_size = int(student_bundle.model.config.vocab_size)
     student = FSDP(
         student_bundle.model,
         device_id=device,
         use_orig_params=True,
     )
+    teacher = None
+    teacher_metadata: list[Any] = [None]
+    if rank == 0:
+        teacher_bundle = load_model_and_tokenizer(config["teacher"], for_training=False)
+        tokenizer_hash = assert_tokenizer_compatible(
+            student_bundle.tokenizer,
+            teacher_bundle.tokenizer,
+        )
+        teacher = teacher_bundle.model.to(device)
+        teacher_metadata[0] = {
+            "resolved_teacher_commit": teacher_bundle.resolved_model_commit,
+            "tokenizer_fingerprint": tokenizer_hash,
+        }
+    dist.broadcast_object_list(teacher_metadata, src=0)
+    if not isinstance(teacher_metadata[0], dict):
+        raise RuntimeError("rank-zero teacher metadata broadcast failed")
+    tokenizer_hash = str(teacher_metadata[0]["tokenizer_fingerprint"])
     optimizer = torch.optim.AdamW(student.parameters(), lr=1e-3)
     raw_prompt = (
         f"RANK-CANARY-{rank}\nFACTS F01: A\nRULES R01: A -> B\n"
@@ -78,8 +166,27 @@ def _qwen3_training_path(
     unique_rank_shards = len(set(str(value) for value in prompt_hashes)) == world_size
 
     optimizer.zero_grad(set_to_none=True)
-    with torch.no_grad():
-        teacher_logits = teacher(input_ids=input_ids, attention_mask=attention_mask).logits
+    gathered_ids = [torch.empty_like(input_ids) for _ in range(world_size)]
+    gathered_masks = [torch.empty_like(attention_mask) for _ in range(world_size)]
+    dist.all_gather(gathered_ids, input_ids)
+    dist.all_gather(gathered_masks, attention_mask)
+    teacher_logits = torch.empty(
+        (*input_ids.shape, vocab_size),
+        dtype=torch.bfloat16,
+        device=device,
+    )
+    if rank == 0:
+        if teacher is None:
+            raise RuntimeError("rank zero did not load the teacher")
+        with torch.no_grad():
+            batched_teacher_logits = teacher(
+                input_ids=torch.cat(gathered_ids, dim=0),
+                attention_mask=torch.cat(gathered_masks, dim=0),
+            ).logits
+        scatter_rows = list(batched_teacher_logits.split(input_ids.shape[0], dim=0))
+    else:
+        scatter_rows = None
+    dist.scatter(teacher_logits, scatter_list=scatter_rows, src=0)
     student_logits = student(input_ids=input_ids, attention_mask=attention_mask).logits
     soft_teacher_loss = functional.kl_div(
         student_logits.float().log_softmax(dim=-1),
@@ -138,7 +245,7 @@ def _qwen3_training_path(
         "prompt_protocol": formatted.prompt_protocol,
         "enable_thinking": formatted.enable_thinking,
         "student_revision": student_bundle.resolved_model_commit,
-        "teacher_revision": teacher_bundle.resolved_model_commit,
+        "teacher_revision": str(teacher_metadata[0]["resolved_teacher_commit"]),
         "tokenizer_revision": student_bundle.resolved_tokenizer_commit,
         "tokenizer_fingerprint": tokenizer_hash,
         "chat_template_sha256": student_bundle.chat_template_sha256,
@@ -153,6 +260,9 @@ def _qwen3_training_path(
         "checkpoint_sha256": sha256_file(rank_path),
         "max_memory_allocated": int(torch.cuda.max_memory_allocated(device)),
         "max_memory_reserved": int(torch.cuda.max_memory_reserved(device)),
+        "process_max_rss_bytes": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024),
+        "teacher_loaded_on_this_rank": rank == 0,
+        "loading_strategy": "low_cpu_mem_student_rank_zero_teacher",
     }
     del teacher_logits, student_logits, teacher, student, optimizer
     torch.cuda.empty_cache()
@@ -193,7 +303,7 @@ def main(argv: list[str] | None = None) -> None:
     resolved_model_commit = ""
     tokenizer_hash = ""
     qwen3_rows: list[Any] = [None for _ in range(world_size)]
-    if config.get("protocol_track") == "qwen3_v1":
+    if str(config.get("protocol_track", "")).startswith("qwen3_"):
         if os.environ.get("HF_HUB_OFFLINE") != "1":
             raise RuntimeError("Qwen3 production preflight requires HF_HUB_OFFLINE=1")
         if rank == 0 and require_git_output(["status", "--porcelain"]):
@@ -248,7 +358,7 @@ def main(argv: list[str] | None = None) -> None:
             "resolved_model_commit": resolved_model_commit,
             "tokenizer_hash": tokenizer_hash,
             "protocol_track": str(config.get("protocol_track", "core_v2")),
-            "artifact_namespace": str(config.get("artifact_namespace", "legacy")),
+            "artifact_namespace": str(config["model"].get("artifact_namespace", "legacy")),
             "resolved_config_sha256": sha256_value(config),
             "launch_environment": {
                 name: os.environ.get(name)
@@ -266,11 +376,22 @@ def main(argv: list[str] | None = None) -> None:
             },
             "devices": device_rows,
             "git_commit": git_commit,
+            "code_commit": git_commit,
             "job_id": os.environ.get("SLURM_JOB_ID"),
             "created_at": utc_now(),
         }
-        if config.get("protocol_track") == "qwen3_v1":
+        if str(config.get("protocol_track", "")).startswith("qwen3_"):
             prereg_path = Path(str(config["prereg_path"]))
+            process_peak = sum(int(row["process_max_rss_bytes"]) for row in qwen3_rows)
+            resource_budget = config.get("resource_budget", {})
+            memory = validate_memory_headroom(
+                cgroup_memory_snapshot(),
+                requested_gib=int(resource_budget["node_memory_gib"]),
+                minimum_headroom_gib=int(resource_budget["minimum_headroom_gib"]),
+                minimum_headroom_fraction=float(resource_budget["minimum_headroom_fraction"]),
+                observed_process_peak_bytes=process_peak,
+            )
+            payload["passed"] = bool(payload["passed"] and memory["passed"])
             payload.update(
                 {
                     "teacher_revision": str(config["teacher"]["model_revision"]),
@@ -283,15 +404,24 @@ def main(argv: list[str] | None = None) -> None:
                     "prereg_commit": require_git_output(
                         ["log", "-n", "1", "--format=%H", "--", str(prereg_path)]
                     ),
+                    "prereg_version": str(config["prereg_version"]),
+                    "tokenizer_revision": str(config["model"]["tokenizer_revision"]),
+                    "tokenizer_fingerprint": str(qwen3_rows[0]["tokenizer_fingerprint"]),
                     "rank_training_checks": qwen3_rows,
                     "rank_prompt_hashes_unique": len(
                         {str(row["model_facing_prompt_sha256"]) for row in qwen3_rows}
                     )
                     == world_size,
+                    "cgroup_memory": memory,
+                    "rank_zero_teacher_load_count": sum(
+                        int(row["teacher_loaded_on_this_rank"]) for row in qwen3_rows
+                    ),
                 }
             )
         payload["sha256"] = sha256_value(payload)
         atomic_write_json(args.output, payload)
+        status.fill_(int(payload["passed"]))
+    dist.broadcast(status, src=0)
     dist.barrier()
     dist.destroy_process_group()
     if not nccl_passed or not bool(status.item()):

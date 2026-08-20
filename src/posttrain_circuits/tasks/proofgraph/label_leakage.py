@@ -303,9 +303,12 @@ def validate_label_leakage_artifact(
     content = {key: value for key, value in artifact.items() if key != "sha256"}
     if expected != sha256_value(content):
         raise ValueError("label-leakage artifact hash mismatch")
-    from posttrain_circuits.core.scientific_versions import require_core_v2_artifact
+    from posttrain_circuits.core.scientific_versions import require_scientific_artifact
 
-    require_core_v2_artifact(artifact)
+    require_scientific_artifact(
+        artifact,
+        expected_prereg_version=str(artifact.get("prereg_version", "")),
+    )
     if artifact.get("audit_version") != LEAKAGE_AUDIT_VERSION:
         raise ValueError("unsupported label-leakage audit version")
     if expected_dataset_hash is not None and artifact.get("dataset_hash") != expected_dataset_hash:

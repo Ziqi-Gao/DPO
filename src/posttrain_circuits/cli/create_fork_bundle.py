@@ -11,6 +11,7 @@ import torch
 from posttrain_circuits.cli._common import dry_run_report, print_json
 from posttrain_circuits.core.config import compose_config, is_production_scale
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
+from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.core.seeding import RNGState
 from posttrain_circuits.core.types import PromptBatch, TrajectoryBatch, TrajectoryRecord
 from posttrain_circuits.data.trajectory_store import TrajectoryStore
@@ -264,6 +265,7 @@ def main(argv: list[str] | None = None) -> None:
         probe_input_ids=probe,
         pre_update_outputs=outputs,
         manifest_hashes={**input_hashes, "model_revision": str(model_config["model_revision"])},
+        formal_binding=formal_artifact_binding(config) if production else {},
         model_spec={
             **model_config,
             "seed": args.seed,

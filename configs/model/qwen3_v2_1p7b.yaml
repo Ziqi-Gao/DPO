@@ -1,0 +1,27 @@
+model_name_or_path: Qwen/Qwen3-1.7B
+model_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+tokenizer_name_or_path: Qwen/Qwen3-1.7B
+tokenizer_revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+tokenizer_fingerprint: 03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d
+torch_dtype: bfloat16
+attn_implementation: sdpa
+gradient_checkpointing: true
+use_cache: false
+trust_remote_code: false
+allow_unpinned_revision: false
+low_cpu_mem_usage: true
+protocol_track: qwen3_v2
+artifact_namespace: qwen3-v2
+prompt_protocol:
+  name: qwen3_non_thinking_v1
+  enable_thinking: false
+  messages: single_user
+  add_generation_prompt: true
+  chat_template_sha256: a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8
+sampling_protocol:
+  name: qwen3_non_thinking_sampling_v1
+  do_sample: true
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  min_p: 0.0

@@ -10,6 +10,8 @@ defaults:
 
 seed: 42
 output_root: outputs
+prereg_path: prereg/core_v2.yaml
+prereg_version: core_v2
 trainer:
   max_steps: 2
   steps_per_round: 1

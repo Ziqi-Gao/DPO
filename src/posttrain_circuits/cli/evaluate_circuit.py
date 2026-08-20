@@ -37,7 +37,8 @@ from posttrain_circuits.core.config import (
 )
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.scientific_versions import require_core_v2_artifact
+from posttrain_circuits.core.provenance import formal_artifact_binding
+from posttrain_circuits.core.scientific_versions import require_scientific_artifact
 from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
     move_model_to_local_cuda,
@@ -116,7 +117,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.circuit_artifact is None:
         raise ValueError("--circuit-artifact is required outside --dry-run")
     artifact = json.loads(args.circuit_artifact.read_text(encoding="utf-8"))
-    require_core_v2_artifact(artifact, require_circuit_schema=True, require_hash=True)
+    require_scientific_artifact(
+        artifact,
+        expected_prereg_version=str(config["prereg_version"]),
+        require_circuit_schema=True,
+        require_hash=True,
+    )
 
     model_config = config["model"]
     if str(model_config["model_name_or_path"]).startswith("local/"):
@@ -238,8 +244,9 @@ def main(argv: list[str] | None = None) -> None:
     }
     if args.transfer_source_circuit is not None:
         source_artifact = json.loads(args.transfer_source_circuit.read_text(encoding="utf-8"))
-        require_core_v2_artifact(
+        require_scientific_artifact(
             source_artifact,
+            expected_prereg_version=str(config["prereg_version"]),
             require_circuit_schema=True,
             require_hash=True,
         )
@@ -315,11 +322,15 @@ def main(argv: list[str] | None = None) -> None:
             "label_semantics": artifact.get("label_semantics"),
             "circuit_probe_schema_version": artifact.get("circuit_probe_schema_version"),
             "probe_stage": stage,
+            "checkpoint_sha256": artifact.get("checkpoint_sha256"),
+            "probe_cohort": artifact.get("probe_cohort"),
+            "probe_cohort_manifest_hash": artifact.get("probe_cohort_manifest_hash"),
             "semantic_probe_manifest_hash": artifact.get("semantic_probe_manifest_hash"),
             "tokenized_probe_manifest_hash": tokenized_manifest["sha256"],
             "stage_target_manifest_hash": artifact.get("stage_target_manifest_hash"),
         }
     )
+    evaluation.update(formal_artifact_binding(config))
     evaluation["sha256"] = sha256_value(evaluation)
     atomic_write_json(output, evaluation)
     print_json(

@@ -13,10 +13,11 @@ import torch
 from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
 from posttrain_circuits.core.config import is_production_scale
-from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.provenance import (
     RunManifest,
     finalize_run_directory,
+    formal_artifact_binding,
     initialize_run_directory,
 )
 from posttrain_circuits.core.readiness import require_factorial_prerequisites
@@ -77,16 +78,27 @@ def _require_qwen3_store_binding(
     config: dict[str, Any],
     expected_behavior_policy: str,
 ) -> None:
-    if config.get("protocol_track") != "qwen3_v1":
+    if not str(config.get("protocol_track", "")).startswith("qwen3_"):
         return
     expected = {
-        "protocol_track": "qwen3_v1",
-        "artifact_namespace": "qwen3-v1",
+        "protocol_track": config["protocol_track"],
+        "artifact_namespace": config["model"]["artifact_namespace"],
         "prompt_protocol": "qwen3_non_thinking_v1",
         "enable_thinking": False,
         "chat_template_sha256": config["model"]["prompt_protocol"]["chat_template_sha256"],
         "tokenizer_hash": config["model"]["tokenizer_fingerprint"],
     }
+    if config.get("protocol_track") == "qwen3_v2":
+        binding = formal_artifact_binding(config)
+        expected.update(
+            {
+                "prereg_path": binding["prereg_path"],
+                "prereg_version": binding["prereg_version"],
+                "prereg_commit": binding["prereg_commit"],
+                "prereg_sha256": binding["prereg_sha256"],
+                "code_commit": binding["code_commit"],
+            }
+        )
     mismatches = {
         key: {"expected": value, "observed": manifest.get(key)}
         for key, value in expected.items()
@@ -123,7 +135,9 @@ def main(argv: list[str] | None = None) -> None:
         "online_verified_replay",
     }
     prerequisite_evidence: dict[str, Any] = {}
-    if production_scale and cell in factorial_cells:
+    if production_scale and (
+        cell in factorial_cells or (cell == "canonical_sft" and "pilot_profile" in config)
+    ):
         prerequisite_evidence = require_factorial_prerequisites(config)
     seed = int(config["seed"])
     seed_everything(seed)
@@ -275,6 +289,24 @@ def main(argv: list[str] | None = None) -> None:
             teacher_model = build_tiny_qwen(seed + 1)
             teacher_id_value = "local/tiny-teacher"
             teacher_revision_value = "local-random-v1"
+        elif (
+            config.get("protocol_track") == "qwen3_v2"
+            and world_size > 1
+            and bool(config["teacher"].get("rank_zero_only_training_load"))
+        ):
+            if launch_rank == 0:
+                loaded_teacher = load_model_and_tokenizer(
+                    config["teacher"],
+                    for_training=False,
+                )
+                assert_tokenizer_compatible(tokenizer, loaded_teacher.tokenizer)
+                teacher_model = move_model_to_local_cuda(loaded_teacher.model)
+                teacher_id_value = loaded_teacher.model_id
+                teacher_revision_value = loaded_teacher.resolved_model_commit
+            else:
+                teacher_model = None
+                teacher_id_value = str(config["teacher"]["model_name_or_path"])
+                teacher_revision_value = str(config["teacher"]["model_revision"])
         else:
             loaded_teacher = load_model_and_tokenizer(
                 config["teacher"],
@@ -296,6 +328,11 @@ def main(argv: list[str] | None = None) -> None:
                 model.config.vocab_size,
             ),
             minimum_retained_mass=float(config["supervision"].get("minimum_retained_mass", 0.0)),
+            distributed_rank_zero=(
+                config.get("protocol_track") == "qwen3_v2"
+                and world_size > 1
+                and bool(config["teacher"].get("rank_zero_only_training_load"))
+            ),
         )
 
     optimizer = build_adamw(
@@ -419,6 +456,11 @@ def main(argv: list[str] | None = None) -> None:
         ),
         protocol_track=str(config.get("protocol_track", "core_v2")),
         artifact_namespace=str(model_config.get("artifact_namespace", "legacy")),
+        protocol_teacher_revision=str(config["teacher"].get("model_revision", "unbound")),
+        token_budget=int(config["trainer"]["token_budget"]),
+        token_budget_unit=str(
+            config["trainer"].get("token_budget_unit", "global_nonpadding_model_input_tokens")
+        ),
     )
     if launch_rank == 0:
         initialize_run_directory(
@@ -429,6 +471,10 @@ def main(argv: list[str] | None = None) -> None:
         )
     trainer_config = TrainerConfig(
         max_steps=int(config["trainer"]["max_steps"]),
+        token_budget=int(config["trainer"]["token_budget"]),
+        token_budget_unit=str(
+            config["trainer"].get("token_budget_unit", "global_nonpadding_model_input_tokens")
+        ),
         steps_per_round=int(config["trainer"]["steps_per_round"]),
         learning_rate=float(config["trainer"]["learning_rate"]),
         checkpoint_every=int(config["trainer"]["checkpoint_every"]),
@@ -490,6 +536,14 @@ def main(argv: list[str] | None = None) -> None:
         trainer.resume(args.resume)
     history = trainer.train()
     if trainer.is_main_process:
+        final_checkpoint = output / "checkpoints" / f"step-{trainer.global_step:08d}.pt"
+        if not final_checkpoint.is_file():
+            raise RuntimeError("training completed without a final optimizer-boundary checkpoint")
+        manifest.token_budget_consumed = trainer.token_budget.consumed
+        manifest.training_stop_reason = trainer.token_budget.stop_reason
+        manifest.metrics_sha256 = sha256_file(output / "metrics.jsonl")
+        manifest.final_checkpoint_path = str(final_checkpoint)
+        manifest.final_checkpoint_sha256 = sha256_file(final_checkpoint)
         finalize_run_directory(output, manifest)
         print_json(
             {

@@ -8,6 +8,7 @@ done
 [[ "${HF_HUB_OFFLINE:?Set HF_HUB_OFFLINE=1}" == 1 ]]
 cd "${PROJECT_ROOT}"
 export PYTHONPATH="${PROJECT_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+source scripts/production/slurm_supervision.sh
 run_id=${GPU_PREFLIGHT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 run_dir=${GPU_PREFLIGHT_RUN_DIR:-${OUTPUT_ROOT}/gpu-preflight/${run_id}}
 mkdir -p "${run_dir}/logs"
@@ -19,6 +20,7 @@ dependency=()
 if [[ -n "${QWEN3_SERIAL_DEPENDENCY:-}" ]]; then
   dependency+=(--dependency="afterany:${QWEN3_SERIAL_DEPENDENCY}")
 fi
+require_no_competing_opd_gpu_job "Qwen3 preflight"
 submission=$(sbatch --parsable --account="${SLURM_ACCOUNT:?Set SLURM_ACCOUNT}" \
   --partition="${partition}" "${dependency[@]}" --export=ALL \
   --output="${run_dir}/logs/preflight-%j.out" \

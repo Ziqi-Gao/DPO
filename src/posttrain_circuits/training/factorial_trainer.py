@@ -29,6 +29,7 @@ from posttrain_circuits.supervision.verified_replay import (
 from posttrain_circuits.training.checkpointing import atomic_torch_save, load_checkpoint, save_checkpoint
 from posttrain_circuits.training.optimizer import parameter_update_norm
 from posttrain_circuits.training.schedules import PromptScheduler
+from posttrain_circuits.training.token_budget import TOKEN_BUDGET_UNIT, TokenBudgetState
 
 _REQUIRED_EVALUATION_METRICS = (
     "validation_accuracy",
@@ -47,6 +48,8 @@ _COLLECTION_METRICS = (
 @dataclass(frozen=True)
 class TrainerConfig:
     max_steps: int = 2
+    token_budget: int = 1024
+    token_budget_unit: str = TOKEN_BUDGET_UNIT
     steps_per_round: int = 1
     learning_rate: float = 5e-4
     checkpoint_every: int = 1
@@ -59,6 +62,10 @@ class TrainerConfig:
     def __post_init__(self) -> None:
         if self.max_steps < 0:
             raise ValueError("max_steps must be non-negative")
+        if self.token_budget < 1:
+            raise ValueError("token_budget must be positive")
+        if self.token_budget_unit != TOKEN_BUDGET_UNIT:
+            raise ValueError(f"unsupported token_budget_unit {self.token_budget_unit!r}")
         if self.steps_per_round < 1:
             raise ValueError("steps_per_round must be positive")
         if self.gradient_accumulation_steps < 1:
@@ -115,16 +122,20 @@ class FactorialTrainer:
         if config.require_evaluation_metrics and evaluation_fn is None:
             raise ValueError("formal training requires an evaluation callback before any update")
         self.global_step = 0
+        self.token_budget = TokenBudgetState(config.token_budget, config.token_budget_unit)
         self.online_rollout_round = 0
         self.cumulative_counts: dict[str, float] = {
             "prompts_consumed": 0.0,
             "trajectories_generated": 0.0,
             "response_tokens_generated": 0.0,
             "supervised_response_tokens": 0.0,
+            "model_facing_input_tokens_processed": 0.0,
             "forward_backward_flop_estimate": 0.0,
         }
         self._pending_collection: dict[str, float] = {key: 0.0 for key in _COLLECTION_METRICS}
         self._pending_processed_tokens = 0.0
+        self._pending_input_tokens = 0
+        self._current_global_update_tokens = 0
         self._pending_metric_sums: dict[str, float] = {}
         self._pending_metric_calls = 0
         self._accumulation_micro_step = 0
@@ -294,6 +305,7 @@ class FactorialTrainer:
         )
         self._pending_processed_tokens += base_supervised_tokens
         self.cumulative_counts["supervised_response_tokens"] += base_supervised_tokens
+        self._pending_input_tokens += int(supervision.attention_mask.sum().item())
         parameter_count = sum(parameter.numel() for parameter in self.model.parameters())
         flop_estimate = 6.0 * parameter_count * base_supervised_tokens
         self.cumulative_counts["forward_backward_flop_estimate"] += flop_estimate
@@ -350,12 +362,19 @@ class FactorialTrainer:
         }
         if self._parameters_before_update is None:
             raise RuntimeError("optimizer update has no parameter snapshot")
+        self.cumulative_counts["model_facing_input_tokens_processed"] = float(self.token_budget.consumed)
         metric: dict[str, Any] = {
             **objective_metrics,
             **collection_metrics,
             "step": float(self.global_step),
             **self.cumulative_counts,
             "effective_supervised_tokens_this_update": (self._pending_processed_tokens),
+            "local_model_facing_input_tokens_this_update": self._pending_input_tokens,
+            "model_facing_input_tokens_this_update": self._current_global_update_tokens,
+            "token_budget": self.token_budget.budget,
+            "token_budget_unit": self.token_budget.unit,
+            "token_budget_consumed": self.token_budget.consumed,
+            "token_budget_remaining": self.token_budget.remaining,
             "optimizer_updates": float(self.global_step),
             "parameter_update_norm": parameter_update_norm(
                 self._parameters_before_update,
@@ -370,6 +389,8 @@ class FactorialTrainer:
         }
         self._pending_collection = {key: 0.0 for key in _COLLECTION_METRICS}
         self._pending_processed_tokens = 0.0
+        self._pending_input_tokens = 0
+        self._current_global_update_tokens = 0
         self._pending_metric_sums = {}
         self._pending_metric_calls = 0
         self._parameters_before_update = None
@@ -378,16 +399,24 @@ class FactorialTrainer:
     def train(self) -> list[dict[str, Any]]:
         history: list[dict[str, Any]] = []
         started = time.perf_counter()
-        while self.global_step < self.config.max_steps:
-            prompts = self.prompt_scheduler.next_batch()
-            trajectories, supervision, attempts = self._collect_trajectories(prompts)
-            self._register_collection(
-                prompts,
-                trajectories,
-                supervision,
-                attempts,
-            )
-            for _ in range(self.config.steps_per_round):
+        queued_microbatches: list[SupervisionBatch] = []
+        while self.global_step < self.config.max_steps and not self._terminate:
+            if self.token_budget.remaining == 0:
+                self.token_budget.stop_reason = "token_budget_exactly_consumed"
+                break
+            while len(queued_microbatches) < self.config.gradient_accumulation_steps:
+                prompts = self.prompt_scheduler.next_batch()
+                trajectories, supervision, attempts = self._collect_trajectories(prompts)
+                self._register_collection(prompts, trajectories, supervision, attempts)
+                queued_microbatches.extend([supervision] * self.config.steps_per_round)
+            window = queued_microbatches[: self.config.gradient_accumulation_steps]
+            del queued_microbatches[: self.config.gradient_accumulation_steps]
+            local_window_tokens = sum(int(batch.attention_mask.sum().item()) for batch in window)
+            admitted, global_window_tokens = self.token_budget.reserve_optimizer_update(local_window_tokens)
+            if not admitted:
+                break
+            self._current_global_update_tokens = global_window_tokens
+            for supervision in window:
                 sync_gradients = self._training_micro_step(supervision)
                 if not sync_gradients:
                     continue
@@ -397,10 +426,26 @@ class FactorialTrainer:
                     append_metric(self.run_dir / "metrics.jsonl", metric)
                 if self.global_step % self.config.checkpoint_every == 0 or self._terminate:
                     self.save(self.run_dir / "checkpoints" / f"step-{self.global_step:08d}.pt")
-                if self._terminate or self.global_step >= self.config.max_steps:
-                    break
-            if self._terminate:
                 break
+        if self.token_budget.stop_reason is None:
+            self.token_budget.stop_reason = (
+                "signal_at_optimizer_boundary" if self._terminate else "max_steps_safety_limit"
+            )
+        if self.is_main_process and self.config.require_evaluation_metrics:
+            append_metric(
+                self.run_dir / "metrics.jsonl",
+                {
+                    "event": "training_stop",
+                    "step": float(self.global_step),
+                    "token_budget": self.token_budget.budget,
+                    "token_budget_unit": self.token_budget.unit,
+                    "token_budget_consumed": self.token_budget.consumed,
+                    "token_budget_remaining": self.token_budget.remaining,
+                    "stop_reason": self.token_budget.stop_reason,
+                },
+            )
+        if self.global_step > 0:
+            self.save(self.run_dir / "checkpoints" / f"step-{self.global_step:08d}.pt")
         return history
 
     def save(self, path: Path) -> None:
@@ -458,6 +503,7 @@ class FactorialTrainer:
                         "trainer_state": {
                             "cumulative_counts": self.cumulative_counts,
                             "accumulation_micro_step": self._accumulation_micro_step,
+                            "token_budget": self.token_budget.state_dict(),
                         },
                         "global_step": self.global_step,
                         "policy_version": int(getattr(self.state_source, "policy_version", 0)),
@@ -483,6 +529,7 @@ class FactorialTrainer:
             trainer_state={
                 "cumulative_counts": self.cumulative_counts,
                 "accumulation_micro_step": self._accumulation_micro_step,
+                "token_budget": self.token_budget.state_dict(),
             },
             global_step=self.global_step,
             policy_version=int(getattr(self.state_source, "policy_version", 0)),
@@ -518,6 +565,7 @@ class FactorialTrainer:
             self._accumulation_micro_step = int(
                 payload.get("trainer_state", {}).get("accumulation_micro_step", 0)
             )
+            self.token_budget.load_state_dict(payload["trainer_state"]["token_budget"])
             self.resume_ancestry = [*payload.get("resume_ancestry", []), str(path)]
             return
         payload = load_checkpoint(
@@ -533,6 +581,7 @@ class FactorialTrainer:
         trainer_state = payload.get("trainer_state", {})
         self.cumulative_counts.update(trainer_state.get("cumulative_counts", {}))
         self._accumulation_micro_step = int(trainer_state.get("accumulation_micro_step", 0))
+        self.token_budget.load_state_dict(trainer_state["token_budget"])
         if self._accumulation_micro_step != 0:
             raise ValueError("checkpoint contains an unsupported partial accumulation window")
         scaler = getattr(self._accelerator, "scaler", None)

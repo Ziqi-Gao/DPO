@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
+from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.data.splits import build_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
@@ -100,7 +101,11 @@ def main(argv: list[str] | None = None) -> None:
         generation_config,
         model_config=teacher_config,
     )
-    manifest = write_teacher_demo_store(output, result)
+    manifest = write_teacher_demo_store(
+        output,
+        result,
+        protocol_bindings=formal_artifact_binding(config),
+    )
     print_json({"output": str(output), "manifest": manifest})
 
 

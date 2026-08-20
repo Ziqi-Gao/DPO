@@ -6,6 +6,7 @@ overrides:
   output_root: outputs/qwen3-v1
   protocol_track: qwen3_v1
   prereg_path: prereg/qwen3_v1.yaml
+  prereg_version: qwen3_v1
   seed: 42
   trainer:
     backend: accelerate

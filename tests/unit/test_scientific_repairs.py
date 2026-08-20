@@ -138,10 +138,11 @@ def test_checkpoint_loader_changes_actual_qwen_logits(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_local_fork_out_of_tolerance_exits_nonzero(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    bundle_id = "fork-" + sha256_value({"bundle_id": ""})[:16]
     payload = {
         "model_spec": {"model_name_or_path": "local/tiny-qwen", "seed": 1},
         "optimizer": {"param_groups": [{"lr": 1e-4}]},
-        "manifest": {"bundle_id": "bundle"},
+        "manifest": {"bundle_id": bundle_id},
     }
     monkeypatch.setattr("posttrain_circuits.cli.run_local_fork.load_fork_bundle", lambda _path: payload)
 

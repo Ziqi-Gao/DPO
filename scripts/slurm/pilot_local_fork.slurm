@@ -4,6 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
+#SBATCH --mem=96G
 #SBATCH --time=12:00:00
 #SBATCH --signal=B:TERM@300
 set -euo pipefail
@@ -14,7 +15,8 @@ teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
 pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 
 run_dir=${PILOT_RUN_DIR:?Set PILOT_RUN_DIR}
-checkpoint="${run_dir}/runs/canonical_sft/seed-42/checkpoints/step-00000120.pt"
+checkpoint=$("${PYTHON_BIN}" -m posttrain_circuits.cli.resolve_final_checkpoint \
+  --manifest "${run_dir}/runs/canonical_sft/seed-42/manifest.json")
 inputs="${run_dir}/local_fork/inputs"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.build_local_fork_inputs \
   pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \

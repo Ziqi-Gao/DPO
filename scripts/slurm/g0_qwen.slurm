@@ -4,6 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:4
+#SBATCH --mem=192G
 #SBATCH --time=12:00:00
 #SBATCH --signal=B:TERM@300
 set -euo pipefail
@@ -20,7 +21,7 @@ data_root="${run_dir}/datasets"
 initial_checkpoint="${run_dir}/checkpoints/initial.pt"
 demo_store="${run_dir}/teacher_demos"
 calibration_run="${run_dir}/calibration_sft"
-calibration_checkpoint="${calibration_run}/checkpoints/step-00000120.pt"
+calibration_checkpoint=""
 probe_scores="${run_dir}/probes/scores.json"
 probe_root="${run_dir}/probes/cohorts"
 bank_root="${run_dir}/bank/common_mu"
@@ -47,6 +48,7 @@ initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.
   --output "${demo_store}" --confirm-production
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.audit_label_leakage \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   --split-root "${data_root}/validation" --split validation \
   --output "${run_dir}/label_leakage.json"
 
@@ -55,14 +57,16 @@ initial_checkpoint_hash=$("${PYTHON_BIN}" -c 'import hashlib,sys; print(hashlib.
   --validation-split "${data_root}/validation" --output "${run_dir}/teacher_readiness.json" \
   --confirm-production
 
-"${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
-  -m posttrain_circuits.cli.train pilot="${pilot_config}" experiment=canonical_sft \
+"${ACCELERATE_BIN:?Set ACCELERATE_BIN}" launch --config_file configs/accelerate/fsdp.yaml \
+  -m posttrain_circuits.cli.train g0="${g0_config}" experiment=canonical_sft \
   model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   task.validation_split_path="${data_root}/validation" \
   production_safety.initial_checkpoint_path="${initial_checkpoint}" \
   production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
-  state_source.store_path="${demo_store}" trainer.max_steps=120 trainer.checkpoint_every=120 \
+  state_source.store_path="${demo_store}" trainer.max_steps=120 trainer.checkpoint_every=20 \
   --output "${calibration_run}" --confirm-production
+calibration_checkpoint=$("${PYTHON_BIN}" -m posttrain_circuits.cli.resolve_final_checkpoint \
+  --manifest "${calibration_run}/manifest.json")
 
 "${PYTHON_BIN}" -m posttrain_circuits.cli.score_probe_candidates \
   g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
@@ -107,19 +111,25 @@ for stage in final_answer first_rule_selection; do
     --output "${stage_root}/exact_patching.json" --confirm-production
 done
 
+resume_source="${calibration_run}/checkpoints/step-00000020.pt"
+[[ -f "${resume_source}" ]] || { echo "G0 resume source step 20 is absent" >&2; exit 1; }
 for replica in a b; do
-  "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
-    -m posttrain_circuits.cli.train pilot="${pilot_config}" experiment=canonical_sft \
+  "${ACCELERATE_BIN:?Set ACCELERATE_BIN}" launch --config_file configs/accelerate/fsdp.yaml \
+    -m posttrain_circuits.cli.train g0="${g0_config}" experiment=canonical_sft \
     model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
     task.validation_split_path="${data_root}/validation" \
     production_safety.initial_checkpoint_path="${initial_checkpoint}" \
     production_safety.initial_checkpoint_hash="${initial_checkpoint_hash}" \
-    state_source.store_path="${demo_store}" trainer.max_steps=121 trainer.checkpoint_every=1 \
-    --resume "${calibration_checkpoint}" --output "${run_dir}/resume-${replica}" --confirm-production
+    state_source.store_path="${demo_store}" trainer.max_steps=120 trainer.checkpoint_every=20 \
+    --resume "${resume_source}" --output "${run_dir}/resume-${replica}" --confirm-production
 done
+resume_a=$("${PYTHON_BIN}" -m posttrain_circuits.cli.resolve_final_checkpoint \
+  --manifest "${run_dir}/resume-a/manifest.json")
+resume_b=$("${PYTHON_BIN}" -m posttrain_circuits.cli.resolve_final_checkpoint \
+  --manifest "${run_dir}/resume-b/manifest.json")
 "${PYTHON_BIN}" -m posttrain_circuits.cli.compare_distributed_resume \
-  --checkpoint-a "${run_dir}/resume-a/checkpoints/step-00000121.pt" \
-  --checkpoint-b "${run_dir}/resume-b/checkpoints/step-00000121.pt" \
+  g0="${g0_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
+  --checkpoint-a "${resume_a}" --checkpoint-b "${resume_b}" \
   --metrics-a "${run_dir}/resume-a/metrics.jsonl" --metrics-b "${run_dir}/resume-b/metrics.jsonl" \
   --world-size 4 --output "${run_dir}/distributed_resume.json"
 

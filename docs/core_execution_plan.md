@@ -91,6 +91,32 @@ With only three training seeds, ordinary cluster-robust covariance estimates are
 confirmatory inference. The registered output is seed-level cell means and seed-specific contrasts,
 described as descriptive; cluster-robust inference requires at least five training seeds.
 
+### Qwen3-v2 repaired feasibility track
+
+The independently reviewable successor is `prereg/qwen3_v2.yaml`, with profiles
+`qwen3_v2_1p7b`, `qwen3_v2_teacher_8b`, `qwen3_v2_primary`,
+`qwen3_v2_eap_separation`, and `qwen3_v2_core`. Its scientific artifacts live only under
+`outputs/qwen3-v2`; v1 outputs may supply model-cache bytes but never scientific evidence.
+
+All four-GPU stages request 192 GiB. The preflight must demonstrate the enforced cgroup-v1 or
+cgroup-v2 memory limit,
+32-GiB/20% post-peak headroom, four-rank NCCL, distinct prompt shards, low-CPU-memory student
+loading, a rank-zero 8B teacher, finite soft-teacher forward/backward, and FSDP save/resume. Before
+each four-GPU `sbatch`, the supervisor checks for any other pending or allocated OPD GPU job.
+
+Training stops at the first of the registered global token budget or `max_steps`. Exact distributed
+model-input tokens are reserved before factorial/SFT optimizer windows; GRPO admits only updates
+whose conservative distributed maximum fits and reduces the actual rank deltas after each update.
+Consumption and stop reason are part of checkpoints, cell manifests, metrics, and the final hash
+chain.
+
+The seed-42 circuit plan is the complete feasibility matrix: eight cells × two cohorts × process
+and final-answer stages, plus both stages/cohorts at the initial checkpoint. The report verifies 4
+initial and 32 final rows, all exact-patching and noise-floor artifacts, local-fork output-KL,
+distributed resume, training terminal evidence, and every metrics/checkpoint hash. This is a
+pipeline-feasibility gate, not a confirmatory mechanism result. The full three-seed factorial and
+Gemma replication remain forbidden without separate authorization.
+
 ## Core Gemma mini-replication
 
 Gemma-2-2B-it with Gemma-2-9B-it as the same-family teacher is a core mini-replication, not a full

@@ -4,6 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:4
+#SBATCH --mem=192G
 #SBATCH --time=00:30:00
 set -euo pipefail
 source "$(dirname "$0")/common.sh"

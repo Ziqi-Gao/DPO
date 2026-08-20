@@ -6,6 +6,7 @@ overrides:
   output_root: outputs/qwen3-v1
   protocol_track: qwen3_v1
   prereg_path: prereg/qwen3_v1.yaml
+  prereg_version: qwen3_v1
   trainer:
     backend: accelerate
     max_steps: 1000
@@ -40,4 +41,3 @@ full_parameter_training: true
 student: qwen3_1p7b
 teacher: qwen3_teacher_8b
 checkpoint_fractions: [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 1.0]
-

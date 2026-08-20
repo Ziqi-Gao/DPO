@@ -41,6 +41,13 @@ def main(argv: list[str] | None = None) -> None:
             "g0=qwen3_eap_separation",
             "pilot=qwen3_core",
         ],
+        "qwen3_v2": [
+            "production=qwen3_v2_primary",
+            "model=qwen3_v2_1p7b",
+            "teacher=qwen3_v2_teacher_8b",
+            "g0=qwen3_v2_eap_separation",
+            "pilot=qwen3_v2_core",
+        ],
     }
     for track, track_overrides in tracks.items():
         for experiment, (state_source, supervision) in FACTORIAL_CELLS.items():

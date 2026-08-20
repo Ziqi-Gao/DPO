@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
+from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import require_git_output
+from posttrain_circuits.core.provenance import formal_artifact_binding, require_git_output
 
 REQUIRED_ENV = (
     "MODEL_CONFIG",
@@ -34,20 +34,6 @@ def main(argv: list[str] | None = None) -> None:
     if missing:
         raise RuntimeError(f"Qwen3 launch requires explicit environment variables: {missing}")
     environment = {name: os.environ[name] for name in REQUIRED_ENV}
-    expected_configs = {
-        "MODEL_CONFIG": "qwen3_1p7b",
-        "TEACHER_CONFIG": "qwen3_teacher_8b",
-        "PRODUCTION_CONFIG": "qwen3_primary",
-        "G0_CONFIG": "qwen3_eap_separation",
-        "PILOT_CONFIG": "qwen3_core",
-    }
-    wrong = {
-        name: {"expected": expected, "observed": environment[name]}
-        for name, expected in expected_configs.items()
-        if environment[name] != expected
-    }
-    if wrong:
-        raise RuntimeError(f"Qwen3 launch config mismatch: {wrong}")
     project_root = Path(environment["PROJECT_ROOT"]).resolve()
     if project_root != Path.cwd().resolve():
         raise RuntimeError("Qwen3 PROJECT_ROOT does not match the launch checkout")
@@ -56,9 +42,6 @@ def main(argv: list[str] | None = None) -> None:
     for name in ("PYTHON_BIN", "ACCELERATE_BIN"):
         if not Path(environment[name]).is_file():
             raise RuntimeError(f"Qwen3 {name} is not a file: {environment[name]}")
-    output_root = Path(environment["OUTPUT_ROOT"])
-    if "qwen3-v1" not in output_root.parts:
-        raise RuntimeError("Qwen3 OUTPUT_ROOT must use the qwen3-v1 namespace")
     overrides = [
         f"production={environment['PRODUCTION_CONFIG']}",
         f"model={environment['MODEL_CONFIG']}",
@@ -68,17 +51,19 @@ def main(argv: list[str] | None = None) -> None:
         f"output_root={environment['OUTPUT_ROOT']}",
     ]
     config = compose_config(overrides)
-    prereg_path = Path(str(config["prereg_path"]))
+    if not str(config.get("protocol_track", "")).startswith("qwen3_"):
+        raise RuntimeError("Qwen3 launch configs did not resolve a registered Qwen3 protocol")
+    namespace = str(config["model"]["artifact_namespace"])
+    output_root = Path(environment["OUTPUT_ROOT"])
+    if namespace not in output_root.parts:
+        raise RuntimeError(f"Qwen3 OUTPUT_ROOT must use the {namespace} namespace")
+    formal = formal_artifact_binding(config)
     payload: dict[str, Any] = {
         "format_version": 1,
         "phase": args.phase,
-        "protocol_track": "qwen3_v1",
-        "artifact_namespace": "qwen3-v1",
+        **formal,
         "launch_environment": environment,
         "git_commit": require_git_output(["rev-parse", "HEAD"]),
-        "prereg_path": str(prereg_path),
-        "prereg_sha256": sha256_file(prereg_path),
-        "prereg_commit": require_git_output(["log", "-n", "1", "--format=%H", "--", str(prereg_path)]),
         "resolved_config_sha256": sha256_value(config),
         "model_revision": str(config["model"]["model_revision"]),
         "teacher_revision": str(config["teacher"]["model_revision"]),

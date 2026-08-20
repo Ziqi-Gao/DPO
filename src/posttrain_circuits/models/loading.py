@@ -175,6 +175,7 @@ def load_model_and_tokenizer(
         torch_dtype=_DTYPES[dtype_name],
         attn_implementation=str(config["attn_implementation"]),
         trust_remote_code=trust_remote_code,
+        low_cpu_mem_usage=bool(config.get("low_cpu_mem_usage", True)),
     )
     model.config.use_cache = bool(config["use_cache"])
     if for_training:

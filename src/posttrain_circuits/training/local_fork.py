@@ -47,6 +47,7 @@ class ForkBundleManifest:
     probe_input_hash: str
     probe_output_hash: str
     manifest_hashes: dict[str, str]
+    formal_binding: dict[str, Any]
     policy_version: int
     group_membership_hash: str
     minimum_group_size: int
@@ -152,6 +153,7 @@ def create_fork_bundle(
     pre_update_outputs: torch.Tensor,
     probe_input_ids: torch.Tensor | None = None,
     manifest_hashes: dict[str, str],
+    formal_binding: dict[str, Any] | None = None,
     model_spec: dict[str, Any] | None = None,
     minimum_group_size: int = 4,
 ) -> ForkBundleManifest:
@@ -224,6 +226,7 @@ def create_fork_bundle(
         probe_input_hash=state_hash(probe_inputs),
         probe_output_hash=state_hash(probe_outputs),
         manifest_hashes=manifest_hashes,
+        formal_binding=dict(formal_binding or {}),
         policy_version=trajectories.policy_version,
         group_membership_hash=sha256_value(group_membership),
         minimum_group_size=minimum_group_size,

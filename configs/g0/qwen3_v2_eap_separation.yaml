@@ -1,12 +1,12 @@
 groups:
-  model: qwen3_1p7b
-  teacher: qwen3_teacher_8b
+  model: qwen3_v2_1p7b
+  teacher: qwen3_v2_teacher_8b
   task: proofgraph_main
 overrides:
-  output_root: outputs/qwen3-v1
-  protocol_track: qwen3_v1
-  prereg_path: prereg/qwen3_v1.yaml
-  prereg_version: qwen3_v1
+  output_root: outputs/qwen3-v2
+  protocol_track: qwen3_v2
+  prereg_path: prereg/qwen3_v2.yaml
+  prereg_version: qwen3_v2
   trainer:
     backend: accelerate
     max_steps: 120
@@ -18,27 +18,32 @@ overrides:
     evaluation_every: 20
     validation_examples: 128
   task:
-    validation_split_path: outputs/qwen3-v1/datasets/proofgraph-validation
+    validation_split_path: outputs/qwen3-v2/datasets/proofgraph-validation
   anti_shortcut:
-    report_path: outputs/qwen3-v1/g0/anti_shortcut.json
+    report_path: outputs/qwen3-v2/g0/anti_shortcut.json
     num_examples: 128
   state_source:
-    store_path: outputs/qwen3-v1/rollout_banks/common_mu
+    store_path: outputs/qwen3-v2/rollout_banks/common_mu
     temperature: 0.7
     top_p: 0.8
     top_k: 20
     min_p: 0.0
+  resource_budget:
+    node_memory_gib: 192
+    minimum_headroom_gib: 32
+    minimum_headroom_fraction: 0.20
+    loading_strategy: low_cpu_mem_student_rank_zero_teacher
   production_safety:
-    readiness_report: outputs/qwen3-v1/readiness/readiness.json
-    probe_cohort_manifest: outputs/qwen3-v1/probes/proofgraph/manifest.json
+    readiness_report: outputs/qwen3-v2/readiness/readiness.json
+    probe_cohort_manifest: outputs/qwen3-v2/probes/proofgraph/manifest.json
   circuit:
     discovery_pair_count: 8
     validation_pair_count: 8
     mib_bootstrap_replicates: 5
     prompt_bootstrap_samples: 200
-profile_kind: qwen3_production_stack_gate
-protocol_track: qwen3_v1
-artifact_namespace: qwen3-v1
+profile_kind: qwen3_v2_production_stack_gate
+protocol_track: qwen3_v2
+artifact_namespace: qwen3-v2
 full_parameter_training: false
 seed: 42
 parity_tolerance: 0.02

@@ -50,7 +50,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--max-calibration-rounds", type=int, default=2)
     args = parser.parse_args(argv)
     payload = load_fork_bundle(args.bundle)
+    manifest_without_id = {key: value for key, value in payload["manifest"].items() if key != "bundle_id"}
+    expected_bundle_id = "fork-" + sha256_value({"bundle_id": "", **manifest_without_id})[:16]
+    if payload["manifest"].get("bundle_id") != expected_bundle_id:
+        raise ValueError("local-fork bundle manifest binding changed after creation")
     model_spec = dict(payload.get("model_spec", {}))
+    formal_binding = dict(payload["manifest"].get("formal_binding", {}))
+    if str(model_spec.get("protocol_track", "")).startswith("qwen3_") and not formal_binding:
+        raise ValueError("Qwen3 local-fork bundle lacks its formal protocol binding")
     if str(model_spec.get("model_name_or_path", "local/")).startswith("local/"):
         tokenizer = build_tiny_tokenizer()
 
@@ -160,7 +167,8 @@ def main(argv: list[str] | None = None) -> None:
                 )
     report = {
         "format_version": 2,
-        **scientific_compatibility_fields(),
+        **scientific_compatibility_fields(str(formal_binding.get("prereg_version", "core_v2"))),
+        **formal_binding,
         "bundle": payload["manifest"],
         "results": results,
         "valid_for_primary_analysis": not invalid_cells,

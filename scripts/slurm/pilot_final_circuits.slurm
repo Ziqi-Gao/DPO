@@ -4,8 +4,9 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
+#SBATCH --mem=64G
 #SBATCH --time=08:00:00
-#SBATCH --array=0-11%4
+#SBATCH --array=0-31%4
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 require_protocol_launch_environment
@@ -13,19 +14,21 @@ model_config=${MODEL_CONFIG:?Set MODEL_CONFIG}
 teacher_config=${TEACHER_CONFIG:?Set TEACHER_CONFIG}
 pilot_config=${PILOT_CONFIG:?Set PILOT_CONFIG}
 
-cells=(offline_soft online_soft_opd online_hard online_verified_replay canonical_grpo canonical_sft)
-cohorts=(base_capable challenge)
-cell_index=$((SLURM_ARRAY_TASK_ID / 2))
-cohort_index=$((SLURM_ARRAY_TASK_ID % 2))
-cell=${cells[$cell_index]}
-cohort=${cohorts[$cohort_index]}
-checkpoint="${PILOT_RUN_DIR:?}/runs/${cell}/seed-42/checkpoints/step-00000120.pt"
-root="${PILOT_RUN_DIR}/circuits/final/${cell}/${cohort}"
-source_circuit="${PILOT_RUN_DIR}/circuits/initial/${cohort}/circuit.json"
+IFS=$'\t' read -r cell stage_label stage cohort < <(
+  "${PYTHON_BIN}" -m posttrain_circuits.cli.resolve_pilot_circuit_scope \
+    pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" \
+    --matrix final --index "${SLURM_ARRAY_TASK_ID}"
+)
+manifest="${PILOT_RUN_DIR:?}/runs/${cell}/seed-42/manifest.json"
+checkpoint=$("${PYTHON_BIN}" -m posttrain_circuits.cli.resolve_final_checkpoint \
+  --manifest "${manifest}")
+root="${PILOT_RUN_DIR}/circuits/final/${cell}/${stage_label}/${cohort}"
+source_circuit="${PILOT_RUN_DIR}/circuits/initial/${stage_label}/${cohort}/circuit.json"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.discover_circuit \
   pilot="${pilot_config}" model="${model_config}" teacher="${teacher_config}" task=proofgraph_main \
   output_root="${OUTPUT_ROOT}" \
-  --checkpoint "${checkpoint}" --initial-checkpoint "${PILOT_INITIAL_CHECKPOINT:?}" \
+  --stage "${stage}" --checkpoint "${checkpoint}" \
+  --initial-checkpoint "${PILOT_INITIAL_CHECKPOINT:?}" \
   --probe-cohort-manifest "${PILOT_PROBE_MANIFEST:?}" --cohort "${cohort}" \
   --output "${root}/circuit.json" --confirm-production
 "${PYTHON_BIN}" -m posttrain_circuits.cli.evaluate_circuit \

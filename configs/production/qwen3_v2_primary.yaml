@@ -1,0 +1,49 @@
+groups:
+  model: qwen3_v2_1p7b
+  teacher: qwen3_v2_teacher_8b
+  task: proofgraph_main
+overrides:
+  output_root: outputs/qwen3-v2
+  protocol_track: qwen3_v2
+  prereg_path: prereg/qwen3_v2.yaml
+  prereg_version: qwen3_v2
+  trainer:
+    backend: accelerate
+    max_steps: 1000
+    token_budget: 64000000
+    token_budget_unit: global_nonpadding_model_input_tokens
+    batch_size: 4
+    gradient_accumulation_steps: 4
+    checkpoint_every: 50
+    evaluation_every: 50
+    validation_examples: 128
+  resource_budget:
+    node_memory_gib: 192
+    minimum_headroom_gib: 32
+    minimum_headroom_fraction: 0.20
+    loading_strategy: low_cpu_mem_student_rank_zero_teacher
+  state_source:
+    store_path: outputs/qwen3-v2/rollout_banks/common_mu
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+  supervision:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+  task:
+    validation_split_path: outputs/qwen3-v2/datasets/proofgraph-validation
+  anti_shortcut:
+    report_path: outputs/qwen3-v2/g0/anti_shortcut.json
+  production_safety:
+    readiness_report: outputs/qwen3-v2/readiness/readiness.json
+    probe_cohort_manifest: outputs/qwen3-v2/probes/proofgraph/manifest.json
+profile_kind: primary_qwen3_v2
+protocol_track: qwen3_v2
+artifact_namespace: qwen3-v2
+full_parameter_training: true
+student: qwen3_v2_1p7b
+teacher: qwen3_v2_teacher_8b
+checkpoint_fractions: [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 1.0]

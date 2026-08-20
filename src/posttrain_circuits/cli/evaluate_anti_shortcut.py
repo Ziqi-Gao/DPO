@@ -12,7 +12,7 @@ from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import require_git_output
+from posttrain_circuits.core.provenance import formal_artifact_binding, require_git_output
 from posttrain_circuits.data.splits import build_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.models.prompt_protocol import format_model_prompt
@@ -109,10 +109,10 @@ def main(argv: list[str] | None = None) -> None:
         minimum_per_transformation_accuracy=float(gate_config["minimum_per_transformation_accuracy"]),
         dataset_hash=sha256_value([asdict(example) for example in examples]),
         code_commit=require_git_output(["rev-parse", "HEAD"]),
-        prereg_commit=require_git_output(
-            ["log", "-n", "1", "--format=%H", "--", str(config.get("prereg_path", "prereg/core_v2.yaml"))]
-        ),
+        prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", str(config["prereg_path"])]),
     )
+    report.update(formal_artifact_binding(config))
+    report["sha256"] = sha256_value({key: value for key, value in report.items() if key != "sha256"})
     atomic_write_json(output, report)
     print_json({"output": str(output), **report})
 

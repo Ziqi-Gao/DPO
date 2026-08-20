@@ -20,11 +20,8 @@ from posttrain_circuits.circuits.mib_eap_ig import MIB_REVISION
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import require_git_output
-from posttrain_circuits.core.scientific_versions import (
-    CORE_PREREG_VERSION,
-    scientific_compatibility_fields,
-)
+from posttrain_circuits.core.provenance import require_git_output, resolve_preregistration
+from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 
 
 def _git(args: list[str]) -> str:
@@ -51,13 +48,10 @@ def main(argv: list[str] | None = None) -> None:
     checks["clean_git"] = dirty == ""
     if dirty:
         blockers.append("working tree is not clean")
-    prereg_path = str(config.get("prereg_path", "prereg/core_v2.yaml"))
-    prereg_version = "qwen3_v1" if config.get("protocol_track") == "qwen3_v1" else CORE_PREREG_VERSION
-    prereg_commit = (
-        _git(["log", "-n", "1", "--format=%H", "--", prereg_path])
-        if checks["git_repository"]
-        else "unavailable"
-    )
+    prereg = resolve_preregistration(config)
+    prereg_path = str(prereg.path)
+    prereg_version = prereg.version
+    prereg_commit = prereg.git_commit if checks["git_repository"] else "unavailable"
     checks["frozen_prereg"] = bool(prereg_commit)
     if not prereg_commit:
         blockers.append(f"{prereg_path} has no frozen commit")
@@ -121,24 +115,33 @@ def main(argv: list[str] | None = None) -> None:
         checks["gpu_preflight_model_revision"] = (
             gpu_preflight.get("model_revision") == config["model"]["model_revision"]
         )
-        if config.get("protocol_track") == "qwen3_v1":
+        if str(config.get("protocol_track", "")).startswith("qwen3_"):
+            namespace = str(config["model"]["artifact_namespace"])
             checks["gpu_preflight_teacher_revision"] = (
                 gpu_preflight.get("teacher_revision") == config["teacher"]["model_revision"]
                 and gpu_preflight.get("resolved_teacher_commit") == config["teacher"]["model_revision"]
             )
             checks["gpu_preflight_protocol"] = (
-                gpu_preflight.get("protocol_track") == "qwen3_v1"
-                and gpu_preflight.get("artifact_namespace") == "qwen3-v1"
+                gpu_preflight.get("protocol_track") == config["protocol_track"]
+                and gpu_preflight.get("artifact_namespace") == namespace
                 and gpu_preflight.get("prompt_protocol") == "qwen3_non_thinking_v1"
                 and gpu_preflight.get("enable_thinking") is False
+                and gpu_preflight.get("tokenizer_revision") == config["model"]["tokenizer_revision"]
+                and gpu_preflight.get("tokenizer_fingerprint") == config["model"]["tokenizer_fingerprint"]
+                and gpu_preflight.get("chat_template_sha256")
+                == config["model"]["prompt_protocol"]["chat_template_sha256"]
                 and gpu_preflight.get("prereg_path") == prereg_path
+                and gpu_preflight.get("prereg_version") == prereg_version
                 and gpu_preflight.get("prereg_sha256") == sha256_file(Path(prereg_path))
+                and gpu_preflight.get("prereg_commit") == prereg_commit
             )
             rank_rows = gpu_preflight.get("rank_training_checks", [])
             checks["gpu_preflight_real_training_path"] = (
                 isinstance(rank_rows, list)
                 and len(rank_rows) == 4
                 and gpu_preflight.get("rank_prompt_hashes_unique") is True
+                and gpu_preflight.get("rank_zero_teacher_load_count") == 1
+                and gpu_preflight.get("cgroup_memory", {}).get("passed") is True
                 and all(
                     row.get("teacher_forward_finite") is True
                     and row.get("student_forward_finite") is True
@@ -157,7 +160,7 @@ def main(argv: list[str] | None = None) -> None:
             "gpu_preflight_git_commit",
             "gpu_preflight_model_revision",
         ]
-        if config.get("protocol_track") == "qwen3_v1":
+        if str(config.get("protocol_track", "")).startswith("qwen3_"):
             required_gpu_checks.extend(
                 [
                     "gpu_preflight_teacher_revision",
@@ -178,7 +181,7 @@ def main(argv: list[str] | None = None) -> None:
             "gpu_preflight_model_revision",
         ):
             checks[name] = False
-        if config.get("protocol_track") == "qwen3_v1":
+        if str(config.get("protocol_track", "")).startswith("qwen3_"):
             for name in (
                 "gpu_preflight_teacher_revision",
                 "gpu_preflight_protocol",
@@ -209,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
         blockers.append(f"pinned model/tokenizer cache is incomplete: {cache_error}")
     payload: dict[str, Any] = {
         "format_version": 2,
-        **scientific_compatibility_fields(),
+        **scientific_compatibility_fields(prereg_version),
         "phase": "G0_preflight",
         "passed": all(checks.values()),
         "checks": checks,
@@ -220,7 +223,7 @@ def main(argv: list[str] | None = None) -> None:
         "prereg_version": prereg_version,
         "prereg_sha256": sha256_file(Path(prereg_path)),
         "protocol_track": str(config.get("protocol_track", "core_v2")),
-        "artifact_namespace": str(config.get("artifact_namespace", "legacy")),
+        "artifact_namespace": str(config["model"].get("artifact_namespace", "legacy")),
         "mib_revision": mib_revision,
         "python_executable": sys.executable,
         "torch_version": torch.__version__,

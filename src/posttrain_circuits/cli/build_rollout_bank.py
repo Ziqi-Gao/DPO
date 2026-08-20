@@ -12,6 +12,7 @@ from posttrain_circuits.cli._common import (
     print_json,
 )
 from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.core.scientific_versions import ROLLOUT_GENERATION_VERSION
 from posttrain_circuits.core.types import PromptBatch, TrajectoryRecord
 from posttrain_circuits.data.splits import build_split
@@ -135,6 +136,7 @@ def main(argv: list[str] | None = None) -> None:
         teacher_version=None,
         top_k=0,
         extra_metadata={
+            **formal_artifact_binding(config),
             "store_kind": "rollout_bank",
             "rollout_generation_version": ROLLOUT_GENERATION_VERSION,
             "tokenizer_hash": tokenizer_hash,

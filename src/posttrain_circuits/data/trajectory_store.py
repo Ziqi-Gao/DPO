@@ -15,7 +15,7 @@ from posttrain_circuits.core.manifests import atomic_write_json, utc_now
 from posttrain_circuits.core.scientific_versions import (
     ROLLOUT_GENERATION_VERSION,
     TRAJECTORY_STORE_VERSION,
-    require_core_v2_artifact,
+    require_scientific_artifact,
     scientific_compatibility_fields,
 )
 from posttrain_circuits.core.types import TrajectoryRecord
@@ -123,9 +123,11 @@ class TrajectoryStore:
 
         rewards = [float(record.verifier_reward or 0.0) for record in records]
         lengths = [len(record.response_ids) for record in records]
+        metadata = dict(extra_metadata or {})
+        prereg_version = str(metadata.pop("prereg_version", "core_v2"))
         manifest: dict[str, Any] = {
             "format_version": TRAJECTORY_STORE_VERSION,
-            **scientific_compatibility_fields(),
+            **scientific_compatibility_fields(prereg_version),
             "behavior_policy": behavior_policy,
             "prompt_manifest_hash": prompt_manifest_hash,
             "sampling_configuration": sampling_configuration,
@@ -149,13 +151,13 @@ class TrajectoryStore:
             },
             "created_at": utc_now(),
         }
-        if extra_metadata:
-            overlap = set(manifest) & set(extra_metadata)
+        if metadata:
+            overlap = set(manifest) & set(metadata)
             if overlap:
                 raise ValueError(
                     f"extra trajectory-store metadata overwrites reserved keys: {sorted(overlap)}"
                 )
-            manifest.update(extra_metadata)
+            manifest.update(metadata)
         teacher_path = self.root / "teacher-00000.safetensors"
         if teacher_path.exists():
             manifest["files"][teacher_path.name] = sha256_file(teacher_path)
@@ -169,7 +171,10 @@ class TrajectoryStore:
         manifest = json.loads((self.root / "manifest.json").read_text(encoding="utf-8"))
         if manifest.get("format_version") != TRAJECTORY_STORE_VERSION:
             raise ValueError("pre-core-v2 trajectory stores are scientific-history only")
-        require_core_v2_artifact(manifest)
+        require_scientific_artifact(
+            manifest,
+            expected_prereg_version=str(manifest.get("prereg_version", "")),
+        )
         if manifest.get("store_kind") in {"rollout_bank", "teacher_scored_rollout_bank"}:
             observed_generation_version = manifest.get("rollout_generation_version")
             if observed_generation_version != ROLLOUT_GENERATION_VERSION:

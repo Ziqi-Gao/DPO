@@ -85,6 +85,18 @@ class CircuitArtifact:
     tokenized_probe_manifest_path: str = ""
     semantic_pair_hashes: list[str] = field(default_factory=list)
     tokenized_pair_hashes: list[str] = field(default_factory=list)
+    protocol_track: str = ""
+    artifact_namespace: str = ""
+    model_revision: str = ""
+    teacher_revision: str = ""
+    tokenizer_fingerprint: str = ""
+    chat_template_sha256: str = ""
+    prompt_protocol: str = ""
+    enable_thinking: bool = False
+    code_commit: str = ""
+    prereg_path: str = ""
+    prereg_commit: str = ""
+    prereg_sha256: str = ""
     created_at: str = field(default_factory=utc_now)
 
     def write(self, path: Path) -> None:

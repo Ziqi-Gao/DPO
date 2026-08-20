@@ -4,6 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:4
+#SBATCH --mem=192G
 #SBATCH --time=12:00:00
 #SBATCH --signal=B:TERM@300
 #SBATCH --array=0-7%1
@@ -30,12 +31,12 @@ common=(pilot="${pilot_config}" model="${model_config}" teacher="${teacher_confi
   production_safety.initial_checkpoint_hash="${PILOT_INITIAL_CHECKPOINT_SHA256:?}")
 
 if [[ "${cell}" == canonical_grpo ]]; then
-  "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
+  "${ACCELERATE_BIN:?Set ACCELERATE_BIN}" launch --config_file configs/accelerate/fsdp.yaml \
     -m posttrain_circuits.cli.run_grpo experiment=canonical_grpo "${common[@]}" \
     trainer.batch_size=8 \
     --output "${output}" --confirm-production
 elif [[ "${cell}" == canonical_sft ]]; then
-  "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
+  "${ACCELERATE_BIN:?Set ACCELERATE_BIN}" launch --config_file configs/accelerate/fsdp.yaml \
     -m posttrain_circuits.cli.train experiment=canonical_sft "${common[@]}" \
     state_source.store_path="${PILOT_TEACHER_DEMOS:?Set PILOT_TEACHER_DEMOS}" \
     --output "${output}" --confirm-production
@@ -44,7 +45,7 @@ else
   if [[ "${cell}" == offline_* ]]; then
     extra+=(state_source.store_path="${PILOT_COMMON_BANK:?Set PILOT_COMMON_BANK}")
   fi
-  "${ACCELERATE_BIN:-accelerate}" launch --config_file configs/accelerate/fsdp.yaml \
+  "${ACCELERATE_BIN:?Set ACCELERATE_BIN}" launch --config_file configs/accelerate/fsdp.yaml \
     -m posttrain_circuits.cli.train experiment="${cell}" "${common[@]}" "${extra[@]}" \
     --output "${output}" --confirm-production
 fi

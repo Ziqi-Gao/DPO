@@ -8,6 +8,7 @@ from posttrain_circuits.core.provenance import (
     RunManifest,
     finalize_run_directory,
     initialize_run_directory,
+    resolve_preregistration,
 )
 
 
@@ -65,19 +66,32 @@ def test_formal_run_requires_clean_frozen_preregistration() -> None:
     )
     with pytest.raises(RuntimeError, match="differs from its frozen Git commit"):
         dirty.validate(require_git=True)
-    frozen = _manifest(
+    unbound = _manifest(
         prereg_git_commit="prereg-commit",
         prereg_sha256="prereg-sha",
         prereg_dirty=False,
         dirty_working_tree=False,
     )
+    with pytest.raises(RuntimeError, match="bound preregistration is missing"):
+        unbound.validate(require_git=True)
+    binding = resolve_preregistration({"prereg_path": "prereg/core_v2.yaml", "prereg_version": "core_v2"})
+    frozen = _manifest(
+        prereg_git_commit=binding.git_commit,
+        prereg_sha256=binding.sha256,
+        prereg_dirty=False,
+        dirty_working_tree=False,
+        prereg_path=str(binding.path),
+        prereg_version=binding.version,
+    )
     frozen.validate(require_git=True)
 
     source_dirty = _manifest(
-        prereg_git_commit="prereg-commit",
-        prereg_sha256="prereg-sha",
+        prereg_git_commit=binding.git_commit,
+        prereg_sha256=binding.sha256,
         prereg_dirty=False,
         dirty_working_tree=True,
+        prereg_path=str(binding.path),
+        prereg_version=binding.version,
     )
     with pytest.raises(RuntimeError, match="source working tree is dirty"):
         source_dirty.validate(require_git=True)

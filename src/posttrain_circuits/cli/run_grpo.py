@@ -25,6 +25,7 @@ from posttrain_circuits.core.provenance import (
     finalize_run_directory,
     initialize_run_directory,
 )
+from posttrain_circuits.core.readiness import require_factorial_prerequisites
 from posttrain_circuits.core.seeding import RNGState
 from posttrain_circuits.data.splits import build_split, load_frozen_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
@@ -40,6 +41,7 @@ from posttrain_circuits.training.grpo_backend import (
 )
 from posttrain_circuits.training.grpo_data import build_grpo_rows_and_reward
 from posttrain_circuits.training.local_fork import state_hash
+from posttrain_circuits.training.token_budget import maximum_grpo_tokens_per_update
 from posttrain_circuits.utils.tiny_model import (
     build_tiny_qwen,
     build_tiny_tokenizer,
@@ -213,9 +215,35 @@ def main(argv: list[str] | None = None) -> None:
 
     model_config = config["model"]
     is_tiny = str(model_config["model_name_or_path"]).startswith("local/")
+    prerequisite_evidence = {} if is_tiny else require_factorial_prerequisites(config)
     world_size, rank = _world_info()
     is_main_process = rank == 0
+    resume_payload = None
+    initial_budget_consumed = 0
+    initial_optimizer_steps = 0
+    if args.resume is not None:
+        resume_payload = torch.load(args.resume, map_location="cpu", weights_only=False)
+        budget_state = resume_payload.get("token_budget")
+        if not isinstance(budget_state, dict):
+            raise ValueError("GRPO resume checkpoint has no token-budget state")
+        if int(budget_state.get("budget", -1)) != int(config["trainer"]["token_budget"]):
+            raise ValueError("GRPO resume checkpoint token budget differs from config")
+        initial_budget_consumed = int(budget_state["consumed"])
+        initial_optimizer_steps = int(resume_payload["global_step"])
     initial_checkpoint_hash: str | None = None
+    max_prompt_length = int(
+        config["supervision"].get(
+            "max_prompt_length",
+            128 if is_tiny else 2048,
+        )
+    )
+    reserved_tokens_per_update = maximum_grpo_tokens_per_update(
+        world_size=world_size,
+        per_device_batch_size=int(config["trainer"]["batch_size"]),
+        gradient_accumulation_steps=int(config["supervision"]["gradient_accumulation_steps"]),
+        max_prompt_length=max_prompt_length,
+        max_completion_length=int(config["supervision"]["max_completion_length"]),
+    )
     settings = GrpoSettings(
         max_completion_length=int(
             config["supervision"]["max_completion_length"],
@@ -238,17 +266,19 @@ def main(argv: list[str] | None = None) -> None:
         ),
         per_device_train_batch_size=int(config["trainer"]["batch_size"]),
         learning_rate=float(config["trainer"]["learning_rate"]),
-        max_prompt_length=int(
-            config["supervision"].get(
-                "max_prompt_length",
-                128 if is_tiny else 2048,
-            )
-        ),
+        max_prompt_length=max_prompt_length,
         use_cpu=is_tiny,
         gradient_checkpointing=bool(
             model_config["gradient_checkpointing"],
         ),
         seed=int(config["seed"]),
+        token_budget=int(config["trainer"]["token_budget"]),
+        token_budget_unit=str(
+            config["trainer"].get("token_budget_unit", "global_nonpadding_model_input_tokens")
+        ),
+        reserved_tokens_per_update=reserved_tokens_per_update,
+        initial_token_budget_consumed=initial_budget_consumed,
+        initial_optimizer_steps=initial_optimizer_steps,
     )
     batch_contract = resolve_grpo_batch_contract(settings, world_size=world_size)
 
@@ -405,6 +435,10 @@ def main(argv: list[str] | None = None) -> None:
             **(
                 {"initial_checkpoint": initial_checkpoint_hash} if initial_checkpoint_hash is not None else {}
             ),
+            **{
+                f"prerequisite_{name}": str(evidence.get("report_hash", evidence.get("manifest_hash")))
+                for name, evidence in prerequisite_evidence.items()
+            },
         },
         rollout_bank_hash=source_hash,
         prompt_schedule_hash=prompt_hash,
@@ -416,6 +450,11 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer_fingerprint=(loaded.tokenizer_hash if not is_tiny else "legacy-unrecorded"),
         protocol_track=str(config.get("protocol_track", "core_v2")),
         artifact_namespace=str(model_config.get("artifact_namespace", "legacy")),
+        protocol_teacher_revision=str(config["teacher"].get("model_revision", "unbound")),
+        token_budget=int(config["trainer"]["token_budget"]),
+        token_budget_unit=str(
+            config["trainer"].get("token_budget_unit", "global_nonpadding_model_input_tokens")
+        ),
     )
     try:
         from datasets import Dataset
@@ -431,6 +470,12 @@ def main(argv: list[str] | None = None) -> None:
         output_dir=str(output),
         processing_class=tokenizer,
     )
+    if resume_payload is not None:
+        accelerator_state_path = str(resume_payload.get("accelerate_state_path", ""))
+        if not accelerator_state_path:
+            raise ValueError("GRPO resume checkpoint has no Accelerate state path")
+        trainer.accelerator.load_state(accelerator_state_path)
+        trainer.state.global_step = initial_optimizer_steps
     _wait_for_everyone(trainer)
     accelerator = getattr(trainer, "accelerator", None)
     if not is_tiny:
@@ -465,6 +510,32 @@ def main(argv: list[str] | None = None) -> None:
     )
     if global_step < 1:
         raise RuntimeError("GRPO trainer completed without an optimizer step")
+    token_budget_callback = getattr(trainer, "token_budget_callback", None)
+    if token_budget_callback is None:
+        if not is_tiny:
+            raise RuntimeError("production GRPO backend omitted token-budget enforcement")
+        token_budget_state = {
+            "budget": settings.token_budget,
+            "unit": settings.token_budget_unit,
+            "consumed": min(settings.reserved_tokens_per_update, settings.token_budget),
+            "reserved_tokens_per_update": settings.reserved_tokens_per_update,
+            "stop_reason": "max_steps_safety_limit",
+        }
+    else:
+        token_budget_state = token_budget_callback.state_dict()
+    raw_consumed = token_budget_state.get("consumed")
+    raw_budget = token_budget_state.get("budget")
+    if (
+        isinstance(raw_consumed, bool)
+        or not isinstance(raw_consumed, int)
+        or isinstance(raw_budget, bool)
+        or not isinstance(raw_budget, int)
+    ):
+        raise RuntimeError("GRPO token-budget state requires integer consumed and budget values")
+    token_budget_consumed = raw_consumed
+    token_budget_limit = raw_budget
+    if token_budget_consumed > token_budget_limit:
+        raise RuntimeError("GRPO completed beyond its registered global token budget")
     trained_model = (
         trainer.accelerator.unwrap_model(trainer.model) if hasattr(trainer, "accelerator") else trainer.model
     )
@@ -550,6 +621,8 @@ def main(argv: list[str] | None = None) -> None:
                 "global_step": global_step,
                 "world_size": world_size,
                 "initial_checkpoint_sha256": initial_checkpoint_hash,
+                "token_budget": token_budget_state,
+                "accelerate_state_path": str(accelerate_state_path),
             },
         )
         checkpoint_sha256 = sha256_file(checkpoint_path)
@@ -565,6 +638,7 @@ def main(argv: list[str] | None = None) -> None:
             "trl_train_called": True,
             "main_process_only_writes": True,
             "optimizer_steps": global_step,
+            "token_budget": token_budget_state,
             "parameter_update_norm": update_norm,
             "parameter_update_norm_method": "one-tensor-at-a-time-disk-snapshot",
             "parameters_changed": bool(update_norm and update_norm > 0.0),
@@ -607,11 +681,20 @@ def main(argv: list[str] | None = None) -> None:
                             "step": global_step,
                             **validation_metrics,
                             "output_kl_from_initial": output_kl,
+                            "token_budget": token_budget_limit,
+                            "token_budget_unit": token_budget_state["unit"],
+                            "token_budget_consumed": token_budget_consumed,
+                            "stop_reason": token_budget_state["stop_reason"],
                         },
                         sort_keys=True,
                     )
                     + "\n"
                 )
+        manifest.token_budget_consumed = token_budget_consumed
+        manifest.training_stop_reason = str(token_budget_state["stop_reason"])
+        manifest.metrics_sha256 = sha256_file(Path(output) / "metrics.jsonl")
+        manifest.final_checkpoint_path = str(checkpoint_path)
+        manifest.final_checkpoint_sha256 = checkpoint_sha256
         finalize_run_directory(output, manifest)
         print_json(
             {
