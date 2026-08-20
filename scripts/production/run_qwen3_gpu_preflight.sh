@@ -7,6 +7,7 @@ for name in MODEL_CONFIG TEACHER_CONFIG PRODUCTION_CONFIG G0_CONFIG PILOT_CONFIG
 done
 [[ "${HF_HUB_OFFLINE:?Set HF_HUB_OFFLINE=1}" == 1 ]]
 cd "${PROJECT_ROOT}"
+export PYTHONPATH="${PROJECT_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 run_id=${GPU_PREFLIGHT_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 run_dir=${GPU_PREFLIGHT_RUN_DIR:-${OUTPUT_ROOT}/gpu-preflight/${run_id}}
 mkdir -p "${run_dir}/logs"

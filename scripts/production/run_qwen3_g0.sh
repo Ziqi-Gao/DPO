@@ -7,6 +7,7 @@ for name in MODEL_CONFIG TEACHER_CONFIG PRODUCTION_CONFIG G0_CONFIG PILOT_CONFIG
 done
 [[ "${HF_HUB_OFFLINE:?Set HF_HUB_OFFLINE=1}" == 1 ]]
 cd "${PROJECT_ROOT}"
+export PYTHONPATH="${PROJECT_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 run_id=${G0_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
 export G0_RUN_ID="${run_id}"
 export G0_RUN_DIR=${G0_RUN_DIR:-${OUTPUT_ROOT}/g0/${run_id}}
