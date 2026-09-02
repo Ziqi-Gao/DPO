@@ -14,6 +14,7 @@ from posttrain_circuits.workflows.contracts import (
 
 
 MODULE_NAME = re.compile(r"posttrain_circuits\.cli\.[a-z][a-z0-9_]*\Z")
+HANDLER_CONTRACT = re.compile(r"handler-contract:[a-z][a-z0-9_]*\Z")
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,12 @@ class CandidateEntrypointTemplate:
     def validate(self) -> None:
         if not isinstance(self.task, str) or not IDENTIFIER.fullmatch(self.task):
             raise ValueError("candidate task must be an identifier")
-        if not isinstance(self.module, str) or not MODULE_NAME.fullmatch(self.module):
-            raise ValueError("candidate module must be a fixed OPD CLI module name")
+        if not isinstance(self.module, str) or not (
+            MODULE_NAME.fullmatch(self.module) or HANDLER_CONTRACT.fullmatch(self.module)
+        ):
+            raise ValueError(
+                "candidate implementation must be a fixed OPD CLI module or handler contract"
+            )
         for values, context in (
             (self.input_names, "candidate input names"),
             (self.output_names, "candidate output names"),
@@ -77,6 +82,16 @@ _TRAINING_OUTPUTS = ("checkpoint.pt", "metrics.jsonl", "run_manifest.json")
 _TRAINING_GATES = ("checkpoint_integrity", "config_binding", "finite_metrics")
 
 _CANDIDATE_TEMPLATES = (
+    _template(
+        "repository_preflight",
+        "handler-contract:repository_preflight",
+        outputs=("preflight_report.json",),
+        gates=(
+            "config_binding",
+            "no_gpu_required",
+            "runtime_isolation",
+        ),
+    ),
     _template(
         "offline_hard",
         "posttrain_circuits.cli.train",

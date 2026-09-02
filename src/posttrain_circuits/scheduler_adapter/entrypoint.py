@@ -16,7 +16,11 @@ from posttrain_circuits.scheduler_adapter.environment import (
 from posttrain_circuits.scheduler_adapter.errors import AdapterError, AdapterValidationError
 from posttrain_circuits.scheduler_adapter.manifest import load_running_manifest
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
-from posttrain_circuits.scheduler_adapter.registry import HANDLER_REGISTRY, require_handler
+from posttrain_circuits.scheduler_adapter.registry import (
+    FIXED_RUNTIME_ROOT,
+    HANDLER_REGISTRY,
+    require_handler,
+)
 
 
 def _parse_manifest_argument(argv: Sequence[str]) -> Path:
@@ -52,7 +56,7 @@ def main(
         with handler.prepare(
             manifest,
             approved_code_root=layout.code_root,
-            approved_runtime_root=layout.scratch_root,
+            approved_runtime_root=FIXED_RUNTIME_ROOT,
             observed_gpu_models=None,
         ) as prepared:
             configure_thread_environment(

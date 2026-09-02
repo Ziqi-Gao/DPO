@@ -14,7 +14,15 @@ from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError, 
 from posttrain_circuits.scheduler_adapter.manifest import IDENTIFIER, SHA256, RunningManifest
 from posttrain_circuits.scheduler_adapter.paths import (
     ATTEMPT_COMPLETION_NAME,
+    PRODUCTION_CODE_ROOT,
     validate_path_chain,
+)
+from posttrain_circuits.scheduler_adapter.repository_preflight import (
+    GATE_NAMES as REPOSITORY_PREFLIGHT_GATES,
+    OUTPUT_NAME as REPOSITORY_PREFLIGHT_OUTPUT,
+    PROFILE_NAME as REPOSITORY_PREFLIGHT_PROFILE_NAME,
+    TASK_NAME as REPOSITORY_PREFLIGHT_TASK,
+    validate_repository_preflight_completion,
 )
 from posttrain_circuits.scheduler_adapter.secure_files import (
     HeldRegularFile,
@@ -92,6 +100,7 @@ PACKAGE_MANIFEST_KEYS = frozenset(
 )
 
 SemanticValidator = Callable[[Mapping[str, Any], Any], None]
+FIXED_RUNTIME_ROOT = Path("/usr/bin")
 
 
 class ConfigBindingResolver(Protocol):
@@ -695,8 +704,72 @@ class HandlerSpec:
             )
 
 
-# Empty means no scientific task/profile is migrated and no outbox request is valid.
-HANDLER_REGISTRY: Mapping[str, HandlerSpec] = MappingProxyType({})
+_REPOSITORY_PREFLIGHT_PROFILE = ExecutionProfileContract(
+    name=REPOSITORY_PREFLIGHT_PROFILE_NAME,
+    kind="cpu",
+    process_count=1,
+    cpu_cores_min=1,
+    cpu_cores_max=1,
+    memory_mib_min=128,
+    memory_mib_max=128,
+    gpu_count=0,
+    gpu_memory_mib_min=0,
+    gpu_memory_mib_max=0,
+    gpu_utilization_pct_min=0,
+    gpu_utilization_pct_max=0,
+    exclusive_gpu=False,
+    allowed_gpu_models=(),
+)
+_REPOSITORY_PREFLIGHT_DEPLOYMENT = DeploymentContract(
+    deployment_id="repository-preflight-python312-v1",
+    runtime_version="Python 3.12.13",
+    runtime_flags=("-I", "-S"),
+    executable=Path("/usr/bin/python3.12"),
+    executable_sha256="848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
+    implementation=(
+        PRODUCTION_CODE_ROOT
+        / "scripts"
+        / "server_scheduler"
+        / "repository-preflight-handler.py"
+    ),
+    implementation_sha256="2884dcd34609fa1f178be6856db76848e40a8fe0ce630152526c2bd24ee899a6",
+    dependency_lock=(
+        PRODUCTION_CODE_ROOT
+        / "deployments"
+        / "repository_preflight"
+        / "dependency-lock.json"
+    ),
+    dependency_lock_sha256="106569bec10ba3892a86d2e2ad0cc38cf6da3ad62935524c0c2646654b40abe5",
+    package_manifest=(
+        PRODUCTION_CODE_ROOT
+        / "deployments"
+        / "repository_preflight"
+        / "package-manifest.json"
+    ),
+    package_manifest_sha256="22b01e70e387c05886b24c75527a85ba6006e71025925e0679d4c0cd4765c3ef",
+    deployment_identity_sha256="3e958f8ce86a220e7d443bf5605055d695e4d634603e639a02a32be23a5da6d5",
+)
+_REPOSITORY_PREFLIGHT_HANDLER = HandlerSpec(
+    task=REPOSITORY_PREFLIGHT_TASK,
+    deployment=_REPOSITORY_PREFLIGHT_DEPLOYMENT,
+    profiles=MappingProxyType(
+        {REPOSITORY_PREFLIGHT_PROFILE_NAME: _REPOSITORY_PREFLIGHT_PROFILE}
+    ),
+    fixed_args=(),
+    fixed_environment=MappingProxyType({}),
+    cwd=PRODUCTION_CODE_ROOT,
+    output_names=(REPOSITORY_PREFLIGHT_OUTPUT,),
+    required_gate_names=REPOSITORY_PREFLIGHT_GATES,
+    config_hash_bindings=CONFIG_HASH_CONTENT_INPUTS,
+    semantic_validator_id="repository-preflight-result-v1",
+    semantic_validator=validate_repository_preflight_completion,
+)
+
+# Only this measured, CPU-only pilot is migrated. All scientific workloads
+# remain fail-closed until separately reviewed and registered.
+HANDLER_REGISTRY: Mapping[str, HandlerSpec] = MappingProxyType(
+    {REPOSITORY_PREFLIGHT_TASK: _REPOSITORY_PREFLIGHT_HANDLER}
+)
 
 
 def require_handler(

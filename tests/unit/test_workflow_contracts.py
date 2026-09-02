@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import runpy
 import unittest
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 from types import MappingProxyType
 
 from posttrain_circuits.artifacts.hashing import canonical_json as artifact_canonical_json
@@ -55,6 +57,38 @@ def _unit(
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_repository_preflight_has_an_exact_content_and_result_contract(self):
+        self.assertEqual(
+            WORKFLOW_TASK_REGISTRY["repository_preflight"],
+            (
+                "config_binding_sha256",
+                "execution_config_sha256",
+                "resolved_config_sha256",
+                "scientific_config_sha256",
+            ),
+        )
+        template = candidate_entrypoint("repository_preflight")
+        self.assertEqual(template.module, "handler-contract:repository_preflight")
+        self.assertEqual(template.output_names, ("preflight_report.json",))
+        self.assertEqual(
+            template.gate_names,
+            (
+                "config_binding",
+                "no_gpu_required",
+                "runtime_isolation",
+            ),
+        )
+        handler = runpy.run_path(
+            str(
+                Path(__file__).resolve().parents[2]
+                / "scripts/server_scheduler/repository-preflight-handler.py"
+            )
+        )
+        self.assertEqual(handler["TASK"], template.task)
+        self.assertEqual(handler["EXPECTED_INPUT_NAMES"], template.input_names)
+        self.assertEqual((handler["REPORT_NAME"],), template.output_names)
+        self.assertEqual(handler["GATE_NAMES"], template.gate_names)
+
     def test_candidate_entrypoint_catalog_exactly_covers_scientific_tasks(self):
         self.assertIsInstance(CANDIDATE_ENTRYPOINT_CATALOG, MappingProxyType)
         self.assertEqual(
@@ -65,7 +99,10 @@ class WorkflowContractTests(unittest.TestCase):
             with self.subTest(task=task):
                 self.assertIs(candidate_entrypoint(task), template)
                 self.assertEqual(template.input_names, WORKFLOW_TASK_REGISTRY[task])
-                self.assertIsNotNone(importlib.util.find_spec(template.module))
+                if template.module.startswith("posttrain_circuits.cli."):
+                    self.assertIsNotNone(importlib.util.find_spec(template.module))
+                else:
+                    self.assertEqual(template.module, f"handler-contract:{task}")
                 self.assertEqual(
                     set(template.to_payload()),
                     {"gate_names", "input_names", "module", "output_names", "task"},

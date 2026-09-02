@@ -1238,7 +1238,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             default_request = build_outbox_request(plan, unit_id="cell")
             self.assertNotIn("execution_profile", default_request)
 
-    def test_empty_production_registry_rejects_every_outbox_request(self):
+    def test_production_registry_rejects_unmigrated_outbox_requests(self):
         plan = _plan()
         for function in (
             build_outbox_request,
@@ -1631,7 +1631,7 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_adapter_ast_contains_no_submission_or_local_scheduler_primitives(self):
         self.assertIsInstance(HANDLER_REGISTRY, MappingProxyType)
-        self.assertEqual(dict(HANDLER_REGISTRY), {})
+        self.assertEqual(tuple(HANDLER_REGISTRY), ("repository_preflight",))
         banned_modules = {"fcntl", "multiprocessing"}
         banned_calls = {
             ("os", "fork"),

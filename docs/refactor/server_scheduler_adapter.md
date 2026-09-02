@@ -106,12 +106,13 @@ adapter resolves through.  Likewise a registered Python executable must be a
 regular executable inode, not a symlink.  This condition has not been validated
 or remediated by this slice.
 
-## Deliberately unavailable
+## Deliberately narrow pilot
 
-The production handler registry is empty.  Existing training, dataset, teacher,
-local-fork, and circuit CLIs have **not** been declared migrated by this slice.
-Consequently the entrypoint fails closed for every task today.  No task may be
-added to a future ServerScheduler registration until its handler slice supplies:
+The production handler registry contains only the measured CPU-only
+`repository_preflight` pilot. Existing training, dataset, teacher, local-fork,
+and circuit CLIs have **not** been declared migrated by this slice and continue
+to fail closed. No additional task may be added to a future ServerScheduler
+registration until its handler slice supplies:
 
 1. an immutable `HandlerSpec`, `DeploymentContract`, and one or more immutable
    `ExecutionProfileContract` values satisfying the implemented checks;
