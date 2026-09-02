@@ -161,4 +161,3 @@ def difficulty_distribution(
         "pair_group_hash": sha256_value(sorted(example.pair_group_id for example in examples)),
         "topology": counts("topology_hash"),
     }
-
