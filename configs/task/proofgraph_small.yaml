@@ -19,3 +19,4 @@ split_sizes:
   circuit_discovery: 100
   circuit_validation: 100
 balanced_labels: true
+dataset_family_path: /data/del6500/OPD/outputs/datasets/proofgraph

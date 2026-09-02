@@ -7,15 +7,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_manifest
-from posttrain_circuits.core.config import is_production_scale
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import formal_artifact_binding
-from posttrain_circuits.core.scientific_versions import (
+from posttrain_circuits.artifacts.compatibility import (
     require_scientific_artifact,
     scientific_compatibility_fields,
 )
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import formal_artifact_binding
+from posttrain_circuits.datasets.circuit_probes.cohorts import validate_probe_cohort_manifest
+from posttrain_circuits.core.config import is_production_scale
 
 
 @dataclass(frozen=True)
@@ -245,7 +245,8 @@ def require_factorial_prerequisites(config: dict[str, Any]) -> dict[str, Any]:
                 raise RuntimeError("probe cohorts were frozen under a different prereg commit")
             if (
                 probes.get("construction_phase") != "before_confirmatory_training"
-                or probes.get("training_ancestry") != []
+                or probes.get("confirmatory_training_ancestry") != []
+                or not probes.get("eligibility_evidence_ancestry")
             ):
                 raise RuntimeError("probe cohorts are not demonstrably frozen before training")
         evidence["probe_cohorts"] = {

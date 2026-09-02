@@ -1,4 +1,0 @@
-name: phase0_sft
-state_source: teacher_demo
-supervision: canonical_sft
-

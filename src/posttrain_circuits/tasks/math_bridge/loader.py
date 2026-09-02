@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.core.hashing import sha256_file
+from posttrain_circuits.artifacts.hashing import sha256_file
 
 
 def load_curated_manifest(path: Path) -> dict[str, Any]:

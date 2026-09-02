@@ -6,20 +6,20 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from posttrain_circuits.artifacts.compatibility import ROLLOUT_GENERATION_VERSION
 from posttrain_circuits.cli._common import (
     dry_run_report,
     print_json,
 )
 from posttrain_circuits.core.config import compose_config, is_production_scale
-from posttrain_circuits.core.scientific_versions import ROLLOUT_GENERATION_VERSION
-from posttrain_circuits.core.types import TrajectoryBatch
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
+from posttrain_circuits.learning.contracts import TrajectoryBatch
 from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
     move_model_to_local_cuda,
     tokenizer_fingerprint,
 )
-from posttrain_circuits.teacher.hf_scorer import HuggingFaceTeacherScorer
+from posttrain_circuits.learning.teacher.hf_scorer import HuggingFaceTeacherScorer
 from posttrain_circuits.utils.smoke import build_fixed_bank, build_smoke_examples
 from posttrain_circuits.utils.tiny_model import (
     build_tiny_qwen,
@@ -119,6 +119,12 @@ def main(argv: list[str] | None = None) -> None:
             "sampling_configuration": {"temperature": 1.0, "top_p": 1.0},
             "verifier_version": "proofgraph-exact-v1",
             "sha256": "local-smoke-bank",
+            "rollout_generation_version": ROLLOUT_GENERATION_VERSION,
+            "protocol_track": "core_v2",
+            "artifact_namespace": "smoke",
+            "prompt_protocol": records[0].prompt_protocol,
+            "enable_thinking": records[0].enable_thinking,
+            "chat_template_sha256": records[0].chat_template_sha256,
         }
         model = build_tiny_qwen(43)
         teacher_id = "local/tiny-teacher"
@@ -152,9 +158,7 @@ def main(argv: list[str] | None = None) -> None:
         top_k=top_k,
         extra_metadata={
             "store_kind": "teacher_scored_rollout_bank",
-            "rollout_generation_version": str(
-                source_manifest.get("rollout_generation_version", ROLLOUT_GENERATION_VERSION)
-            ),
+            "rollout_generation_version": str(source_manifest["rollout_generation_version"]),
             "source_bank_hash": str(source_manifest["sha256"]),
             "teacher_id": teacher_id,
             "teacher_revision": teacher_revision,
@@ -166,11 +170,11 @@ def main(argv: list[str] | None = None) -> None:
                 "mean": sum(retained_mass) / len(retained_mass),
                 "positions": len(retained_mass),
             },
-            "protocol_track": str(source_manifest.get("protocol_track", "core_v2")),
-            "artifact_namespace": str(source_manifest.get("artifact_namespace", "legacy")),
-            "prompt_protocol": str(source_manifest.get("prompt_protocol", "legacy_raw_v1")),
-            "enable_thinking": bool(source_manifest.get("enable_thinking", False)),
-            "chat_template_sha256": str(source_manifest.get("chat_template_sha256", "legacy-unrecorded")),
+            "protocol_track": str(source_manifest["protocol_track"]),
+            "artifact_namespace": str(source_manifest["artifact_namespace"]),
+            "prompt_protocol": str(source_manifest["prompt_protocol"]),
+            "enable_thinking": bool(source_manifest["enable_thinking"]),
+            "chat_template_sha256": str(source_manifest["chat_template_sha256"]),
             **{
                 key: source_manifest[key]
                 for key in (

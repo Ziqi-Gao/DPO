@@ -1,5 +1,25 @@
 # OPD Agent Guide
 
+## Mandatory ServerScheduler boundaries
+
+Before changing or running project code, read all of the following files in full:
+
+- `/home/del6500/projects/ServerScheduler/docs/project-integration.md`
+- `/home/del6500/projects/ServerScheduler/docs/job-contract.md`
+- `/home/del6500/projects/ServerScheduler/docs/project-migration-instructions.md`
+- `/home/del6500/projects/ServerScheduler/schemas/job-request-v2.schema.json`
+
+These rules take precedence over operational guidance elsewhere in this file:
+
+- The only writable project roots are `/home/del6500/projects/OPD`, `/data/del6500/OPD`, and `/scr/del6500/OPD`. Do not request or add another writable root; place temporary files under `/scr/del6500/OPD/tmp`. Do not edit ServerScheduler source, configuration, registrations, queues, leases, audit records, performance data, schemas, or service files.
+- Do not submit ServerScheduler, Slurm, or other compute jobs. Preparing or validating project-owned configuration and request examples is not permission to submit them. Job submission requires a separate, explicit user-approved action outside the current project task.
+- Do not start, stop, enable, disable, restart, or edit system or user services. Report external service dependencies without managing them.
+- Do not implement or retain project-local CPU/GPU scheduling. In particular, do not select physical GPUs, poll `nvidia-smi` for placement, create resource locks or leases, manage CPU capacity, fan out work through Screen/tmux, launch detached workers, or build a duplicate queue/retry/status system.
+- Do not modify `CUDA_VISIBLE_DEVICES` to choose host GPUs. A future approved foreground entrypoint must consume the scheduler-provided allocation, preserve assigned GPU visibility, remain in the foreground, validate protocol-v2 manifests and allowlisted parameters, and confine outputs to approved OPD-owned paths.
+- Treat registration edits, request submission, pilot execution, service changes, legacy-scheduler cutover, and cleanup as separate approval gates. Never infer one approval from another, and never delete scientific outputs or validated completion markers.
+
+The Slurm material below documents safety constraints for a future, separately authorized operation. It does not override the no-submission boundary above and does not itself authorize any job or service action.
+
 ## Quest Slurm submission policy
 
 - Request the shortest walltime that has a defensible completion margin. A shorter request can improve backfill opportunities and pending priority; never shorten a job below the time needed to preserve the registered scientific workflow.

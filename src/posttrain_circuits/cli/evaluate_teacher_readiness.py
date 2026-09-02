@@ -8,7 +8,10 @@ from pathlib import Path
 
 import torch
 
-from posttrain_circuits.circuits.probes import (
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import git_output, resolve_preregistration
+from posttrain_circuits.causal_circuits.metrics.probes import (
     CircuitProbeSpec,
     build_semantic_probe_specs,
     semantic_probe_manifest,
@@ -17,14 +20,11 @@ from posttrain_circuits.circuits.probes import (
 )
 from posttrain_circuits.cli._common import dry_run_report, print_json
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import _git, resolve_preregistration
-from posttrain_circuits.data.splits import load_frozen_split
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.teacher.demo_generation import HfTeacherCandidateGenerator
-from posttrain_circuits.teacher.evaluation import (
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.learning.teacher.demo_generation import HfTeacherCandidateGenerator
+from posttrain_circuits.learning.teacher.evaluation import (
     TeacherPrefixScore,
     TeacherReadinessThresholds,
     evaluate_teacher_readiness,
@@ -119,10 +119,8 @@ def main(argv: list[str] | None = None) -> None:
     if not args.confirm_production:
         raise SystemExit("teacher readiness is a formal gate; pass --confirm-production")
 
-    examples, dataset_manifest = load_frozen_split(
-        args.validation_split,
-        expected_split="validation",
-    )
+    family = load_dataset_family(args.validation_split.parent)
+    examples = family.examples("validation")
     examples = examples[: args.limit]
     loaded = load_model_and_tokenizer(config["teacher"], for_training=False)
     model = move_model_to_local_cuda(loaded.model)
@@ -137,12 +135,12 @@ def main(argv: list[str] | None = None) -> None:
         example.example_id: generator(
             example=example,
             candidate_index=0,
-            generation_seed=int(config["seed"]) + index,
+            actual_sampling_seed=int(config["seed"]) + index,
             temperature=0.0,
             top_p=1.0,
             top_k=0,
             min_p=0.0,
-        )
+        ).response_text
         for index, example in enumerate(examples)
     }
 
@@ -204,9 +202,11 @@ def main(argv: list[str] | None = None) -> None:
         "chat_template_sha256": loaded.chat_template_sha256,
         "prompt_protocol": loaded.prompt_protocol,
         "enable_thinking": False,
-        "dataset_hash": str(dataset_manifest["sha256"]),
+        "dataset_hash": str(
+            family.boundary("validation")["examples_file_sha256"]
+        ),
         "prefix_probe_hash": str(tokenized_manifest["sha256"]),
-        "code_commit": _git(["rev-parse", "HEAD"]) or "unavailable",
+        "code_commit": git_output(["rev-parse", "HEAD"]) or "unavailable",
         "prereg_path": str(prereg.path),
         "prereg_version": prereg.version,
         "prereg_commit": prereg.git_commit,

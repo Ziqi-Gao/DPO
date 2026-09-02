@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 
+from posttrain_circuits.artifacts.runs import formal_artifact_binding
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
-from posttrain_circuits.core.provenance import formal_artifact_binding
-from posttrain_circuits.data.splits import build_split
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
-from posttrain_circuits.teacher.demo_generation import (
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.contracts import TaskExample
+from posttrain_circuits.datasets.teacher_demos.contracts import (
+    LOGPROB_FIXTURE_UNAVAILABLE,
+    TeacherCandidateOutput,
+)
+from posttrain_circuits.datasets.teacher_demos.store import write_teacher_demo_store
+from posttrain_circuits.learning.teacher.demo_generation import (
     HfTeacherCandidateGenerator,
     TeacherCandidateGenerator,
     TeacherDemoGenerationConfig,
     generate_teacher_demonstrations,
-    write_teacher_demo_store,
 )
 from posttrain_circuits.utils.tiny_model import build_tiny_tokenizer
 
@@ -31,16 +36,24 @@ class SmokeProofTeacher:
         *,
         example: TaskExample,
         candidate_index: int,
-        generation_seed: int,
+        actual_sampling_seed: int,
         temperature: float,
         top_p: float,
         top_k: int,
         min_p: float,
-    ) -> str:
-        del generation_seed, temperature, top_p, top_k, min_p
+    ) -> TeacherCandidateOutput:
+        del actual_sampling_seed, temperature, top_p, top_k, min_p
         if candidate_index == 0:
-            return self.task.canonical_target(example)
-        return f"<proof>\n\n</proof>\n<answer>{1 - example.label}</answer>"
+            response_text = self.task.canonical_target(example)
+        else:
+            response_text = f"<proof>\n\n</proof>\n<answer>{1 - example.label}</answer>"
+        return TeacherCandidateOutput(
+            response_text=response_text,
+            response_ids=None,
+            token_logprobs=None,
+            logprob_status=LOGPROB_FIXTURE_UNAVAILABLE,
+            finish_reason="oracle_fixture",
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -53,15 +66,15 @@ def main(argv: list[str] | None = None) -> None:
         return
     teacher_config = config["teacher"]
     task_config = config["task"]
-    count = int(task_config.get("num_examples", 32))
-    seed = int(task_config.get("seed", config["seed"]))
-    examples = build_split(
-        ProofGraphTask(),
-        "train",
-        count,
-        seed,
-        dict(task_config),
+    family = load_dataset_family(
+        Path(str(task_config.get("dataset_family_path", "")))
     )
+    family_train = family.examples("train")
+    count = int(task_config.get("num_examples", len(family_train)))
+    if count < 1 or count > len(family_train):
+        raise ValueError("task.num_examples is outside the frozen train family split")
+    examples = family_train[:count]
+    family_train_ids = {example.example_id for example in family_train}
     candidate_generator: TeacherCandidateGenerator
     if str(teacher_config.get("backend", "")).lower() == "huggingface":
         loaded_teacher = load_model_and_tokenizer(
@@ -87,7 +100,7 @@ def main(argv: list[str] | None = None) -> None:
         teacher_id=teacher_id,
         teacher_revision=teacher_revision,
         resolved_teacher_commit=resolved_teacher_commit,
-        generation_seed=int(teacher_config["generation_seed"]),
+        sampling_request_seed=int(teacher_config["generation_seed"]),
         temperature=float(teacher_config["temperature"]),
         top_p=float(teacher_config["top_p"]),
         top_k=int(teacher_config.get("top_k", 0)),
@@ -101,10 +114,26 @@ def main(argv: list[str] | None = None) -> None:
         generation_config,
         model_config=teacher_config,
     )
+    unknown_prompt_ids = {attempt.prompt_id for attempt in result.attempts} - family_train_ids
+    if unknown_prompt_ids:
+        raise ValueError(
+            "teacher-demo prompt IDs are outside the configured train family: "
+            f"{sorted(unknown_prompt_ids)}"
+        )
     manifest = write_teacher_demo_store(
         output,
-        result,
-        protocol_bindings=formal_artifact_binding(config),
+        result.attempts,
+        ordered_prompt_ids=result.ordered_prompt_ids,
+        prompt_manifest_hash=result.prompt_manifest_hash,
+        tokenizer_hash=result.tokenizer_hash,
+        generation=asdict(result.config),
+        protocol_bindings={
+            **formal_artifact_binding(config),
+            "dataset_family_sha256": str(family.manifest["sha256"]),
+            "train_examples_file_sha256": str(
+                family.boundary("train")["examples_file_sha256"]
+            ),
+        },
     )
     print_json({"output": str(output), "manifest": manifest})
 

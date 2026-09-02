@@ -7,8 +7,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
+import yaml
 
-from posttrain_circuits.circuits.pilot_scope import PILOT_CELLS, resolve_pilot_circuit_scope
+from posttrain_circuits.artifacts import runs as provenance
+from posttrain_circuits.artifacts.config_bindings import bind_config
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.causal_circuits.discovery.pilot_scope import resolve_pilot_circuit_scope
 from posttrain_circuits.cli.finalize_g0 import (
     _require_formal_binding,
     _teacher_readiness_formal_binding,
@@ -19,15 +24,22 @@ from posttrain_circuits.cli.finalize_pilot import (
     _require_dynamics_slot,
     _terminal_paths,
 )
-from posttrain_circuits.cli.finalize_pilot_training import _terminal_tasks
+from posttrain_circuits.cli.finalize_pilot_training import (
+    _load_run_config_binding,
+    _terminal_tasks,
+    _validate_resolved_config_yaml_sha256,
+)
 from posttrain_circuits.cli.gpu_preflight import cgroup_memory_snapshot, validate_memory_headroom
-from posttrain_circuits.core import provenance
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
 from posttrain_circuits.core.readiness import require_formal_prerequisite_binding
-from posttrain_circuits.training.factorial_trainer import TrainerConfig
-from posttrain_circuits.training.grpo_backend import GrpoSettings, GrpoTokenBudgetCallback
-from posttrain_circuits.training.token_budget import TOKEN_BUDGET_UNIT, TokenBudgetState
+from posttrain_circuits.experiments.protocols.specs import (
+    CONTROLLED_FACTORIAL,
+    ExperimentBinding,
+)
+from posttrain_circuits.methods.registry import PILOT_METHOD_IDS, get_method_spec
+from posttrain_circuits.learning.training.factorial_trainer import TrainerConfig
+from posttrain_circuits.learning.training.grpo_backend import GrpoSettings, GrpoTokenBudgetCallback
+from posttrain_circuits.learning.training.token_budget import TOKEN_BUDGET_UNIT, TokenBudgetState
 
 ROOT = Path(__file__).parents[2]
 
@@ -97,9 +109,10 @@ def test_pilot_circuit_scope_is_full_and_stage_explicit() -> None:
     final = (ROOT / "scripts/slurm/pilot_final_circuits.slurm").read_text(encoding="utf-8")
     assert "#SBATCH --array=0-3" in initial
     assert "#SBATCH --array=0-31" in final
-    scope = (ROOT / "src/posttrain_circuits/circuits/pilot_scope.py").read_text(encoding="utf-8")
-    assert "offline_hard" in scope
-    assert "offline_verified_replay" in scope
+    scope = (
+        ROOT / "src/posttrain_circuits/causal_circuits/discovery/pilot_scope.py"
+    ).read_text(encoding="utf-8")
+    assert "PILOT_METHOD_IDS" in scope
     assert '"process": "first_rule_selection"' in scope
     assert '"final_answer": "final_answer"' in scope
     assert "resolve_pilot_circuit_scope" in initial
@@ -121,12 +134,12 @@ def test_pilot_supervisor_does_not_treat_empty_accounting_as_success() -> None:
 def test_qwen3_v2_scope_is_exactly_eight_by_two_by_two() -> None:
     config = compose_config(["pilot=qwen3_v2_core", "model=qwen3_v2_1p7b", "teacher=qwen3_v2_teacher_8b"])
     scope = resolve_pilot_circuit_scope(config)
-    assert tuple(scope["cells"]) == PILOT_CELLS
+    assert tuple(scope["cells"]) == PILOT_METHOD_IDS
     assert scope["initial_count"] == 4
     assert scope["final_count"] == 32
     assert {(row["cell"], row["stage_label"], row["cohort"]) for row in scope["final_matrix"]} == {
         (cell, stage, cohort)
-        for cell in PILOT_CELLS
+        for cell in PILOT_METHOD_IDS
         for stage in ("process", "final_answer")
         for cohort in ("base_capable", "challenge")
     }
@@ -144,7 +157,7 @@ def test_qwen3_v2_profiles_have_no_legacy_scientific_fallback(profile: str) -> N
     assert config["teacher"]["model_name_or_path"] == "Qwen/Qwen3-8B"
     assert config["prereg_path"] == "prereg/qwen3_v2.yaml"
     assert config["prereg_version"] == "qwen3_v2"
-    assert config["output_root"] == "outputs/qwen3-v2"
+    assert config["output_root"] == "/data/del6500/OPD/outputs/qwen3-v2"
     for forbidden in ("Qwen2.5", "qwen25", "outputs/qwen3-v1", "prereg/qwen3_v1.yaml"):
         assert forbidden not in serialized
 
@@ -227,7 +240,7 @@ def test_cgroup_v1_unlimited_sentinel_is_not_a_finite_limit(tmp_path: Path) -> N
 @pytest.mark.unit
 def test_token_budget_is_distributed_exact_and_resume_safe(monkeypatch) -> None:
     monkeypatch.setattr(
-        "posttrain_circuits.training.token_budget.distributed_token_sum", lambda value: value * 4
+        "posttrain_circuits.learning.training.token_budget.distributed_token_sum", lambda value: value * 4
     )
     state = TokenBudgetState(100)
     assert state.reserve_optimizer_update(20) == (True, 80)
@@ -243,7 +256,7 @@ def test_token_budget_is_distributed_exact_and_resume_safe(monkeypatch) -> None:
 @pytest.mark.unit
 def test_grpo_budget_reduces_rank_deltas_and_never_resets(monkeypatch) -> None:
     monkeypatch.setattr(
-        "posttrain_circuits.training.grpo_backend.distributed_token_sum", lambda value: value * 4
+        "posttrain_circuits.learning.training.grpo_backend.distributed_token_sum", lambda value: value * 4
     )
     callback = GrpoTokenBudgetCallback(
         GrpoSettings(
@@ -325,18 +338,53 @@ def test_teacher_readiness_keeps_distinct_student_and_teacher_tokenizer_revision
 def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
     root = tmp_path / "cell"
     root.mkdir(parents=True)
+    method = get_method_spec("offline_hard")
     metrics = root / "metrics.jsonl"
     metrics.write_text('{"step": 1, "validation_accuracy": 0.5}\n', encoding="utf-8")
-    checkpoint = root / "checkpoints" / "step.pt"
-    checkpoint.parent.mkdir()
-    checkpoint.write_bytes(b"checkpoint")
+    state_source_protocol = {
+        "name": "fixed_bank",
+        "behavior_policy_id": "common_mu",
+        "include_successes_and_failures": True,
+    }
+    supervision_protocol = {
+        "name": "hard_teacher",
+        "training_backend": method.training_backend,
+        "training_backend_version": method.training_backend_version,
+        "training_batch_contract": method.training_batch_contract,
+    }
+    resolved_payload = {
+        "experiment": {
+            "name": "offline_hard",
+            "state_source": "fixed_bank",
+            "supervision": "hard_teacher",
+            "use_verifier_reward": False,
+        },
+        "state_source": {
+            **state_source_protocol,
+            "store_path": "/data/example/common_mu",
+        },
+        "supervision": supervision_protocol,
+        "protocol_track": "qwen3_v2",
+    }
     resolved = root / "resolved_config.yaml"
-    resolved.write_text("protocol_track: qwen3_v2\n", encoding="utf-8")
-    terminal_hash = "t" * 64
+    resolved.write_text(yaml.safe_dump(resolved_payload), encoding="utf-8")
+    config_binding = bind_config(
+        resolved_payload,
+        input_artifact_hashes={"state_source.store_path": "d" * 64},
+        execution_context={"entrypoint": "pilot-fixture", "world_size": 4},
+    )
+    (root / "config_binding.json").write_text(
+        json.dumps(config_binding.as_dict()),
+        encoding="utf-8",
+    )
+    terminal_hash = "d" * 64
     dataset_hashes = {
-        "initial_checkpoint": "i" * 64,
-        "prerequisite_probe_cohorts": "p" * 64,
-        "validation_manifest": "v" * 64,
+        "train": "1" * 64,
+        "validation": "2" * 64,
+        "initial_checkpoint": "3" * 64,
+        "probe_manifest": "4" * 64,
+        "prerequisite_probe_cohorts": "4" * 64,
+        "validation_manifest": "2" * 64,
     }
     expected: dict[str, object] = {
         "protocol_track": "qwen3_v2",
@@ -344,32 +392,108 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
         "model_revision": "student",
         "teacher_revision": "teacher",
         "tokenizer_revision": "tokenizer",
-        "tokenizer_fingerprint": "fingerprint",
-        "chat_template_sha256": "chat",
+        "tokenizer_fingerprint": "f" * 64,
+        "chat_template_sha256": "c" * 64,
         "prompt_protocol": "qwen3_non_thinking_v1",
         "enable_thinking": False,
         "code_commit": "code",
         "prereg_path": "prereg/qwen3_v2.yaml",
         "prereg_version": "qwen3_v2",
         "prereg_commit": "prereg-commit",
-        "prereg_sha256": "prereg-hash",
+        "prereg_sha256": "e" * 64,
     }
+    experiment_binding = ExperimentBinding(
+        experiment_id=(
+            "qwen3_v2:offline_hard:seed-42:"
+            f"{CONTROLLED_FACTORIAL.design_id}"
+        ),
+        method_id="offline_hard",
+        method_spec_sha256=method.scientific_sha256,
+        factorial_design_sha256=CONTROLLED_FACTORIAL.scientific_sha256,
+        scientific_config_sha256=config_binding.scientific_config_sha256,
+        seed=42,
+        protocol_track="qwen3_v2",
+        preregistration_sha256=str(expected["prereg_sha256"]),
+        implementation_commit=str(expected["code_commit"]),
+        implementation_dirty=False,
+        model_id="student-id",
+        model_requested_revision="student",
+        model_resolved_revision="student-resolved",
+        teacher_id="teacher-id",
+        teacher_requested_revision="teacher",
+        teacher_resolved_revision="teacher-resolved",
+        tokenizer_id="tokenizer-id",
+        tokenizer_requested_revision="tokenizer",
+        tokenizer_resolved_revision="tokenizer-resolved",
+        tokenizer_fingerprint=str(expected["tokenizer_fingerprint"]),
+        prompt_protocol="qwen3_non_thinking_v1",
+        chat_template_sha256=str(expected["chat_template_sha256"]),
+        enable_thinking=False,
+        model_facing_prompt_schedule_sha256="6" * 64,
+        probe_manifest_sha256=str(dataset_hashes["probe_manifest"]),
+        task_protocol_sha256="7" * 64,
+        state_source_protocol_sha256=sha256_value(state_source_protocol),
+        supervision_protocol_sha256=sha256_value(supervision_protocol),
+        response_mask_protocol="response_tokens_only_including_eos_v1",
+        max_completion_length=256,
+        full_parameter_training=True,
+        initial_checkpoint_sha256=str(dataset_hashes["initial_checkpoint"]),
+        train_dataset_sha256=str(dataset_hashes["train"]),
+        validation_dataset_sha256=str(dataset_hashes["validation"]),
+        optimizer_spec_sha256="a" * 64,
+        scheduler_spec_sha256="b" * 64,
+        backend_id=method.training_backend,
+        backend_version=method.training_backend_version,
+        backend_batch_contract=method.training_batch_contract,
+        resolved_batch_contract_sha256="c" * 64,
+        token_budget=100,
+        offline_bank_manifest_sha256="d" * 64,
+        offline_bank_content_sha256="e" * 64,
+        offline_bank_initial_cursor_sha256="f" * 64,
+    )
+    checkpoint = root / "checkpoints" / "step.pt"
+    checkpoint.parent.mkdir()
+    torch.save(
+        {
+            "manifest_hashes": {
+                "experiment_binding": experiment_binding.scientific_sha256,
+                "factorial_design": experiment_binding.factorial_design_sha256,
+                "dataset_train": experiment_binding.train_dataset_sha256,
+                "dataset_validation": experiment_binding.validation_dataset_sha256,
+            },
+            "git_commit": experiment_binding.implementation_commit,
+            "implementation_dirty": experiment_binding.implementation_dirty,
+        },
+        checkpoint,
+    )
     binding: dict[str, object] = {
         "cell": "offline_hard",
         "seed": 42,
-        "resolved_config_sha256": sha256_file(resolved),
+        "resolved_config_sha256": config_binding.resolved_config_sha256,
+        "scientific_config_sha256": config_binding.scientific_config_sha256,
+        "execution_config_sha256": config_binding.execution_config_sha256,
+        "resolved_config_yaml_sha256": sha256_file(resolved),
         "metrics_sha256": sha256_file(metrics),
         "final_checkpoint_sha256": sha256_file(checkpoint),
-        "slurm_terminal_evidence_sha256": terminal_hash,
-        "slurm": {"job_id_raw": "123_0", "state": "COMPLETED", "exit_code": "0:0"},
+        "terminal_evidence_sha256": terminal_hash,
+        "execution_task": {
+            "job_id_raw": "123_0",
+            "state": "COMPLETED",
+            "exit_code": "0:0",
+        },
         "token_budget": 100,
         "token_budget_consumed": 80,
         "token_budget_unit": TOKEN_BUDGET_UNIT,
         "training_stop_reason": "max_steps_safety_limit",
         "dataset_hashes_sha256": sha256_value(dataset_hashes),
-        "probe_manifest_hashes": ["p" * 64],
-        "initial_checkpoint_sha256": "i" * 64,
-        "state_source_artifact_sha256": "s" * 64,
+        "probe_manifest_hashes": ["4" * 64],
+        "initial_checkpoint_sha256": "3" * 64,
+        "state_source_artifact_sha256": experiment_binding.offline_bank_manifest_sha256,
+        "experiment_binding_sha256": experiment_binding.scientific_sha256,
+        "factorial_design_sha256": experiment_binding.factorial_design_sha256,
+        "method_spec_sha256": experiment_binding.method_spec_sha256,
+        "grpo_update_evidence_sha256": None,
+        "factorial_update_evidence_sha256": None,
     }
     binding["sha256"] = sha256_value(binding)
     manifest: dict[str, object] = {
@@ -377,9 +501,28 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
         "seed": 42,
         **{key: value for key, value in expected.items() if key != "code_commit"},
         "git_commit": expected["code_commit"],
+        "dirty_working_tree": False,
         "prereg_git_commit": expected["prereg_commit"],
         "protocol_teacher_revision": expected["teacher_revision"],
-        "slurm_terminal_evidence_sha256": terminal_hash,
+        "model_id": experiment_binding.model_id,
+        "resolved_model_commit": experiment_binding.model_resolved_revision,
+        "tokenizer_id": experiment_binding.tokenizer_id,
+        "resolved_tokenizer_commit": experiment_binding.tokenizer_resolved_revision,
+        "teacher_id": experiment_binding.teacher_id,
+        "teacher_revision": experiment_binding.teacher_requested_revision,
+        "resolved_teacher_commit": experiment_binding.teacher_resolved_revision,
+        "model_facing_prompt_schedule_hash": (
+            experiment_binding.model_facing_prompt_schedule_sha256
+        ),
+        "experiment_binding": experiment_binding.to_payload(),
+        "experiment_binding_sha256": experiment_binding.scientific_sha256,
+        "factorial_design_sha256": experiment_binding.factorial_design_sha256,
+        "config_binding": config_binding.as_dict(),
+        "resolved_config_sha256": config_binding.resolved_config_sha256,
+        "scientific_config_sha256": config_binding.scientific_config_sha256,
+        "execution_config_sha256": config_binding.execution_config_sha256,
+        "execution_context": config_binding.as_dict()["execution_context"],
+        "resolved_config_yaml_sha256": sha256_file(resolved),
         "final_checkpoint_path": str(checkpoint),
         "final_checkpoint_sha256": sha256_file(checkpoint),
         "metrics_sha256": sha256_file(metrics),
@@ -388,12 +531,61 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
         "token_budget_unit": TOKEN_BUDGET_UNIT,
         "training_stop_reason": "max_steps_safety_limit",
         "dataset_hashes": dataset_hashes,
-        "rollout_bank_hash": "s" * 64,
+        "rollout_bank_hash": experiment_binding.offline_bank_manifest_sha256,
         "pilot_terminal_binding": binding,
     }
     manifest["sha256"] = sha256_value(manifest)
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return root, expected, terminal_hash
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "hash_field",
+    [
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "execution_config_sha256",
+    ],
+)
+def test_pilot_config_binding_rejects_each_manifest_hash(
+    tmp_path: Path,
+    hash_field: str,
+) -> None:
+    root, _, _ = _write_cell_chain(tmp_path)
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    resolved_config = yaml.safe_load(
+        (root / "resolved_config.yaml").read_text(encoding="utf-8")
+    )
+    experiment_binding = ExperimentBinding.from_payload(manifest["experiment_binding"])
+    _load_run_config_binding(
+        root,
+        manifest=manifest,
+        resolved_config=resolved_config,
+        experiment_binding=experiment_binding,
+    )
+    manifest[hash_field] = "0" * 64
+    with pytest.raises(ValueError, match="config binding mismatch"):
+        _load_run_config_binding(
+            root,
+            manifest=manifest,
+            resolved_config=resolved_config,
+            experiment_binding=experiment_binding,
+        )
+
+
+@pytest.mark.unit
+def test_pilot_resolved_yaml_uses_only_its_byte_digest_field(tmp_path: Path) -> None:
+    root, _, _ = _write_cell_chain(tmp_path)
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    yaml_digest = _validate_resolved_config_yaml_sha256(root, manifest=manifest)
+    assert yaml_digest == sha256_file(root / "resolved_config.yaml")
+    assert yaml_digest != manifest["resolved_config_sha256"]
+
+    semantic_hash = manifest["resolved_config_sha256"]
+    manifest["resolved_config_yaml_sha256"] = semantic_hash
+    with pytest.raises(ValueError, match="YAML byte digest mismatch"):
+        _validate_resolved_config_yaml_sha256(root, manifest=manifest)
 
 
 @pytest.mark.unit
@@ -456,12 +648,12 @@ def test_pilot_cell_chain_rejects_cross_cell_checkpoint_path(tmp_path: Path) -> 
 
 
 @pytest.mark.unit
-def test_pilot_cell_chain_rejects_rehashed_wrong_slurm_job(tmp_path: Path) -> None:
+def test_pilot_cell_chain_rejects_rehashed_wrong_execution_task(tmp_path: Path) -> None:
     root, expected, terminal_hash = _write_cell_chain(tmp_path)
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     binding = manifest["pilot_terminal_binding"]
-    binding["slurm"]["job_id_raw"] = "999_0"
+    binding["execution_task"]["job_id_raw"] = "999_0"
     binding["sha256"] = sha256_value({key: value for key, value in binding.items() if key != "sha256"})
     manifest["sha256"] = sha256_value({key: value for key, value in manifest.items() if key != "sha256"})
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -479,7 +671,9 @@ def test_pilot_cell_chain_rejects_rehashed_wrong_slurm_job(tmp_path: Path) -> No
 def test_terminal_evidence_rejects_rows_from_a_different_job(tmp_path: Path) -> None:
     terminal = tmp_path / "training.txt"
     terminal.write_text(
-        "".join(f"999_{index}|COMPLETED|0:0\n" for index in range(len(PILOT_CELLS))),
+        "".join(
+            f"999_{index}|COMPLETED|0:0\n" for index in range(len(PILOT_METHOD_IDS))
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="exactly the eight pilot tasks"):

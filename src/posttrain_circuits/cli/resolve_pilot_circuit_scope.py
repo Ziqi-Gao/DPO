@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from posttrain_circuits.circuits.pilot_scope import resolve_pilot_circuit_scope
+from posttrain_circuits.causal_circuits.discovery.pilot_scope import resolve_pilot_circuit_scope
 from posttrain_circuits.core.config import compose_config
 
 

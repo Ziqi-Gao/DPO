@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from posttrain_circuits.artifacts.io import atomic_write_json
 from posttrain_circuits.cli._common import print_json
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
-from posttrain_circuits.training.local_fork import (
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
+from posttrain_circuits.learning.training.local_fork import (
     match_state_source_forks,
 )
 

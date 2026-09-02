@@ -1,5 +1,7 @@
 name: verified_replay
+training_backend: factorial_trainer
+training_backend_version: in-repository-v1
+training_batch_contract: optimizer-boundary-gradient-accumulation-v1
 normalization: sequence
 minimum_positives: 1
 retry_limit: 8
-

@@ -10,8 +10,8 @@ from typing import Any
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.core.config import validate_model_revision
-from posttrain_circuits.core.hashing import sha256_value
 from posttrain_circuits.models.prompt_protocol import chat_template_sha256, prompt_protocol_name
 
 _DTYPES: dict[str, torch.dtype] = {

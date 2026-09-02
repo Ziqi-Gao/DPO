@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import torch
 
-from posttrain_circuits.circuits.exact_patching import ExactTokenPair
-from posttrain_circuits.circuits.graph import CircuitArtifact
-from posttrain_circuits.circuits.mib_eap_ig import MibEapIgAdapter, write_fixed_discovery_pairs
-from posttrain_circuits.circuits.model_adapter import check_hf_identity_compatibility
-from posttrain_circuits.circuits.probe_cohorts import load_probe_examples
-from posttrain_circuits.circuits.probes import (
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import formal_artifact_binding
+from posttrain_circuits.causal_circuits.interventions.exact_patching import ExactTokenPair
+from posttrain_circuits.causal_circuits.contracts import CircuitArtifact
+from posttrain_circuits.causal_circuits.discovery.backends.mib_eap_ig import MibEapIgAdapter, write_fixed_discovery_pairs
+from posttrain_circuits.causal_circuits.model.adapter import check_hf_identity_compatibility
+from posttrain_circuits.causal_circuits.metrics.probes import (
     CIRCUIT_PROBE_SCHEMA_VERSION,
     PRIMARY_CORRUPTION,
     PROBE_STAGES,
@@ -25,20 +28,20 @@ from posttrain_circuits.circuits.probes import (
     tokenize_probe_specs,
     tokenized_probe_manifest,
 )
-from posttrain_circuits.circuits.tiny_eap_ig import TinyEapIgBackend
+from posttrain_circuits.causal_circuits.discovery.backends.tiny_eap_ig import TinyEapIgBackend
 from posttrain_circuits.cli._common import enforce_production_guard, print_json
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import formal_artifact_binding
-from posttrain_circuits.core.types import CounterfactualPair
-from posttrain_circuits.data.splits import deserialize_example
-from posttrain_circuits.tasks.proofgraph.generator import (
+from posttrain_circuits.datasets.circuit_probes.cohorts import (
+    group_complete_pairs,
+    load_probe_examples,
+)
+from posttrain_circuits.datasets.circuit_probes.contracts import ProbePair
+from posttrain_circuits.datasets.proofgraph.contracts import CounterfactualPair
+from posttrain_circuits.datasets.proofgraph.generation import (
     GENERATOR_VERSION,
     LABEL_SEMANTICS,
     ProofGraphTask,
 )
-from posttrain_circuits.tasks.proofgraph.schemas import TaskExample
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 
@@ -52,40 +55,30 @@ def _padded_pair(tokenizer: Any, clean: str, corrupt: str) -> tuple[torch.Tensor
     return torch.tensor([clean_ids]), torch.tensor([corrupt_ids])
 
 
-def _unique_pair_examples(examples: list[TaskExample], count: int) -> list[TaskExample]:
-    selected = []
-    seen = set()
-    for example in examples:
-        if not example.pair_group_id or example.pair_group_id in seen:
-            continue
-        selected.append(example)
-        seen.add(example.pair_group_id)
-        if len(selected) == count:
-            return selected
-    raise ValueError(f"frozen cohort has fewer than {count} distinct semantic pairs")
-
-
-def _all_unique_pair_examples(examples: list[TaskExample]) -> list[TaskExample]:
-    selected = []
-    seen = set()
-    for example in examples:
-        if not example.pair_group_id or example.pair_group_id in seen:
-            continue
-        selected.append(example)
-        seen.add(example.pair_group_id)
-    return selected
-
-
 def _support_swap_pairs(
     task: ProofGraphTask,
-    examples: list[TaskExample],
-    *,
-    seed: int,
+    pairs: list[ProbePair],
 ) -> list[CounterfactualPair]:
-    return [
-        task.make_counterfactual(example, PRIMARY_CORRUPTION, seed + index)
-        for index, example in enumerate(examples)
-    ]
+    results = []
+    for pair in pairs:
+        by_label = {example.label: example for example in pair.examples}
+        clean = by_label[1]
+        corrupt = by_label[0]
+        results.append(
+            CounterfactualPair(
+                pair_id="pair-"
+                + sha256_value([pair.pair_group_id, PRIMARY_CORRUPTION])[:16],
+                clean_example=clean,
+                corrupt_example=corrupt,
+                clean_prompt=task.render(clean),
+                corrupt_prompt=task.render(corrupt),
+                clean_target=task.canonical_target(clean),
+                corrupt_target=task.canonical_target(corrupt),
+                corruption_type=PRIMARY_CORRUPTION,
+                changed_semantic_field="facts.active_support",
+            )
+        )
+    return results
 
 
 def _fixed_pairs(
@@ -94,6 +87,7 @@ def _fixed_pairs(
     count: int,
     seed: int,
     task_config: dict[str, Any],
+    subset: str,
 ) -> list[CounterfactualPair]:
     if count < 2:
         raise ValueError("circuit discovery needs at least two pairs")
@@ -107,8 +101,12 @@ def _fixed_pairs(
         "paired_generation": True,
         "require_exactly_one_query_polarity": True,
     }
-    examples = [task.generate_pair(seed + index, difficulty)[0] for index in range(count)]
-    return _support_swap_pairs(task, examples, seed=seed + 100_000)
+    examples = [
+        example
+        for index in range(count)
+        for example in task.generate_pair(seed + index, difficulty)
+    ]
+    return _support_swap_pairs(task, group_complete_pairs(examples, subset=subset))
 
 
 def _select_tokenizer_aligned_pairs(
@@ -230,12 +228,14 @@ def main(argv: list[str] | None = None) -> None:
             count=max(discovery_count * 8, discovery_count + 16),
             seed=seed,
             task_config=config["task"],
+            subset="discovery",
         )
         validation_candidates = _fixed_pairs(
             task,
             count=max(validation_count * 8, validation_count + 16),
             seed=seed + 1_000_000,
             task_config=config["task"],
+            subset="validation",
         )
     else:
         if (
@@ -261,10 +261,14 @@ def main(argv: list[str] | None = None) -> None:
         )
         if validation_manifest["sha256"] != probe_manifest["sha256"]:
             raise ValueError("discovery and validation probes do not share one frozen cohort manifest")
-        discovery_examples = _all_unique_pair_examples([deserialize_example(row) for row in discovery_rows])
-        validation_examples = _all_unique_pair_examples([deserialize_example(row) for row in validation_rows])
-        discovery_candidates = _support_swap_pairs(task, discovery_examples, seed=seed + 100_000)
-        validation_candidates = _support_swap_pairs(task, validation_examples, seed=seed + 2_000_000)
+        discovery_candidates = _support_swap_pairs(
+            task,
+            group_complete_pairs(discovery_rows, subset="discovery"),
+        )
+        validation_candidates = _support_swap_pairs(
+            task,
+            group_complete_pairs(validation_rows, subset="validation"),
+        )
         from transformers import AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained(
@@ -359,8 +363,10 @@ def main(argv: list[str] | None = None) -> None:
                 for probe in selected
             ]
         ),
-        "semantic_probe_manifest_path": str(semantic_path.resolve()),
-        "tokenized_probe_manifest_path": str(tokenized_path.resolve()),
+        "semantic_probe_manifest": semantic_manifest,
+        "tokenized_probe_manifest": tokenized_manifest,
+        "discovery_pair_manifest": pair_manifest,
+        "probe_cohort_manifest": probe_manifest or {"kind": "deterministic_tiny_cohort"},
         "semantic_pair_hashes": [probe.semantic_pair_hash for probe in selected],
         "tokenized_pair_hashes": [probe.tokenized_pair_hash for probe in selected],
         **formal_artifact_binding(config),
@@ -442,6 +448,7 @@ def main(argv: list[str] | None = None) -> None:
                 config["model"].get("resolved_model_commit", config["model"]["model_revision"])
             ),
             tokenizer_hash=str(tokenized_manifest["tokenizer_hash"]),
+            model_compatibility=compatibility_payload,
             probe_cohort=args.cohort,
             probe_subset="discovery",
             probe_cohort_manifest_hash=str(probe_manifest["sha256"]),
@@ -461,6 +468,11 @@ def main(argv: list[str] | None = None) -> None:
             integrated_gradient_steps=int(config["circuit"]["smoke_steps"]),
         )
         scores = backend.score_all_components(model, TargetSequenceMetric())
+        compatibility_payload = {
+            **asdict(compatibility),
+            "hf_identity_max_error": compatibility.hf_identity_max_error,
+            "sha256": compatibility.sha256,
+        }
         artifact = CircuitArtifact(
             run_id="tiny-base",
             checkpoint_id="local-random-v1",
@@ -479,8 +491,9 @@ def main(argv: list[str] | None = None) -> None:
             backend_revision="in-repository-v2",
             attribution_method=backend.method,
             discovery_pair_count=pair_manifest["pair_count"],
-            uncertainty_method="prompt_standard_error",
+            uncertainty_method="prompt_pair_standard_deviation",
             tokenizer_hash=str(tokenized_manifest["tokenizer_hash"]),
+            model_compatibility=compatibility_payload,
             **artifact_common,
         )
         compatibility.write(output.with_name("compatibility.json"))

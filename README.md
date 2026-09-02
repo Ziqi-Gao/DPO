@@ -18,16 +18,44 @@ post-training algorithms. Random-matched and format-only rewards are GRPO contro
 ## Quick start
 
 ```bash
-/usr/bin/python3.12 -m venv .venv
-.venv/bin/python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-.venv/bin/python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-cpu.lock
+/usr/bin/python3.12 -m venv /scr/del6500/OPD/envs/opd
+/scr/del6500/OPD/envs/opd/bin/python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+/scr/del6500/OPD/envs/opd/bin/python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-cpu.lock
 make test
 make validate-configs
 make smoke-factorial
 ```
 
 The tests instantiate a tiny random causal LM from configuration and build a tiny local tokenizer;
-they never download production weights. Generated outputs live below `outputs/` and are ignored.
+they never download production weights. Generated outputs live below
+`/data/del6500/OPD/outputs`; caches, environments, logs, and temporary files live below
+`/scr/del6500/OPD`.
+
+## Server storage layout
+
+OPD uses three project-owned roots with distinct roles:
+
+| Role | Root |
+|---|---|
+| Version-controlled code and configuration | `/home/del6500/projects/OPD` |
+| Durable datasets, artifacts, results, and checkpoints | `/data/del6500/OPD` |
+| Caches, environments, logs, runtime state, and temporary files | `/scr/del6500/OPD` |
+
+Copy `.env.example` to the ignored `project.local.env` when a shell workflow needs the canonical
+paths. Keep temporary project files below `/scr/del6500/OPD/tmp`; no additional writable root is
+part of the OPD server contract.
+
+## ServerScheduler execution boundary
+
+OPD does not submit, poll, retry, or place compute work itself. Project code may prepare a
+content-addressed protocol-v2 request for later, separately approved ServerScheduler submission.
+The registered project entrypoint validates the running manifest and allocation, stays in the
+foreground while its fixed handler runs, and preserves the scheduler-provided CPU/GPU visibility.
+Project configuration must not set `SERVER_SCHEDULER_*` or rewrite `CUDA_VISIBLE_DEVICES`.
+
+The active boundary is `scripts/server_scheduler/opd-entrypoint` plus
+`posttrain_circuits.scheduler_adapter`. Production registration, request submission, and pilot
+execution are independent approval gates; the repository quick start authorizes none of them.
 
 ## Tiny CPU commands
 
@@ -40,8 +68,8 @@ make smoke-local-fork
 make smoke-resume
 make smoke-circuits
 make smoke-repaired-g0
-.venv/bin/python -m posttrain_circuits.cli.build_anchor_pilots \
-  --output-dir outputs/anchor-pilots --seed 42 \
+/scr/del6500/OPD/envs/opd/bin/python -m posttrain_circuits.cli.build_anchor_pilots \
+  --output-dir /data/del6500/OPD/outputs/anchor-pilots --seed 42 \
   --discovery-per-task 4 --validation-per-task 4
 ```
 
@@ -71,23 +99,24 @@ nonempty exact proof, so the query surface cannot determine the answer. Circuit 
 stage-specific (`first_rule_selection`, `intermediate_conclusion`, `final_answer`): EAP-IG proposes
 candidates and held-out exact activation/path patching supplies the causal validation.
 
-Before Qwen factorial submission, evaluate the initial checkpoint's semantics-preserving
+Before preparing a Qwen factorial request, evaluate the initial checkpoint's semantics-preserving
 anti-shortcut suite and freeze the `base_capable` and `challenge` discovery/validation probe
-manifests. The submission wrapper and each production factorial training entry point both validate
-the evidence hashes, model revision, and configured `shortcut_gap` threshold.
+manifests. The project preflight and each production factorial training entry point validate the
+evidence hashes, model revision, and configured `shortcut_gap` threshold. ServerScheduler remains
+the sole owner of allocation and execution state.
 
 ```bash
 # Read-only command preview; this does not load a production model.
-.venv/bin/python -m posttrain_circuits.cli.evaluate_anti_shortcut \
+/scr/del6500/OPD/envs/opd/bin/python -m posttrain_circuits.cli.evaluate_anti_shortcut \
   model=qwen25_1p5b task=proofgraph_main --dry-run
 
 # After separate initial-student scoring and learnability-pilot artifacts exist.
-.venv/bin/python -m posttrain_circuits.cli.build_probe_cohorts \
-  --splits-root outputs/datasets/proofgraph \
-  --scores outputs/probes/initial_student_scores.json \
+/scr/del6500/OPD/envs/opd/bin/python -m posttrain_circuits.cli.build_probe_cohorts \
+  --splits-root /data/del6500/OPD/outputs/datasets/proofgraph \
+  --scores /data/del6500/OPD/outputs/probes/initial_student_scores.json \
   --initial-checkpoint-hash <resolved-model-commit> \
   --learnability-evidence-hash <frozen-pilot-manifest-hash> \
-  --output outputs/probes/proofgraph
+  --output /data/del6500/OPD/outputs/probes/proofgraph
 ```
 
 Local forks use matched `KL(output_new || output_fork)` as the primary axis and retain update count
@@ -95,10 +124,11 @@ and parameter-update norm as secondary axes. Circuit dynamics subtract same-chec
 noise as `excess_churn` and require full-score stability, cross-checkpoint mask transfer, and
 held-out exact-patching evidence alongside thresholded-mask diagnostics.
 
-The core non-Qwen mini-replication is the six-cell/anchor Gemma plan in
-[`configs/replication/gemma2_2b_core.yaml`](configs/replication/gemma2_2b_core.yaml), executed by
-[`scripts/slurm/gemma_mini_replication.slurm`](scripts/slurm/gemma_mini_replication.slurm). It is
-not a complete factorial and does not make OLMo or Edge Pruning a dependency.
+The core non-Qwen mini-replication is the six-cell/anchor Gemma scientific plan in
+[`configs/replication/gemma2_2b_core.yaml`](configs/replication/gemma2_2b_core.yaml). Any future
+execution must be represented by reviewed ServerScheduler workflow units; no active project entry
+uses a repository-local scheduler. The plan is not a complete factorial and does not make OLMo or
+Edge Pruning a dependency.
 
 ## Final CPU acceptance
 
@@ -121,10 +151,10 @@ make smoke-repaired-g0
 
 ## Outputs
 
-Each run contains `resolved_config.yaml`, `manifest.json`, `metrics.jsonl`, `environment.json`,
-`git_diff.patch`, `checkpoints/`, and `evaluations/`. Dataset and rollout-bank outputs add immutable
-manifests and content hashes. Weights, banks, datasets, checkpoints, W&B caches, and secrets are
-excluded by `.gitignore`.
+Each run contains `resolved_config.yaml`, `config_binding.json`, `manifest.json`, `metrics.jsonl`,
+`environment.json`, `git_diff.patch`, `checkpoints/`, and `evaluations/`. Dataset and rollout-bank
+outputs add immutable manifests and content hashes. Weights, banks, datasets, checkpoints, W&B
+caches, and secrets are excluded by `.gitignore`.
 
 Production manifests also record the Git commit and SHA-256 of the frozen preregistration. A missing,
 uncommitted, or modified `prereg/core_v2.yaml` is a hard production refusal.
@@ -132,6 +162,6 @@ uncommitted, or modified `prereg/core_v2.yaml` is a hard production refusal.
 ## Status
 
 The Phase-0 task, controlled trainer, canonical baselines, local-fork workflow, and tiny-model circuit
-vertical slice are CPU-testable. Production configurations and cluster templates are interfaces,
-not evidence that GPU-scale experiments or the scientific hypothesis have been validated. See
-`docs/known_risks.md` and the readiness command before allocating production compute.
+vertical slice are CPU-testable. Production configurations and ServerScheduler project contracts
+are interfaces, not evidence that GPU-scale experiments or the scientific hypothesis have been
+validated. See `docs/known_risks.md` and the readiness command before requesting production compute.

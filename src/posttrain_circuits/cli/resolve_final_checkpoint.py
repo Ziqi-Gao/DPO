@@ -6,8 +6,11 @@ import argparse
 import json
 from pathlib import Path
 
-from posttrain_circuits.core.hashing import sha256_file
-from posttrain_circuits.core.provenance import validate_run_manifest_payload
+from posttrain_circuits.artifacts.hashing import sha256_file
+from posttrain_circuits.artifacts.runs import validate_run_manifest_payload
+from posttrain_circuits.experiments.protocols.specs import (
+    validate_run_manifest_experiment_binding,
+)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -15,6 +18,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     args = parser.parse_args(argv)
     payload = validate_run_manifest_payload(json.loads(args.manifest.read_text(encoding="utf-8")))
+    validate_run_manifest_experiment_binding(payload)
     checkpoint = Path(str(payload.get("final_checkpoint_path", "")))
     expected = str(payload.get("final_checkpoint_sha256", ""))
     if not checkpoint.is_file() or sha256_file(checkpoint) != expected:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from posttrain_circuits.core.types import PromptBatch
-from posttrain_circuits.rollout.current_policy import CurrentPolicyStateSource
+from posttrain_circuits.learning.contracts import PromptBatch
+from posttrain_circuits.learning.state_sources.current_policy import CurrentPolicyStateSource
 from posttrain_circuits.utils.smoke import build_smoke_examples, scripted_current_policy_generator
 
 

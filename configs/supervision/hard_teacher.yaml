@@ -1,5 +1,7 @@
 name: hard_teacher
+training_backend: factorial_trainer
+training_backend_version: in-repository-v1
+training_batch_contract: optimizer-boundary-gradient-accumulation-v1
 teacher_top_k: 128
 include_eos: true
 token_normalization: token
-

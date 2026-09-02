@@ -7,13 +7,19 @@ import json
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import formal_artifact_binding, require_git_output
-from posttrain_circuits.core.scientific_versions import (
+from posttrain_circuits.artifacts.compatibility import (
     require_scientific_artifact,
     scientific_compatibility_fields,
+)
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import formal_artifact_binding, require_git_output
+from posttrain_circuits.core.config import compose_config
+from posttrain_circuits.experiments.protocols.specs import CONTROLLED_FACTORIAL
+from posttrain_circuits.methods.registry import (
+    ANCHOR_METHOD_IDS,
+    FACTORIAL_METHOD_IDS,
+    get_method_spec,
 )
 
 
@@ -24,6 +30,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
+    factorial_cells = tuple(map(str, config.get("pilot", {}).get("factorial_cells", ())))
+    anchors = tuple(map(str, config.get("pilot", {}).get("anchors", ())))
+    if factorial_cells != FACTORIAL_METHOD_IDS or anchors != ANCHOR_METHOD_IDS:
+        raise ValueError(
+            "pilot method matrix differs from the canonical registry: "
+            f"factorial={factorial_cells}, anchors={anchors}"
+        )
     formal = formal_artifact_binding(config)
     g0 = json.loads(args.g0.read_text(encoding="utf-8"))
     expected = g0.pop("sha256", None)
@@ -69,8 +82,13 @@ def main(argv: list[str] | None = None) -> None:
         "status": "prepared",
         "seed": 42,
         "full_factorial": False,
-        "cells": config["pilot"]["factorial_cells"],
-        "anchors": config["pilot"]["anchors"],
+        "cells": list(factorial_cells),
+        "anchors": list(anchors),
+        "factorial_design_sha256": CONTROLLED_FACTORIAL.scientific_sha256,
+        "method_spec_hashes": {
+            method_id: get_method_spec(method_id).scientific_sha256
+            for method_id in (*factorial_cells, *anchors)
+        },
         "g0_path": str(args.g0.resolve()),
         "g0_sha256": sha256_file(args.g0),
         "git_commit": git_commit,

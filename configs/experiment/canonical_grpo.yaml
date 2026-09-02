@@ -2,6 +2,6 @@ name: canonical_grpo
 state_source: current_policy
 supervision: grpo
 reward: exact
+use_policy_gradient: true
 use_teacher_loss: false
 use_sft_auxiliary_loss: false
-

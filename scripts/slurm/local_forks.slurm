@@ -12,6 +12,7 @@ bundle="${OUTPUT_ROOT}/local_fork/${RUN_ID:?Set RUN_ID}/bundle.pt"
 "${PYTHON_BIN}" -m posttrain_circuits.cli.create_fork_bundle \
   production=qwen_primary experiment=local_fork model=qwen25_1p5b teacher=qwen25_teacher_7b task=proofgraph_main \
   --checkpoint "${CHECKPOINT:?Set CHECKPOINT}" \
+  --source-manifest "${SOURCE_MANIFEST:?Set SOURCE_MANIFEST}" \
   --prompts "${FROZEN_PROMPTS:?Set FROZEN_PROMPTS}" \
   --trajectory-store "${FROZEN_TRAJECTORY_STORE:?Set FROZEN_TRAJECTORY_STORE}" \
   --probe-set "${FROZEN_PROBE_SET:?Set FROZEN_PROBE_SET}" \

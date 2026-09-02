@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -10,47 +11,59 @@ from typing import Any
 
 import torch
 
-from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
-from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
-from posttrain_circuits.core.config import is_production_scale
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.provenance import (
+from posttrain_circuits.artifacts.checkpoints import checkpoint_runtime_state_hashes
+from posttrain_circuits.artifacts.config_bindings import bind_config
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import publish_json_once
+from posttrain_circuits.artifacts.runs import (
     RunManifest,
     finalize_run_directory,
     formal_artifact_binding,
+    git_output,
     initialize_run_directory,
 )
+from posttrain_circuits.causal_circuits.model.runner import load_checkpoint_into_hf_model
+from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
+from posttrain_circuits.core.config import is_production_scale
 from posttrain_circuits.core.readiness import require_factorial_prerequisites
 from posttrain_circuits.core.seeding import seed_everything
-from posttrain_circuits.core.types import TrajectoryRecord
-from posttrain_circuits.data.splits import build_split, load_frozen_split
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.teacher_demos.contracts import TeacherDemoAttempt
+from posttrain_circuits.datasets.teacher_demos.store import read_teacher_demo_store
+from posttrain_circuits.datasets.trajectories.contracts import TrajectoryRecord
+from posttrain_circuits.experiments.protocols.specs import (
+    build_experiment_binding,
+    validate_run_manifest_experiment_binding,
+)
+from posttrain_circuits.methods.registry import get_method_spec
+from posttrain_circuits.methods.sft import CANONICAL_SFT_METHOD
+from posttrain_circuits.methods.specs import FACTORIAL_TRAINING_BACKEND
 from posttrain_circuits.models.loading import (
     LoadedModel,
     assert_tokenizer_compatible,
     load_model_and_tokenizer,
     move_model_to_local_cuda,
 )
-from posttrain_circuits.models.prompt_protocol import format_model_prompts
-from posttrain_circuits.rollout.generation import build_proofgraph_hf_generator
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.tasks.proofgraph.renderer import render_example
-from posttrain_circuits.teacher.demo_generation import read_teacher_demo_store
-from posttrain_circuits.teacher.hf_scorer import HuggingFaceTeacherScorer
-from posttrain_circuits.training.evaluation import build_proofgraph_evaluator
-from posttrain_circuits.training.factorial_trainer import FactorialTrainer, TrainerConfig
-from posttrain_circuits.training.factories import build_state_source, build_supervisor
-from posttrain_circuits.training.optimizer import build_adamw
-from posttrain_circuits.training.schedules import PromptScheduler
+from posttrain_circuits.models.prompt_protocol import format_model_prompts, prompt_schedule_hashes
+from posttrain_circuits.learning.state_sources.generation import build_proofgraph_hf_generator
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.rendering import render_example
+from posttrain_circuits.learning.teacher.hf_scorer import HuggingFaceTeacherScorer
+from posttrain_circuits.learning.training.evaluation import build_proofgraph_evaluator
+from posttrain_circuits.learning.training.factorial_trainer import FactorialTrainer, TrainerConfig
+from posttrain_circuits.learning.training.factories import build_state_source, build_supervisor
+from posttrain_circuits.learning.training.optimizer import build_adamw
+from posttrain_circuits.learning.training.schedules import PromptScheduler
+from posttrain_circuits.learning.training.local_fork import state_hash
 from posttrain_circuits.utils.smoke import (
     build_fixed_bank,
-    build_smoke_examples,
     scripted_current_policy_generator,
 )
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 
-def _teacher_demo_prompts(
+def _trajectory_prompts(
     records: list[TrajectoryRecord],
 ) -> tuple[list[str], list[str]]:
     by_prompt: dict[str, str] = {}
@@ -61,15 +74,15 @@ def _teacher_demo_prompts(
     return list(by_prompt), list(by_prompt.values())
 
 
-def _production_examples(config: dict[str, Any], split: str, count: int):
-    task_config = config["task"]
-    return build_split(
-        ProofGraphTask(),
-        split,
-        count,
-        int(task_config.get("seed", config["seed"])),
-        dict(task_config),
-    )
+def _teacher_demo_prompts(
+    attempts: list[TeacherDemoAttempt],
+) -> tuple[list[str], list[str]]:
+    by_prompt: dict[str, str] = {}
+    for attempt in attempts:
+        by_prompt.setdefault(attempt.prompt_id, attempt.raw_prompt_text)
+    if not by_prompt:
+        raise ValueError("teacher-demo accepted view has no prompts")
+    return list(by_prompt), list(by_prompt.values())
 
 
 def _require_qwen3_store_binding(
@@ -99,10 +112,14 @@ def _require_qwen3_store_binding(
                 "code_commit": binding["code_commit"],
             }
         )
+    protocol_bindings = manifest.get("protocol_bindings")
+    observed_bindings = dict(manifest)
+    if isinstance(protocol_bindings, dict):
+        observed_bindings.update(protocol_bindings)
     mismatches = {
-        key: {"expected": value, "observed": manifest.get(key)}
+        key: {"expected": value, "observed": observed_bindings.get(key)}
         for key, value in expected.items()
-        if manifest.get(key) != value
+        if observed_bindings.get(key) != value
     }
     observed_policy = str(manifest.get("behavior_policy", {}).get("id", ""))
     if observed_policy != expected_behavior_policy:
@@ -126,17 +143,18 @@ def main(argv: list[str] | None = None) -> None:
         output=output,
     ):
         return
-    factorial_cells = {
-        "offline_hard",
-        "online_hard",
-        "offline_soft",
-        "online_soft_opd",
-        "offline_verified_replay",
-        "online_verified_replay",
-    }
+    method = get_method_spec(cell)
+    if method.training_backend != FACTORIAL_TRAINING_BACKEND or not (
+        method.role == "factorial_cell" or method is CANONICAL_SFT_METHOD
+    ):
+        raise ValueError(f"train CLI does not execute registered method {cell!r}")
     prerequisite_evidence: dict[str, Any] = {}
     if production_scale and (
-        cell in factorial_cells or (cell == "canonical_sft" and "pilot_profile" in config)
+        method.role == "factorial_cell"
+        or (
+            method is CANONICAL_SFT_METHOD
+            and "pilot_profile" in config
+        )
     ):
         prerequisite_evidence = require_factorial_prerequisites(config)
     seed = int(config["seed"])
@@ -171,27 +189,37 @@ def main(argv: list[str] | None = None) -> None:
             initial_checkpoint,
             expected_sha256=expected_initial_hash,
         )
+    else:
+        initial_checkpoint_hash = state_hash(model.state_dict())
     state_source_name = str(config["state_source"]["name"])
     supervision_name = str(config["supervision"]["name"])
     batch_size = int(config["trainer"]["batch_size"])
-
-    examples = (
-        build_smoke_examples(batch_size, seed)
-        if local_model
-        else _production_examples(
-            config,
-            "train",
-            int(config["task"]["num_examples"]),
-        )
+    family_path = Path(str(config["task"].get("dataset_family_path", "")))
+    family = load_dataset_family(family_path)
+    family_train = family.examples("train")
+    train_count = int(config["task"].get("num_examples", len(family_train)))
+    if train_count < 1 or train_count > len(family_train):
+        raise ValueError("task.num_examples is outside the frozen train family split")
+    examples = family_train[:train_count]
+    family_train_ids = {example.example_id for example in family_train}
+    validation_examples = family.examples("validation")
+    validation_limit = int(
+        config["trainer"].get("validation_examples", len(validation_examples))
     )
+    if validation_limit < 1 or validation_limit > len(validation_examples):
+        raise ValueError("trainer.validation_examples is outside the frozen validation family split")
+    validation_examples = validation_examples[:validation_limit]
     fixed_bank: list[TrajectoryRecord] | None = None
     fixed_bank_manifest: dict[str, Any] | None = None
-    teacher_demos: list[TrajectoryRecord] | None = None
+    teacher_demos: list[TeacherDemoAttempt] | None = None
     teacher_demo_manifest: dict[str, Any] | None = None
     current_generator = None
     if state_source_name == "teacher_demo":
         store_path = Path(str(config["state_source"]["store_path"]))
-        teacher_demos, loaded_manifest = read_teacher_demo_store(store_path)
+        teacher_demos, loaded_manifest = read_teacher_demo_store(
+            store_path,
+            require_formal=production_scale,
+        )
         teacher_demo_manifest = dict(loaded_manifest)
         _require_qwen3_store_binding(
             teacher_demo_manifest,
@@ -208,6 +236,19 @@ def main(argv: list[str] | None = None) -> None:
             and teacher_demo_manifest.get("tokenizer_hash") != loaded_student.tokenizer_hash
         ):
             raise ValueError("teacher-demo tokenizer does not match the student tokenizer")
+        expected_prompt_ids = [example.example_id for example in examples]
+        observed_prompt_ids = {attempt.prompt_id for attempt in teacher_demos}
+        if list(teacher_demo_manifest.get("ordered_prompt_ids", [])) != expected_prompt_ids:
+            raise ValueError(
+                "teacher-demo ordered prompt population differs from the configured train family"
+            )
+        if observed_prompt_ids != set(expected_prompt_ids):
+            missing = set(expected_prompt_ids) - observed_prompt_ids
+            extra = observed_prompt_ids - set(expected_prompt_ids)
+            raise ValueError(
+                "teacher-demo accepted view does not exactly cover configured train prompts: "
+                f"missing={sorted(missing)}, extra={sorted(extra)}"
+            )
         prompt_ids, prompt_texts = _teacher_demo_prompts(teacher_demos)
     else:
         prompt_ids = [example.example_id for example in examples]
@@ -222,7 +263,15 @@ def main(argv: list[str] | None = None) -> None:
                     expected_tokenizer_hash = sha256_value(tokenizer.get_vocab())
                     if fixed_bank_manifest.get("tokenizer_hash") != expected_tokenizer_hash:
                         raise ValueError("smoke rollout-bank tokenizer does not match the student tokenizer")
-                    prompt_ids, prompt_texts = _teacher_demo_prompts(fixed_bank)
+                    unknown_prompt_ids = {
+                        record.prompt_id for record in fixed_bank
+                    } - family_train_ids
+                    if unknown_prompt_ids:
+                        raise ValueError(
+                            "rollout-bank prompt IDs are outside the configured train family: "
+                            f"{sorted(unknown_prompt_ids)}"
+                        )
+                    prompt_ids, prompt_texts = _trajectory_prompts(fixed_bank)
                 else:
                     fixed_bank = build_fixed_bank(examples, tokenizer, seed)
             else:
@@ -237,7 +286,15 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 if fixed_bank_manifest.get("tokenizer_hash") != loaded_student.tokenizer_hash:
                     raise ValueError("rollout-bank tokenizer does not match the student tokenizer")
-                prompt_ids, prompt_texts = _teacher_demo_prompts(fixed_bank)
+                unknown_prompt_ids = {
+                    record.prompt_id for record in fixed_bank
+                } - family_train_ids
+                if unknown_prompt_ids:
+                    raise ValueError(
+                        "rollout-bank prompt IDs are outside the configured train family: "
+                        f"{sorted(unknown_prompt_ids)}"
+                    )
+                prompt_ids, prompt_texts = _trajectory_prompts(fixed_bank)
         elif state_source_name == "current_policy":
             if local_model:
                 current_generator = scripted_current_policy_generator(
@@ -328,6 +385,9 @@ def main(argv: list[str] | None = None) -> None:
                 model.config.vocab_size,
             ),
             minimum_retained_mass=float(config["supervision"].get("minimum_retained_mass", 0.0)),
+            fail_below_mass=bool(
+                config["supervision"].get("fail_below_minimum_retained_mass", False)
+            ),
             distributed_rank_zero=(
                 config.get("protocol_track") == "qwen3_v2"
                 and world_size > 1
@@ -342,36 +402,43 @@ def main(argv: list[str] | None = None) -> None:
     )
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 1.0)
     run_id = f"{cell}-seed{seed}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
-    validation_manifest: dict[str, Any] | None = None
-    if production_scale:
-        validation_examples, validation_manifest = load_frozen_split(
-            Path(str(config["task"]["validation_split_path"])),
-            expected_split="validation",
-        )
-        validation_limit = int(config["trainer"].get("validation_examples", len(validation_examples)))
-        if validation_limit < 1 or validation_limit > len(validation_examples):
-            raise ValueError("trainer.validation_examples is outside the frozen validation split")
-        validation_examples = validation_examples[:validation_limit]
-    else:
-        validation_examples = build_smoke_examples(max(2, min(4, batch_size)), seed + 100_000)
     dataset_hashes = {
-        "train": sha256_value(
-            {
-                "prompt_ids": global_prompt_ids,
-                "prompt_texts": global_prompt_texts,
-            }
-        ),
-        "validation": sha256_value([asdict(example) for example in validation_examples]),
+        "family_manifest": str(family.manifest["sha256"]),
+        "train": str(family.boundary("train")["examples_file_sha256"]),
+        "validation": str(family.boundary("validation")["examples_file_sha256"]),
     }
-    if validation_manifest is not None:
-        dataset_hashes["validation_manifest"] = str(validation_manifest["sha256"])
-        dataset_hashes["validation_file"] = str(validation_manifest["examples_file_sha256"])
     if initial_checkpoint_hash is not None:
         dataset_hashes["initial_checkpoint"] = initial_checkpoint_hash
     for name, evidence in prerequisite_evidence.items():
         dataset_hashes[f"prerequisite_{name}"] = str(
             evidence.get("report_hash", evidence.get("manifest_hash"))
         )
+    probe_manifest_hash = str(
+        prerequisite_evidence.get("probe_cohorts", {}).get(
+            "manifest_hash",
+            sha256_value(
+                {
+                    "kind": "deterministic_smoke_probe",
+                    "validation": dataset_hashes["validation"],
+                    "seed": seed,
+                }
+            ),
+        )
+    )
+    dataset_hashes["probe_manifest"] = probe_manifest_hash
+    if method.requires_common_rollout_bank and fixed_bank_manifest is None:
+        if not fixed_bank:
+            raise ValueError("offline method has no rollout-bank content to bind")
+        in_memory_content_hash = sha256_value([asdict(record) for record in fixed_bank])
+        fixed_bank_manifest = {
+            "sha256": sha256_value(
+                {
+                    "kind": "deterministic_smoke_rollout_bank",
+                    "content": in_memory_content_hash,
+                }
+            ),
+            "files": {"in-memory-records": in_memory_content_hash},
+        }
     if fixed_bank_manifest is not None:
         source_hash = str(fixed_bank_manifest["sha256"])
     elif fixed_bank is not None:
@@ -396,22 +463,27 @@ def main(argv: list[str] | None = None) -> None:
         }
     )
     formatted_schedule = format_model_prompts(global_prompt_texts, tokenizer, model_config)
-    raw_prompt_schedule_hash = sha256_value([prompt.raw_prompt_sha256 for prompt in formatted_schedule])
-    model_facing_prompt_schedule_hash = sha256_value(
-        [prompt.model_facing_prompt_sha256 for prompt in formatted_schedule]
+    raw_prompt_schedule_hash, model_facing_prompt_schedule_hash = prompt_schedule_hashes(
+        formatted_schedule
     )
 
-    teacher_id: str | None = None
-    teacher_revision: str | None = None
-    resolved_teacher_commit: str | None = None
+    teacher_config = config["teacher"]
+    teacher_id = str(
+        teacher_config.get("model_name_or_path", teacher_config.get("teacher_id", ""))
+    )
+    teacher_revision = str(
+        teacher_config.get("model_revision", teacher_config.get("teacher_revision", ""))
+    )
+    resolved_teacher_commit = str(
+        teacher_config.get(
+            "model_revision",
+            teacher_config.get("resolved_teacher_commit", teacher_revision),
+        )
+    )
     teacher_demo_generation: dict[str, Any] | None = None
     if loaded_teacher is not None:
-        teacher_id = loaded_teacher.model_id
-        teacher_revision = loaded_teacher.requested_model_revision
         resolved_teacher_commit = loaded_teacher.resolved_model_commit
     elif teacher is not None:
-        teacher_id = teacher.teacher_id
-        teacher_revision = teacher.teacher_revision
         resolved_teacher_commit = teacher.teacher_revision
     elif teacher_demo_manifest is not None:
         teacher_demo_generation = dict(teacher_demo_manifest["teacher_demo_generation"])
@@ -426,6 +498,105 @@ def main(argv: list[str] | None = None) -> None:
     )
     resolved_tokenizer_commit_value = (
         loaded_student.resolved_tokenizer_commit if loaded_student is not None else tokenizer_revision
+    )
+    tokenizer_fingerprint_value = (
+        loaded_student.tokenizer_hash
+        if loaded_student is not None
+        else sha256_value(tokenizer.get_vocab())
+    )
+    full_parameter_training = all(parameter.requires_grad for parameter in model.parameters())
+    offline_cursor = None
+    if method.requires_common_rollout_bank:
+        source_state = state_source.state_dict()
+        offline_cursor = source_state.get("cursor")
+        if not isinstance(offline_cursor, dict):
+            raise ValueError("offline rollout-bank state source lacks its initial cursor")
+    task_protocol = {
+        key: value
+        for key, value in config["task"].items()
+        if not any(marker in key.lower() for marker in ("path", "directory", "output_root"))
+    }
+    task_protocol.update(
+        generator_version=ProofGraphTask.generator_version,
+        label_semantics=ProofGraphTask.label_semantics,
+    )
+    config_input_hashes = {
+        "prereg_path": sha256_file(Path(str(config["prereg_path"]))),
+        "task.dataset_family_path": str(family.manifest["sha256"]),
+    }
+    initial_checkpoint_locator = str(
+        config.get("production_safety", {}).get("initial_checkpoint_path", "")
+    ).strip()
+    if initial_checkpoint_locator:
+        config_input_hashes["production_safety.initial_checkpoint_path"] = str(
+            initial_checkpoint_hash
+        )
+    if fixed_bank_manifest is not None:
+        config_input_hashes["state_source.store_path"] = str(
+            fixed_bank_manifest["sha256"]
+        )
+    elif teacher_demo_manifest is not None:
+        config_input_hashes["state_source.store_path"] = str(
+            teacher_demo_manifest["sha256"]
+        )
+    prerequisite_locator_bindings = {
+        "full_readiness": ("production_safety.readiness_report", "report_hash"),
+        "anti_shortcut": ("anti_shortcut.report_path", "report_hash"),
+        "probe_cohorts": (
+            "production_safety.probe_cohort_manifest",
+            "manifest_hash",
+        ),
+    }
+    for evidence_name, (locator_name, hash_name) in prerequisite_locator_bindings.items():
+        evidence = prerequisite_evidence.get(evidence_name)
+        if isinstance(evidence, dict) and evidence.get(hash_name):
+            config_input_hashes[locator_name] = str(evidence[hash_name])
+    execution_context = {
+        "entrypoint": "train",
+        "output": str(Path(output).absolute()),
+        "backend": str(config["trainer"]["backend"]),
+        "world_size": world_size,
+        "resume": str(args.resume.absolute()) if args.resume is not None else None,
+    }
+    config_binding = bind_config(
+        config,
+        input_artifact_hashes=config_input_hashes,
+        execution_context=execution_context,
+    )
+    experiment_binding = build_experiment_binding(
+        config=config,
+        config_binding=config_binding,
+        implementation_commit=git_output(["rev-parse", "HEAD"]) or "unavailable",
+        implementation_dirty=bool(git_output(["status", "--porcelain"]) or ""),
+        model_resolved_revision=resolved_model_commit_value,
+        tokenizer_resolved_revision=resolved_tokenizer_commit_value,
+        tokenizer_fingerprint=tokenizer_fingerprint_value,
+        teacher_resolved_revision=resolved_teacher_commit,
+        initial_checkpoint_sha256=str(initial_checkpoint_hash),
+        train_dataset_sha256=dataset_hashes["train"],
+        validation_dataset_sha256=dataset_hashes["validation"],
+        model_facing_prompt_schedule_sha256=model_facing_prompt_schedule_hash,
+        probe_manifest_sha256=probe_manifest_hash,
+        task_protocol=task_protocol,
+        optimizer_spec={
+            "class": "torch.optim.AdamW",
+            "learning_rate": optimizer.defaults["lr"],
+            "weight_decay": optimizer.defaults["weight_decay"],
+            "betas": optimizer.defaults["betas"],
+            "eps": optimizer.defaults["eps"],
+        },
+        scheduler_spec={"class": "torch.optim.lr_scheduler.LambdaLR", "schedule": "constant_1.0"},
+        resolved_batch_contract={
+            "execution_backend": config["trainer"]["backend"],
+            "world_size": world_size,
+            "per_rank_batch_size": batch_size,
+            "gradient_accumulation_steps": config["trainer"]["gradient_accumulation_steps"],
+            "steps_per_round": config["trainer"]["steps_per_round"],
+        },
+        full_parameter_training=full_parameter_training,
+        offline_bank_manifest=fixed_bank_manifest,
+        offline_bank_initial_cursor=offline_cursor,
+        teacher_demo_manifest=teacher_demo_manifest,
     )
     manifest = RunManifest(
         run_id=run_id,
@@ -444,28 +615,36 @@ def main(argv: list[str] | None = None) -> None:
         dataset_hashes=dataset_hashes,
         rollout_bank_hash=source_hash,
         prompt_schedule_hash=prompt_schedule_hash,
+        experiment_binding=experiment_binding.to_payload(),
+        experiment_binding_sha256=experiment_binding.scientific_sha256,
+        factorial_design_sha256=experiment_binding.factorial_design_sha256,
+        config_binding=config_binding.as_dict(),
+        resolved_config_sha256=config_binding.resolved_config_sha256,
+        scientific_config_sha256=config_binding.scientific_config_sha256,
+        execution_config_sha256=config_binding.execution_config_sha256,
+        execution_context=execution_context,
         raw_prompt_schedule_hash=raw_prompt_schedule_hash,
         model_facing_prompt_schedule_hash=model_facing_prompt_schedule_hash,
-        prompt_protocol=(loaded_student.prompt_protocol if loaded_student is not None else "legacy_raw_v1"),
-        enable_thinking=False,
-        chat_template_sha256=(
-            loaded_student.chat_template_sha256 if loaded_student is not None else "legacy-unrecorded"
-        ),
-        tokenizer_fingerprint=(
-            loaded_student.tokenizer_hash if loaded_student is not None else "legacy-unrecorded"
-        ),
+        prompt_protocol=experiment_binding.prompt_protocol,
+        enable_thinking=experiment_binding.enable_thinking,
+        chat_template_sha256=experiment_binding.chat_template_sha256,
+        tokenizer_fingerprint=experiment_binding.tokenizer_fingerprint,
         protocol_track=str(config.get("protocol_track", "core_v2")),
         artifact_namespace=str(model_config.get("artifact_namespace", "legacy")),
         protocol_teacher_revision=str(config["teacher"].get("model_revision", "unbound")),
         token_budget=int(config["trainer"]["token_budget"]),
         token_budget_unit=str(
-            config["trainer"].get("token_budget_unit", "global_nonpadding_model_input_tokens")
+            config["trainer"].get(
+                "token_budget_unit", "global_nonpadding_model_input_tokens_processed"
+            )
         ),
     )
+    validate_run_manifest_experiment_binding(asdict(manifest))
     if launch_rank == 0:
         initialize_run_directory(
             output,
             config,
+            config_binding,
             manifest,
             require_git=production_scale,
         )
@@ -473,7 +652,9 @@ def main(argv: list[str] | None = None) -> None:
         max_steps=int(config["trainer"]["max_steps"]),
         token_budget=int(config["trainer"]["token_budget"]),
         token_budget_unit=str(
-            config["trainer"].get("token_budget_unit", "global_nonpadding_model_input_tokens")
+            config["trainer"].get(
+                "token_budget_unit", "global_nonpadding_model_input_tokens_processed"
+            )
         ),
         steps_per_round=int(config["trainer"]["steps_per_round"]),
         learning_rate=float(config["trainer"]["learning_rate"]),
@@ -503,17 +684,24 @@ def main(argv: list[str] | None = None) -> None:
         manifest_hashes={
             "dataset_train": dataset_hashes["train"],
             "dataset_validation": dataset_hashes["validation"],
+            "initial_checkpoint": str(initial_checkpoint_hash),
             "state_source": source_hash,
             "prompt_schedule": prompt_schedule_hash,
-            "prompt_shard": sha256_value(
-                {
-                    "rank": launch_rank,
-                    "world_size": world_size,
-                    "prompt_ids": prompt_scheduler.prompt_ids,
-                }
-            ),
+            "model_facing_prompt_schedule": model_facing_prompt_schedule_hash,
+            "probe_manifest": probe_manifest_hash,
+            "experiment_binding": experiment_binding.scientific_sha256,
+            "factorial_design": experiment_binding.factorial_design_sha256,
+            "method_spec": experiment_binding.method_spec_sha256,
         },
+        rank_shard_hash=sha256_value(
+            {
+                "rank": launch_rank,
+                "world_size": world_size,
+                "prompt_ids": prompt_scheduler.prompt_ids,
+            }
+        ),
         git_commit=manifest.git_commit,
+        implementation_dirty=manifest.dirty_working_tree,
         dependency_versions=manifest.package_versions,
         resume_ancestry=manifest.resume_ancestry,
         probe_input_ids=torch.tensor(
@@ -544,6 +732,61 @@ def main(argv: list[str] | None = None) -> None:
         manifest.metrics_sha256 = sha256_file(output / "metrics.jsonl")
         manifest.final_checkpoint_path = str(final_checkpoint)
         manifest.final_checkpoint_sha256 = sha256_file(final_checkpoint)
+        manifest.resume_ancestry = list(trainer.resume_ancestry)
+        checkpoint_payload = torch.load(
+            final_checkpoint,
+            map_location="cpu",
+            weights_only=False,
+        )
+        if not isinstance(checkpoint_payload, dict):
+            raise RuntimeError("final Factorial checkpoint payload is not a mapping")
+        metric_rows = [
+            json.loads(line)
+            for line in (output / "metrics.jsonl").read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        metric_update_rows = [
+            {
+                "step": row.get("step"),
+                "parameter_update_norm": row.get("parameter_update_norm"),
+            }
+            for row in metric_rows
+            if isinstance(row, dict) and row.get("parameter_update_norm") is not None
+        ]
+        update_evidence: dict[str, Any] = {
+            "format_version": 1,
+            "checkpoint": str(final_checkpoint.resolve()),
+            "final_checkpoint_sha256": manifest.final_checkpoint_sha256,
+            "metrics_sha256": manifest.metrics_sha256,
+            "metric_update_rows": metric_update_rows,
+            "metric_update_rows_sha256": sha256_value(metric_update_rows),
+            "global_step": checkpoint_payload.get("global_step"),
+            "parameter_update_norm": checkpoint_payload.get("parameter_update_norm"),
+            "final_model_state_hash": checkpoint_payload.get("final_model_state_hash"),
+            "update_norm_baseline_checkpoint_path": checkpoint_payload.get(
+                "update_norm_baseline_checkpoint_path"
+            ),
+            "update_norm_baseline_checkpoint_sha256": checkpoint_payload.get(
+                "update_norm_baseline_checkpoint_sha256"
+            ),
+            "token_budget": checkpoint_payload.get("token_budget"),
+            "resume_ancestry": checkpoint_payload.get("resume_ancestry"),
+            "checkpoint_runtime_state_hashes": checkpoint_runtime_state_hashes(
+                checkpoint_payload
+            ),
+            "manifest_hashes": checkpoint_payload.get("manifest_hashes"),
+            "experiment_binding_sha256": experiment_binding.scientific_sha256,
+            "factorial_design_sha256": experiment_binding.factorial_design_sha256,
+            "method_spec_sha256": experiment_binding.method_spec_sha256,
+            "git_commit": experiment_binding.implementation_commit,
+            "implementation_dirty": experiment_binding.implementation_dirty,
+        }
+        update_evidence["sha256"] = sha256_value(update_evidence)
+        update_evidence_path = output / "factorial_update_evidence.json"
+        publish_json_once(update_evidence_path, update_evidence)
+        manifest.dataset_hashes["factorial_update_evidence"] = str(
+            update_evidence["sha256"]
+        )
         finalize_run_directory(output, manifest)
         print_json(
             {

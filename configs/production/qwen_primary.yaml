@@ -13,9 +13,9 @@ overrides:
     evaluation_every: 50
     validation_examples: 128
   task:
-    validation_split_path: outputs/datasets/proofgraph-validation
+    dataset_family_path: /data/del6500/OPD/outputs/datasets/proofgraph
   production_safety:
-    readiness_report: outputs/readiness/readiness.json
+    readiness_report: /data/del6500/OPD/outputs/readiness/readiness.json
 profile_kind: primary_qwen
 full_parameter_training: true
 student: qwen25_1p5b

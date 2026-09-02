@@ -2,9 +2,10 @@
 set -euo pipefail
 
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-python_bin=${PYTHON:-"${project_root}/.venv/bin/python"}
-mkdir -p "${project_root}/outputs"
-smoke_root=$(mktemp -d "${project_root}/outputs/smoke-repaired-g0.XXXXXX")
+python_bin=${PYTHON:-"/scr/del6500/OPD/envs/opd/bin/python"}
+output_root=${SMOKE_OUTPUT_ROOT:-"/data/del6500/OPD/outputs/smoke"}
+mkdir -p "${output_root}"
+smoke_root=$(mktemp -d "${output_root}/repaired-g0.XXXXXX")
 
 cd "${project_root}"
 
@@ -25,7 +26,9 @@ split_overrides=(
   --split validation --output "${smoke_root}/label_leakage.json"
 
 "${python_bin}" -m posttrain_circuits.cli.build_rollout_bank \
-  model=tiny_qwen state_source.num_generations_per_prompt=4 \
+  model=tiny_qwen task=proofgraph_small \
+  task.dataset_family_path="${smoke_root}/dataset" task.num_examples=20 \
+  state_source.num_generations_per_prompt=4 \
   --output "${smoke_root}/common_bank"
 
 cells=(
@@ -37,7 +40,14 @@ cells=(
   online_verified_replay
 )
 for cell in "${cells[@]}"; do
-  cell_args=(experiment="${cell}" model=tiny_qwen trainer.max_steps=2)
+  cell_args=(
+    experiment="${cell}"
+    model=tiny_qwen
+    task=proofgraph_small
+    task.dataset_family_path="${smoke_root}/dataset"
+    task.num_examples=20
+    trainer.max_steps=2
+  )
   if [[ "${cell}" == offline_* ]]; then
     cell_args+=(state_source.store_path="${smoke_root}/common_bank")
   fi
@@ -46,15 +56,19 @@ for cell in "${cells[@]}"; do
 done
 
 "${python_bin}" -m posttrain_circuits.cli.build_teacher_demos \
-  experiment=canonical_sft model=tiny_qwen task.num_examples=4 \
+  experiment=canonical_sft model=tiny_qwen task=proofgraph_small \
+  task.dataset_family_path="${smoke_root}/dataset" task.num_examples=4 \
   state_source.num_candidates=2 --output "${smoke_root}/sft/demos"
 "${python_bin}" -m posttrain_circuits.cli.train \
   experiment=canonical_sft model=tiny_qwen trainer.max_steps=2 \
+  task=proofgraph_small task.dataset_family_path="${smoke_root}/dataset" \
+  task.num_examples=4 \
   state_source.store_path="${smoke_root}/sft/demos" \
   --output "${smoke_root}/sft/run"
 
 "${python_bin}" -m posttrain_circuits.cli.run_grpo \
-  experiment=grpo_random_reward model=tiny_qwen task.num_examples=4 \
+  experiment=grpo_random_reward model=tiny_qwen task=proofgraph_small \
+  task.dataset_family_path="${smoke_root}/dataset" task.num_examples=4 \
   trainer.max_steps=1 trainer.batch_size=4 supervision.num_generations=2 \
   supervision.gradient_accumulation_steps=1 supervision.max_completion_length=8 \
   --output "${smoke_root}/grpo"

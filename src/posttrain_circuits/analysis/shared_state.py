@@ -7,8 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
 
 SourceMode = Literal["canonical_prefix", "natural_rollout"]
 DatasetSplit = Literal["discovery", "validation"]

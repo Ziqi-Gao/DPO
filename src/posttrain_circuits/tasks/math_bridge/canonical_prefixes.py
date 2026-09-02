@@ -10,8 +10,8 @@ from typing import Literal
 
 import torch
 
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
 from posttrain_circuits.tasks.math_bridge.answer_normalization import (
     normalize_answer,
 )

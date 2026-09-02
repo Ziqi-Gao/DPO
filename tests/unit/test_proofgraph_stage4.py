@@ -5,14 +5,15 @@ import json
 import pytest
 
 from posttrain_circuits.cli.build_splits import main as build_splits_main
-from posttrain_circuits.data.splits import (
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.proofgraph.splits import (
     SPLITS,
     build_all_splits,
     build_split,
     difficulty_distribution,
 )
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.tasks.proofgraph.tokenization import (
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.tokenization import (
     semantic_token_indices,
     tokenization_audit,
 )
@@ -128,7 +129,7 @@ def test_tokenization_audit_captures_every_repeated_occurrence(tokenizer) -> Non
 
 
 @pytest.mark.integration
-def test_unified_split_cli_writes_all_manifests_and_distributions(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_unified_split_cli_writes_one_exact_family_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
     output = tmp_path / "splits"
     build_splits_main(
         [
@@ -139,9 +140,15 @@ def test_unified_split_cli_writes_all_manifests_and_distributions(tmp_path) -> N
         ]
     )
     global_manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
-    assert global_manifest["leakage_check"] == "passed"
-    assert set(global_manifest["split_hashes"]) == set(SPLITS)
+    assert set(global_manifest["splits"]) == set(SPLITS)
+    family = load_dataset_family(output)
+    assert tuple(family.splits) == SPLITS
     for split in SPLITS:
-        manifest = json.loads((output / split / "manifest.json").read_text(encoding="utf-8"))
-        assert manifest["difficulty_distribution"]["depth"]
-        assert manifest["difficulty_distribution"]["structure"]
+        boundary = global_manifest["splits"][split]
+        assert boundary["num_examples"] == 2
+        assert boundary["examples_file_sha256"]
+        assert list((output / split).iterdir()) == [output / split / "examples.jsonl"]
+
+    (output / "unexpected-empty-split").mkdir()
+    with pytest.raises(ValueError, match="root entries differ"):
+        load_dataset_family(output)

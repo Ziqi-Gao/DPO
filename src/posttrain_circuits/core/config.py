@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+import re
 from typing import Any
 
 import yaml
+
+from posttrain_circuits.experiments.protocols.local_fork import LOCAL_FORK_SPEC
+from posttrain_circuits.experiments.protocols.specs import TOKEN_BUDGET_UNIT
+from posttrain_circuits.methods.registry import FACTORIAL_METHOD_IDS, METHOD_REGISTRY
 
 QWEN3_STUDENT = "Qwen/Qwen3-1.7B"
 QWEN3_TEACHER = "Qwen/Qwen3-8B"
@@ -23,6 +28,13 @@ QWEN3_TRACKS = {
         "artifact_namespace": "qwen3-v2",
     },
 }
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def _require_identifier(value: str, *, name: str) -> str:
+    if not _IDENTIFIER.fullmatch(value):
+        raise ValueError(f"{name} is not a valid configuration identifier: {value!r}")
+    return value
 
 
 def _merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
@@ -41,16 +53,24 @@ def _parse_value(value: str) -> Any:
 
 def _set_path(config: dict[str, Any], path: str, value: Any) -> None:
     parts = path.split(".")
+    if not parts or any(not _IDENTIFIER.fullmatch(part) for part in parts):
+        raise ValueError(f"override key is not a valid dotted identifier: {path!r}")
     cursor = config
     for part in parts[:-1]:
-        child = cursor.setdefault(part, {})
+        if part not in cursor:
+            raise ValueError(f"unknown override key: {path}")
+        child = cursor[part]
         if not isinstance(child, dict):
             raise ValueError(f"cannot override {path}: {part} is not a mapping")
         cursor = child
+    if parts[-1] not in cursor:
+        raise ValueError(f"unknown override key: {path}")
     cursor[parts[-1]] = value
 
 
 def _load_group(config_root: Path, group: str, name: str) -> dict[str, Any]:
+    _require_identifier(group, name="configuration group")
+    _require_identifier(name, name=f"configuration selection for {group}")
     path = config_root / group / f"{name}.yaml"
     if not path.exists():
         raise FileNotFoundError(f"configuration group {group}={name} does not exist: {path}")
@@ -66,12 +86,24 @@ def compose_config(
     config_root: Path = Path("configs"),
     root_name: str = "config.yaml",
 ) -> dict[str, Any]:
+    if config_root.is_symlink():
+        raise ValueError(f"configuration root must not be a symlink: {config_root}")
+    if not config_root.is_dir():
+        raise FileNotFoundError(f"configuration root does not exist: {config_root}")
+    root_path = Path(root_name)
+    if root_path.name != root_name or root_path.suffix != ".yaml":
+        raise ValueError(f"configuration root file name is invalid: {root_name!r}")
     root = yaml.safe_load((config_root / root_name).read_text(encoding="utf-8")) or {}
     defaults = root.pop("defaults", [])
     default_groups: dict[str, str] = {}
     for entry in defaults:
         if isinstance(entry, dict):
-            default_groups.update({str(key): str(value) for key, value in entry.items()})
+            for key, value in entry.items():
+                group = _require_identifier(str(key), name="default configuration group")
+                selection = _require_identifier(
+                    str(value), name=f"default configuration selection for {group}"
+                )
+                default_groups[group] = selection
 
     explicit_groups: dict[str, str] = {}
     scalar_overrides: list[tuple[str, str]] = []
@@ -79,7 +111,10 @@ def compose_config(
         if "=" not in override:
             raise ValueError(f"override must be key=value, received {override!r}")
         key, value = override.split("=", 1)
+        if "." not in key:
+            _require_identifier(key, name="override group/key")
         if "." not in key and (config_root / key).is_dir():
+            _require_identifier(value, name=f"configuration selection for {key}")
             explicit_groups[key] = value
         else:
             scalar_overrides.append((key, value))
@@ -89,7 +124,9 @@ def compose_config(
         config[group] = _load_group(config_root, group, name)
     config = _merge(config, root)
 
-    experiment_name = explicit_groups.get("experiment", default_groups.get("experiment", "offline_hard"))
+    experiment_name = explicit_groups.get(
+        "experiment", default_groups.get("experiment", FACTORIAL_METHOD_IDS[0])
+    )
     config["experiment"] = _load_group(config_root, "experiment", experiment_name)
 
     for dependency in ("state_source", "supervision"):
@@ -192,20 +229,14 @@ def validate_config(config: dict[str, Any]) -> None:
     if "model" in config:
         validate_model_revision(config["model"])
     experiment = config.get("experiment", {})
-    for dependency in ("state_source", "supervision"):
-        expected = experiment.get(dependency)
-        if expected is None:
-            continue
-        actual = config.get(dependency, {}).get("name")
-        if actual != expected:
-            raise ValueError(
-                f"experiment {experiment.get('name')} requires {dependency}={expected}, "
-                f"but resolved {dependency}.name={actual}"
-            )
-    if experiment.get("supervision") == "soft_teacher" and experiment.get("use_verifier_reward", False):
-        raise ValueError("OPD/soft-teacher cells cannot enable verifier reward")
-    if experiment.get("name", "").startswith("offline") and experiment.get("state_source") != "fixed_bank":
-        raise ValueError("offline factorial cells must use the fixed common bank")
+    experiment_name = str(experiment.get("name", ""))
+    if experiment_name == "local_fork":
+        LOCAL_FORK_SPEC.validate_experiment_config(experiment)
+    else:
+        method = METHOD_REGISTRY.get(experiment_name)
+        if method is None:
+            raise ValueError(f"unregistered training experiment: {experiment_name!r}")
+        method.validate_resolved_config(config)
     if "production_profile" in config or "pilot_profile" in config:
         validate_production_training_config(config)
     if config.get("protocol_track") in QWEN3_TRACKS:
@@ -236,13 +267,17 @@ def _validate_qwen3_track(config: dict[str, Any]) -> None:
         if model_config.get("artifact_namespace") != namespace:
             raise ValueError(f"{track} {role} model config has the wrong artifact namespace")
     if track == "qwen3_v2":
+        if config.get("trainer", {}).get("token_budget_unit") != TOKEN_BUDGET_UNIT:
+            raise ValueError(
+                f"qwen3_v2 token budget unit must exactly match frozen prereg: {TOKEN_BUDGET_UNIT}"
+            )
         if not bool(model.get("low_cpu_mem_usage")) or not bool(teacher.get("low_cpu_mem_usage")):
             raise ValueError("qwen3_v2 requires low_cpu_mem_usage for student and teacher")
         if teacher.get("rank_zero_only_training_load") is not True:
             raise ValueError("qwen3_v2 requires rank-zero-only training teacher loading")
     bound_paths = {
         "state_source.store_path": config.get("state_source", {}).get("store_path"),
-        "task.validation_split_path": config.get("task", {}).get("validation_split_path"),
+        "task.dataset_family_path": config.get("task", {}).get("dataset_family_path"),
         "anti_shortcut.report_path": config.get("anti_shortcut", {}).get("report_path"),
         "production_safety.readiness_report": config.get("production_safety", {}).get("readiness_report"),
         "production_safety.probe_cohort_manifest": config.get("production_safety", {}).get(
@@ -307,8 +342,8 @@ def validate_production_training_config(config: dict[str, Any]) -> None:
     evaluation_every = int(trainer.get("evaluation_every", 0))
     if evaluation_every < 1 or evaluation_every > int(trainer.get("max_steps", 0)):
         failures.append("invalid formal evaluation interval")
-    if not str(config.get("task", {}).get("validation_split_path", "")).strip():
-        failures.append("missing frozen validation_split_path")
+    if not str(config.get("task", {}).get("dataset_family_path", "")).strip():
+        failures.append("missing frozen dataset_family_path")
     if profile.get("full_parameter_training") is not True:
         failures.append("full_parameter_training is not true")
     if failures:

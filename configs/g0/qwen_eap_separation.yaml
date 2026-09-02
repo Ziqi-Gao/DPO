@@ -4,9 +4,9 @@ groups:
   task: proofgraph_main
 overrides:
   task:
-    validation_split_path: outputs/datasets/proofgraph-validation
+    dataset_family_path: /data/del6500/OPD/outputs/datasets/proofgraph
   anti_shortcut:
-    report_path: outputs/g0/anti_shortcut.json
+    report_path: /data/del6500/OPD/outputs/g0/anti_shortcut.json
     num_examples: 128
   circuit:
     discovery_pair_count: 8

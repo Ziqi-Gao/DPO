@@ -6,16 +6,16 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from posttrain_circuits.artifacts.datasets import DatasetManifest
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.runs import require_git_output
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import DatasetManifest
-from posttrain_circuits.core.provenance import require_git_output
-from posttrain_circuits.data.splits import (
+from posttrain_circuits.datasets.proofgraph.splits import (
     build_split,
     difficulty_distribution,
     serialize_examples,
 )
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
 
 def main(argv: list[str] | None = None) -> None:

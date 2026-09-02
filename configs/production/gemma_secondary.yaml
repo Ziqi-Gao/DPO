@@ -13,7 +13,7 @@ overrides:
     evaluation_every: 30
     validation_examples: 128
   task:
-    validation_split_path: outputs/datasets/proofgraph-validation
+    dataset_family_path: /data/del6500/OPD/outputs/datasets/proofgraph
 profile_kind: secondary_gemma
 full_parameter_training: true
 student: gemma2_2b

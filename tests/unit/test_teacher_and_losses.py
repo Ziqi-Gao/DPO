@@ -5,14 +5,15 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from posttrain_circuits.core.types import TrajectoryBatch, TrajectoryRecord
-from posttrain_circuits.supervision.losses import (
+from posttrain_circuits.datasets.trajectories.contracts import TrajectoryRecord
+from posttrain_circuits.learning.contracts import SamplingCursor, SamplingRequest, TrajectoryBatch
+from posttrain_circuits.learning.supervision.losses import (
     hard_teacher_loss,
     soft_teacher_loss,
     verified_replay_loss,
 )
-from posttrain_circuits.teacher.hf_scorer import HuggingFaceTeacherScorer
-from posttrain_circuits.teacher.topk import topk_from_logits, topk_kl
+from posttrain_circuits.learning.teacher.hf_scorer import HuggingFaceTeacherScorer
+from posttrain_circuits.learning.teacher.topk import topk_from_logits, topk_kl
 
 
 class PositionalTeacher(torch.nn.Module):
@@ -31,8 +32,10 @@ class PositionalTeacher(torch.nn.Module):
 
 
 def record() -> TrajectoryRecord:
-    return TrajectoryRecord(
-        trajectory_id="t",
+    cursor = SamplingCursor(0, 0, "p", 0)
+    request = SamplingRequest(0, "unit-test-sampling-v1", (cursor,))
+    value = TrajectoryRecord(
+        trajectory_id="",
         prompt_id="p",
         split="train",
         prompt_text="p",
@@ -43,11 +46,16 @@ def record() -> TrajectoryRecord:
         behavior_policy_id="b",
         behavior_policy_revision="r",
         policy_version=0,
-        generation_seed=0,
+        sampling_request_seed=0,
+        actual_sampling_seed=request.seed_for(0, policy_version=0),
+        sampling_cursor_id=cursor.cursor_id,
+        sampling_protocol_id=request.sampling_protocol_id,
         sampling_temperature=1.0,
         top_p=1.0,
         behavior_logprobs=[0.0, 0.0],
     )
+    value.trajectory_id = value.expected_trajectory_id
+    return value
 
 
 @pytest.mark.unit

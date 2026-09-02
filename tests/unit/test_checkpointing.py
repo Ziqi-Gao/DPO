@@ -8,15 +8,69 @@ import torch
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import OptimStateKeyType
 
+from posttrain_circuits.artifacts.checkpoints import (
+    accelerator_state_file_hashes,
+    load_checkpoint,
+    model_update_evidence,
+    save_checkpoint,
+    validate_accelerator_state_directory,
+)
+from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.cli.create_fork_bundle import _load_portable_optimizer_state
 from posttrain_circuits.core.seeding import seed_everything
-from posttrain_circuits.training.checkpointing import load_checkpoint, save_checkpoint
-from posttrain_circuits.training.local_fork import state_hash
+from posttrain_circuits.learning.training.local_fork import state_hash
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen
 
 
 @pytest.mark.unit
-def test_checkpoint_restores_model_optimizer_scheduler_and_rng(tmp_path, tiny_model) -> None:  # type: ignore[no-untyped-def]
+def test_model_update_evidence_recomputes_positive_norm_and_detects_no_update() -> None:
+    baseline = {"weight": torch.tensor([1.0, 2.0])}
+    unchanged_norm, unchanged_hash = model_update_evidence(baseline, baseline)
+    assert unchanged_norm == 0.0
+    assert unchanged_hash
+    changed_norm, changed_hash = model_update_evidence(
+        baseline,
+        {"weight": torch.tensor([2.0, 4.0])},
+    )
+    assert changed_norm == pytest.approx(5**0.5)
+    assert changed_hash != unchanged_hash
+    with pytest.raises(ValueError, match="inventories differ"):
+        model_update_evidence(baseline, {"other": torch.tensor([2.0, 4.0])})
+
+
+@pytest.mark.unit
+def test_accelerator_state_binding_rejects_same_path_replacement(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    state_root = tmp_path / "run" / "checkpoints" / "state"
+    state_root.mkdir(parents=True)
+    state_file = state_root / "optimizer.bin"
+    state_file.write_bytes(b"original-state")
+    hashes = accelerator_state_file_hashes(
+        state_root,
+        expected_run_root=tmp_path / "run",
+    )
+    validate_accelerator_state_directory(
+        state_root,
+        expected_run_root=tmp_path / "run",
+        expected_files=hashes,
+        expected_sha256=sha256_value(hashes),
+    )
+    state_file.write_bytes(b"replaced-state")
+    with pytest.raises(ValueError, match="content differs"):
+        validate_accelerator_state_directory(
+            state_root,
+            expected_run_root=tmp_path / "run",
+            expected_files=hashes,
+            expected_sha256=sha256_value(hashes),
+        )
+
+
+@pytest.mark.unit
+def test_checkpoint_restores_model_optimizer_scheduler_and_rng(
+    tmp_path,
+    tiny_model,
+) -> None:  # type: ignore[no-untyped-def]
     seed_everything(19)
     optimizer = torch.optim.AdamW(tiny_model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
@@ -54,7 +108,10 @@ def test_checkpoint_restores_model_optimizer_scheduler_and_rng(tmp_path, tiny_mo
 
 
 @pytest.mark.unit
-def test_checkpoint_resume_reproduces_next_random_update(tmp_path, tiny_model) -> None:  # type: ignore[no-untyped-def]
+def test_checkpoint_resume_reproduces_next_random_update(
+    tmp_path,
+    tiny_model,
+) -> None:  # type: ignore[no-untyped-def]
     seed_everything(91)
     optimizer = torch.optim.AdamW(tiny_model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)

@@ -6,8 +6,8 @@ import argparse
 import json
 from pathlib import Path
 
-from posttrain_circuits.core.hashing import sha256_file
-from posttrain_circuits.rewards.random_matched import (
+from posttrain_circuits.artifacts.hashing import sha256_file
+from posttrain_circuits.learning.rl.rewards.random_matched import (
     build_random_reward_calibration,
     write_random_reward_calibration,
 )

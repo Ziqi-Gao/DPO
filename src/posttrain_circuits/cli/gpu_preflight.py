@@ -12,10 +12,10 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as functional
 
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import require_git_output
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import require_git_output
 from posttrain_circuits.models.loading import (
     assert_tokenizer_compatible,
     load_model_and_tokenizer,
@@ -31,7 +31,7 @@ def _read_cgroup_value(path: Path) -> int | None:
         return None
     parsed = int(value)
     # cgroup-v1 represents an unlimited memory controller with a value close
-    # to INT64_MAX. That is not evidence of a finite Slurm allocation limit.
+    # to INT64_MAX. That is not evidence of a finite allocation limit.
     return None if parsed >= 2**60 else parsed
 
 
@@ -40,7 +40,7 @@ def cgroup_memory_snapshot(
     proc_cgroup: Path = Path("/proc/self/cgroup"),
     cgroup_root: Path = Path("/sys/fs/cgroup"),
 ) -> dict[str, int | None]:
-    """Read the Slurm cgroup-v1 or cgroup-v2 memory controller without host fallbacks."""
+    """Read the current allocation's cgroup memory controller without host fallbacks."""
 
     unified_relative: Path | None = None
     memory_relative: Path | None = None
@@ -81,10 +81,12 @@ def validate_memory_headroom(
     limit = snapshot.get("limit_bytes")
     cgroup_peak = snapshot.get("peak_bytes")
     if limit is None or limit <= 0:
-        raise RuntimeError("GPU preflight cannot verify a finite Slurm cgroup memory limit")
+        raise RuntimeError("GPU preflight cannot verify a finite allocation cgroup memory limit")
     requested_bytes = requested_gib * 1024**3
     if limit < requested_bytes:
-        raise RuntimeError(f"Slurm cgroup memory limit {limit} is below registered request {requested_bytes}")
+        raise RuntimeError(
+            f"allocation cgroup memory limit {limit} is below registered request {requested_bytes}"
+        )
     observed_peak = max(int(cgroup_peak or 0), observed_process_peak_bytes)
     headroom = limit - observed_peak
     minimum = max(int(minimum_headroom_gib * 1024**3), int(limit * minimum_headroom_fraction))
@@ -103,6 +105,29 @@ def _parameter_checksum(model: torch.nn.Module, device: torch.device) -> torch.T
     for parameter in model.parameters():
         checksum += parameter.detach().double().sum()
     return checksum
+
+
+def _foreground_execution_context(*, world_size: int) -> dict[str, Any]:
+    """Validate scheduler-provided visibility without selecting or rewriting host GPUs."""
+
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible is None or not visible:
+        raise RuntimeError("GPU preflight requires an allocated CUDA visibility envelope")
+    assigned = tuple(visible.split(","))
+    if (
+        len(assigned) != world_size
+        or len(set(assigned)) != world_size
+        or any(not value or value.strip() != value for value in assigned)
+    ):
+        raise RuntimeError("allocated CUDA visibility does not match the distributed world size")
+    if torch.cuda.device_count() != world_size:
+        raise RuntimeError("visible CUDA device count differs from the allocated world size")
+    return {
+        "mode": "server_scheduler_foreground",
+        "allocation_visibility": "preserved",
+        "distributed_launcher": "environment_rank_passthrough",
+        "visible_device_count": world_size,
+    }
 
 
 def _qwen3_training_path(
@@ -282,6 +307,11 @@ def main(argv: list[str] | None = None) -> None:
     world_size = int(os.environ["WORLD_SIZE"])
     if world_size != 4:
         raise RuntimeError(f"GPU preflight requires exactly four ranks, observed {world_size}")
+    if not 0 <= local_rank < world_size:
+        raise RuntimeError("local rank is outside the allocated distributed world")
+    execution_context = _foreground_execution_context(world_size=world_size)
+    # Select only the process-local logical device inside the visibility envelope
+    # already validated by the ServerScheduler entrypoint.
     torch.cuda.set_device(local_rank)
     dist.init_process_group("nccl")
     device = torch.device("cuda", local_rank)
@@ -360,24 +390,10 @@ def main(argv: list[str] | None = None) -> None:
             "protocol_track": str(config.get("protocol_track", "core_v2")),
             "artifact_namespace": str(config["model"].get("artifact_namespace", "legacy")),
             "resolved_config_sha256": sha256_value(config),
-            "launch_environment": {
-                name: os.environ.get(name)
-                for name in (
-                    "MODEL_CONFIG",
-                    "TEACHER_CONFIG",
-                    "PRODUCTION_CONFIG",
-                    "G0_CONFIG",
-                    "PILOT_CONFIG",
-                    "PROJECT_ROOT",
-                    "PYTHON_BIN",
-                    "ACCELERATE_BIN",
-                    "OUTPUT_ROOT",
-                )
-            },
+            "execution_context": execution_context,
             "devices": device_rows,
             "git_commit": git_commit,
             "code_commit": git_commit,
-            "job_id": os.environ.get("SLURM_JOB_ID"),
             "created_at": utc_now(),
         }
         if str(config.get("protocol_track", "")).startswith("qwen3_"):

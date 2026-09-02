@@ -15,7 +15,7 @@ from posttrain_circuits.analysis.stage7 import (
     SharedStateObservation,
     analyze_shared_state,
 )
-from posttrain_circuits.core.manifests import atomic_write_json
+from posttrain_circuits.artifacts.io import atomic_write_json
 
 
 def _parser() -> argparse.ArgumentParser:

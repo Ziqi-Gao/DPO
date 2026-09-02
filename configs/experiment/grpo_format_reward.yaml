@@ -2,4 +2,6 @@ name: grpo_format_reward
 state_source: current_policy
 supervision: grpo
 reward: format_only
-
+use_policy_gradient: true
+use_teacher_loss: false
+use_sft_auxiliary_loss: false

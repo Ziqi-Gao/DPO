@@ -6,23 +6,27 @@ from pathlib import Path
 import pytest
 import torch
 
-from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
-from posttrain_circuits.circuits.probe_cohorts import (
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.causal_circuits.model.runner import load_checkpoint_into_hf_model
+from posttrain_circuits.datasets.circuit_probes.cohorts import (
     build_probe_cohort_manifest,
+    family_probe_pairs,
     validate_probe_cohort_manifest,
     write_probe_cohort_manifest,
 )
 from posttrain_circuits.cli.aggregate_results import main as aggregate_results
 from posttrain_circuits.cli.run_local_fork import main as run_local_fork
 from posttrain_circuits.core.config import compose_config, validate_production_training_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.core.readiness import validate_anti_shortcut_report
-from posttrain_circuits.tasks.proofgraph.anti_shortcut import (
+from posttrain_circuits.datasets.proofgraph.anti_shortcut import (
     build_anti_shortcut_suite,
     evaluate_anti_shortcut_suite,
 )
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.proofgraph.manifests import write_dataset_family
+from posttrain_circuits.datasets.proofgraph.splits import SPLITS, build_all_splits
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen
 
 
@@ -61,7 +65,7 @@ def test_qwen_production_profile_resolves_without_smoke_defaults() -> None:
     assert config["trainer"]["backend"] == "accelerate"
     assert config["trainer"]["max_steps"] > config["production_safety"]["max_smoke_steps"]
     assert config["trainer"]["token_budget"] > config["production_safety"]["max_smoke_tokens"]
-    assert config["task"]["validation_split_path"]
+    assert config["task"]["dataset_family_path"]
 
 
 @pytest.mark.unit
@@ -76,46 +80,55 @@ def test_production_profile_rejects_wrong_teacher_family() -> None:
         )
 
 
-def _probe_manifest() -> dict[str, object]:
-    rows = {
-        "discovery": [
-            {"example_id": "d0", "pair_group_id": "pd0", "payload": "capable"},
-            {"example_id": "d1", "pair_group_id": "pd1", "payload": "challenge"},
-        ],
-        "validation": [
-            {"example_id": "v0", "pair_group_id": "pv0", "payload": "capable"},
-            {"example_id": "v1", "pair_group_id": "pv1", "payload": "challenge"},
-        ],
-    }
-    scores = {
-        key: {
-            "initial_correct": key.endswith("0"),
-            "learnable_after_post_training": True,
-        }
-        for key in ("d0", "d1", "v0", "v1")
-    }
+def _probe_manifest(root: Path) -> dict[str, object]:
+    split_examples = build_all_splits(
+        ProofGraphTask(),
+        split_sizes={split: 4 for split in SPLITS},
+        base_seed=913,
+        difficulty={},
+    )
+    write_dataset_family(root, split_examples)
+    family = load_dataset_family(root)
+    scores = {}
+    for subset in ("discovery", "validation"):
+        for index, pair in enumerate(
+            family_probe_pairs(family, subset=subset, limit_pairs=2)
+        ):
+            for example in pair.examples:
+                scores[example.example_id] = {
+                    "initial_correct": index == 0,
+                    "learnable_after_post_training": True,
+                }
     return build_probe_cohort_manifest(
-        rows,
+        family,
         scores,
-        source_split_hashes={"discovery": "d-hash", "validation": "v-hash"},
-        initial_student_checkpoint_hash="initial",
-        scoring_manifest_hash="scores",
-        learnability_evidence_hash="learnability",
+        initial_student_checkpoint_hash="d" * 64,
+        scoring_manifest_hash="e" * 64,
+        eligibility_evidence_ancestry=[
+            {
+                "calibration_checkpoint_sha256": "a" * 64,
+                "calibration_run_manifest_sha256": "b" * 64,
+                "calibration_run_id": "calibration",
+                "experiment_binding_sha256": "c" * 64,
+            }
+        ],
+        limit_pairs_per_split=2,
     )
 
 
 @pytest.mark.unit
 def test_probe_manifest_rejects_exact_byte_tampering(tmp_path: Path) -> None:
-    manifest = _probe_manifest()
-    write_probe_cohort_manifest(tmp_path, manifest)
-    path = tmp_path / "manifest.json"
+    manifest = _probe_manifest(tmp_path / "family")
+    output = tmp_path / "cohort"
+    write_probe_cohort_manifest(output, manifest)
+    path = output / "manifest.json"
     tampered = json.loads(path.read_text(encoding="utf-8"))
-    tampered["cohorts"]["base_capable"]["discovery"]["examples"][0]["example"]["payload"] = "tampered"
-    subset = tampered["cohorts"]["base_capable"]["discovery"]
-    subset["sha256"] = sha256_value({key: value for key, value in subset.items() if key != "sha256"})
-    tampered["sha256"] = sha256_value({key: value for key, value in tampered.items() if key != "sha256"})
+    example = tampered["cohorts"]["base_capable"]["discovery"]["pairs"][0][
+        "examples"
+    ][0]
+    example["example_id"] = str(example["example_id"]) + "-tampered"
     atomic_write_json(path, tampered)
-    with pytest.raises(ValueError, match="example byte hash mismatch"):
+    with pytest.raises(ValueError, match="top-level manifest hash mismatch"):
         validate_probe_cohort_manifest(path)
 
 
@@ -142,7 +155,13 @@ def test_local_fork_out_of_tolerance_exits_nonzero(monkeypatch, tmp_path: Path) 
     payload = {
         "model_spec": {"model_name_or_path": "local/tiny-qwen", "seed": 1},
         "optimizer": {"param_groups": [{"lr": 1e-4}]},
-        "manifest": {"bundle_id": bundle_id},
+        "manifest": {
+            "bundle_id": bundle_id,
+            "manifest_sha256": "a" * 64,
+            "protocol_id": "shared_state_matched_output_kl_v1",
+            "local_fork_spec_sha256": "b" * 64,
+            "formal_binding": {},
+        },
     }
     monkeypatch.setattr("posttrain_circuits.cli.run_local_fork.load_fork_bundle", lambda _path: payload)
 
@@ -151,7 +170,12 @@ def test_local_fork_out_of_tolerance_exits_nonzero(monkeypatch, tmp_path: Path) 
         return {"probe_output_kl_new_to_fork": kl, "parameter_update_norm": 1.0}
 
     monkeypatch.setattr("posttrain_circuits.cli.run_local_fork.run_branch", fake_run_branch)
+    monkeypatch.setattr(
+        "posttrain_circuits.cli.run_local_fork.validate_local_fork_report",
+        lambda report, **_kwargs: report,
+    )
     output = tmp_path / "result.json"
+    (tmp_path / "bundle.pt").write_bytes(b"bound-local-fork-test-bundle")
     with pytest.raises(RuntimeError, match="outside tolerance"):
         run_local_fork(
             [
@@ -161,8 +185,6 @@ def test_local_fork_out_of_tolerance_exits_nonzero(monkeypatch, tmp_path: Path) 
                 str(output),
                 "--horizons",
                 "1",
-                "--max-calibration-rounds",
-                "0",
             ]
         )
     assert json.loads(output.read_text(encoding="utf-8"))["valid_for_primary_analysis"] is False

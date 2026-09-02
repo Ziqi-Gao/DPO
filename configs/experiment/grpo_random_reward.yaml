@@ -2,4 +2,7 @@ name: grpo_random_reward
 state_source: current_policy
 supervision: grpo
 reward: matched_random
-random_reward_calibration_path: outputs/rewards/random_reward_calibration.json
+use_policy_gradient: true
+use_teacher_loss: false
+use_sft_auxiliary_loss: false
+random_reward_calibration_path: /data/del6500/OPD/outputs/rewards/random_reward_calibration.json

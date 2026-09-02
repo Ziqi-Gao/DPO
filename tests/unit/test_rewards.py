@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from posttrain_circuits.rewards.format_only import FormatOnlyReward
-from posttrain_circuits.rewards.proofgraph_reward import ProofGraphExactReward
-from posttrain_circuits.rewards.random_matched import MatchedRandomReward
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+from posttrain_circuits.learning.rl.rewards.format_only import FormatOnlyReward
+from posttrain_circuits.learning.rl.rewards.proofgraph_reward import ProofGraphExactReward
+from posttrain_circuits.learning.rl.rewards.random_matched import MatchedRandomReward
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
 
 @pytest.mark.unit

@@ -4,10 +4,10 @@ import copy
 
 import pytest
 
-from posttrain_circuits.core.types import PromptBatch
-from posttrain_circuits.rollout.current_policy import CurrentPolicyStateSource
-from posttrain_circuits.rollout.fixed_bank import FixedBankStateSource
-from posttrain_circuits.training.schedules import PromptScheduler
+from posttrain_circuits.learning.contracts import PromptBatch
+from posttrain_circuits.learning.state_sources.current_policy import CurrentPolicyStateSource
+from posttrain_circuits.learning.state_sources.fixed_bank import FixedBankStateSource
+from posttrain_circuits.learning.training.schedules import PromptScheduler
 from posttrain_circuits.utils.smoke import (
     build_fixed_bank,
     build_smoke_examples,
@@ -39,8 +39,8 @@ def test_online_source_increments_versions_and_rejects_stale(tokenizer) -> None:
     assert source.get_batch(None, prompts, 1).policy_version == 2
     stale_generator = scripted_current_policy_generator(examples, tokenizer)
 
-    def stale(model, prompt_batch, policy_version, seed):  # type: ignore[no-untyped-def]
-        values = stale_generator(model, prompt_batch, policy_version, seed)
+    def stale(model, prompt_batch, policy_version, sampling_request):  # type: ignore[no-untyped-def]
+        values = stale_generator(model, prompt_batch, policy_version, sampling_request)
         for value in values:
             value.policy_version = policy_version - 1
         return values
@@ -50,6 +50,7 @@ def test_online_source_increments_versions_and_rejects_stale(tokenizer) -> None:
         rejecting.get_batch(None, prompts, 0)
     manual = source.get_batch(None, prompts, 2)
     manual.records[0].policy_version -= 1
+    manual.records[0].trajectory_id = manual.records[0].expected_trajectory_id
     with pytest.raises(ValueError, match="stale trajectory"):
         manual.validate(max_policy_lag=0)
 

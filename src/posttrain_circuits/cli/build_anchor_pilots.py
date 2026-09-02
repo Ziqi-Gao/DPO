@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from posttrain_circuits.tasks.anchors import (
+from posttrain_circuits.datasets.anchors import (
     build_fixed_anchor_pilots,
     write_anchor_pilots,
 )

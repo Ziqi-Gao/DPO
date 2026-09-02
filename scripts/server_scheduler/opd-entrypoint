@@ -1,0 +1,27 @@
+#!/usr/bin/python3.12 -I
+"""Absolute project entrypoint registered with ServerScheduler."""
+
+import os
+import sys
+from pathlib import Path
+
+
+REJECTED_AMBIENT = (
+    "LD_AUDIT",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "PYTHONHOME",
+    "PYTHONPATH",
+)
+injected = [key for key in REJECTED_AMBIENT if os.environ.get(key, "")]
+if injected:
+    print(f"OPD ServerScheduler entrypoint rejected ambient injection: {injected}", file=sys.stderr)
+    raise SystemExit(2)
+
+PROJECT_SRC = Path("/home/del6500/projects/OPD/src")
+sys.path.insert(0, str(PROJECT_SRC))
+
+from posttrain_circuits.scheduler_adapter.entrypoint import main  # noqa: E402
+
+
+raise SystemExit(main())

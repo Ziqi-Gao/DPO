@@ -8,20 +8,20 @@ import os
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.circuits.dynamics import estimate_estimator_noise_floor
-from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_manifest
-from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import formal_artifact_binding, require_git_output
-from posttrain_circuits.core.readiness import build_readiness_report, validate_anti_shortcut_report
-from posttrain_circuits.core.scientific_versions import (
+from posttrain_circuits.artifacts.compatibility import (
     require_scientific_artifact,
     scientific_compatibility_fields,
 )
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
-from posttrain_circuits.tasks.proofgraph.label_leakage import validate_label_leakage_artifact
-from posttrain_circuits.teacher.evaluation import validate_teacher_readiness_artifact
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import formal_artifact_binding, require_git_output
+from posttrain_circuits.causal_circuits.dynamics import estimate_estimator_noise_floor
+from posttrain_circuits.datasets.circuit_probes.cohorts import validate_probe_cohort_manifest
+from posttrain_circuits.core.config import compose_config
+from posttrain_circuits.core.readiness import build_readiness_report, validate_anti_shortcut_report
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
+from posttrain_circuits.datasets.proofgraph.leakage import validate_label_leakage_artifact
+from posttrain_circuits.learning.teacher.evaluation import validate_teacher_readiness_artifact
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -215,8 +215,9 @@ def main(argv: list[str] | None = None) -> None:
         "base_capable_probes": probes["cohorts"]["base_capable"]["discovery"]["num_examples"] > 0
         and probes["cohorts"]["base_capable"]["validation"]["num_examples"] > 0,
         "probe_scoring_binding": base.get("initial_checkpoint_sha256") == initial_checkpoint_hash
-        and probes.get("scoring_manifest_hash") == sha256_file(args.base_scores)
-        and probes.get("learnability_evidence_hash") == base.get("sha256"),
+        and probes.get("scoring_manifest_hash") == base.get("sha256")
+        and probes.get("eligibility_evidence_ancestry")
+        == base.get("eligibility_evidence_ancestry"),
         "hf_transformerlens_gqa_parity": compatibility.get("passed") is True
         and compatibility.get("transformerlens_parity_passed") is True
         and compatibility.get("sha256") == sha256_value(compatibility_payload)

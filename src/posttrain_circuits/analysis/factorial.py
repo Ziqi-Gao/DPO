@@ -7,19 +7,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-PLANNED_CONTRASTS = (
-    ("online_hard", "offline_hard"),
-    ("online_soft_opd", "offline_soft"),
-    ("online_verified_replay", "offline_verified_replay"),
-    ("online_soft_opd", "online_hard"),
-    ("online_soft_opd", "online_verified_replay"),
-    ("online_verified_replay", "canonical_grpo"),
-)
+from posttrain_circuits.experiments.protocols.specs import CONTROLLED_FACTORIAL
 
 
 def planned_contrasts(cell_means: dict[str, float]) -> dict[str, float]:
     results = {}
-    for left, right in PLANNED_CONTRASTS:
+    for left, right in CONTROLLED_FACTORIAL.planned_contrasts:
         if left in cell_means and right in cell_means:
             results[f"{left} - {right}"] = cell_means[left] - cell_means[right]
     return results

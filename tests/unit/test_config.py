@@ -7,7 +7,6 @@ import pytest
 from posttrain_circuits.core.config import compose_config, validate_model_revision
 
 EXPERIMENTS = [
-    "phase0_sft",
     "offline_hard",
     "online_hard",
     "offline_soft",
@@ -20,6 +19,25 @@ EXPERIMENTS = [
     "grpo_format_reward",
     "local_fork",
 ]
+
+
+@pytest.mark.unit
+def test_unregistered_training_experiment_is_rejected(tmp_path: Path) -> None:
+    experiment_root = tmp_path / "experiment"
+    experiment_root.mkdir(parents=True)
+    (experiment_root / "unknown.yaml").write_text(
+        "name: unknown\nstate_source: fixed_bank\nsupervision: hard_teacher\n",
+        encoding="utf-8",
+    )
+    for source in Path("configs").iterdir():
+        if source.name == "experiment":
+            continue
+        if source.is_dir():
+            (tmp_path / source.name).symlink_to(source.resolve(), target_is_directory=True)
+        elif source.name == "config.yaml":
+            (tmp_path / source.name).symlink_to(source.resolve())
+    with pytest.raises(ValueError, match="unregistered training experiment"):
+        compose_config(["experiment=unknown"], config_root=tmp_path)
 
 
 @pytest.mark.unit
@@ -59,6 +77,33 @@ def test_conflicting_explicit_dependency_override_is_rejected() -> None:
             ["experiment=offline_hard", "state_source=current_policy"],
             config_root=Path("configs"),
         )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("override", ["unknown=1", "trainer.unknown=1"])
+def test_unknown_override_keys_are_rejected(override: str) -> None:
+    with pytest.raises(ValueError, match="unknown override key"):
+        compose_config([override], config_root=Path("configs"))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "override",
+    ["experiment=../offline_hard", "experiment=offline/hard"],
+)
+def test_configuration_group_traversal_and_invalid_names_are_rejected(
+    override: str,
+) -> None:
+    with pytest.raises(ValueError, match="valid configuration identifier"):
+        compose_config([override], config_root=Path("configs"))
+
+
+@pytest.mark.unit
+def test_configuration_root_symlink_is_rejected(tmp_path: Path) -> None:
+    config_link = tmp_path / "configs-link"
+    config_link.symlink_to(Path("configs").resolve(), target_is_directory=True)
+    with pytest.raises(ValueError, match="root must not be a symlink"):
+        compose_config([], config_root=config_link)
 
 
 @pytest.mark.unit

@@ -9,7 +9,7 @@ defaults:
   - experiment: offline_hard
 
 seed: 42
-output_root: outputs
+output_root: /data/del6500/OPD/outputs
 prereg_path: prereg/core_v2.yaml
 prereg_version: core_v2
 trainer:
@@ -31,8 +31,10 @@ production_safety:
   max_smoke_tokens: 1000000
   require_anti_shortcut_gate: true
   require_frozen_probe_cohorts: true
-  probe_cohort_manifest: outputs/probes/proofgraph/manifest.json
-  readiness_report: outputs/readiness/readiness.json
+  probe_cohort_manifest: /data/del6500/OPD/outputs/probes/proofgraph/manifest.json
+  readiness_report: /data/del6500/OPD/outputs/readiness/readiness.json
+  initial_checkpoint_path: ""
+  initial_checkpoint_hash: ""
 label_leakage:
   maximum_query_only_accuracy: 0.55
   maximum_surface_feature_accuracy: 0.55

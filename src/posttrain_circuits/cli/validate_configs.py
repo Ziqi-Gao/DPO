@@ -6,18 +6,10 @@ import argparse
 import json
 from pathlib import Path
 
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-
-FACTORIAL_CELLS = {
-    "offline_hard": ("fixed_bank", "hard_teacher"),
-    "online_hard": ("current_policy", "hard_teacher"),
-    "offline_soft": ("fixed_bank", "soft_teacher"),
-    "online_soft_opd": ("current_policy", "soft_teacher"),
-    "offline_verified_replay": ("fixed_bank", "verified_replay"),
-    "online_verified_replay": ("current_policy", "verified_replay"),
-}
+from posttrain_circuits.methods.registry import FACTORIAL_METHOD_SPECS
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -50,7 +42,8 @@ def main(argv: list[str] | None = None) -> None:
         ],
     }
     for track, track_overrides in tracks.items():
-        for experiment, (state_source, supervision) in FACTORIAL_CELLS.items():
+        for method in FACTORIAL_METHOD_SPECS:
+            experiment = method.method_id
             config = compose_config(
                 [*track_overrides, f"experiment={experiment}"],
                 config_root=args.config_root,
@@ -59,10 +52,12 @@ def main(argv: list[str] | None = None) -> None:
                 config["state_source"]["name"],
                 config["supervision"]["name"],
             )
-            if actual != (state_source, supervision):
+            expected = (method.state_source, method.supervision)
+            if actual != expected:
                 raise RuntimeError(
-                    f"{track}/{experiment} resolved {actual}, expected {(state_source, supervision)}",
+                    f"{track}/{experiment} resolved {actual}, expected {expected}",
                 )
+            method.validate_resolved_config(config)
             rows.append(
                 {
                     "track": track,
@@ -73,6 +68,7 @@ def main(argv: list[str] | None = None) -> None:
                     "teacher": config["teacher"].get(
                         "model_name_or_path", config["teacher"].get("teacher_id")
                     ),
+                    "method_spec_sha256": method.scientific_sha256,
                     "resolved_config_sha256": sha256_value(config),
                 }
             )

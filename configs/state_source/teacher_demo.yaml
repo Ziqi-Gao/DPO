@@ -1,5 +1,7 @@
 name: teacher_demo
-store_path: outputs/teacher_demos/canonical
+store_path: /data/del6500/OPD/outputs/teacher_demos/canonical
 num_candidates: 8
 require_exact_verifier_success: true
-
+require_complete_prompt_coverage: true
+require_behavior_logprobs_for_formal_sft: true
+zero_success_policy: fail_closed

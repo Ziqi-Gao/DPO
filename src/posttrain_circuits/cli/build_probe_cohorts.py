@@ -5,113 +5,77 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
-
-from posttrain_circuits.circuits.probe_cohorts import (
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.runs import require_git_output
+from posttrain_circuits.datasets.circuit_probes.cohorts import (
     build_probe_cohort_manifest,
+    family_probe_pairs,
+    ordered_pair_population,
     write_probe_cohort_manifest,
 )
 from posttrain_circuits.cli._common import print_json
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.provenance import require_git_output
-
-
-def _jsonl(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
-
-
-def _eligible_candidates(
-    rows: list[dict[str, Any]],
-    scores: dict[str, dict[str, Any]],
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    selected = []
-    excluded = []
-    for row in rows:
-        example_id = str(row.get("example_id", ""))
-        score = scores.get(example_id)
-        if score is None:
-            raise ValueError(f"probe candidate {example_id!r} has no score")
-        initial = bool(score.get("initial_correct"))
-        learned = bool(score.get("learnable_after_post_training"))
-        if initial or learned:
-            selected.append(row)
-        else:
-            excluded.append(
-                {
-                    "example_id": example_id,
-                    "reason": "initially_unsolved_and_not_learned_by_frozen_calibration",
-                }
-            )
-    audit: dict[str, Any] = {
-        "candidate_count": len(rows),
-        "selected_count": len(selected),
-        "excluded_count": len(excluded),
-        "excluded": excluded,
-    }
-    audit["sha256"] = sha256_value(audit)
-    return selected, audit
+from posttrain_circuits.datasets.circuit_probes.contracts import SOURCE_SPLITS, SUBSETS
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Freeze hash-pinned circuit probe cohorts")
-    parser.add_argument("--splits-root", type=Path, required=True)
+    parser.add_argument("--dataset-family", type=Path, required=True)
     parser.add_argument("--scores", type=Path, required=True)
-    parser.add_argument("--initial-checkpoint-hash", required=True)
-    parser.add_argument("--learnability-evidence-hash", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--limit-per-split", type=int)
+    parser.add_argument(
+        "--limit-per-split",
+        type=int,
+        required=True,
+        help="Maximum ordered candidate pair groups per circuit split.",
+    )
     args = parser.parse_args(argv)
-    source_names = {
-        "discovery": "circuit_discovery",
-        "validation": "circuit_validation",
-    }
-    split_rows = {
-        subset: _jsonl(args.splits_root / source / "examples.jsonl")[: args.limit_per_split]
-        if args.limit_per_split is not None
-        else _jsonl(args.splits_root / source / "examples.jsonl")
-        for subset, source in source_names.items()
-    }
-    source_hashes = {
-        subset: str(
-            json.loads((args.splits_root / source / "manifest.json").read_text(encoding="utf-8"))["sha256"]
-        )
-        for subset, source in source_names.items()
-    }
+    family = load_dataset_family(args.dataset_family)
     scores_payload = json.loads(args.scores.read_text(encoding="utf-8"))
     score_digest = scores_payload.get("sha256")
     score_content = {key: value for key, value in scores_payload.items() if key != "sha256"}
     if score_digest != sha256_value(score_content):
         raise ValueError("probe score artifact hash mismatch")
-    score_rows = scores_payload.get("scores", scores_payload)
-    if isinstance(score_rows, list):
-        scores = {str(row["example_id"]): row for row in score_rows}
-    elif isinstance(score_rows, dict):
-        scores = {str(key): dict(value) for key, value in score_rows.items()}
-    else:
-        raise TypeError("probe scores must be a mapping or a list of score rows")
-    candidate_audit = {}
-    for subset, rows in split_rows.items():
-        split_rows[subset], candidate_audit[subset] = _eligible_candidates(rows, scores)
+    score_rows = scores_payload.get("scores")
+    if not isinstance(score_rows, dict):
+        raise TypeError("probe score artifact requires an exact score mapping")
+    scores = {str(key): dict(value) for key, value in score_rows.items()}
+    expected_source_hashes = {
+        subset: str(
+            family.boundary(SOURCE_SPLITS[subset])["examples_file_sha256"]
+        )
+        for subset in SUBSETS
+    }
+    if scores_payload.get("source_dataset_family_hash") != family.manifest["sha256"]:
+        raise ValueError("probe scores bind a different dataset family")
+    if scores_payload.get("source_split_hashes") != expected_source_hashes:
+        raise ValueError("probe scores bind different circuit source splits")
+    expected_population = {
+        subset: ordered_pair_population(
+            family_probe_pairs(
+                family,
+                subset=subset,
+                limit_pairs=args.limit_per_split,
+            )
+        )
+        for subset in SUBSETS
+    }
+    if scores_payload.get("ordered_candidate_pairs") != expected_population:
+        raise ValueError("probe score candidate pair order differs from the frozen family")
     prereg_path = str(scores_payload.get("prereg_path", ""))
     if not prereg_path:
         raise ValueError("probe scores do not bind a preregistration path")
     manifest = build_probe_cohort_manifest(
-        split_rows,
+        family,
         scores,
-        source_split_hashes=source_hashes,
-        initial_student_checkpoint_hash=args.initial_checkpoint_hash,
-        scoring_manifest_hash=sha256_file(args.scores),
-        learnability_evidence_hash=args.learnability_evidence_hash,
+        initial_student_checkpoint_hash=str(scores_payload.get("initial_checkpoint_sha256", "")),
+        scoring_manifest_hash=str(score_digest),
+        eligibility_evidence_ancestry=scores_payload.get(
+            "eligibility_evidence_ancestry", []
+        ),
+        limit_pairs_per_split=args.limit_per_split,
         git_commit=require_git_output(["rev-parse", "HEAD"]),
         prereg_commit=require_git_output(["log", "-n", "1", "--format=%H", "--", prereg_path]),
-        source_artifacts={
-            subset: {
-                "path": str((args.splits_root / source).resolve()),
-                "manifest_hash": source_hashes[subset],
-            }
-            for subset, source in source_names.items()
-        },
-        candidate_selection_audit=candidate_audit,
         protocol_bindings={
             key: scores_payload[key]
             for key in (

@@ -9,20 +9,24 @@ from pathlib import Path
 
 import torch
 
-from posttrain_circuits.circuits.cross_mask_transfer import evaluate_mask_transfer
-from posttrain_circuits.circuits.exact_patching import (
+from posttrain_circuits.artifacts.compatibility import require_scientific_artifact
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import formal_artifact_binding
+from posttrain_circuits.causal_circuits.validation.cross_mask_transfer import evaluate_mask_transfer
+from posttrain_circuits.causal_circuits.interventions.exact_patching import (
     ExactPatchingBackend,
     ExactTokenPair,
     normalize_circuit_scores,
 )
-from posttrain_circuits.circuits.faithfulness import (
+from posttrain_circuits.causal_circuits.validation.faithfulness import (
     faithfulness_sparsity_curve,
 )
-from posttrain_circuits.circuits.plots import (
+from posttrain_circuits.causal_circuits.metrics.plots import (
     write_attribution_patching_calibration,
 )
-from posttrain_circuits.circuits.probe_cohorts import load_probe_examples
-from posttrain_circuits.circuits.probes import (
+from posttrain_circuits.datasets.circuit_probes.cohorts import load_probe_examples
+from posttrain_circuits.causal_circuits.metrics.probes import (
     CIRCUIT_PROBE_SCHEMA_VERSION,
     CircuitProbeSpec,
     TargetSequenceMetric,
@@ -35,10 +39,6 @@ from posttrain_circuits.core.config import (
     compose_config,
     is_production_scale,
 )
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import formal_artifact_binding
-from posttrain_circuits.core.scientific_versions import require_scientific_artifact
 from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
     move_model_to_local_cuda,
@@ -65,10 +65,9 @@ def _load_tokenized_probes(
     artifact: dict[str, object],
     tokenizer: object,
 ) -> tuple[list[CircuitProbeSpec], dict[str, object]]:
-    path = Path(str(artifact.get("tokenized_probe_manifest_path", "")))
-    if not path.is_file():
-        raise ValueError("exact patching requires the frozen tokenized probe manifest from discovery")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = artifact.get("tokenized_probe_manifest")
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("exact patching requires embedded frozen tokenized probes from discovery")
     content = {key: value for key, value in payload.items() if key != "sha256"}
     if payload.get("sha256") != sha256_value(content):
         raise ValueError("tokenized circuit probe manifest hash mismatch")
@@ -78,7 +77,7 @@ def _load_tokenized_probes(
         raise ValueError("exact patching rejects legacy circuit probe schemas")
     if payload.get("tokenizer_hash") != tokenizer_fingerprint(tokenizer):
         raise ValueError("exact patching tokenizer hash differs from frozen discovery probes")
-    probes = [CircuitProbeSpec(**row) for row in payload["probes"]]
+    probes = [CircuitProbeSpec.from_mapping(row) for row in payload["probes"]]
     return probes, payload
 
 
@@ -242,6 +241,7 @@ def main(argv: list[str] | None = None) -> None:
         "stage_target_manifest_hash": artifact.get("stage_target_manifest_hash"),
         "selected_vs_matched_random_cpr_margin": evaluation.get("selected_vs_matched_random_cpr_margin"),
     }
+    transfer_source_artifact = None
     if args.transfer_source_circuit is not None:
         source_artifact = json.loads(args.transfer_source_circuit.read_text(encoding="utf-8"))
         require_scientific_artifact(
@@ -256,6 +256,7 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("mask-transfer source uses a different frozen probe cohort")
         if source_artifact.get("graph_convention") != artifact.get("graph_convention"):
             raise ValueError("mask-transfer source uses a different graph convention")
+        transfer_source_artifact = source_artifact
         source_scores, source_unsupported = normalize_circuit_scores(
             model,
             {key: float(value) for key, value in source_artifact["scores"].items()},
@@ -290,7 +291,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     evaluation["artifacts"] = {
         "calibration_plot": calibration_paths,
-        "circuit_artifact": str(args.circuit_artifact),
+        "discovery_artifact": artifact,
+        "discovery_artifact_path": str(args.circuit_artifact),
+        "tokenized_probe_manifest": tokenized_manifest,
+        "validation_probe_specs": [asdict(probe) for probe in validation_probes],
+        "transfer_source_artifact": transfer_source_artifact,
         "checkpoint": (str(args.checkpoint) if args.checkpoint is not None else None),
         "checkpoint_sha256": artifact.get("checkpoint_sha256"),
         "probe_cohort": artifact.get("probe_cohort"),

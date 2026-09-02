@@ -8,9 +8,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.tasks.anchors import (
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.datasets.anchors import (
     AnchorExample,
     require_base_accuracy,
 )

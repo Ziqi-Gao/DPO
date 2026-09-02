@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from posttrain_circuits.circuits.mib_eap_ig import (
+from posttrain_circuits.artifacts.hashing import sha256_file
+from posttrain_circuits.causal_circuits.discovery.backends.mib_eap_ig import (
     MibEapIgAdapter,
     write_fixed_discovery_pairs,
 )
-from posttrain_circuits.core.hashing import sha256_file
 
 
 @pytest.mark.unit
@@ -66,7 +66,7 @@ def test_mib_execution_uses_fixed_pairs_and_complete_scores(
                     "pair_count": 1,
                     "pair_manifest_hash": "pair-hash",
                     "bootstrap_replicates": 2,
-                    "uncertainty_method": ("prompt_bootstrap_standard_error"),
+                    "uncertainty_method": ("prompt_bootstrap_standard_deviation"),
                     "compatibility_hash": "compatibility-hash",
                     "graph": {
                         "nodes": {"layer.0.q": {"score": 1.5}},
@@ -79,7 +79,7 @@ def test_mib_execution_uses_fixed_pairs_and_complete_scores(
         )
 
     monkeypatch.setattr(
-        "posttrain_circuits.circuits.mib_eap_ig.subprocess.run",
+        "posttrain_circuits.causal_circuits.discovery.backends.mib_eap_ig.subprocess.run",
         fake_run,
     )
     scores = adapter.run(
@@ -102,7 +102,7 @@ def test_mib_execution_uses_fixed_pairs_and_complete_scores(
     command = calls[0][0]
     assert command[1:3] == [
         "-m",
-        "posttrain_circuits.circuits.mib_runner",
+        "posttrain_circuits.causal_circuits.model.runner",
     ]
     assert command[command.index("--pairs") + 1] == str(pairs)
     assert command[command.index("--model-revision") + 1] == ("resolved-commit")

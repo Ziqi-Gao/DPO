@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from posttrain_circuits.circuits.dynamics import (
+from posttrain_circuits.causal_circuits.dynamics import (
     attribution_rank_stability,
     continuous_churn,
     locking_time_bootstrap,
@@ -16,39 +16,39 @@ from posttrain_circuits.circuits.dynamics import (
     thresholded_churn,
     weighted_overlap,
 )
-from posttrain_circuits.circuits.exact_patching import (
+from posttrain_circuits.causal_circuits.interventions.exact_patching import (
     ExactPatchingBackend,
     ExactTokenPair,
     component_metadata,
     normalize_circuit_scores,
 )
-from posttrain_circuits.circuits.faithfulness import (
+from posttrain_circuits.causal_circuits.validation.faithfulness import (
     REQUIRED_SPARSITY_GRID,
     faithfulness_sparsity_curve,
     integrate_curve,
 )
-from posttrain_circuits.circuits.graph import (
+from posttrain_circuits.causal_circuits.contracts import (
     AblationSpec,
     CircuitArtifact,
     CircuitEvaluation,
     CircuitMask,
+    q_to_kv_head_mapping,
 )
-from posttrain_circuits.circuits.masks import (
+from posttrain_circuits.causal_circuits.interventions.masks import (
     layer_matched_random_mask,
     top_mask,
 )
-from posttrain_circuits.circuits.mib_eap_ig import MibEapIgAdapter
-from posttrain_circuits.circuits.model_adapter import (
+from posttrain_circuits.causal_circuits.discovery.backends.mib_eap_ig import MibEapIgAdapter
+from posttrain_circuits.causal_circuits.model.adapter import (
     build_transformerlens_qwen_from_hf,
     check_hf_identity_compatibility,
-    q_to_kv_head_mapping,
     require_compatible_for_extraction,
     require_transformerlens_parity,
 )
-from posttrain_circuits.circuits.plots import (
+from posttrain_circuits.causal_circuits.metrics.plots import (
     write_attribution_patching_calibration,
 )
-from posttrain_circuits.circuits.tiny_eap_ig import TinyEapIgBackend
+from posttrain_circuits.causal_circuits.discovery.backends.tiny_eap_ig import TinyEapIgBackend
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_qwen3
 
 
@@ -155,23 +155,26 @@ def test_exact_head_gqa_and_selected_path_patching(
         "discovery",
         torch.tensor([[2, 4, 5, 6]]),
         torch.tensor([[2, 4, 8, 6]]),
+        clean_intervention_positions=(2,),
+        corrupt_intervention_positions=(2,),
     )
     validation = [
         ExactTokenPair(
             "heldout-1",
             torch.tensor([[2, 5, 6, 7]]),
             torch.tensor([[2, 5, 9, 7]]),
+            clean_intervention_positions=(2,),
+            corrupt_intervention_positions=(2,),
         ),
         ExactTokenPair(
             "heldout-2",
             torch.tensor([[2, 6, 7, 8]]),
             torch.tensor([[2, 6, 10, 8]]),
+            clean_intervention_positions=(2,),
+            corrupt_intervention_positions=(2,),
         ),
     ]
-    backend = ExactPatchingBackend(
-        discovery.clean_ids,
-        discovery.corrupt_ids,
-    )
+    backend = ExactPatchingBackend(discovery)
 
     def metric(logits: torch.Tensor) -> torch.Tensor:
         return logits[:, -1, 10].mean() - logits[:, -1, 11].mean()
@@ -334,7 +337,7 @@ def test_mib_parser_preserves_full_graph_and_uncertainty() -> None:
         "backend_revision": "commit",
         "method": "EAP-IG-inputs",
         "pair_count": 4,
-        "uncertainty_method": "prompt_bootstrap_standard_error",
+        "uncertainty_method": "prompt_bootstrap_standard_deviation",
         "graph": {
             "nodes": {
                 "a0.h0": {"score": 0.2, "in_graph": True},
@@ -370,11 +373,15 @@ def test_tiny_eap_ig_writes_base_and_sft_artifacts(
             "p1",
             torch.tensor([[2, 4, 5]]),
             torch.tensor([[2, 4, 6]]),
+            clean_intervention_positions=(2,),
+            corrupt_intervention_positions=(2,),
         ),
         ExactTokenPair(
             "p2",
             torch.tensor([[2, 7, 8]]),
             torch.tensor([[2, 7, 9]]),
+            clean_intervention_positions=(2,),
+            corrupt_intervention_positions=(2,),
         ),
     ]
 
@@ -413,12 +420,17 @@ def test_tiny_eap_ig_writes_base_and_sft_artifacts(
             ablation_baseline="counterfactual_replacement",
             scores=scores.scores,
             score_uncertainty=scores.uncertainty,
+            semantic_probe_manifest={"probes": ["semantic"]},
+            tokenized_probe_manifest={"probes": ["tokenized"]},
+            discovery_pair_manifest={"pairs": ["p1", "p2"]},
+            probe_cohort_manifest={"cohort": "tiny"},
+            model_compatibility={"passed": True},
             node_scores=scores.node_scores,
             backend_name="tiny-hf-eap-ig",
             backend_revision="in-repository-v1",
             attribution_method=backend.method,
             discovery_pair_count=2,
-            uncertainty_method="prompt_standard_error",
+            uncertainty_method="prompt_pair_standard_deviation",
         )
         path = tmp_path / f"{checkpoint}.json"
         artifact.write(path)
@@ -440,7 +452,7 @@ def test_masks_curves_dynamics_and_serialization(
     mask = top_mask(scores, 2 / 3)
     assert mask.components == ("layer.0.a", "layer.1.c")
     random_mask = layer_matched_random_mask(
-        tuple(scores),
+        (*scores, "layer.1.d"),
         mask,
         3,
     )
@@ -458,9 +470,9 @@ def test_masks_curves_dynamics_and_serialization(
         threshold=1.5,
     ) == pytest.approx(0.5)
     series = [
-        {"edge": 0.0},
-        {"edge": 0.2},
-        {"edge": 0.3},
+        {"edge": 0.0, "stable": 1.0},
+        {"edge": 0.2, "stable": 0.9},
+        {"edge": 0.3, "stable": 0.8},
     ]
     summary = summarize_dynamics(
         series,
@@ -489,6 +501,11 @@ def test_masks_curves_dynamics_and_serialization(
         "counterfactual_replacement",
         scores,
         {},
+        {"probes": ["semantic"]},
+        {"probes": ["tokenized"]},
+        {"pairs": ["p1"]},
+        {"cohort": "tiny"},
+        {"passed": True},
     )
     path = tmp_path / "circuit.json"
     artifact.write(path)

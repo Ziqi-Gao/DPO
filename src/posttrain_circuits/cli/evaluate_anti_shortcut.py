@@ -8,19 +8,19 @@ from typing import Any
 
 import torch
 
-from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import formal_artifact_binding, require_git_output
+from posttrain_circuits.causal_circuits.model.runner import load_checkpoint_into_hf_model
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import formal_artifact_binding, require_git_output
-from posttrain_circuits.data.splits import build_split
+from posttrain_circuits.datasets.proofgraph.splits import build_split
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.models.prompt_protocol import format_model_prompt
-from posttrain_circuits.tasks.proofgraph.anti_shortcut import (
+from posttrain_circuits.datasets.proofgraph.anti_shortcut import (
     build_anti_shortcut_suite,
     evaluate_anti_shortcut_suite,
 )
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 

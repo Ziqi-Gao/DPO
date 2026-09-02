@@ -6,31 +6,34 @@ from pathlib import Path
 import pytest
 import torch
 
-from posttrain_circuits.circuits.dynamics import (
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.causal_circuits.dynamics import (
     circuit_stability_report,
     estimate_estimator_noise_floor,
 )
-from posttrain_circuits.circuits.probe_cohorts import (
+from posttrain_circuits.datasets.circuit_probes.cohorts import (
     build_probe_cohort_manifest,
+    family_probe_pairs,
     validate_probe_cohort_manifest,
     write_probe_cohort_manifest,
 )
 from posttrain_circuits.cli.analyze_circuit_dynamics import _mask_transfer
-from posttrain_circuits.cli.build_probe_cohorts import _eligible_candidates
 from posttrain_circuits.cli.finalize_pilot import _curve
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.manifests import atomic_write_json
 from posttrain_circuits.core.readiness import (
     require_factorial_prerequisites,
     validate_anti_shortcut_report,
 )
-from posttrain_circuits.tasks.proofgraph.anti_shortcut import (
+from posttrain_circuits.datasets.proofgraph.anti_shortcut import (
     TRANSFORMATIONS,
     build_anti_shortcut_suite,
     evaluate_anti_shortcut_suite,
 )
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.training.local_fork import (
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.proofgraph.manifests import write_dataset_family
+from posttrain_circuits.datasets.proofgraph.splits import SPLITS, build_all_splits
+from posttrain_circuits.learning.training.local_fork import (
     _probe_kl,
     calibrate_learning_rate_for_output_kl,
     output_kl_match_status,
@@ -96,7 +99,7 @@ def test_anti_shortcut_gate_rejects_failed_or_wrong_checkpoint_report(tmp_path: 
     passing = copy.deepcopy(report)
     passing.update({"shortcut_gap": 0.0, "transformed_accuracy": 1.0, "passed": True})
     passing.pop("sha256")
-    from posttrain_circuits.core.hashing import sha256_value
+    from posttrain_circuits.artifacts.hashing import sha256_value
 
     passing["sha256"] = sha256_value(passing)
     atomic_write_json(path, passing)
@@ -108,80 +111,111 @@ def test_anti_shortcut_gate_rejects_failed_or_wrong_checkpoint_report(tmp_path: 
         )
 
 
-def _probe_rows() -> dict[str, list[dict[str, object]]]:
-    return {
-        "discovery": [
-            {"example_id": "d-capable", "pair_group_id": "pair-d-capable", "payload": 1},
-            {"example_id": "d-challenge", "pair_group_id": "pair-d-challenge", "payload": 2},
-        ],
-        "validation": [
-            {"example_id": "v-capable", "pair_group_id": "pair-v-capable", "payload": 3},
-            {"example_id": "v-challenge", "pair_group_id": "pair-v-challenge", "payload": 4},
-        ],
-    }
+def _probe_family(root: Path):  # type: ignore[no-untyped-def]
+    splits = build_all_splits(
+        ProofGraphTask(),
+        split_sizes={split: 8 for split in SPLITS},
+        base_seed=812,
+        difficulty={},
+    )
+    write_dataset_family(root, splits)
+    return load_dataset_family(root)
+
+
+def _probe_scores(family, *, limit: int = 2):  # type: ignore[no-untyped-def]
+    scores = {}
+    for subset in ("discovery", "validation"):
+        for index, pair in enumerate(
+            family_probe_pairs(family, subset=subset, limit_pairs=limit)
+        ):
+            for example in pair.examples:
+                scores[example.example_id] = {
+                    "initial_correct": index == 0,
+                    "learnable_after_post_training": True,
+                }
+    return scores
+
+
+def _probe_ancestry() -> list[dict[str, str]]:
+    return [
+        {
+            "calibration_checkpoint_sha256": "a" * 64,
+            "calibration_run_manifest_sha256": "b" * 64,
+            "calibration_run_id": "calibration",
+            "experiment_binding_sha256": "c" * 64,
+        }
+    ]
 
 
 @pytest.mark.unit
 def test_probe_cohorts_are_complete_disjoint_and_hash_pinned(tmp_path: Path) -> None:
-    scores = {
-        "d-capable": {"initial_correct": True, "learnable_after_post_training": True},
-        "d-challenge": {"initial_correct": False, "learnable_after_post_training": True},
-        "v-capable": {"initial_correct": True, "learnable_after_post_training": True},
-        "v-challenge": {"initial_correct": False, "learnable_after_post_training": True},
-    }
+    family = _probe_family(tmp_path / "family")
+    scores = _probe_scores(family)
     manifest = build_probe_cohort_manifest(
-        _probe_rows(),
+        family,
         scores,
-        source_split_hashes={"discovery": "discovery-hash", "validation": "validation-hash"},
-        initial_student_checkpoint_hash="local-random-v1",
-        scoring_manifest_hash="score-hash",
-        learnability_evidence_hash="pilot-hash",
+        initial_student_checkpoint_hash="d" * 64,
+        scoring_manifest_hash="e" * 64,
+        eligibility_evidence_ancestry=_probe_ancestry(),
+        limit_pairs_per_split=2,
     )
-    write_probe_cohort_manifest(tmp_path, manifest)
-    validated = validate_probe_cohort_manifest(tmp_path / "manifest.json")
+    output = tmp_path / "cohort"
+    write_probe_cohort_manifest(output, manifest)
+    validated = validate_probe_cohort_manifest(output / "manifest.json")
     assert validated["sha256"] == manifest["sha256"]
     assert validated["git_commit"] == "test-unfrozen"
     assert validated["prereg_commit"] == "test-unfrozen"
-    assert validated["training_ancestry"] == []
-    assert validated["cohorts"]["base_capable"]["discovery"]["num_examples"] == 1
-    assert validated["cohorts"]["challenge"]["validation"]["num_examples"] == 1
+    assert validated["confirmatory_training_ancestry"] == []
+    assert validated["eligibility_evidence_ancestry"] == _probe_ancestry()
+    assert validated["cohorts"]["base_capable"]["discovery"]["num_examples"] == 2
+    assert validated["cohorts"]["challenge"]["validation"]["num_examples"] == 2
     bad_scores = copy.deepcopy(scores)
-    bad_scores["d-challenge"]["learnable_after_post_training"] = False
-    with pytest.raises(ValueError, match="learnability"):
+    challenge_pair = family_probe_pairs(
+        family,
+        subset="discovery",
+        limit_pairs=2,
+    )[1]
+    bad_scores[challenge_pair.examples[0].example_id][
+        "learnable_after_post_training"
+    ] = False
+    with pytest.raises(ValueError, match="mixed sibling evidence"):
         build_probe_cohort_manifest(
-            _probe_rows(),
+            family,
             bad_scores,
-            source_split_hashes={"discovery": "d", "validation": "v"},
-            initial_student_checkpoint_hash="base",
-            scoring_manifest_hash="scores",
-            learnability_evidence_hash="pilot",
+            initial_student_checkpoint_hash="d" * 64,
+            scoring_manifest_hash="e" * 64,
+            eligibility_evidence_ancestry=_probe_ancestry(),
+            limit_pairs_per_split=2,
         )
 
 
 @pytest.mark.unit
-def test_unlearned_probe_candidates_are_excluded_with_a_hash_audit() -> None:
-    rows = [
-        {"example_id": "base"},
-        {"example_id": "challenge"},
-        {"example_id": "not-eligible"},
-    ]
-    scores = {
-        "base": {"initial_correct": True, "learnable_after_post_training": True},
-        "challenge": {"initial_correct": False, "learnable_after_post_training": True},
-        "not-eligible": {"initial_correct": False, "learnable_after_post_training": False},
-    }
-    selected, audit = _eligible_candidates(rows, scores)
-    assert [row["example_id"] for row in selected] == ["base", "challenge"]
-    assert audit["candidate_count"] == 3
-    assert audit["selected_count"] == 2
-    assert audit["excluded"][0]["example_id"] == "not-eligible"
-    from posttrain_circuits.core.hashing import sha256_value
-
-    assert audit["sha256"] == sha256_value({key: value for key, value in audit.items() if key != "sha256"})
+def test_unlearned_probe_pairs_are_excluded_with_a_top_level_audit(tmp_path: Path) -> None:
+    family = _probe_family(tmp_path / "family")
+    scores = _probe_scores(family, limit=3)
+    for subset in ("discovery", "validation"):
+        pair = family_probe_pairs(family, subset=subset, limit_pairs=3)[2]
+        for example in pair.examples:
+            scores[example.example_id]["learnable_after_post_training"] = False
+    manifest = build_probe_cohort_manifest(
+        family,
+        scores,
+        initial_student_checkpoint_hash="d" * 64,
+        scoring_manifest_hash="e" * 64,
+        eligibility_evidence_ancestry=_probe_ancestry(),
+        limit_pairs_per_split=3,
+    )
+    audit = manifest["candidate_selection"]["discovery"]
+    assert audit["candidate_pair_count"] == 3
+    assert audit["selected_pair_count"] == 2
+    assert audit["excluded_pair_count"] == 1
+    assert audit["exclusions"][0]["reason"].startswith("initially_unsolved")
+    assert "sha256" not in audit
 
 
 @pytest.mark.unit
 def test_factorial_preflight_requires_both_hash_pinned_gates(tmp_path: Path) -> None:
+    checkpoint_hash = "d" * 64
     task = ProofGraphTask()
     examples = [task.generate(30, {"positive": True, "distractors": 1})]
     cases = build_anti_shortcut_suite(examples, seed=3, distractor_ood_count=4)
@@ -190,31 +224,26 @@ def test_factorial_preflight_requires_both_hash_pinned_gates(tmp_path: Path) -> 
         cases,
         lambda example, _prompt: task.canonical_target(example),
         max_shortcut_gap=0.05,
-        model_checkpoint_hash="local-random-v1",
+        model_checkpoint_hash=checkpoint_hash,
     )
     anti_path = tmp_path / "anti.json"
     atomic_write_json(anti_path, report)
-    scores = {
-        key: {
-            "initial_correct": "capable" in key,
-            "learnable_after_post_training": True,
-        }
-        for rows in _probe_rows().values()
-        for key in [str(row["example_id"]) for row in rows]
-    }
+    family = _probe_family(tmp_path / "family")
+    scores = _probe_scores(family)
     probes = build_probe_cohort_manifest(
-        _probe_rows(),
+        family,
         scores,
-        source_split_hashes={"discovery": "d", "validation": "v"},
-        initial_student_checkpoint_hash="local-random-v1",
-        scoring_manifest_hash="scores",
-        learnability_evidence_hash="pilot",
+        initial_student_checkpoint_hash=checkpoint_hash,
+        scoring_manifest_hash="e" * 64,
+        eligibility_evidence_ancestry=_probe_ancestry(),
+        limit_pairs_per_split=2,
     )
     probe_root = tmp_path / "probes"
     write_probe_cohort_manifest(probe_root, probes)
     config = compose_config(
         [
             "experiment=offline_soft",
+            f"model.model_revision={checkpoint_hash}",
             f"anti_shortcut.report_path={anti_path}",
             f"production_safety.probe_cohort_manifest={probe_root / 'manifest.json'}",
         ]

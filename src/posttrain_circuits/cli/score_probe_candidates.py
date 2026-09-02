@@ -3,23 +3,33 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any
 
 import torch
 
-from posttrain_circuits.circuits.mib_runner import load_checkpoint_into_hf_model
+from posttrain_circuits.artifacts.compatibility import scientific_compatibility_fields
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import (
+    formal_artifact_binding,
+    validate_run_manifest_payload,
+)
+from posttrain_circuits.causal_circuits.model.runner import load_checkpoint_into_hf_model
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import formal_artifact_binding
-from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
-from posttrain_circuits.data.splits import load_frozen_split
+from posttrain_circuits.datasets.circuit_probes.cohorts import (
+    family_probe_pairs,
+    flatten_pairs,
+    ordered_pair_population,
+)
+from posttrain_circuits.datasets.circuit_probes.contracts import SOURCE_SPLITS, SUBSETS
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.models.prompt_protocol import format_model_prompt
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.tasks.proofgraph.metrics import aggregate_verification
-from posttrain_circuits.tasks.proofgraph.schemas import TaskExample, VerificationResult
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.metrics import aggregate_verification
+from posttrain_circuits.datasets.proofgraph.contracts import TaskExample, VerificationResult
 
 
 @torch.no_grad()
@@ -63,29 +73,36 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("overrides", nargs="*")
     parser.add_argument("--initial-checkpoint", type=Path, required=True)
     parser.add_argument("--calibration-checkpoint", type=Path, required=True)
-    parser.add_argument("--discovery-split", type=Path, required=True)
-    parser.add_argument("--validation-split", type=Path, required=True)
-    parser.add_argument("--task-validation-split", type=Path, required=True)
+    parser.add_argument("--calibration-run-manifest", type=Path, required=True)
+    parser.add_argument("--dataset-family", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--probe-limit-per-split", type=int, required=True)
+    parser.add_argument(
+        "--probe-limit-per-split",
+        type=int,
+        required=True,
+        help="Ordered pair-group count per circuit split.",
+    )
     parser.add_argument("--task-validation-limit", type=int, required=True)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
     if str(config["model"]["model_name_or_path"]).startswith("local/"):
         raise ValueError("production probe scoring cannot use a tiny model")
-    discovery, discovery_manifest = load_frozen_split(
-        args.discovery_split, expected_split="circuit_discovery"
+    family = load_dataset_family(args.dataset_family)
+    discovery_pairs = family_probe_pairs(
+        family,
+        subset="discovery",
+        limit_pairs=args.probe_limit_per_split,
     )
-    validation, validation_manifest = load_frozen_split(
-        args.validation_split, expected_split="circuit_validation"
+    validation_pairs = family_probe_pairs(
+        family,
+        subset="validation",
+        limit_pairs=args.probe_limit_per_split,
     )
-    task_validation, task_validation_manifest = load_frozen_split(
-        args.task_validation_split, expected_split="validation"
-    )
-    if args.probe_limit_per_split < 2 or args.task_validation_limit < 1:
+    discovery = flatten_pairs(discovery_pairs)
+    validation = flatten_pairs(validation_pairs)
+    task_validation = family.examples("validation")
+    if args.probe_limit_per_split < 1 or args.task_validation_limit < 1:
         raise ValueError("probe/validation scoring limits are too small")
-    discovery = discovery[: args.probe_limit_per_split]
-    validation = validation[: args.probe_limit_per_split]
     task_validation = task_validation[: args.task_validation_limit]
     loaded = load_model_and_tokenizer(config["model"], for_training=False)
     model = move_model_to_local_cuda(loaded.model)
@@ -107,6 +124,21 @@ def main(argv: list[str] | None = None) -> None:
         model_config=config["model"],
     )
     calibration_hash = sha256_file(args.calibration_checkpoint)
+    calibration_run = validate_run_manifest_payload(
+        json.loads(args.calibration_run_manifest.read_text(encoding="utf-8"))
+    )
+    if calibration_run.get("final_checkpoint_sha256") != calibration_hash:
+        raise ValueError("calibration run manifest does not bind the scoring checkpoint")
+    eligibility_evidence_ancestry = [
+        {
+            "calibration_checkpoint_sha256": calibration_hash,
+            "calibration_run_manifest_sha256": str(calibration_run["sha256"]),
+            "calibration_run_id": str(calibration_run.get("run_id", "")),
+            "experiment_binding_sha256": str(
+                calibration_run.get("experiment_binding_sha256", "")
+            ),
+        }
+    ]
     load_checkpoint_into_hf_model(model, args.calibration_checkpoint, expected_sha256=calibration_hash)
     calibrated_probe, _ = _score_examples(
         model,
@@ -146,10 +178,18 @@ def main(argv: list[str] | None = None) -> None:
         "chat_template_sha256": loaded.chat_template_sha256,
         "tokenizer_fingerprint": loaded.tokenizer_hash,
         "calibration_checkpoint_sha256": calibration_hash,
+        "eligibility_evidence_ancestry": eligibility_evidence_ancestry,
+        "source_dataset_family_hash": family.manifest["sha256"],
         "source_split_hashes": {
-            "discovery": discovery_manifest["sha256"],
-            "validation": validation_manifest["sha256"],
-            "task_validation": task_validation_manifest["sha256"],
+            subset: family.boundary(SOURCE_SPLITS[subset])["examples_file_sha256"]
+            for subset in SUBSETS
+        },
+        "task_validation_split_hash": family.boundary("validation")[
+            "examples_file_sha256"
+        ],
+        "ordered_candidate_pairs": {
+            "discovery": ordered_pair_population(discovery_pairs),
+            "validation": ordered_pair_population(validation_pairs),
         },
     }
     payload["sha256"] = sha256_value(payload)

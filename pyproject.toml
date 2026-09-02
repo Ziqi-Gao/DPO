@@ -66,9 +66,6 @@ ptc-check-factorial-prerequisites = "posttrain_circuits.cli.check_factorial_prer
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/posttrain_circuits"]
-ptc-evaluate-anti-shortcut = "posttrain_circuits.cli.evaluate_anti_shortcut:main"
-ptc-build-probe-cohorts = "posttrain_circuits.cli.build_probe_cohorts:main"
-ptc-check-factorial-prerequisites = "posttrain_circuits.cli.check_factorial_prerequisites:main"
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("pyarrow")
 
 from posttrain_circuits.cli.build_local_fork_inputs import main as build_local_fork_inputs
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
 from posttrain_circuits.utils.smoke import build_grouped_fork_bank, build_smoke_examples
 from posttrain_circuits.utils.tiny_model import build_tiny_tokenizer
 

@@ -5,4 +5,4 @@ depth: 2
 distractors: 2
 structure: chain
 balanced_labels: true
-
+dataset_family_path: /data/del6500/OPD/outputs/datasets/proofgraph

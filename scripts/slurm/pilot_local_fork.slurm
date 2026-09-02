@@ -26,7 +26,9 @@ inputs="${run_dir}/local_fork/inputs"
   pilot="${pilot_config}" experiment=local_fork model="${model_config}" teacher="${teacher_config}" \
   output_root="${OUTPUT_ROOT}" \
   task=proofgraph_main task.validation_split_path="${PILOT_VALIDATION_SPLIT:?}" \
-  --checkpoint "${checkpoint}" --prompts "${inputs}/prompts.json" \
+  --checkpoint "${checkpoint}" \
+  --source-manifest "${run_dir}/runs/canonical_sft/seed-42/manifest.json" \
+  --prompts "${inputs}/prompts.json" \
   --trajectory-store "${PILOT_COMMON_BANK}" --probe-set "${inputs}/probe_set.json" \
   --output "${run_dir}/local_fork/bundle.pt" --confirm-production
 "${PYTHON_BIN}" -m posttrain_circuits.cli.run_local_fork \

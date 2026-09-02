@@ -7,22 +7,24 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from posttrain_circuits.cli.finalize_pilot import _hash_valid as pilot_hash_valid
-from posttrain_circuits.cli.train import _require_qwen3_store_binding
-from posttrain_circuits.core.config import compose_config, validate_config
-from posttrain_circuits.core.provenance import (
+from posttrain_circuits.artifacts.config_bindings import bind_config
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.runs import (
     RunManifest,
     run_manifest_payload,
     validate_run_manifest_payload,
 )
-from posttrain_circuits.core.types import PromptBatch
+from posttrain_circuits.cli.finalize_pilot import _hash_valid as pilot_hash_valid
+from posttrain_circuits.cli.train import _require_qwen3_store_binding
+from posttrain_circuits.core.config import compose_config, validate_config
+from posttrain_circuits.learning.contracts import PromptBatch, SamplingCursor, SamplingRequest
 from posttrain_circuits.models.loading import tokenizer_fingerprint
 from posttrain_circuits.models.prompt_protocol import (
     chat_template_sha256,
     format_model_prompt,
 )
-from posttrain_circuits.rollout.generation import hf_generate_trajectories
-from posttrain_circuits.training.schedules import PromptScheduler
+from posttrain_circuits.learning.state_sources.generation import HF_SAMPLING_PROTOCOL_ID, hf_generate_trajectories
+from posttrain_circuits.learning.training.schedules import PromptScheduler
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 
@@ -142,7 +144,11 @@ def test_qwen3_sampling_parameters_reach_hf_generate(monkeypatch) -> None:  # ty
         tokenizer,
         PromptBatch(("p0",), ("FACTS F01 A",)),
         policy_version=0,
-        seed=17,
+        sampling_request=SamplingRequest(
+            sampling_request_seed=17,
+            sampling_protocol_id=HF_SAMPLING_PROTOCOL_ID,
+            cursors=(SamplingCursor(0, 0, "p0", 0),),
+        ),
         max_new_tokens=1,
         temperature=0.7,
         top_p=0.8,
@@ -202,6 +208,16 @@ def test_qwen3_artifacts_and_run_manifests_fail_closed_on_cross_model_or_tamper(
             expected_behavior_policy="Qwen/Qwen3-1.7B",
         )
 
+    config_binding = bind_config(
+        {"seed": 42},
+        input_artifact_hashes={},
+        execution_context={"entrypoint": "unit-test"},
+    )
+    experiment_binding = {
+        "fixture": "qwen3-run-binding-v3",
+        "factorial_design_sha256": "f" * 64,
+        "scientific_config_sha256": config_binding.scientific_config_sha256,
+    }
     manifest = RunManifest(
         run_id="qwen3-run",
         experiment_cell="offline_soft",
@@ -215,6 +231,15 @@ def test_qwen3_artifacts_and_run_manifests_fail_closed_on_cross_model_or_tamper(
         dataset_hashes={"train": "hash"},
         rollout_bank_hash="bank",
         prompt_schedule_hash="schedule",
+        experiment_binding=experiment_binding,
+        experiment_binding_sha256=sha256_value(experiment_binding),
+        factorial_design_sha256="f" * 64,
+        config_binding=config_binding.as_dict(),
+        resolved_config_sha256=config_binding.resolved_config_sha256,
+        scientific_config_sha256=config_binding.scientific_config_sha256,
+        execution_config_sha256=config_binding.execution_config_sha256,
+        execution_context=config_binding.as_dict()["execution_context"],
+        resolved_config_yaml_sha256="0" * 64,
         raw_prompt_schedule_hash="1" * 64,
         model_facing_prompt_schedule_hash="2" * 64,
         prompt_protocol="qwen3_non_thinking_v1",

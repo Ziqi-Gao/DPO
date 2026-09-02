@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 
+from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.cli._common import print_json
 from posttrain_circuits.core.config import compose_config, validate_production_training_config
-from posttrain_circuits.core.hashing import sha256_value
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> None:
             "backend": config["trainer"]["backend"],
             "max_steps": config["trainer"]["max_steps"],
             "token_budget": config["trainer"]["token_budget"],
-            "validation_split_path": config["task"]["validation_split_path"],
+            "dataset_family_path": config["task"]["dataset_family_path"],
         }
     )
 

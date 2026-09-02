@@ -7,13 +7,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.circuits.dynamics import circuit_stability_report
+from posttrain_circuits.artifacts.compatibility import scientific_compatibility_fields
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import formal_artifact_binding
+from posttrain_circuits.causal_circuits.dynamics import circuit_stability_report
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import formal_artifact_binding
 from posttrain_circuits.core.readiness import require_formal_prerequisite_binding
-from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 
 
 def _read(path: Path) -> dict[str, Any]:

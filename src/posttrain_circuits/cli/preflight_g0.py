@@ -1,4 +1,4 @@
-"""Read-only environment/provenance gate before submitting G0."""
+"""Read-only scientific/runtime readiness gate before an approved G0 execution."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import contextlib
 import importlib.util
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,12 +15,12 @@ from typing import Any
 import torch
 from transformers import AutoConfig, AutoTokenizer
 
-from posttrain_circuits.circuits.mib_eap_ig import MIB_REVISION
+from posttrain_circuits.artifacts.compatibility import scientific_compatibility_fields
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import require_git_output, resolve_preregistration
+from posttrain_circuits.causal_circuits.discovery.backends.mib_eap_ig import MIB_REVISION
 from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import require_git_output, resolve_preregistration
-from posttrain_circuits.core.scientific_versions import scientific_compatibility_fields
 
 
 def _git(args: list[str]) -> str:
@@ -71,17 +70,6 @@ def main(argv: list[str] | None = None) -> None:
     checks["pinned_mib"] = mib_revision == MIB_REVISION
     if not checks["pinned_mib"]:
         blockers.append(f"MIB_REPOSITORY is absent or not pinned to {MIB_REVISION}; observed={mib_revision}")
-    checks["slurm_client"] = shutil.which("sbatch") is not None
-    checks["slurm_account"] = bool(os.environ.get("SLURM_ACCOUNT"))
-    checks["slurm_gpu_partition"] = bool(
-        os.environ.get("SLURM_GPU_PARTITION") or os.environ.get("SLURM_PARTITION")
-    )
-    if not checks["slurm_client"]:
-        blockers.append("sbatch is unavailable")
-    if not checks["slurm_account"]:
-        blockers.append("SLURM_ACCOUNT is unset")
-    if not checks["slurm_gpu_partition"]:
-        blockers.append("SLURM_GPU_PARTITION/SLURM_PARTITION is unset")
     checks["cuda_torch_build"] = torch.version.cuda is not None
     if not checks["cuda_torch_build"]:
         blockers.append("the selected Python has a CPU-only torch build")
@@ -114,6 +102,14 @@ def main(argv: list[str] | None = None) -> None:
         checks["gpu_preflight_git_commit"] = gpu_preflight.get("git_commit") == git_commit
         checks["gpu_preflight_model_revision"] = (
             gpu_preflight.get("model_revision") == config["model"]["model_revision"]
+        )
+        execution_context = gpu_preflight.get("execution_context")
+        checks["gpu_preflight_foreground_allocation"] = (
+            isinstance(execution_context, dict)
+            and execution_context.get("mode") == "server_scheduler_foreground"
+            and execution_context.get("allocation_visibility") == "preserved"
+            and execution_context.get("distributed_launcher")
+            == "environment_rank_passthrough"
         )
         if str(config.get("protocol_track", "")).startswith("qwen3_"):
             namespace = str(config["model"]["artifact_namespace"])
@@ -159,6 +155,7 @@ def main(argv: list[str] | None = None) -> None:
             "gpu_preflight_world_size",
             "gpu_preflight_git_commit",
             "gpu_preflight_model_revision",
+            "gpu_preflight_foreground_allocation",
         ]
         if str(config.get("protocol_track", "")).startswith("qwen3_"):
             required_gpu_checks.extend(
@@ -179,6 +176,7 @@ def main(argv: list[str] | None = None) -> None:
             "gpu_preflight_world_size",
             "gpu_preflight_git_commit",
             "gpu_preflight_model_revision",
+            "gpu_preflight_foreground_allocation",
         ):
             checks[name] = False
         if str(config.get("protocol_track", "")).startswith("qwen3_"):
@@ -247,7 +245,7 @@ def main(argv: list[str] | None = None) -> None:
         encoding="utf-8",
     )
     if not payload["passed"]:
-        raise SystemExit("G0 preflight blocked; no GPU job submitted")
+        raise SystemExit("G0 preflight blocked; no execution is authorized")
 
 
 if __name__ == "__main__":

@@ -2,17 +2,23 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from collections import defaultdict
 
 import pytest
 import torch
 
-from posttrain_circuits.core.types import PromptBatch
-from posttrain_circuits.rollout.generation import (
+from posttrain_circuits.learning.contracts import (
+    PromptBatch,
+    SamplingCursor,
+    SamplingRequest,
+)
+from posttrain_circuits.learning.state_sources.generation import (
+    HF_SAMPLING_PROTOCOL_ID,
     build_proofgraph_hf_generator,
     hf_generate_trajectories,
 )
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.teacher.demo_generation import HfTeacherCandidateGenerator
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.learning.teacher.demo_generation import HfTeacherCandidateGenerator
 from posttrain_circuits.utils.smoke import build_smoke_examples
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
@@ -25,12 +31,29 @@ def _generate(
     prompt_batch: PromptBatch | None = None,
     temperature: float = 1.0,
 ):
+    prompts = prompt_batch or PromptBatch(("short", "long"), ("A", "A B C D"))
+    generation_indices: dict[str, int] = defaultdict(int)
+    cursors: list[SamplingCursor] = []
+    for prompt_id in prompts.prompt_ids:
+        cursors.append(
+            SamplingCursor(
+                optimizer_step=0,
+                retry_index=0,
+                prompt_id=prompt_id,
+                generation_index=generation_indices[prompt_id],
+            )
+        )
+        generation_indices[prompt_id] += 1
     return hf_generate_trajectories(
         model,
         tokenizer,
-        prompt_batch or PromptBatch(("short", "long"), ("A", "A B C D")),
+        prompts,
         policy_version=3,
-        seed=seed,
+        sampling_request=SamplingRequest(
+            sampling_request_seed=seed,
+            sampling_protocol_id=HF_SAMPLING_PROTOCOL_ID,
+            cursors=tuple(cursors),
+        ),
         max_new_tokens=6,
         temperature=temperature,
         top_p=1.0,
@@ -55,7 +78,8 @@ def test_real_qwen_generation_preserves_prompt_bytes_rng_and_padding_setting(
         assert record.input_ids == tokenizer(text, add_special_tokens=True)["input_ids"]
         assert len(record.response_ids) == len(record.response_token_mask)
         assert len(record.response_ids) == len(record.behavior_logprobs)
-        assert record.generation_seed == 101
+        assert record.sampling_request_seed == 101
+        assert record.actual_sampling_seed != record.sampling_request_seed
 
 
 @pytest.mark.unit
@@ -195,7 +219,11 @@ def test_canonical_proof_with_retained_eos_receives_reward_one(monkeypatch) -> N
         model,
         PromptBatch((example.example_id,), (task.render(example),)),
         policy_version=0,
-        seed=227,
+        sampling_request=SamplingRequest(
+            sampling_request_seed=227,
+            sampling_protocol_id=HF_SAMPLING_PROTOCOL_ID,
+            cursors=(SamplingCursor(0, 0, example.example_id, 0),),
+        ),
     )[0]
     assert record.response_ids[-1] == eos
     assert record.response_text == target
@@ -220,15 +248,19 @@ def test_teacher_generation_uses_supported_rng_context_with_real_qwen(monkeypatc
     first = generate(
         example=example,
         candidate_index=0,
-        generation_seed=123,
+        actual_sampling_seed=123,
         temperature=1.0,
         top_p=1.0,
     )
     second = generate(
         example=example,
         candidate_index=0,
-        generation_seed=123,
+        actual_sampling_seed=123,
         temperature=1.0,
         top_p=1.0,
     )
     assert first == second
+    assert first.response_ids is not None
+    assert first.token_logprobs is not None
+    assert len(first.response_ids) == len(first.token_logprobs)
+    assert first.logprob_status == "available"

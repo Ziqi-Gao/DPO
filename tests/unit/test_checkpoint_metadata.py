@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from posttrain_circuits.training.checkpointing import load_checkpoint, save_checkpoint
+from posttrain_circuits.artifacts.checkpoints import load_checkpoint, save_checkpoint
 
 
 @pytest.mark.unit

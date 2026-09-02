@@ -16,7 +16,7 @@ build/
 wandb/
 outputs/
 runs/
-artifacts/
+/artifacts/
 data/generated/
 data/rollout_banks/
 checkpoints/
@@ -25,5 +25,4 @@ checkpoints/
 *.pth
 *.ckpt
 *.parquet
-cluster.local.env
-.slurm-local.env
+project.local.env

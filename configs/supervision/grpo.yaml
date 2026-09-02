@@ -1,9 +1,14 @@
 name: grpo
+training_backend: trl.GRPOTrainer
+training_backend_version: 0.22.2
+training_batch_contract: 0.22.2-default-steps_per_generation
 beta: 0.0
 num_generations: 8
 temperature: 1.0
+top_p: 0.95
+top_k: 0
+min_p: 0.0
 max_completion_length: 256
 loss_type: dapo
 scale_rewards: false
 gradient_accumulation_steps: 8
-

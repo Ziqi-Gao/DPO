@@ -5,9 +5,9 @@ from dataclasses import asdict
 
 import pytest
 
-from posttrain_circuits.core.manifests import DatasetManifest
-from posttrain_circuits.data.splits import assert_split_isolation, build_split
-from posttrain_circuits.tasks.proofgraph.generator import CORRUPTIONS, ProofGraphTask
+from posttrain_circuits.artifacts.datasets import DatasetManifest
+from posttrain_circuits.datasets.proofgraph.splits import assert_split_isolation, build_split
+from posttrain_circuits.datasets.proofgraph.generation import CORRUPTIONS, ProofGraphTask
 
 
 @pytest.mark.unit

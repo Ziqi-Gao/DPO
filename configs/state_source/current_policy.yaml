@@ -1,6 +1,9 @@
 name: current_policy
 refresh_interval: 1
 max_policy_lag: 0
+refresh_boundary: optimizer_update
+retry_forces_refresh: false
 temperature: 1.0
 top_p: 0.95
-
+top_k: 0
+min_p: 0.0

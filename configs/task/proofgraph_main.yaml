@@ -11,6 +11,7 @@ structures: [chain, branch, converging_dag]
 balanced_labels: true
 unique_proof_for_circuits: true
 multiple_valid_proof_fraction: 0.0
+dataset_family_path: /data/del6500/OPD/outputs/datasets/proofgraph
 split_sizes:
   train: 100000
   validation: 10000

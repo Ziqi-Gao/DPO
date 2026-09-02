@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from posttrain_circuits.core.hashing import sha256_value
+from posttrain_circuits.artifacts.hashing import sha256_value
 
 LEGACY_PROMPT_PROTOCOL = "legacy_raw_v1"
 QWEN3_PROMPT_PROTOCOL = "qwen3_non_thinking_v1"
@@ -99,6 +99,17 @@ def format_model_prompts(
     model_config: dict[str, Any] | None = None,
 ) -> list[FormattedPrompt]:
     return [format_model_prompt(prompt, tokenizer, model_config) for prompt in raw_prompts]
+
+
+def prompt_schedule_hashes(prompts: list[FormattedPrompt]) -> tuple[str, str]:
+    """Return the canonical raw/model-facing identities shared by all trainers."""
+
+    if not prompts:
+        raise ValueError("prompt schedule cannot be empty")
+    return (
+        sha256_value([prompt.raw_prompt_sha256 for prompt in prompts]),
+        sha256_value([prompt.model_facing_prompt_sha256 for prompt in prompts]),
+    )
 
 
 def prompt_manifest(

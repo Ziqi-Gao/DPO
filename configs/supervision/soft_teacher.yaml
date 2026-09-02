@@ -1,8 +1,11 @@
 name: soft_teacher
+training_backend: factorial_trainer
+training_backend_version: in-repository-v1
+training_batch_contract: optimizer-boundary-gradient-accumulation-v1
 teacher_top_k: 128
 topk_mode: renormalized
 include_eos: true
 minimum_retained_mass: 0.90
+fail_below_minimum_retained_mass: false
 use_task_rewards: false
 use_policy_gradient: false
-

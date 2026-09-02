@@ -9,7 +9,12 @@ import pytest
 import torch
 import torch.nn.functional as functional
 
-from posttrain_circuits.circuits.probes import (
+from posttrain_circuits.artifacts.compatibility import (
+    require_core_v2_artifact,
+    scientific_compatibility_fields,
+)
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.causal_circuits.metrics.probes import (
     PROBE_STAGES,
     CircuitProbeSpec,
     build_semantic_probe_specs,
@@ -17,24 +22,20 @@ from posttrain_circuits.circuits.probes import (
     sequence_log_probability,
     tokenize_probe_specs,
 )
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.scientific_versions import (
-    require_core_v2_artifact,
-    scientific_compatibility_fields,
-)
-from posttrain_circuits.core.types import TrajectoryBatch
-from posttrain_circuits.data.splits import assert_split_isolation, build_split, load_frozen_split
-from posttrain_circuits.supervision.verified_replay import VerifiedReplaySupervisor
-from posttrain_circuits.tasks.proofgraph.label_leakage import audit_label_leakage
-from posttrain_circuits.tasks.proofgraph.schemas import Literal
-from posttrain_circuits.teacher.evaluation import (
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.proofgraph.splits import assert_split_isolation, build_split
+from posttrain_circuits.learning.contracts import TrajectoryBatch
+from posttrain_circuits.learning.supervision.verified_replay import VerifiedReplaySupervisor
+from posttrain_circuits.datasets.proofgraph.leakage import audit_label_leakage
+from posttrain_circuits.datasets.proofgraph.contracts import Literal
+from posttrain_circuits.learning.teacher.evaluation import (
     TeacherPrefixScore,
     TeacherReadinessThresholds,
     evaluate_teacher_readiness,
     validate_teacher_readiness_artifact,
 )
-from posttrain_circuits.training.grpo_backend import GrpoSettings, resolve_grpo_batch_contract
-from posttrain_circuits.training.local_fork import (
+from posttrain_circuits.learning.training.grpo_backend import GrpoSettings, resolve_grpo_batch_contract
+from posttrain_circuits.learning.training.local_fork import (
     SharedTrajectoryCenteredPolicyGradientSupervisor,
     SharedTrajectoryUncenteredReinforceDiagnostic,
 )
@@ -43,24 +44,18 @@ from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_toke
 
 
 @pytest.mark.unit
-def test_formal_loaders_reject_v1_dataset_and_circuit_artifacts(tmp_path: Path) -> None:
-    split_root = tmp_path / "validation"
-    split_root.mkdir()
-    (split_root / "examples.jsonl").write_text("", encoding="utf-8")
-    (split_root / "manifest.json").write_text(
-        json.dumps(
-            {
-                "split_name": "validation",
-                "prereg_version": "core_v1",
-                "generator_version": "proofgraph-v2",
-                "label_semantics": "binary_provability",
-                "dataset_schema_version": "proofgraph-dataset-v1",
-            }
-        ),
-        encoding="utf-8",
+def test_formal_loaders_reject_v1_dataset_and_circuit_artifacts(
+    dataset_family_path: Path,
+) -> None:
+    manifest_path = dataset_family_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["generator_version"] = "proofgraph-v2"
+    manifest["sha256"] = sha256_value(
+        {key: value for key, value in manifest.items() if key != "sha256"}
     )
-    with pytest.raises(ValueError, match="incompatible with core_v2"):
-        load_frozen_split(split_root, expected_split="validation")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="scientific identity changed"):
+        load_dataset_family(dataset_family_path)
 
     v1_circuit = {
         "prereg_version": "core_v1",
@@ -83,15 +78,15 @@ def test_formal_loaders_reject_v1_dataset_and_circuit_artifacts(tmp_path: Path) 
 def test_paired_signed_entailment_hundreds_have_symmetric_nonempty_proofs() -> None:
     task_examples = build_split(
         __import__(
-            "posttrain_circuits.tasks.proofgraph.generator", fromlist=["ProofGraphTask"]
+            "posttrain_circuits.datasets.proofgraph.generation", fromlist=["ProofGraphTask"]
         ).ProofGraphTask(),
         "train",
         400,
         700,
         {"depth_range": [2, 4], "distractor_range": [1, 3]},
     )
-    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-    from posttrain_circuits.tasks.proofgraph.verifier import closure
+    from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+    from posttrain_circuits.datasets.proofgraph.verification import closure
 
     task = ProofGraphTask()
     by_pair: dict[str, list] = {}
@@ -118,7 +113,7 @@ def test_paired_signed_entailment_hundreds_have_symmetric_nonempty_proofs() -> N
 
 @pytest.mark.unit
 def test_pair_groups_never_cross_splits_and_fixed_support_leak_is_detected() -> None:
-    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+    from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
     task = ProofGraphTask()
     discovery = build_split(task, "circuit_discovery", 40, 19, {"depth": 2})
@@ -135,7 +130,7 @@ def test_pair_groups_never_cross_splits_and_fixed_support_leak_is_detected() -> 
 
 @pytest.mark.unit
 def test_all_circuit_stages_use_explicit_aligned_sequence_targets() -> None:
-    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+    from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
     task = ProofGraphTask()
     tokenizer = build_tiny_tokenizer()
@@ -186,7 +181,7 @@ def test_all_circuit_stages_use_explicit_aligned_sequence_targets() -> None:
 @pytest.mark.unit
 def test_tokenizer_alignment_rejects_then_deterministically_selects_next_pair(monkeypatch) -> None:
     from posttrain_circuits.cli import discover_circuit as discovery
-    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+    from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
     task = ProofGraphTask()
     pairs = [
@@ -223,7 +218,7 @@ def test_tokenizer_alignment_rejects_then_deterministically_selects_next_pair(mo
 
 @pytest.mark.unit
 def test_teacher_correctness_and_mass_are_independent_hash_bound_gates() -> None:
-    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+    from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
     task = ProofGraphTask()
     examples = list(task.generate_pair(777, {"depth": 2}))
@@ -267,7 +262,7 @@ def test_teacher_correctness_and_mass_are_independent_hash_bound_gates() -> None
 
 @pytest.mark.unit
 def test_teacher_gate_requires_topk_coverage_corrupt_recovery_and_positive_causal_shift() -> None:
-    from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+    from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
     task = ProofGraphTask()
     examples = list(task.generate_pair(778, {"depth": 2}))

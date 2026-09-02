@@ -7,23 +7,24 @@ import json
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.scientific_versions import require_core_v2_artifact
-from posttrain_circuits.data.splits import assert_split_isolation, load_frozen_split
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
-from posttrain_circuits.tasks.proofgraph.label_leakage import validate_label_leakage_artifact
+from posttrain_circuits.artifacts.compatibility import require_core_v2_artifact
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.proofgraph.splits import assert_split_isolation
+from posttrain_circuits.experiments.protocols.local_fork import LOCAL_FORK_SPEC
+from posttrain_circuits.methods.registry import FACTORIAL_METHOD_IDS, get_method_spec
+from posttrain_circuits.methods.rl import CANONICAL_GRPO_METHOD, TRL_GRPO_BACKEND
+from posttrain_circuits.methods.sft import CANONICAL_SFT_METHOD
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.leakage import validate_label_leakage_artifact
 
-FACTORIAL_CELLS = (
-    "offline_hard",
-    "online_hard",
-    "offline_soft",
-    "online_soft_opd",
-    "offline_verified_replay",
-    "online_verified_replay",
+OFFLINE_FACTORIAL_METHOD_IDS = tuple(
+    method_id
+    for method_id in FACTORIAL_METHOD_IDS
+    if get_method_spec(method_id).requires_common_rollout_bank
 )
-OFFLINE_CELLS = ("offline_hard", "offline_soft", "offline_verified_replay")
 PROBE_STAGES = ("first_rule_selection", "intermediate_conclusion", "final_answer")
 PREREG_PATH = Path("prereg/core_v2.yaml")
 PREREG_VERSION = "core_v2"
@@ -50,7 +51,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     task = ProofGraphTask()
-    splits = {}
+    family = load_dataset_family(args.root / "dataset")
+    splits = family.splits
     proof_counts = {0: 0, 1: 0}
     for split in (
         "train",
@@ -61,8 +63,7 @@ def main(argv: list[str] | None = None) -> None:
         "circuit_discovery",
         "circuit_validation",
     ):
-        examples, _ = load_frozen_split(args.root / "dataset" / split, expected_split=split)
-        splits[split] = examples
+        examples = splits[split]
         for example in examples:
             result = task.verify(example, task.parse_response(task.canonical_target(example)))
             if result.reward != 1.0 or not example.canonical_proof:
@@ -77,11 +78,17 @@ def main(argv: list[str] | None = None) -> None:
         raise RuntimeError("CPU label-leakage audit failed")
 
     bank = TrajectoryStore(args.root / "common_bank").check_integrity()
-    manifests = {cell: _read(args.root / "factorial" / cell / "manifest.json") for cell in FACTORIAL_CELLS}
+    manifests = {
+        method_id: _read(args.root / "factorial" / method_id / "manifest.json")
+        for method_id in FACTORIAL_METHOD_IDS
+    }
     for cell, manifest in manifests.items():
         if manifest.get("prereg_version") != PREREG_VERSION:
             raise RuntimeError(f"{cell} did not bind active preregistration")
-    offline_hashes = {str(manifests[cell].get("rollout_bank_hash")) for cell in OFFLINE_CELLS}
+    offline_hashes = {
+        str(manifests[method_id].get("rollout_bank_hash"))
+        for method_id in OFFLINE_FACTORIAL_METHOD_IDS
+    }
     if offline_hashes != {str(bank["sha256"])}:
         raise RuntimeError(
             "offline factorial cells did not share the exact frozen rollout bank: "
@@ -89,23 +96,22 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     sft_manifest = _read(args.root / "sft" / "run" / "manifest.json")
-    if sft_manifest.get("experiment_cell") != "canonical_sft":
+    if sft_manifest.get("experiment_cell") != CANONICAL_SFT_METHOD.method_id:
         raise RuntimeError("canonical SFT anchor is missing")
 
     grpo = _read(args.root / "grpo" / "grpo_update_evidence.json")
     require_core_v2_artifact(grpo, require_hash=True)
-    if grpo.get("backend") != "trl.GRPOTrainer" or grpo.get("parameters_changed") is not True:
+    if (
+        grpo.get("backend") != TRL_GRPO_BACKEND
+        or grpo.get("method_spec_sha256") != CANONICAL_GRPO_METHOD.scientific_sha256
+        or grpo.get("parameters_changed") is not True
+    ):
         raise RuntimeError("official tiny TRL GRPO did not produce a parameter update")
 
     fork = _read(args.root / "local_fork" / "results.json")
     require_core_v2_artifact(fork, require_circuit_schema=True, require_hash=True)
     branches = {str(row["branch"]) for row in fork.get("results", [])}
-    expected_branches = {
-        "hard_teacher",
-        "soft_teacher",
-        "verified_replay",
-        "centered_policy_gradient",
-    }
+    expected_branches = set(LOCAL_FORK_SPEC.branch_ids)
     if branches != expected_branches or fork.get("valid_for_primary_analysis") is not True:
         raise RuntimeError("grouped local-fork branches are missing or output-KL unmatched")
 
@@ -143,7 +149,7 @@ def main(argv: list[str] | None = None) -> None:
         "split_isolation": "passed",
         "label_leakage_metrics": leakage["metrics"],
         "common_rollout_bank_sha256": bank["sha256"],
-        "factorial_cells": list(FACTORIAL_CELLS),
+        "factorial_cells": list(FACTORIAL_METHOD_IDS),
         "offline_shared_bank_verified": True,
         "canonical_sft": "passed",
         "official_trl_grpo": {

@@ -8,12 +8,12 @@ from pathlib import Path
 
 import torch
 
-from posttrain_circuits.circuits.model_adapter import check_hf_identity_compatibility
-from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_manifest
+from posttrain_circuits.causal_circuits.model.adapter import check_hf_identity_compatibility
+from posttrain_circuits.datasets.circuit_probes.cohorts import validate_probe_cohort_manifest
 from posttrain_circuits.cli._common import print_json
 from posttrain_circuits.core.readiness import build_readiness_report, validate_anti_shortcut_report
-from posttrain_circuits.data.splits import assert_split_isolation, build_split
-from posttrain_circuits.tasks.proofgraph.generator import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.splits import assert_split_isolation, build_split
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.utils.smoke import build_fixed_bank, build_smoke_examples
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 

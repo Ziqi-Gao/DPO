@@ -8,33 +8,71 @@ import math
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from posttrain_circuits.analysis.factorial import match_validation_accuracy
-from posttrain_circuits.circuits.pilot_scope import PILOT_CELLS, resolve_pilot_circuit_scope
-from posttrain_circuits.circuits.probe_cohorts import validate_probe_cohort_manifest
-from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_file, sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json, utc_now
-from posttrain_circuits.core.provenance import (
+from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import (
     formal_artifact_binding,
     require_git_output,
     validate_run_manifest_payload,
 )
+from posttrain_circuits.causal_circuits.discovery.pilot_scope import resolve_pilot_circuit_scope
+from posttrain_circuits.datasets.circuit_probes.cohorts import validate_probe_cohort_manifest
+from posttrain_circuits.cli.finalize_pilot_training import (
+    _load_run_config_binding,
+    _validate_resolved_config_yaml_sha256,
+    _validate_factorial_update_evidence,
+    _validate_grpo_update_evidence,
+)
+from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.core.readiness import (
     require_formal_prerequisite_binding,
     validate_readiness_report,
 )
-from posttrain_circuits.data.splits import load_frozen_split
-from posttrain_circuits.data.trajectory_store import TrajectoryStore
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
+from posttrain_circuits.experiments.protocols.local_fork import (
+    LOCAL_FORK_SPEC,
+    validate_local_fork_report,
+)
+from posttrain_circuits.experiments.protocols.specs import (
+    CONTROLLED_FACTORIAL,
+    ExperimentBinding,
+    validate_checkpoint_experiment_binding_payload,
+    validate_run_manifest_experiment_binding,
+)
+from posttrain_circuits.methods.registry import (
+    FACTORIAL_METHOD_IDS,
+    PILOT_METHOD_IDS,
+    get_method_spec,
+)
+from posttrain_circuits.models.loading import load_model_and_tokenizer
 
-MATCHED_PAIRS = (
-    ("offline_soft", "online_soft_opd"),
-    ("online_hard", "online_soft_opd"),
-    ("online_verified_replay", "canonical_grpo"),
+OFFLINE_FACTORIAL_METHOD_IDS = tuple(
+    method_id
+    for method_id in FACTORIAL_METHOD_IDS
+    if get_method_spec(method_id).requires_common_rollout_bank
 )
 
 
 def _read(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in payload:
+                raise ValueError(f"pilot artifact contains duplicate JSON key {key!r}: {path}")
+            payload[key] = value
+        return payload
+
+    payload = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=lambda value: (_ for _ in ()).throw(
+            ValueError(f"pilot artifact contains non-finite JSON value {value}: {path}")
+        ),
+    )
     if not isinstance(payload, dict):
         raise TypeError(f"pilot artifact is not a mapping: {path}")
     return payload
@@ -85,7 +123,7 @@ def _curve(rows: list[dict[str, Any]], metric: str) -> tuple[list[float], list[f
 
 def _matched_summary(rows_by_cell: dict[str, list[dict[str, Any]]], validation_hash: str) -> dict[str, Any]:
     results: dict[str, Any] = {}
-    for left, right in MATCHED_PAIRS:
+    for left, right in CONTROLLED_FACTORIAL.matched_accuracy_pairs:
         left_steps, left_values = _curve(rows_by_cell[left], "validation_accuracy")
         right_steps, right_values = _curve(rows_by_cell[right], "validation_accuracy")
         if len(left_values) < 2 or len(right_values) < 2:
@@ -123,12 +161,13 @@ def _require_cell_chain(
     expected: dict[str, Any],
     terminal_hash: str,
     training_job_id: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[Path]]:
+) -> tuple[dict[str, Any], ExperimentBinding, list[dict[str, Any]], list[Path]]:
     manifest_path = root / "manifest.json"
     manifest = validate_run_manifest_payload(_read(manifest_path))
     binding = manifest.get("pilot_terminal_binding")
     if not isinstance(binding, dict) or not _hash_valid(binding):
         raise ValueError(f"pilot terminal binding is absent or invalid: {cell}")
+    scientific_binding = validate_run_manifest_experiment_binding(manifest)
     metrics = root / "metrics.jsonl"
     checkpoint = Path(str(manifest.get("final_checkpoint_path", "")))
     resolved = root / "resolved_config.yaml"
@@ -151,7 +190,6 @@ def _require_cell_chain(
         "prereg_version": expected["prereg_version"],
         "prereg_git_commit": expected["prereg_commit"],
         "prereg_sha256": expected["prereg_sha256"],
-        "slurm_terminal_evidence_sha256": terminal_hash,
     }
     mismatches = {
         key: {"expected": value, "observed": manifest.get(key)}
@@ -163,36 +201,106 @@ def _require_cell_chain(
     file_bindings = {
         metrics: str(manifest.get("metrics_sha256", "")),
         checkpoint: str(manifest.get("final_checkpoint_sha256", "")),
-        resolved: str(binding.get("resolved_config_sha256", "")),
     }
     for path, digest in file_bindings.items():
         if not path.is_file() or sha256_file(path) != digest:
             raise ValueError(f"pilot cell file changed after binding: {cell}: {path}")
-    if binding.get("metrics_sha256") != manifest.get("metrics_sha256"):
-        raise ValueError(f"pilot metrics chain is inconsistent: {cell}")
-    if binding.get("final_checkpoint_sha256") != manifest.get("final_checkpoint_sha256"):
-        raise ValueError(f"pilot checkpoint chain is inconsistent: {cell}")
+    import torch
+
+    checkpoint_payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    validate_checkpoint_experiment_binding_payload(
+        checkpoint_payload,
+        scientific_binding,
+    )
+    resolved_payload = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    if not isinstance(resolved_payload, dict):
+        raise ValueError(f"pilot resolved config is not a mapping: {cell}")
+    config_binding = _load_run_config_binding(
+        root,
+        manifest=manifest,
+        resolved_config=resolved_payload,
+        experiment_binding=scientific_binding,
+    )
+    resolved_yaml_sha256 = _validate_resolved_config_yaml_sha256(
+        root,
+        manifest=manifest,
+    )
+    additional_paths: list[Path] = []
+    grpo_evidence_sha256 = None
+    factorial_evidence_sha256 = None
+    if get_method_spec(scientific_binding.method_id).supervision == "grpo":
+        evidence_path = root / "grpo_update_evidence.json"
+        grpo_evidence_sha256 = _validate_grpo_update_evidence(
+            root,
+            manifest=manifest,
+            binding=scientific_binding,
+            checkpoint_path=checkpoint,
+            checkpoint_payload=checkpoint_payload,
+        )
+        evidence_payload = _read(evidence_path)
+        additional_paths.append(evidence_path)
+        snapshot = evidence_payload.get("initial_parameter_snapshot", {})
+        if isinstance(snapshot, dict) and isinstance(snapshot.get("tensors"), dict):
+            additional_paths.extend(
+                Path(str(metadata["path"]))
+                for metadata in snapshot["tensors"].values()
+                if isinstance(metadata, dict) and "path" in metadata
+            )
+        additional_paths.append(
+            Path(str(evidence_payload["initial_parameter_snapshot_manifest_path"]))
+        )
+        state_root = Path(str(evidence_payload["accelerate_state_path"]))
+        state_files = evidence_payload.get("accelerate_state_hashes", {})
+        if isinstance(state_files, dict):
+            additional_paths.extend(state_root / relative for relative in state_files)
+    else:
+        evidence_path = root / "factorial_update_evidence.json"
+        factorial_evidence_sha256 = _validate_factorial_update_evidence(
+            root,
+            manifest=manifest,
+            binding=scientific_binding,
+            checkpoint_path=checkpoint,
+            checkpoint_payload=checkpoint_payload,
+            resolved_config=resolved_payload,
+        )
+        additional_paths.append(evidence_path)
+        evidence_payload = _read(evidence_path)
+        additional_paths.append(
+            Path(str(evidence_payload["update_norm_baseline_checkpoint_path"]))
+        )
+    dataset_hashes = manifest.get("dataset_hashes", {})
     binding_required = {
         "cell": cell,
         "seed": 42,
-        "slurm_terminal_evidence_sha256": terminal_hash,
+        "resolved_config_sha256": config_binding.resolved_config_sha256,
+        "scientific_config_sha256": config_binding.scientific_config_sha256,
+        "execution_config_sha256": config_binding.execution_config_sha256,
+        "resolved_config_yaml_sha256": resolved_yaml_sha256,
+        "metrics_sha256": manifest.get("metrics_sha256"),
+        "final_checkpoint_sha256": manifest.get("final_checkpoint_sha256"),
+        "terminal_evidence_sha256": terminal_hash,
+        "execution_task": {
+            "job_id_raw": f"{training_job_id}_{PILOT_METHOD_IDS.index(cell)}",
+            "state": "COMPLETED",
+            "exit_code": "0:0",
+        },
         "token_budget": manifest.get("token_budget"),
         "token_budget_consumed": manifest.get("token_budget_consumed"),
         "token_budget_unit": manifest.get("token_budget_unit"),
         "training_stop_reason": manifest.get("training_stop_reason"),
-        "dataset_hashes_sha256": sha256_value(manifest.get("dataset_hashes", {})),
+        "dataset_hashes_sha256": sha256_value(dataset_hashes),
         "probe_manifest_hashes": sorted(
             str(value)
-            for key, value in manifest.get("dataset_hashes", {}).items()
+            for key, value in dataset_hashes.items()
             if key.startswith("prerequisite_probe")
         ),
-        "initial_checkpoint_sha256": manifest.get("dataset_hashes", {}).get("initial_checkpoint"),
+        "initial_checkpoint_sha256": dataset_hashes.get("initial_checkpoint"),
         "state_source_artifact_sha256": manifest.get("rollout_bank_hash"),
-        "slurm": {
-            "job_id_raw": f"{training_job_id}_{PILOT_CELLS.index(cell)}",
-            "state": "COMPLETED",
-            "exit_code": "0:0",
-        },
+        "experiment_binding_sha256": scientific_binding.scientific_sha256,
+        "factorial_design_sha256": scientific_binding.factorial_design_sha256,
+        "method_spec_sha256": scientific_binding.method_spec_sha256,
+        "grpo_update_evidence_sha256": grpo_evidence_sha256,
+        "factorial_update_evidence_sha256": factorial_evidence_sha256,
     }
     binding_mismatches = {
         key: {"expected": value, "observed": binding.get(key)}
@@ -203,7 +311,19 @@ def _require_cell_chain(
         raise ValueError(f"pilot terminal binding mismatch for {cell}: {binding_mismatches}")
     if int(manifest.get("token_budget_consumed", -1)) > int(manifest.get("token_budget", -2)):
         raise ValueError(f"pilot cell exceeded its token budget: {cell}")
-    return manifest, _rows(metrics), [manifest_path, metrics, checkpoint, resolved]
+    return (
+        manifest,
+        scientific_binding,
+        _rows(metrics),
+        [
+            manifest_path,
+            root / "config_binding.json",
+            metrics,
+            checkpoint,
+            resolved,
+            *additional_paths,
+        ],
+    )
 
 
 def _require_circuit_slot(
@@ -354,7 +474,10 @@ def main(argv: list[str] | None = None) -> None:
     require_formal_prerequisite_binding(probes, expected, name="pilot probe cohorts")
     _require_g0_file_binding(g0, args.bank_manifest, name="rollout bank")
     _require_g0_file_binding(g0, args.probe_manifest, name="probe manifest")
-    _, validation = load_frozen_split(args.validation_manifest.parent, expected_split="validation")
+    family = load_dataset_family(args.validation_manifest.parent)
+    validation_hash = str(
+        family.boundary("validation")["examples_file_sha256"]
+    )
     jobs, terminal_paths = _terminal_paths(args.run_dir, args.job_ids)
     training_terminal = args.run_dir / "terminal-training.txt"
     terminal_hash = sha256_file(training_terminal)
@@ -368,10 +491,11 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError("pilot training artifact-chain index is invalid")
 
     manifests: dict[str, dict[str, Any]] = {}
+    scientific_bindings: dict[str, ExperimentBinding] = {}
     rows_by_cell: dict[str, list[dict[str, Any]]] = {}
     cell_paths: list[Path] = []
-    for cell in PILOT_CELLS:
-        manifest, rows, paths = _require_cell_chain(
+    for cell in PILOT_METHOD_IDS:
+        manifest, scientific_binding, rows, paths = _require_cell_chain(
             root=args.run_dir / "runs" / cell / "seed-42",
             cell=cell,
             expected=expected,
@@ -379,10 +503,26 @@ def main(argv: list[str] | None = None) -> None:
             training_job_id=jobs["training"],
         )
         manifests[cell] = manifest
+        scientific_bindings[cell] = scientific_binding
         rows_by_cell[cell] = rows
         cell_paths.extend(paths)
-        if chain.get("cells", {}).get(cell, {}).get("manifest_sha256") != sha256_file(paths[0]):
+        chain_cell = chain.get("cells", {}).get(cell, {})
+        if chain_cell.get("manifest_sha256") != sha256_file(paths[0]):
             raise ValueError(f"pilot cell manifest differs from the terminal artifact-chain: {cell}")
+        for key, expected_hash in (
+            ("experiment_binding_sha256", scientific_binding.scientific_sha256),
+            ("factorial_design_sha256", scientific_binding.factorial_design_sha256),
+        ):
+            if chain_cell.get(key) != expected_hash:
+                raise ValueError(f"pilot terminal artifact-chain omitted {cell} {key}")
+
+    CONTROLLED_FACTORIAL.validate_bindings(
+        scientific_bindings[cell] for cell in FACTORIAL_METHOD_IDS
+    )
+    CONTROLLED_FACTORIAL.validate_canonical_grpo_anchor_pair(
+        scientific_bindings["online_verified_replay"],
+        scientific_bindings["canonical_grpo"],
+    )
 
     expected_initial_hash = str(probes.get("initial_student_checkpoint_hash", ""))
     initial_circuit_paths: list[Path] = []
@@ -440,6 +580,42 @@ def main(argv: list[str] | None = None) -> None:
     local_fork_path = args.run_dir / "local_fork" / "results.json"
     resume_path = args.run_dir / "distributed_resume.json"
     local_fork = _read(local_fork_path)
+    selected_source_manifest = (
+        args.run_dir
+        / "runs"
+        / LOCAL_FORK_SPEC.source_method_id
+        / f"seed-{LOCAL_FORK_SPEC.source_seed}"
+        / "manifest.json"
+    )
+
+    def source_model_factory():  # type: ignore[no-untyped-def]
+        import torch
+
+        model = load_model_and_tokenizer(config["model"], for_training=True).model
+        if torch.cuda.is_available():
+            model.to(torch.device("cuda"))
+        return model
+
+    validate_local_fork_report(
+        local_fork,
+        checkpoint_root=local_fork_path.parent / "checkpoints",
+        bundle_path=local_fork_path.parent / "bundle.pt",
+        require_full_protocol=True,
+        require_source_binding=True,
+        expected_source_manifest_path=selected_source_manifest,
+        expected_source_manifest_sha256=sha256_file(selected_source_manifest),
+        expected_source_experiment_binding_sha256=scientific_bindings[
+            LOCAL_FORK_SPEC.source_method_id
+        ].scientific_sha256,
+        source_model_factory=source_model_factory,
+        expected_trajectory_bank_manifest_path=args.bank_manifest,
+        expected_prompt_manifest_path=(
+            local_fork_path.parent / "inputs" / "prompts.json"
+        ),
+        expected_probe_manifest_path=(
+            local_fork_path.parent / "inputs" / "probe_set.json"
+        ),
+    )
     resume = _read(resume_path)
     auxiliary = [local_fork, resume, *circuit_artifacts, *dynamics]
     readiness_path = args.g0.parent / "readiness" / "readiness.json"
@@ -447,7 +623,7 @@ def main(argv: list[str] | None = None) -> None:
         readiness_path, expected_initial_checkpoint_hash=expected_initial_hash
     )
     require_formal_prerequisite_binding(readiness, expected, name="pilot readiness", nested=True)
-    if readiness.get("bindings", {}).get("dataset_hash") != validation.get("sha256"):
+    if readiness.get("bindings", {}).get("dataset_hash") != validation_hash:
         raise ValueError("pilot validation manifest differs from the dataset bound by readiness")
     for name, artifact in (
         ("local fork", local_fork),
@@ -458,9 +634,8 @@ def main(argv: list[str] | None = None) -> None:
         require_formal_prerequisite_binding(artifact, expected, name=name)
     offline_hashes = {
         manifests[cell].get("rollout_bank_hash")
-        for cell in ("offline_hard", "offline_soft", "offline_verified_replay")
+        for cell in OFFLINE_FACTORIAL_METHOD_IDS
     }
-    validation_hash = str(validation.get("sha256", ""))
     matched = _matched_summary(rows_by_cell, validation_hash)
     transition_rows = [row for artifact in dynamics for row in artifact.get("transitions", [])]
     checks = {
@@ -470,9 +645,12 @@ def main(argv: list[str] | None = None) -> None:
         "g0_all_registered_checks": bool(g0.get("checks"))
         and all(value is True for value in g0["checks"].values()),
         "full_readiness_report": readiness.get("ready") is True,
-        "all_training_cells_present": len(manifests) == len(PILOT_CELLS),
+        "all_training_cells_present": len(manifests) == len(PILOT_METHOD_IDS),
         "cell_artifact_chains_complete": all(
-            manifest.get("pilot_terminal_binding", {}).get("slurm", {}).get("state") == "COMPLETED"
+            manifest.get("pilot_terminal_binding", {})
+            .get("execution_task", {})
+            .get("state")
+            == "COMPLETED"
             for manifest in manifests.values()
         ),
         "all_input_artifacts_hash_valid": all(_hash_valid(row) for row in auxiliary),
@@ -484,7 +662,15 @@ def main(argv: list[str] | None = None) -> None:
         "bank_reward_mixture": 0
         < int(bank.get("reward_distribution", {}).get("positive", 0))
         < int(bank.get("total_trajectories", 0)),
-        "local_fork_output_kl_matched": local_fork.get("valid_for_primary_analysis") is True,
+        "local_fork_output_kl_matched": (
+            local_fork.get("local_fork_spec_sha256") == LOCAL_FORK_SPEC.scientific_sha256
+            and local_fork.get("bundle", {}).get("local_fork_spec_sha256")
+            == LOCAL_FORK_SPEC.scientific_sha256
+            and local_fork.get("bundle_manifest_sha256")
+            == local_fork.get("bundle", {}).get("manifest_sha256")
+            and local_fork.get("full_protocol_conformant") is True
+            and local_fork.get("valid_for_primary_analysis") is True
+        ),
         "distributed_resume": resume.get("passed") is True and int(resume.get("world_size", 0)) == 4,
         "full_registered_circuit_matrix": len(initial_circuit_paths) == 2 * int(scope["initial_count"])
         and len(final_circuit_paths) == 2 * int(scope["final_count"])
@@ -520,7 +706,8 @@ def main(argv: list[str] | None = None) -> None:
             row.get("dataset_hashes", {}).get("initial_checkpoint") == expected_initial_hash
             for row in manifests.values()
         ),
-        "matched_accuracy_summaries_complete": len(matched) == len(MATCHED_PAIRS)
+        "matched_accuracy_summaries_complete": len(matched)
+        == len(CONTROLLED_FACTORIAL.matched_accuracy_pairs)
         and all(bool(row.get("valid")) or bool(row.get("reason")) for row in matched.values()),
         "qwen3_v2_protocol_bound": all(
             row.get("protocol_track") == "qwen3_v2"

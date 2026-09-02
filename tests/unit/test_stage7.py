@@ -19,7 +19,7 @@ from posttrain_circuits.analysis.stage7 import (
     analyze_shared_state,
 )
 from posttrain_circuits.cli.analyze_shared_state import main as analyze_main
-from posttrain_circuits.tasks.anchors import (
+from posttrain_circuits.datasets.anchors import (
     BaseAccuracyBelowThreshold,
     build_fixed_anchor_pilots,
     require_base_accuracy,

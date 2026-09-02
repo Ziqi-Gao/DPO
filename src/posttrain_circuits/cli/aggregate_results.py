@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 from posttrain_circuits.analysis.factorial import planned_contrasts
+from posttrain_circuits.artifacts.io import atomic_write_json
 from posttrain_circuits.cli._common import print_json
-from posttrain_circuits.core.manifests import atomic_write_json
 
 
 def main(argv: list[str] | None = None) -> None:

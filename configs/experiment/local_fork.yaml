@@ -1,9 +1,22 @@
 name: local_fork
+protocol_id: shared_state_matched_output_kl_v1
+source_method_id: canonical_sft
+source_seed: 42
 branches: [hard_teacher, soft_teacher, verified_replay, centered_policy_gradient]
 minimum_group_size: 4
+require_within_group_reward_variance: true
+require_frozen_group_advantages: true
+require_old_policy_logprobs: true
 clip_epsilon: 0.2
 horizons: [1, 5, 20]
 primary_horizon: 20
 primary_match_axis: output_kl_new_to_fork
+divergence: "KL(output_new || output_fork)"
+probe_kl_mask_protocol: all_nonpadding_model_facing_prompt_positions_v1
 secondary_axes: [update_count, parameter_update_norm]
 output_kl_relative_tolerance: 0.25
+maximum_calibration_rounds: 2
+calibration_minimum_learning_rate: 1.0e-8
+calibration_maximum_scale: 10.0
+calibration_numeric_tolerance: 1.0e-12
+out_of_tolerance_action: invalidate_cell_and_exit_nonzero

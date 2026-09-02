@@ -5,16 +5,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from posttrain_circuits.core.config import compose_config
-from posttrain_circuits.core.hashing import sha256_value
-from posttrain_circuits.core.manifests import atomic_write_json
-from posttrain_circuits.core.provenance import (
+from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.runs import (
     formal_artifact_binding,
     require_git_output,
     resolve_preregistration,
 )
-from posttrain_circuits.data.splits import load_frozen_split
-from posttrain_circuits.tasks.proofgraph.label_leakage import audit_label_leakage
+from posttrain_circuits.core.config import compose_config
+from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
+from posttrain_circuits.datasets.proofgraph.leakage import audit_label_leakage
 
 
 def _git(args: list[str]) -> str:
@@ -32,14 +32,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--maximum-bow-accuracy", type=float, default=0.60)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
-    examples, manifest = load_frozen_split(args.split_root, expected_split=args.split)
+    family = load_dataset_family(args.split_root)
+    examples = family.examples(args.split)
     prereg_commit = resolve_preregistration(config).git_commit
     result = audit_label_leakage(
         examples,
         maximum_query_only_accuracy=args.maximum_query_only_accuracy,
         maximum_surface_feature_accuracy=args.maximum_surface_feature_accuracy,
         maximum_bow_accuracy=args.maximum_bow_accuracy,
-        dataset_hash=str(manifest["sha256"]),
+        dataset_hash=str(family.boundary(args.split)["examples_file_sha256"]),
         code_commit=_git(["rev-parse", "HEAD"]),
         prereg_commit=prereg_commit,
     )
