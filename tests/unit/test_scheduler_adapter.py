@@ -1447,7 +1447,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                 approved_runtime_root=self.scratch_root,
             )
 
-    def test_prepared_handler_holds_reviewed_inodes_across_path_replacement(self):
+    def test_prepared_handler_rejects_executable_path_replacement_before_launch(self):
         manifest = _manifest(_running_payload(self.root))
         handler = self._handler(manifest)
         reviewed = handler.deployment.executable.read_bytes()
@@ -1456,12 +1456,66 @@ class SchedulerAdapterTests(unittest.TestCase):
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
         ) as prepared:
+            self.assertEqual(
+                prepared.executable_launch_path(),
+                str(handler.deployment.executable),
+            )
             replacement = handler.deployment.executable.with_name("replacement-python")
             replacement.write_bytes(b"unreviewed replacement\n")
             replacement.chmod(0o750)
             os.replace(replacement, handler.deployment.executable)
             self.assertEqual(Path(prepared.executable.proc_path).read_bytes(), reviewed)
             self.assertNotEqual(handler.deployment.executable.read_bytes(), reviewed)
+            with self.assertRaisesRegex(AdapterValidationError, "reviewed inode"):
+                prepared.executable_launch_path()
+
+    def test_absolute_python_path_preserves_venv_identity(self):
+        venv = self.scratch_root / "venv-identity"
+        subprocess.run(
+            (
+                "/usr/bin/python3.12",
+                "-m",
+                "venv",
+                "--without-pip",
+                "--copies",
+                str(venv),
+            ),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        python = venv / "bin" / "python"
+        dist_info = (
+            venv
+            / "lib"
+            / "python3.12"
+            / "site-packages"
+            / "accelerate-1.10.1.dist-info"
+        )
+        dist_info.mkdir(parents=True)
+        (dist_info / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: accelerate\nVersion: 1.10.1\n",
+            encoding="utf-8",
+        )
+        command = (
+            str(python),
+            "-I",
+            "-c",
+            (
+                "import importlib.metadata,sys;"
+                "print(sys.prefix);"
+                "print(importlib.metadata.version('accelerate'))"
+            ),
+        )
+        launched = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        prefix, accelerate = launched.stdout.splitlines()
+        self.assertEqual(Path(prefix), venv)
+        self.assertEqual(accelerate, "1.10.1")
 
     def test_handler_binds_dependency_lock_package_manifest_and_deployment_identity(self):
         manifest = _manifest(_running_payload(self.root))
@@ -1601,7 +1655,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             self.assertEqual(
                 argv[:6],
                 (
-                    prepared.executable.proc_path,
+                    str(handler.deployment.executable),
                     "-I",
                     "-S",
                     prepared.implementation.proc_path,
@@ -1667,6 +1721,7 @@ class SchedulerAdapterTests(unittest.TestCase):
         self.assertIs(captured["start_new_session"], False)
         self.assertEqual(captured["cwd"], self.code_root)
         self.assertEqual(captured["command"], ("/fixed/python", "/fixed/handler.py"))
+        self.assertNotIn("executable", captured)
 
     def test_real_sigterm_is_forwarded_and_entrypoint_preserves_signal_status(self):
         ready = self.root / "signal-child-ready"

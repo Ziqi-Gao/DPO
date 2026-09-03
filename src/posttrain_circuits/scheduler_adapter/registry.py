@@ -37,6 +37,7 @@ from posttrain_circuits.scheduler_adapter.secure_files import (
     hold_regular_file,
     open_directory_nofollow,
     read_descriptor_bytes,
+    sha256_descriptor,
 )
 from posttrain_circuits.scheduler_adapter.strict_json import parse_strict_json
 
@@ -393,6 +394,65 @@ class PreparedHandler:
     def cwd_proc_path(self) -> Path:
         return Path(f"/proc/self/fd/{self.cwd_descriptor}")
 
+    def executable_launch_path(self) -> str:
+        """Return the reviewed absolute interpreter path after rechecking its held inode.
+
+        CPython discovers ``pyvenv.cfg`` relative to the executable pathname.
+        Executing the interpreter through ``/proc/self/fd/N`` defeats that
+        discovery, so only the implementation and data handles use proc-fd
+        paths. The executable descriptor remains open and is compared with the
+        absolute path immediately before spawning.
+        """
+
+        path = self.spec.deployment.executable
+        if not path.is_absolute() or path != self.executable.path:
+            raise AdapterValidationError(
+                "prepared executable path differs from the deployment contract"
+            )
+
+        def identity(metadata: os.stat_result) -> tuple[int, ...]:
+            return (
+                metadata.st_dev,
+                metadata.st_ino,
+                metadata.st_mode,
+                metadata.st_nlink,
+                metadata.st_size,
+                metadata.st_mtime_ns,
+                metadata.st_ctime_ns,
+            )
+
+        try:
+            held_before = os.fstat(self.executable.descriptor)
+            path_before = os.stat(path, follow_symlinks=False)
+        except OSError as error:
+            raise AdapterValidationError(
+                f"cannot revalidate fixed handler executable: {error}"
+            ) from error
+        if identity(path_before) != identity(held_before):
+            raise AdapterValidationError(
+                "fixed handler executable path no longer names the reviewed inode"
+            )
+        observed = sha256_descriptor(
+            self.executable.descriptor,
+            context="fixed handler executable before launch",
+        )
+        try:
+            held_after = os.fstat(self.executable.descriptor)
+            path_after = os.stat(path, follow_symlinks=False)
+        except OSError as error:
+            raise AdapterValidationError(
+                f"cannot revalidate fixed handler executable: {error}"
+            ) from error
+        if (
+            observed != self.spec.deployment.executable_sha256
+            or identity(held_after) != identity(held_before)
+            or identity(path_after) != identity(held_before)
+        ):
+            raise AdapterValidationError(
+                "fixed handler executable changed after deployment verification"
+            )
+        return str(path)
+
     def argv(
         self,
         manifest: RunningManifest,
@@ -427,7 +487,7 @@ class PreparedHandler:
         from posttrain_circuits.workflows.contracts import unit_identity_sha256
 
         argv = [
-            self.executable.proc_path,
+            self.executable_launch_path(),
             *self.spec.deployment.runtime_flags,
             self.implementation.proc_path,
             *self.spec.fixed_args,
