@@ -98,6 +98,10 @@ Central registration is external mutable state. Reverify it in the central
 ServerScheduler session before any future submission. This repository does not
 authorize registration edits, service operations, or submission.
 
+The checked-in production scheduler configuration currently has GPU dispatch
+disabled. The user reported that only two GPUs are available for the proposed
+pilot, which requires four exclusive devices.
+
 ## Execution evidence
 
 - CPU repository preflight `opd-a5248a93209c909b6a2f827120ca5771`
@@ -125,14 +129,20 @@ authorize registration edits, service operations, or submission.
   access ended each attempt with `SIGABRT`; this request is terminal and must
   not be reused.
 - `a6f26fe` committed the non-reentrant student activation-checkpointing
-  correction. A fresh request was prepared, but not centrally submitted, at
-  `/scr/del6500/OPD/scheduler/outbox/opd-21968766ca6a6a4e306c7995f2815593.json`.
-  Its outbox SHA-256 is
-  `f60f9b98505d722ceef9fd7916ee16ef9fa090bd784020c3286ec333ad2d70cb`;
-  its published plan identity remains
+  correction. Request `opd-21968766ca6a6a4e306c7995f2815593`, with outbox
+  SHA-256
+  `f60f9b98505d722ceef9fd7916ee16ef9fa090bd784020c3286ec333ad2d70cb`,
+  was centrally accepted at `2026-09-03T20:35:02Z`. A read-only inspection
+  found it still pending, with no allocation and no process launched. The user
+  withdrew the request because only two GPUs are available. Its project copy
+  was moved out of the active outbox to
+  `/scr/del6500/OPD/scheduler/withdrawn/opd-21968766ca6a6a4e306c7995f2815593.json`.
+  Moving that copy does not cancel the durable central job; ServerScheduler has
+  no public single-job cancellation command, so an operator must resolve the
+  pending record without manually deleting queue or durable-state files. Its
+  published plan identity remains
   `f0382310adbd3fa0c4da873a3bd6227797d305bcce5c9d432b0bdc6a69eb05c0`.
-  Project request and published-plan validation passed. No four-GPU pilot has
-  run for this committed correction.
+  No four-GPU pilot has run for this committed correction.
 
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
 the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
@@ -148,18 +158,19 @@ fresh pilot.
 The formal G0 experiment is not ready to submit. The gate opens only after all
 of the following are true:
 
-1. Commit this handoff synchronization so the project checkout is clean; the
-   GPU handler rejects dirty tracked checkouts.
-2. Have the central operator reverify registration, GPU dispatch, and device
-   safety state before separately authorizing validation and submission of
-   `opd-21968766ca6a6a4e306c7995f2815593`; do not reuse either prior failed job
-   ID.
-3. Capture the authoritative terminal state and complete logs for that run.
-4. If it fails, diagnose the exact phase and make only the required
+1. Commit this handoff synchronization so the project checkout is clean.
+2. Keep GPU dispatch disabled while a central operator resolves the withdrawn
+   but durably pending `opd-21968766ca6a6a4e306c7995f2815593`; do not dispatch,
+   resubmit, or manually delete its scheduler state.
+3. Wait until four reviewed GPUs are available and obtain separate approval
+   before preparing a new request with a fresh job ID.
+4. Capture the authoritative terminal state and complete logs for any future
+   approved pilot.
+5. If it fails, diagnose the exact phase and make only the required
    project-owned correction before forming another clean commit.
-5. If it succeeds, independently validate the published scientific completion
+6. If it succeeds, independently validate the published scientific completion
    and `gpu_preflight.json` artifact.
-6. Only then prepare the separately reviewed G0 handler/profile/request; the
+7. Only then prepare the separately reviewed G0 handler/profile/request; the
    GPU preflight task itself is not the formal experiment.
 
 Do not submit G0, the seed-42 pilot, a full seed matrix, or a Gemma replication
