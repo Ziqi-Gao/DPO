@@ -188,8 +188,9 @@
 - README and execution docs still name v0/v1 as active; ProofGraph signed
   semantics, stage probes, centered PG, teacher gate, and artifact migration are
   absent.
-- Needed: all requested documents, `docs/core_v2_migration.md`, and final
-  `docs/scientific_repair_v2_report.md`.
+- Needed: all requested documents,
+  [core_v2_migration.md](../../core_v2_migration.md), and the final
+  [scientific_repair_v2_report.md](scientific_repair_v2_report.md).
 
 ## Repair decision
 

@@ -7,7 +7,8 @@
 - Final state at report generation: the scientific-repair changes are present in the working tree;
   no production job was launched. The publication commit is intentionally reported by the outer
   handoff because a commit cannot contain its own final hash.
-- Initial gap map: `docs/scientific_repair_v2_gap_analysis.md`.
+- Initial gap map:
+  [scientific_repair_v2_gap_analysis.md](scientific_repair_v2_gap_analysis.md).
 - Files inspected included all task generator/parser/renderer/verifier and split code; circuit probe,
   EAP-IG, MIB, exact patching, faithfulness and dynamics code; local-fork supervisors and runners;
   official-TRL routing and reward controls; provenance/readiness/G0/pilot CLIs; all configuration,

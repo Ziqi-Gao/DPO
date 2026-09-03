@@ -77,7 +77,7 @@ completion validation. A filename replacement alone is not a cutover.
 Historical or quarantine references outside the legacy executable directories
 remain in the two pilot finalizers above, `docs/core_execution_plan.md`,
 `docs/scientific_repair_audit.md`,
-`docs/scientific_repair_v2_gap_analysis.md`,
+`docs/archive/scientific_repair_v2/scientific_repair_v2_gap_analysis.md`,
 `tests/unit/test_qwen3_protocol.py`, and
 `tests/unit/test_qwen3_v2_repairs.py`. These references and tests must be
 rewritten or retired atomically with the corresponding caller, not left as
