@@ -2,7 +2,7 @@
   "dependency_lock_sha256": "944f22e346fbda1bd2545cdac9f8c3e9e7046a576b9afc38911fc2f89a1f735d",
   "deployment_id": "qwen3-v2-gpu-preflight-python312-cuda-v1",
   "executable_sha256": "848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
-  "implementation_sha256": "f34a33df1b642ebde126b32642ec7f963620865ba813669244ee0801e50bfb4d",
+  "implementation_sha256": "793f11c069fdca2698eddee5376e73cf774efa9d5032b70779e53f1581f1f773",
   "runtime_flags": [
     "-I"
   ],

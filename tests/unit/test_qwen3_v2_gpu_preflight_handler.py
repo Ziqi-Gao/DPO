@@ -43,6 +43,23 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             hashlib.sha256(prereg).hexdigest(),
         )
 
+    def test_student_gradient_checkpointing_is_explicitly_non_reentrant(self) -> None:
+        calls: list[dict[str, bool]] = []
+
+        class FakeModel:
+            @staticmethod
+            def gradient_checkpointing_enable(
+                *, gradient_checkpointing_kwargs: dict[str, bool]
+            ) -> None:
+                calls.append(gradient_checkpointing_kwargs)
+
+        self.module._enable_student_gradient_checkpointing(FakeModel())
+
+        self.assertEqual(calls, [{"use_reentrant": False}])
+        source = HANDLER.read_text(encoding="utf-8")
+        self.assertNotIn("model.gradient_checkpointing_enable()", source)
+        self.assertIn('gradient_checkpointing_mode="non_reentrant"', source)
+
     def test_registry_fixes_offline_environment_and_single_implementation(self) -> None:
         handler = require_handler("qwen3_v2_gpu_preflight")
         self.assertEqual(dict(handler.fixed_environment), self.module.FIXED_ENVIRONMENT)

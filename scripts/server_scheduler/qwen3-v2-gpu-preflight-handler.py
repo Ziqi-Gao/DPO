@@ -657,6 +657,12 @@ def _resolved_commit(value: Any, fallback: str) -> str:
     return str(next((item for item in candidates if item), fallback))
 
 
+def _enable_student_gradient_checkpointing(model: Any) -> None:
+    model.gradient_checkpointing_enable(
+        gradient_checkpointing_kwargs={"use_reentrant": False}
+    )
+
+
 def _load_model(config: dict[str, Any], *, training: bool) -> tuple[Any, Any, str]:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -693,7 +699,7 @@ def _load_model(config: dict[str, Any], *, training: bool) -> tuple[Any, Any, st
         if any(not parameter.requires_grad for parameter in model.parameters()):
             raise PreflightError("student is not a full-parameter training model")
         if config.get("gradient_checkpointing") is True:
-            model.gradient_checkpointing_enable()
+            _enable_student_gradient_checkpointing(model)
         model.train()
     else:
         model.eval()
@@ -875,7 +881,11 @@ def _rank_training(
         }
     else:
         student_status = {"ok": True, "rank": rank}
-        _log_phase(rank, "student_load_completed")
+        _log_phase(
+            rank,
+            "student_load_completed",
+            gradient_checkpointing_mode="non_reentrant",
+        )
     student_statuses: list[Any] = [None] * world_size
     dist.all_gather_object(
         student_statuses, student_status, group=runtime.control_group

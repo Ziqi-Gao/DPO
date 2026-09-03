@@ -68,6 +68,13 @@ registered full-parameter training check. The handler logs explicit FSDP,
 student-forward, backward, and optimizer-step phase boundaries so a later
 failure can be assigned to the exact training stage.
 
+Student activation checkpointing remains enabled and explicitly uses PyTorch's
+non-reentrant implementation. The Transformers 4.56.2 default is reentrant;
+with one root FSDP unit it re-entered Qwen3 layers during backward through
+parameter views whose full flat-parameter storage had already been released
+after forward. The non-reentrant implementation preserves the checkpointed
+training-path check without retaining that stale-view failure mode.
+
 No repository snapshot digest is an input. The deployment contract binds the
 fixed runtime and implementation bundle, while the workflow binds the exact
 scientific configuration and preregistration content needed by this task.

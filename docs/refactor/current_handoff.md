@@ -9,8 +9,10 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The current committed baseline is `ba6820b` (`fix: use flat FSDP parameters in
-GPU preflight`). Important preceding milestones are:
+The current committed repository baseline is `667cc34` (`docs: require
+cross-session handoff synchronization`). The current committed GPU
+implementation baseline is `ba6820b` (`fix: use flat FSDP parameters in GPU
+preflight`). Important preceding milestones are:
 
 - `8b020de`: split scientific domains from the scheduler boundary.
 - `0b96a8e`: add the CPU repository-preflight pilot.
@@ -108,13 +110,25 @@ authorize registration edits, service operations, or submission.
 - A later request used job ID `opd-929192edc17cd806cb184a8a6013e0b3`
   and plan SHA-256
   `f0382310adbd3fa0c4da873a3bd6227797d305bcce5c9d432b0bdc6a69eb05c0`.
-  The user reported a new error, but this repository handoff does not yet have
-  authoritative terminal status or stderr for that run. Do not infer its root
-  cause or mark it successful.
+  Its three attempts failed after teacher forward when FSDP exposed empty or
+  one-dimensional original parameter shards to the student forward.
 - `ba6820b` then changed the fully trainable student to one root FSDP unit with
   `use_orig_params=false`, restricted the optimizer to its one nonempty flat
-  parameter shard per rank, and added phase-boundary diagnostics. This is the
-  current committed correction; it has not yet passed a fresh four-GPU pilot.
+  parameter shard per rank, and added phase-boundary diagnostics.
+- A fresh protocol-v2 request for `ba6820b` was prepared at
+  `/scr/del6500/OPD/scheduler/outbox/opd-d23aed0275b16bb906b9c94cb42067a1.json`
+  and was centrally submitted. All three attempts on 2026-09-03 passed CUDA,
+  NCCL, model loading, teacher forward, and student forward, then failed during
+  `loss.backward()` with a `setStorage` access through a 2048-by-2048 parameter
+  view whose backing storage had size zero. The resulting illegal CUDA memory
+  access ended each attempt with `SIGABRT`; this request is terminal and must
+  not be reused.
+- The current uncommitted candidate explicitly selects non-reentrant student
+  activation checkpointing. This retains checkpointing while avoiding the
+  reentrant backward recomputation path through released FSDP flat-parameter
+  views. Seventy-three related tests pass, and a tiny Qwen3 model completes a
+  real forward/backward with this mode in the fixed Transformers runtime. No
+  four-GPU pilot has run for this candidate.
 
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
 the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
@@ -130,14 +144,18 @@ fresh pilot.
 The formal G0 experiment is not ready to submit. The gate opens only after all
 of the following are true:
 
-1. Run the current clean commit through a fresh four-GPU preflight using a new
-   job ID and a separately authorized central submission.
-2. Capture the authoritative terminal state and complete logs for that run.
-3. If it fails, diagnose the exact phase and make only the required
+1. Review and commit the non-reentrant checkpointing candidate in a clean
+   project checkout.
+2. Prepare one new protocol-v2 outbox request with a fresh job ID; do not reuse
+   `opd-d23aed0275b16bb906b9c94cb42067a1`.
+3. Have the central operator reverify registration, GPU dispatch, and device
+   safety state before separately authorizing validation and submission.
+4. Capture the authoritative terminal state and complete logs for that run.
+5. If it fails, diagnose the exact phase and make only the required
    project-owned correction before forming another clean commit.
-4. If it succeeds, independently validate the published scientific completion
+6. If it succeeds, independently validate the published scientific completion
    and `gpu_preflight.json` artifact.
-5. Only then prepare the separately reviewed G0 handler/profile/request; the
+7. Only then prepare the separately reviewed G0 handler/profile/request; the
    GPU preflight task itself is not the formal experiment.
 
 Do not submit G0, the seed-42 pilot, a full seed matrix, or a Gemma replication
