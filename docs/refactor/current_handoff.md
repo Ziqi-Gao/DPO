@@ -9,10 +9,9 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The current committed repository baseline is `ace482c` (`docs: record GPU
-preflight outbox`). The current committed GPU implementation baseline is
-`a6f26fe` (`fix: use non-reentrant checkpointing with FSDP`). Important
-preceding milestones are:
+The current committed repository and GPU implementation baseline is `252b02a`
+(`feat: convert GPU preflight to two GPUs`). Important preceding milestones
+are:
 
 - `8b020de`: split scientific domains from the scheduler boundary.
 - `0b96a8e`: add the CPU repository-preflight pilot.
@@ -25,7 +24,7 @@ preceding milestones are:
 - `ba6820b`: use flat FSDP parameters in the GPU preflight.
 - `667cc34`: require cross-session handoff synchronization.
 
-The current GPU correction spans:
+The current committed GPU correction spans:
 
 - `deployments/qwen3_v2_gpu_preflight/package-manifest.json`
 - `docs/refactor/qwen3_v2_gpu_preflight_pilot.md`
@@ -33,18 +32,13 @@ The current GPU correction spans:
 - `src/posttrain_circuits/scheduler_adapter/registry.py`
 - `tests/unit/test_qwen3_v2_gpu_preflight_handler.py`
 
-It keeps the `ba6820b` root-FSDP flat-parameter correction and additionally
-selects non-reentrant activation checkpointing so backward recomputation does
-not use released FSDP flat-parameter views. Seventy-three related tests pass,
-and a tiny Qwen3 model completes a real forward/backward in the fixed runtime.
-
-The current uncommitted candidate converts only the bounded GPU-preflight task
-from four ranks/GPUs to two. It changes `AGENTS.md`, the GPU deployment manifest
-and disabled registration proposal, the pilot document, handler, request
-builder, semantic validator, registry, and their three focused unit-test files.
-It retains 16 CPU cores and 196608 MiB host memory, uses eight CPU threads per
-rank, retains 81920 MiB and 95% utilization per exclusive GPU, and proposes a
-conservative 3600-second initial runtime. Its candidate plan identity is
+It keeps the root-FSDP flat-parameter and non-reentrant activation-checkpointing
+corrections, and converts only the bounded GPU-preflight task from four
+ranks/GPUs to two. The complete change also includes `AGENTS.md`, the disabled
+registration proposal, request builder, semantic validator, and their focused
+tests. It retains 16 CPU cores and 196608 MiB host memory, uses eight CPU
+threads per rank, retains 81920 MiB and 95% utilization per exclusive GPU, and
+uses a conservative 3600-second initial runtime. Its plan identity is
 `20fbb3315e873ed618d536412f9a53c1928248708280ef217725a17caed4f0be`.
 
 ## Current architecture
@@ -100,20 +94,19 @@ for exactly these two tasks and profiles:
 
 - `repository_preflight` with `repository-preflight-cpu`: 1 CPU, 128 MiB RAM,
   no GPU, 30-second estimate, shareable.
-- `qwen3_v2_gpu_preflight` with `qwen3-v2-gpu-preflight-4gpu`: 16 CPUs,
-  196608 MiB RAM, 4 GPUs, 81920 MiB per GPU, 95% utilization target,
-  exclusive allocation, RTX PRO 6000 Blackwell, 1800-second estimate.
+- `qwen3_v2_gpu_preflight` with `qwen3-v2-gpu-preflight-2gpu`: 16 CPUs,
+  196608 MiB RAM, 2 GPUs, 81920 MiB per GPU, 95% utilization target,
+  exclusive allocation, RTX PRO 6000 Blackwell, 3600-second estimate.
 
 Central registration is external mutable state. Reverify it in the central
 ServerScheduler session before any future submission. This repository does not
 authorize registration edits, service operations, or submission.
 
 The checked-in production scheduler configuration currently has GPU dispatch
-disabled. The user reported that only two GPUs are available. The project-owned
-replacement proposal remains disabled and now names
-`qwen3-v2-gpu-preflight-2gpu`; it has not been installed centrally. The live
-central registration and the already accepted request still name the old
-four-GPU profile.
+disabled. The central OPD registration was independently updated and enabled
+for the two-GPU profile after user approval. The checked-in project-owned
+proposal remains disabled as a handoff artifact; this session did not edit the
+central registration or global dispatch policy.
 
 ## Execution evidence
 
@@ -145,24 +138,29 @@ four-GPU profile.
   correction. Request `opd-21968766ca6a6a4e306c7995f2815593`, with outbox
   SHA-256
   `f60f9b98505d722ceef9fd7916ee16ef9fa090bd784020c3286ec333ad2d70cb`,
-  was centrally accepted at `2026-09-03T20:35:02Z`. A read-only inspection
-  found it still pending, with no allocation and no process launched. The user
-  withdrew the request because only two GPUs are available. Its project-owned
-  outbox/withdrawn copy was deleted at the user's request after its digest was
-  verified. The durable central pending job remains: ServerScheduler has no
-  public single-job cancellation command, so an operator must resolve it
-  without manually deleting queue or durable-state files. Its published plan
-  identity remains
+  was centrally accepted at `2026-09-03T20:35:02Z`. The user withdrew it
+  because only two GPUs were available, and its project-owned request copy was
+  deleted after digest verification. A central operator then canceled it
+  before launch; its terminal state is `failed`, with no allocation, logs, or
+  process, and failure reason `operator canceled before launch`. Its published
+  plan identity remains
   `f0382310adbd3fa0c4da873a3bd6227797d305bcce5c9d432b0bdc6a69eb05c0`.
   No four-GPU pilot has run for this committed correction.
 
-The uncommitted two-GPU candidate passed 20 focused tests and 74 related
+The committed two-GPU implementation passed 20 focused tests and 74 related
 handler, validator, request, adapter, and proposal tests. Syntax, the exact
 two-GPU profile, disabled proposal, package manifest, and all deployment hashes
 also validated. A tiny Qwen3 model completed a real non-reentrant
 forward/backward in the fixed runtime without using a GPU. These remain
-non-pilot results; no two-GPU allocation ran and no new production outbox was
-prepared.
+non-pilot results; no two-GPU allocation has run.
+
+A fresh two-GPU protocol-v2 request was prepared, but not centrally submitted,
+at `/scr/del6500/OPD/scheduler/outbox/opd-d4b63d5a246ed8d06b944b9063a62e1e.json`.
+Its outbox SHA-256 is
+`8500c5f459950a008fede57e8f7a63bedc668c0267b9794a2cc218b39f53c4ab`.
+Project request and published-plan validation passed; it names only the
+registered `qwen3-v2-gpu-preflight-2gpu` profile and contains no resource,
+command, path, or environment override.
 
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
 the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
@@ -178,22 +176,17 @@ behavior on the real two-GPU topology still requires a fresh approved pilot.
 The formal G0 experiment is not ready to submit. The gate opens only after all
 of the following are true:
 
-1. Review and commit the complete two-GPU candidate, including this handoff, so
-   the project checkout is clean.
-2. Keep GPU dispatch disabled while a central operator resolves the withdrawn
-   but durably pending four-GPU job
-   `opd-21968766ca6a6a4e306c7995f2815593`; do not dispatch, resubmit, or manually
-   delete its scheduler state.
-3. Have a central operator review and install the new two-GPU proposal while
-   preserving `enabled = false`, then obtain separate approval for enablement.
-4. Only after those gates, prepare one fresh two-GPU outbox request and obtain
-   separate central validation/submission approval.
-5. Capture the authoritative terminal state and complete logs for that pilot.
-6. If it fails, diagnose the exact phase and make only the required
+1. Commit this handoff synchronization so the project checkout is clean.
+2. Have the central operator verify the running dispatcher's current
+   registration, global GPU-dispatch decision, and both assigned devices'
+   safety state before validating and submitting only
+   `/scr/del6500/OPD/scheduler/outbox/opd-d4b63d5a246ed8d06b944b9063a62e1e.json`.
+3. Capture the authoritative terminal state and complete logs for that pilot.
+4. If it fails, diagnose the exact phase and make only the required
    project-owned correction before forming another clean commit.
-7. If it succeeds, independently validate the published scientific completion
+5. If it succeeds, independently validate the published scientific completion
    and `gpu_preflight.json` artifact.
-8. Only then design and separately review a two-GPU G0 handler/profile/request;
+6. Only then design and separately review a two-GPU G0 handler/profile/request;
    this preflight does not authorize the currently fail-closed formal
    experiment.
 
