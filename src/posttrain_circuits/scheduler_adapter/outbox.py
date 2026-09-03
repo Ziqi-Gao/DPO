@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
+import secrets
 from pathlib import Path
 from typing import Any
 
-from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
 from posttrain_circuits.scheduler_adapter.manifest import IDENTIFIER, PROJECT, WorkflowParameters
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
@@ -22,6 +23,7 @@ from posttrain_circuits.workflows.contracts import WORKFLOW_TASK_REGISTRY, Workf
 REQUEST_BASE_KEYS = frozenset(
     {"schema_version", "job_id", "project", "task", "priority", "parameters"}
 )
+OPD_JOB_ID = re.compile(r"opd-[0-9a-f]{32}\Z")
 
 
 def validate_outbox_request(
@@ -42,9 +44,14 @@ def validate_outbox_request(
         raise AdapterValidationError("outbox request schema_version must be 2")
     if payload["project"] != PROJECT:
         raise AdapterValidationError("outbox request project must be OPD")
-    for key in ("job_id", "task"):
-        if not isinstance(payload[key], str) or not IDENTIFIER.fullmatch(payload[key]):
-            raise AdapterValidationError(f"outbox request {key} is not a valid identifier")
+    if not isinstance(payload["job_id"], str) or not OPD_JOB_ID.fullmatch(
+        payload["job_id"]
+    ):
+        raise AdapterValidationError(
+            "outbox request job_id must be an opaque OPD submission identifier"
+        )
+    if not isinstance(payload["task"], str) or not IDENTIFIER.fullmatch(payload["task"]):
+        raise AdapterValidationError("outbox request task is not a valid identifier")
     priority = payload["priority"]
     if isinstance(priority, bool) or not isinstance(priority, int) or not -100 <= priority <= 100:
         raise AdapterValidationError("outbox request priority is invalid")
@@ -57,9 +64,6 @@ def validate_outbox_request(
         if not isinstance(profile, str) or not IDENTIFIER.fullmatch(profile):
             raise AdapterValidationError("outbox execution_profile is invalid")
         handler.profile(profile)
-    core = {key: value for key, value in payload.items() if key != "job_id"}
-    if payload["job_id"] != f"opd-{sha256_value(core)[:32]}":
-        raise AdapterValidationError("outbox job_id does not match deterministic request content")
     return payload
 
 
@@ -69,7 +73,7 @@ def build_outbox_request(
     unit_id: str,
     execution_profile: str | None = None,
 ) -> dict[str, Any]:
-    """Build one deterministic request without resources, commands, paths, or env."""
+    """Build one submission request without resources, commands, paths, or env."""
 
     plan.validate(task_registry=WORKFLOW_TASK_REGISTRY)
     unit = plan.unit(unit_id, task_registry=WORKFLOW_TASK_REGISTRY)
@@ -90,7 +94,10 @@ def build_outbox_request(
     if execution_profile is not None:
         handler.profile(execution_profile)
         core["execution_profile"] = execution_profile
-    request = {**core, "job_id": f"opd-{sha256_value(core)[:32]}"}
+    # Scientific identity belongs to the immutable workflow parameters.  A job
+    # ID identifies one scheduler submission, so a retry of the same unit must
+    # receive a fresh ID instead of colliding with durable scheduler history.
+    request = {**core, "job_id": f"opd-{secrets.token_hex(16)}"}
     return validate_outbox_request(request)
 
 
@@ -101,7 +108,7 @@ def prepare_outbox_request(
     execution_profile: str | None = None,
     layout: WorkflowLayout,
 ) -> Path:
-    """Atomically publish an idempotent request file and return its local path."""
+    """Atomically publish a fresh submission request and return its local path."""
 
     layout.validate()
     require_published_workflow_plan(plan, layout=layout)

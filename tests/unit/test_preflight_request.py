@@ -55,21 +55,29 @@ class PreflightRequestTests(unittest.TestCase):
         )
         self.assertEqual(unit.output_names, ("preflight_report.json",))
 
-    def test_formal_outbox_preparation_is_idempotent_and_has_no_resource_surface(self) -> None:
+    def test_formal_outbox_preparation_uses_fresh_job_ids_and_has_no_resource_surface(self) -> None:
         first = prepare_repository_preflight_request(layout=self.layout)
         second = prepare_repository_preflight_request(layout=self.layout)
-        self.assertEqual(first, second)
-        request = json.loads(first.outbox_path.read_text(encoding="utf-8"))
-        validate_outbox_request(request)
-        self.assertEqual(request["task"], "repository_preflight")
+        self.assertEqual(first.workflow_id, second.workflow_id)
+        self.assertEqual(first.plan_sha256, second.plan_sha256)
+        self.assertEqual(first.unit_id, second.unit_id)
+        self.assertEqual(first.plan_path, second.plan_path)
+        self.assertNotEqual(first.outbox_path, second.outbox_path)
+        first_request = json.loads(first.outbox_path.read_text(encoding="utf-8"))
+        second_request = json.loads(second.outbox_path.read_text(encoding="utf-8"))
+        validate_outbox_request(first_request)
+        validate_outbox_request(second_request)
+        self.assertNotEqual(first_request["job_id"], second_request["job_id"])
+        self.assertEqual(first_request["task"], "repository_preflight")
         self.assertEqual(
-            request["parameters"],
+            first_request["parameters"],
             {
                 "plan_sha256": first.plan_sha256,
                 "unit_id": UNIT_ID,
                 "workflow_id": WORKFLOW_ID,
             },
         )
+        self.assertEqual(first_request["parameters"], second_request["parameters"])
         self.assertFalse(
             {
                 "command",
@@ -79,7 +87,7 @@ class PreflightRequestTests(unittest.TestCase):
                 "path",
                 "resources",
             }
-            & set(request)
+            & set(first_request)
         )
 
 

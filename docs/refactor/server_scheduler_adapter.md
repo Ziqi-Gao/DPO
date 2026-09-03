@@ -91,8 +91,11 @@ Slurm, or authorize deletion of any legacy execution file.
   `/scr/del6500/OPD/scheduler/outbox` only for a task and optional profile already
   present in the immutable code registry.  Callers cannot supply a reviewed set
   or registry.  Parameters are only `workflow_id`, `plan_sha256`, and `unit_id`;
-  it never submits or polls the file.  Because production registry is empty, it
-  currently rejects every request before publication.
+  it never submits or polls the file.  Each preparation uses a fresh opaque job
+  ID for that scheduler submission, while the immutable parameters retain the
+  scientific identity and completion-marker idempotency.  Failed staging is
+  isolated by both job ID and scheduler attempt; final outputs remain keyed only
+  by the scientific identity.
 - The adapter has no detach, fan-out, resource selection, lock, queue, retry,
   status, submission, or polling mechanism.
 

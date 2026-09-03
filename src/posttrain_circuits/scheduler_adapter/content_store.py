@@ -187,6 +187,7 @@ class OutputAttempt:
     workflow_id: str
     plan_sha256: str
     unit_id: str
+    job_id: str
     attempt: int
 
     @property
@@ -480,6 +481,7 @@ class ContentStore:
         workflow_id: str,
         plan_sha256: str,
         unit_id: str,
+        job_id: str,
         attempt: int,
     ) -> OutputAttempt:
         self.layout.prepare_attempt_parents(
@@ -491,6 +493,7 @@ class ContentStore:
             workflow_id=workflow_id,
             plan_sha256=plan_sha256,
             unit_id=unit_id,
+            job_id=job_id,
             attempt=attempt,
         )
         parent_fd = open_confined_directory(
@@ -519,6 +522,7 @@ class ContentStore:
                 workflow_id=workflow_id,
                 plan_sha256=plan_sha256,
                 unit_id=unit_id,
+                job_id=job_id,
                 attempt=attempt,
             )
         except BaseException:

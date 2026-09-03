@@ -143,6 +143,7 @@ def execute_validated_unit(
             workflow_id=manifest.parameters.workflow_id,
             plan_sha256=plan_sha256,
             unit_id=manifest.parameters.unit_id,
+            job_id=envelope.job_id,
             attempt=envelope.attempt,
         ) as output_attempt:
             exit_code = run_foreground_child(

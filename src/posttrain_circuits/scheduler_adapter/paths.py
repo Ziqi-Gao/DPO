@@ -184,16 +184,18 @@ class WorkflowLayout:
         workflow_id: str,
         plan_sha256: str,
         unit_id: str,
+        job_id: str,
         attempt: int,
     ) -> Path:
-        """Derive one isolated staging directory, adjacent to its final output."""
+        """Derive staging isolated by scheduler submission and attempt."""
 
         if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
             raise AdapterValidationError("attempt must be a positive integer")
         _identifier(unit_id, name="unit_id")
+        _identifier(job_id, name="job_id")
         return self.output_parent_directory(
             workflow_id=workflow_id, plan_sha256=plan_sha256
-        ) / f".{unit_id}.attempt-{attempt}.stage"
+        ) / f".{job_id}.attempt-{attempt}.stage"
 
     def output_path(
         self,

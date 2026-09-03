@@ -403,6 +403,7 @@ class PreparedHandler:
             output_attempt.workflow_id != manifest.parameters.workflow_id
             or output_attempt.plan_sha256 != manifest.parameters.plan_sha256
             or output_attempt.unit_id != manifest.parameters.unit_id
+            or output_attempt.job_id != envelope.job_id
             or output_attempt.attempt != envelope.attempt
             or output_attempt.descriptor < 0
         ):

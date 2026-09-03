@@ -26,6 +26,7 @@ from posttrain_circuits.artifacts.hashing import canonical_json, sha256_file, sh
 from posttrain_circuits.scheduler_adapter.completion import (
     AttemptCompletionDraft,
     execution_identity,
+    publish_output_attempt,
     validate_unit_completion,
 )
 from posttrain_circuits.scheduler_adapter.content_store import (
@@ -488,6 +489,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             workflow_id=plan.workflow_id,
             plan_sha256=plan.sha256(),
             unit_id="cell",
+            job_id=envelope.job_id,
             attempt=envelope.attempt,
         )
         (attempt_path / "result.json").write_text(
@@ -864,6 +866,37 @@ class SchedulerAdapterTests(unittest.TestCase):
                 expected_execution=execution_identity(self._envelope(manifest)),
             )
 
+    def test_output_publication_rejects_staging_from_another_job(self):
+        plan, _path = self._publish_plan()
+        manifest = _manifest(_running_payload(self.root))
+        handler = self._handler(manifest)
+        envelope = self._envelope(manifest)
+        store = ContentStore(self.layout)
+        with store.create_output_attempt(
+            workflow_id=plan.workflow_id,
+            plan_sha256=plan.sha256(),
+            unit_id="cell",
+            job_id=envelope.job_id,
+            attempt=envelope.attempt,
+        ) as attempt:
+            wrong_execution = replace(
+                execution_identity(envelope),
+                job_id="opd-another-job",
+            )
+            with self.assertRaisesRegex(
+                AdapterValidationError,
+                "differs from the workflow execution",
+            ):
+                publish_output_attempt(
+                    plan,
+                    plan.unit("cell"),
+                    attempt,
+                    plan_sha256=plan.sha256(),
+                    layout=self.layout,
+                    expected_execution=wrong_execution,
+                    handler_registry=self._registry(handler),
+                )
+
     def test_completion_config_relationships_are_code_owned(self):
         plan, _path = self._publish_plan()
         manifest = _manifest(_running_payload(self.root))
@@ -1114,6 +1147,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                 workflow_id=plan.workflow_id,
                 plan_sha256=plan.sha256(),
                 unit_id="cell",
+                job_id=first.job_id,
                 attempt=1,
             )
             (failed_path / "poison-from-failed-attempt").write_text(
@@ -1153,6 +1187,111 @@ class SchedulerAdapterTests(unittest.TestCase):
         )
         self.assertEqual(marker["execution"]["attempt"], 2)
         self.assertTrue(failed_path.is_dir())
+
+    def test_new_job_restarts_attempt_count_without_reusing_failed_staging(self):
+        plan, _path = self._publish_plan()
+        manifest = _manifest(_running_payload(self.root))
+        handler = self._handler(manifest)
+        registry = self._registry(handler)
+        first = self._envelope(manifest)
+        test_case = self
+
+        class FailedChild:
+            def poll(self) -> None:
+                return None
+
+            def send_signal(self, _signum: int) -> None:
+                raise AssertionError("unexpected signal")
+
+            def wait(self) -> int:
+                test_case._write_attempt_result(plan, first)
+                return 17
+
+        with handler.prepare(
+            manifest,
+            approved_code_root=self.code_root,
+            approved_runtime_root=self.scratch_root,
+        ) as prepared:
+            self.assertEqual(
+                execute_validated_unit(
+                    manifest,
+                    first,
+                    prepared,
+                    layout=self.layout,
+                    handler_registry=registry,
+                    environ=self._thread_environment(),
+                    popen=lambda *_args, **_kwargs: FailedChild(),
+                ),
+                17,
+            )
+
+        retry_manifest = replace(
+            manifest,
+            job_id="opd-retry-job-2",
+            manifest_sha256="b" * 64,
+        )
+        retry = replace(
+            first,
+            job_id=retry_manifest.job_id,
+            attempt=1,
+            manifest_sha256=retry_manifest.manifest_sha256,
+        )
+
+        class SuccessfulChild:
+            def poll(self) -> None:
+                return None
+
+            def send_signal(self, _signum: int) -> None:
+                raise AssertionError("unexpected signal")
+
+            def wait(self) -> int:
+                test_case._write_attempt_result(plan, retry)
+                return 0
+
+        with handler.prepare(
+            retry_manifest,
+            approved_code_root=self.code_root,
+            approved_runtime_root=self.scratch_root,
+        ) as prepared:
+            self.assertEqual(
+                execute_validated_unit(
+                    retry_manifest,
+                    retry,
+                    prepared,
+                    layout=self.layout,
+                    handler_registry=registry,
+                    environ=self._thread_environment(),
+                    popen=lambda *_args, **_kwargs: SuccessfulChild(),
+                ),
+                0,
+            )
+
+        first_path = self.layout.attempt_directory(
+            workflow_id=plan.workflow_id,
+            plan_sha256=plan.sha256(),
+            unit_id="cell",
+            job_id=first.job_id,
+            attempt=1,
+        )
+        retry_path = self.layout.attempt_directory(
+            workflow_id=plan.workflow_id,
+            plan_sha256=plan.sha256(),
+            unit_id="cell",
+            job_id=retry.job_id,
+            attempt=1,
+        )
+        self.assertNotEqual(first_path, retry_path)
+        self.assertTrue(first_path.is_dir())
+        self.assertFalse(retry_path.exists())
+        marker = json.loads(
+            self.layout.completion_path(
+                workflow_id=plan.workflow_id,
+                plan_sha256=plan.sha256(),
+                unit_id="cell",
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(marker["execution"]["job_id"], retry.job_id)
+        self.assertEqual(marker["execution"]["attempt"], 1)
 
     def test_child_environment_rejects_loader_and_python_injection(self):
         manifest = _manifest(_running_payload(self.root))
@@ -1200,20 +1339,27 @@ class SchedulerAdapterTests(unittest.TestCase):
         with mock.patch(
             "posttrain_circuits.scheduler_adapter.registry.HANDLER_REGISTRY", registry
         ):
-            self.assertEqual(
-                prepare_outbox_request(
-                    plan,
-                    unit_id="cell",
-                    layout=self.layout,
-                ),
-                path,
+            retry_path = prepare_outbox_request(
+                plan,
+                unit_id="cell",
+                layout=self.layout,
             )
+        self.assertNotEqual(retry_path, path)
+        retry = json.loads(retry_path.read_text(encoding="utf-8"))
+        self.assertNotEqual(retry["job_id"], observed["job_id"])
+        self.assertEqual(retry["parameters"], observed["parameters"])
         injected = dict(observed)
         injected["command"] = "/bin/sh"
         with mock.patch(
             "posttrain_circuits.scheduler_adapter.registry.HANDLER_REGISTRY", registry
         ), self.assertRaises(AdapterValidationError):
             validate_outbox_request(injected)
+        malformed_id = dict(observed)
+        malformed_id["job_id"] = "opd-not-a-submission-id"
+        with mock.patch(
+            "posttrain_circuits.scheduler_adapter.registry.HANDLER_REGISTRY", registry
+        ), self.assertRaisesRegex(AdapterValidationError, "opaque OPD"):
+            validate_outbox_request(malformed_id)
 
     def test_outbox_accepts_only_migrated_code_owned_profile(self):
         plan = _plan()
@@ -1440,6 +1586,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             workflow_id=plan.workflow_id,
             plan_sha256=plan.sha256(),
             unit_id="cell",
+            job_id=envelope.job_id,
             attempt=1,
         ) as attempt:
             argv = prepared.argv(

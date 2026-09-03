@@ -453,6 +453,7 @@ def publish_output_attempt(
         attempt.workflow_id != plan.workflow_id
         or attempt.plan_sha256 != plan_sha256
         or attempt.unit_id != unit.unit_id
+        or attempt.job_id != expected_execution.job_id
         or attempt.attempt != expected_execution.attempt
     ):
         raise AdapterValidationError("output attempt differs from the workflow execution")

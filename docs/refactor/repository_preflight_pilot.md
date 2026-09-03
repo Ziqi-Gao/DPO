@@ -63,3 +63,8 @@ This command only writes immutable OPD plan/config content under
 `/scr/del6500/OPD/scheduler/outbox`. It does not submit, poll, enable a
 registration, or manage a service. Central review, registration installation,
 enabling, and pilot execution remain separate approval gates.
+
+Each invocation creates a fresh opaque `job_id` for one scheduler submission.
+The scientific identity remains the immutable `workflow_id`, `plan_sha256`, and
+`unit_id`; this permits an operational retry after an exhausted central job
+without changing or re-hashing the scientific unit.

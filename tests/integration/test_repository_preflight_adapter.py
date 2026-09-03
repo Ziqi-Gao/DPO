@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from posttrain_circuits.artifacts.hashing import sha256_value
@@ -140,15 +141,28 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
         def must_not_launch(*_args: object, **_kwargs: object) -> object:
             raise AssertionError("valid completion must be reused without relaunch")
 
-        with handler.prepare(
+        retry_manifest = replace(
             self.manifest,
+            job_id="opd-repository-preflight-retry",
+            manifest_sha256="b" * 64,
+        )
+        retry_envelope = RuntimeEnvelope(
+            job_id=retry_manifest.job_id,
+            attempt=2,
+            execution_profile=retry_manifest.execution_profile,
+            manifest_path=self.root / "retry-running.json",
+            manifest_sha256=retry_manifest.manifest_sha256,
+            allocation_sha256=sha256_value(retry_manifest.allocation_payload()),
+        )
+        with handler.prepare(
+            retry_manifest,
             approved_code_root=PROJECT_ROOT,
             approved_runtime_root=FIXED_RUNTIME_ROOT,
         ) as prepared:
             self.assertEqual(
                 execute_validated_unit(
-                    self.manifest,
-                    self.envelope,
+                    retry_manifest,
+                    retry_envelope,
                     prepared,
                     layout=self.layout,
                     handler_registry=HANDLER_REGISTRY,
