@@ -59,6 +59,15 @@ not a request parameter and does not change scheduler-provided GPU visibility.
 Rank-zero-only teacher loading and inference are synchronized over Gloo before
 the remaining ranks enter the next NCCL collective.
 
+The fully trainable student is wrapped as one root FSDP unit with
+`use_orig_params=false`. The optimizer therefore consumes the unit's one
+nonempty flat parameter shard on each rank instead of exposing Qwen3's tied
+embedding/output weights as zero-length or one-dimensional original-parameter
+shards during forward execution. This preserves Qwen3 weight tying and the
+registered full-parameter training check. The handler logs explicit FSDP,
+student-forward, backward, and optimizer-step phase boundaries so a later
+failure can be assigned to the exact training stage.
+
 No repository snapshot digest is an input. The deployment contract binds the
 fixed runtime and implementation bundle, while the workflow binds the exact
 scientific configuration and preregistration content needed by this task.

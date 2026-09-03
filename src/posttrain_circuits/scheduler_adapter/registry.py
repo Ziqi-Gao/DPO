@@ -880,7 +880,7 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="cd9d4bb168089ada68d252ced22b49d9006429474730dcc09b0adf3115c6693e",
+    implementation_sha256="f34a33df1b642ebde126b32642ec7f963620865ba813669244ee0801e50bfb4d",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -894,8 +894,8 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="a6a92ffe6096aa4ca06bb69af26dd85ec83d914c8b864452f453e8a11bb0a67c",
-    deployment_identity_sha256="a789381cbcde3e627c6bf244acdb7f6b08077ceda5d661c790b148567d7a4998",
+    package_manifest_sha256="4bd708aa1551009ebab80c7aade9f32d9ae543b05cb5bd0ed5b7702b4a87d708",
+    deployment_identity_sha256="b6a1b1f898ede8c4e663f820978fee2a62e84960a03e00dc6f04c9a3d9939a88",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,

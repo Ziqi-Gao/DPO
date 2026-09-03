@@ -112,6 +112,8 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         self.assertIn('dist.init_process_group(\n        "gloo"', source)
         self.assertIn('backend="nccl"', source)
         self.assertIn("process_group=runtime.data_group", source)
+        self.assertIn("use_orig_params=False", source)
+        self.assertNotIn("use_orig_params=True", source)
         self.assertIn("async_op=True", source)
         self.assertIn(
             "timeout=timedelta(seconds=NCCL_PROBE_TIMEOUT_SECONDS)", source
@@ -120,6 +122,51 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         self.assertIn("group=runtime.data_group", source)
         self.assertNotIn("dist.barrier()", source)
         self.assertIn('"--run-path",', source)
+
+    def test_optimizer_accepts_only_one_nonempty_flat_fsdp_shard(self) -> None:
+        class FakeModel:
+            def __init__(self, parameters: tuple[object, ...]) -> None:
+                self._parameters = parameters
+
+            def parameters(self):  # type: ignore[no-untyped-def]
+                return iter(self._parameters)
+
+        flat_parameter = SimpleNamespace(
+            _is_flat_param=True,
+            ndim=1,
+            numel=lambda: 32,
+        )
+        model = FakeModel((flat_parameter,))
+        self.assertEqual(
+            self.module._flat_optimizer_parameters(model), (flat_parameter,)
+        )
+
+        invalid_parameters = (
+            (),
+            (flat_parameter, flat_parameter),
+            (SimpleNamespace(_is_flat_param=False, ndim=1, numel=lambda: 32),),
+            (SimpleNamespace(_is_flat_param=True, ndim=2, numel=lambda: 32),),
+            (SimpleNamespace(_is_flat_param=True, ndim=1, numel=lambda: 0),),
+        )
+        for parameters in invalid_parameters:
+            with self.subTest(parameters=parameters), self.assertRaises(
+                self.module.PreflightError
+            ):
+                self.module._flat_optimizer_parameters(FakeModel(parameters))
+
+    def test_handler_logs_each_student_training_boundary(self) -> None:
+        source = HANDLER.read_text(encoding="utf-8")
+        for phase in (
+            "student_fsdp_ready",
+            "student_forward_started",
+            "student_forward_completed",
+            "student_backward_started",
+            "student_backward_completed",
+            "optimizer_step_started",
+            "optimizer_step_completed",
+        ):
+            with self.subTest(phase=phase):
+                self.assertIn(f'"{phase}"', source)
 
     def test_nccl_version_normalization(self) -> None:
         class TupleNccl:

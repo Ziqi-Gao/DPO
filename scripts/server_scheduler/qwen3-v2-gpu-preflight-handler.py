@@ -723,6 +723,20 @@ def _parameter_checksum(model: Any, device: Any) -> Any:
     return value
 
 
+def _flat_optimizer_parameters(model: Any) -> tuple[Any, ...]:
+    parameters = tuple(model.parameters())
+    if len(parameters) != 1:
+        raise PreflightError("root FSDP unit did not expose one flat parameter")
+    parameter = parameters[0]
+    if (
+        not bool(getattr(parameter, "_is_flat_param", False))
+        or parameter.ndim != 1
+        or parameter.numel() <= 0
+    ):
+        raise PreflightError("root FSDP unit exposed an invalid flat parameter shard")
+    return parameters
+
+
 def _nccl_runtime_version(torch: Any) -> str:
     value = torch.cuda.nccl.version()
     if isinstance(value, tuple) and len(value) == 3:
@@ -876,7 +890,16 @@ def _rank_training(
         student_model,
         device_id=device,
         process_group=runtime.data_group,
-        use_orig_params=True,
+        # Qwen3 ties embedding and output weights. Original-parameter mode may
+        # expose an empty or 1-D local shard where its forward expects 2-D.
+        use_orig_params=False,
+    )
+    optimizer_parameters = _flat_optimizer_parameters(student)
+    _log_phase(
+        rank,
+        "student_fsdp_ready",
+        parameter_mode="flat",
+        local_parameter_elements=int(optimizer_parameters[0].numel()),
     )
     teacher = None
     teacher_status: list[Any] = [None]
@@ -985,21 +1008,27 @@ def _rank_training(
         group=runtime.data_group,
     )
 
-    optimizer = torch.optim.AdamW(student.parameters(), lr=1e-3)
+    optimizer = torch.optim.AdamW(optimizer_parameters, lr=1e-3)
     optimizer.zero_grad(set_to_none=True)
+    _log_phase(rank, "student_forward_started")
     student_logits = student(input_ids=input_ids, attention_mask=attention_mask).logits
+    _log_phase(rank, "student_forward_completed")
     loss = functional.kl_div(
         student_logits.float().log_softmax(dim=-1),
         teacher_logits.float().softmax(dim=-1),
         reduction="batchmean",
     )
+    _log_phase(rank, "student_backward_started")
     loss.backward()
-    gradients = [item.grad for item in student.parameters() if item.grad is not None]
+    _log_phase(rank, "student_backward_completed")
+    gradients = [item.grad for item in optimizer_parameters if item.grad is not None]
     gradients_finite = bool(gradients) and all(
         bool(torch.isfinite(item).all()) for item in gradients
     )
     before = _parameter_checksum(student, device)
+    _log_phase(rank, "optimizer_step_started")
     optimizer.step()
+    _log_phase(rank, "optimizer_step_completed")
     after = _parameter_checksum(student, device)
     update_nonzero = bool((after - before).abs().item() > 0.0)
 
