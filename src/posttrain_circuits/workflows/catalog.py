@@ -93,6 +93,21 @@ _CANDIDATE_TEMPLATES = (
         ),
     ),
     _template(
+        "qwen3_v2_gpu_preflight",
+        "handler-contract:qwen3_v2_gpu_preflight",
+        outputs=("gpu_preflight.json",),
+        gates=(
+            "allocation_contract",
+            "config_binding",
+            "cuda_runtime",
+            "fsdp_resume",
+            "memory_headroom",
+            "nccl_all_reduce",
+            "offline_pinned_models",
+            "real_forward_backward",
+        ),
+    ),
+    _template(
         "offline_hard",
         "posttrain_circuits.cli.train",
         outputs=_TRAINING_OUTPUTS,

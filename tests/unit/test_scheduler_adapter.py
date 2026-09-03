@@ -1530,12 +1530,15 @@ class SchedulerAdapterTests(unittest.TestCase):
 
         gpu_manifest = _manifest(_running_payload(self.root, gpu=True))
         gpu_handler = self._handler(gpu_manifest)
-        with self.assertRaisesRegex(AdapterValidationError, "model-identity"):
-            gpu_handler.prepare(
-                gpu_manifest,
-                approved_code_root=self.code_root,
-                approved_runtime_root=self.scratch_root,
-            )
+        # Protocol v2 has no trusted model-name field. Central admission applies
+        # the registered allowlist and the scientific worker validates CUDA
+        # device properties; a supplied observation is still fail-closed.
+        with gpu_handler.prepare(
+            gpu_manifest,
+            approved_code_root=self.code_root,
+            approved_runtime_root=self.scratch_root,
+        ) as prepared:
+            self.assertEqual(prepared.profile.process_count, 2)
         with self.assertRaisesRegex(AdapterValidationError, "allowlist"):
             gpu_handler.prepare(
                 gpu_manifest,
@@ -1778,7 +1781,10 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_adapter_ast_contains_no_submission_or_local_scheduler_primitives(self):
         self.assertIsInstance(HANDLER_REGISTRY, MappingProxyType)
-        self.assertEqual(tuple(HANDLER_REGISTRY), ("repository_preflight",))
+        self.assertEqual(
+            tuple(HANDLER_REGISTRY),
+            ("qwen3_v2_gpu_preflight", "repository_preflight"),
+        )
         banned_modules = {"fcntl", "multiprocessing"}
         banned_calls = {
             ("os", "fork"),

@@ -39,6 +39,13 @@ WORKFLOW_TASK_REGISTRY: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "resolved_config_sha256",
             "scientific_config_sha256",
         ),
+        "qwen3_v2_gpu_preflight": (
+            "config_binding_sha256",
+            "execution_config_sha256",
+            "preregistration_sha256",
+            "resolved_config_sha256",
+            "scientific_config_sha256",
+        ),
         "offline_hard": _TRAINING_BINDING,
         "online_hard": _TRAINING_BINDING,
         "offline_soft": _TRAINING_BINDING,

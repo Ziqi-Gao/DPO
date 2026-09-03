@@ -17,6 +17,7 @@ from posttrain_circuits.scheduler_adapter.errors import AdapterError, AdapterVal
 from posttrain_circuits.scheduler_adapter.manifest import load_running_manifest
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.registry import (
+    ADDITIONAL_RUNTIME_ROOTS,
     FIXED_RUNTIME_ROOT,
     HANDLER_REGISTRY,
     require_handler,
@@ -57,6 +58,7 @@ def main(
             manifest,
             approved_code_root=layout.code_root,
             approved_runtime_root=FIXED_RUNTIME_ROOT,
+            additional_runtime_roots=ADDITIONAL_RUNTIME_ROOTS,
             observed_gpu_models=None,
         ) as prepared:
             configure_thread_environment(

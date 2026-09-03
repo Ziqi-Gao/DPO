@@ -24,6 +24,14 @@ from posttrain_circuits.scheduler_adapter.repository_preflight import (
     TASK_NAME as REPOSITORY_PREFLIGHT_TASK,
     validate_repository_preflight_completion,
 )
+from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
+    GATE_NAMES as QWEN3_V2_GPU_PREFLIGHT_GATES,
+    GPU_MODEL as QWEN3_V2_GPU_MODEL,
+    OUTPUT_NAME as QWEN3_V2_GPU_PREFLIGHT_OUTPUT,
+    PROFILE_NAME as QWEN3_V2_GPU_PREFLIGHT_PROFILE_NAME,
+    TASK_NAME as QWEN3_V2_GPU_PREFLIGHT_TASK,
+    validate_qwen3_v2_gpu_preflight_completion,
+)
 from posttrain_circuits.scheduler_adapter.secure_files import (
     HeldRegularFile,
     hold_regular_file,
@@ -101,6 +109,8 @@ PACKAGE_MANIFEST_KEYS = frozenset(
 
 SemanticValidator = Callable[[Mapping[str, Any], Any], None]
 FIXED_RUNTIME_ROOT = Path("/usr/bin")
+GPU_RUNTIME_ROOT = Path("/scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin")
+ADDITIONAL_RUNTIME_ROOTS = (GPU_RUNTIME_ROOT,)
 
 
 class ConfigBindingResolver(Protocol):
@@ -270,14 +280,18 @@ class ExecutionProfileContract:
             raise AdapterValidationError(
                 "allocation GPU utilization is outside the profile contract"
             )
-        if observed_gpu_models is None:
-            raise AdapterValidationError(
-                "GPU handler activation requires a trusted model-identity observation"
-            )
-        if len(observed_gpu_models) != self.gpu_count or any(
-            model not in self.allowed_gpu_models for model in observed_gpu_models
-        ):
-            raise AdapterValidationError("observed GPU models differ from the profile allowlist")
+        # Protocol v2 does not expose GPU model names in the running manifest.
+        # ServerScheduler applies the registered model allowlist before launch;
+        # the GPU worker independently records and validates CUDA device names.
+        # Tests and future protocol revisions may still supply a trusted
+        # observation here, in which case it is checked strictly.
+        if observed_gpu_models is not None:
+            if len(observed_gpu_models) != self.gpu_count or any(
+                model not in self.allowed_gpu_models for model in observed_gpu_models
+            ):
+                raise AdapterValidationError(
+                    "observed GPU models differ from the profile allowlist"
+                )
 
     def identity_payload(self) -> dict[str, Any]:
         self.validate_contract()
@@ -320,9 +334,9 @@ class DeploymentContract:
         _identifier(self.deployment_id, name="deployment_id")
         if not isinstance(self.runtime_version, str) or not self.runtime_version.strip():
             raise AdapterValidationError("deployment runtime_version must be non-empty")
-        if self.runtime_flags != ("-I", "-S"):
+        if self.runtime_flags not in {("-I", "-S"), ("-I",)}:
             raise AdapterValidationError(
-                "deployment runtime_flags must enforce isolated Python without site packages"
+                "deployment runtime_flags must enforce isolated Python"
             )
         for value, name in (
             (self.executable_sha256, "deployment executable_sha256"),
@@ -604,6 +618,7 @@ class HandlerSpec:
         *,
         approved_code_root: Path,
         approved_runtime_root: Path,
+        additional_runtime_roots: tuple[Path, ...] = (),
         observed_gpu_models: tuple[str, ...] | None = None,
     ) -> PreparedHandler:
         self.validate_contract()
@@ -616,7 +631,11 @@ class HandlerSpec:
         deployment = self.deployment
         validate_path_chain(
             deployment.executable,
-            approved_roots=(approved_code_root, approved_runtime_root),
+            approved_roots=(
+                approved_code_root,
+                approved_runtime_root,
+                *additional_runtime_roots,
+            ),
             final_kind="file",
         )
         for path in (deployment.implementation, deployment.package_manifest):
@@ -625,7 +644,11 @@ class HandlerSpec:
             )
         validate_path_chain(
             deployment.dependency_lock,
-            approved_roots=(approved_code_root, approved_runtime_root),
+            approved_roots=(
+                approved_code_root,
+                approved_runtime_root,
+                *additional_runtime_roots,
+            ),
             final_kind="file",
         )
         validate_path_chain(
@@ -766,10 +789,86 @@ _REPOSITORY_PREFLIGHT_HANDLER = HandlerSpec(
     semantic_validator=validate_repository_preflight_completion,
 )
 
-# Only this measured, CPU-only pilot is migrated. All scientific workloads
-# remain fail-closed until separately reviewed and registered.
+_QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
+    name=QWEN3_V2_GPU_PREFLIGHT_PROFILE_NAME,
+    kind="gpu",
+    process_count=4,
+    cpu_cores_min=16,
+    cpu_cores_max=16,
+    memory_mib_min=196608,
+    memory_mib_max=196608,
+    gpu_count=4,
+    gpu_memory_mib_min=81920,
+    gpu_memory_mib_max=81920,
+    gpu_utilization_pct_min=95,
+    gpu_utilization_pct_max=95,
+    exclusive_gpu=True,
+    allowed_gpu_models=(QWEN3_V2_GPU_MODEL,),
+)
+_QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
+    deployment_id="qwen3-v2-gpu-preflight-python312-cuda-v1",
+    runtime_version=(
+        "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; Transformers 4.56.2"
+    ),
+    runtime_flags=("-I",),
+    executable=GPU_RUNTIME_ROOT / "python",
+    executable_sha256="848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
+    implementation=(
+        PRODUCTION_CODE_ROOT
+        / "scripts"
+        / "server_scheduler"
+        / "qwen3-v2-gpu-preflight-handler.py"
+    ),
+    implementation_sha256="dfdd5edc262e896023c7679f5b25b804ff039b6d9cafc2c912372a18247988c0",
+    dependency_lock=(
+        PRODUCTION_CODE_ROOT
+        / "deployments"
+        / "qwen3_v2_gpu_preflight"
+        / "dependency-lock.json"
+    ),
+    dependency_lock_sha256="5d2bb96680e253ee58f711b28b17bdbf404425eece7f45a176199cde5ab6179a",
+    package_manifest=(
+        PRODUCTION_CODE_ROOT
+        / "deployments"
+        / "qwen3_v2_gpu_preflight"
+        / "package-manifest.json"
+    ),
+    package_manifest_sha256="dac84af0c928e8a4c0fc2bc202a68db0a774897e11f7e1947355f7cf3dfb2d1a",
+    deployment_identity_sha256="ba8e5330b8e27b4eb6dcc1c379a234fd5a7efd5b6f62c142011e06fa44203435",
+)
+_QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
+    task=QWEN3_V2_GPU_PREFLIGHT_TASK,
+    deployment=_QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT,
+    profiles=MappingProxyType(
+        {QWEN3_V2_GPU_PREFLIGHT_PROFILE_NAME: _QWEN3_V2_GPU_PREFLIGHT_PROFILE}
+    ),
+    fixed_args=(),
+    fixed_environment=MappingProxyType(
+        {
+            "HF_HOME": "/scr/del6500/OPD/cache/huggingface",
+            "HF_HUB_CACHE": "/scr/del6500/OPD/cache/huggingface/hub",
+            "HF_HUB_OFFLINE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "TOKENIZERS_PARALLELISM": "false",
+            "TRANSFORMERS_OFFLINE": "1",
+            "TMPDIR": "/scr/del6500/OPD/tmp",
+        }
+    ),
+    cwd=PRODUCTION_CODE_ROOT,
+    output_names=(QWEN3_V2_GPU_PREFLIGHT_OUTPUT,),
+    required_gate_names=QWEN3_V2_GPU_PREFLIGHT_GATES,
+    config_hash_bindings=CONFIG_HASH_CONTENT_INPUTS,
+    semantic_validator_id="qwen3-v2-gpu-preflight-result-v1",
+    semantic_validator=validate_qwen3_v2_gpu_preflight_completion,
+)
+
+# The CPU preflight and one bounded four-GPU preflight are migrated. Training,
+# circuit analysis, G0, and factorial tasks remain fail-closed.
 HANDLER_REGISTRY: Mapping[str, HandlerSpec] = MappingProxyType(
-    {REPOSITORY_PREFLIGHT_TASK: _REPOSITORY_PREFLIGHT_HANDLER}
+    {
+        QWEN3_V2_GPU_PREFLIGHT_TASK: _QWEN3_V2_GPU_PREFLIGHT_HANDLER,
+        REPOSITORY_PREFLIGHT_TASK: _REPOSITORY_PREFLIGHT_HANDLER,
+    }
 )
 
 
