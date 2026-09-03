@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import fcntl
 import hashlib
 import importlib.metadata
@@ -25,8 +26,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -44,6 +46,9 @@ CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9
 PREREGISTRATION_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
 GPU_MODEL = "NVIDIA RTX PRO 6000 Blackwell Server Edition"
 GPU_COUNT = 4
+NCCL_VERSION = "2.27.3"
+NCCL_PROBE_TIMEOUT_SECONDS = 120
+CONTROL_GROUP_TIMEOUT_SECONDS = 900
 NODE_MEMORY_BYTES = 192 * 1024**3
 MINIMUM_HEADROOM_BYTES = max(32 * 1024**3, int(NODE_MEMORY_BYTES * 0.20))
 MAX_INPUT_BYTES = 64 * 1024 * 1024
@@ -81,10 +86,16 @@ FIXED_ENVIRONMENT = {
     "HF_HOME": "/scr/del6500/OPD/cache/huggingface",
     "HF_HUB_CACHE": "/scr/del6500/OPD/cache/huggingface/hub",
     "HF_HUB_OFFLINE": "1",
+    "NCCL_DEBUG": "INFO",
+    "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
+    "NCCL_P2P_DISABLE": "1",
     "PYTHONDONTWRITEBYTECODE": "1",
     "TOKENIZERS_PARALLELISM": "false",
     "TRANSFORMERS_OFFLINE": "1",
     "TMPDIR": "/scr/del6500/OPD/tmp",
+    "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+    "TORCH_NCCL_DUMP_ON_TIMEOUT": "1",
+    "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
 }
 
 
@@ -126,6 +137,18 @@ class Invocation:
             "job_id": self.job_id,
             "manifest_sha256": self.manifest_sha256,
         }
+
+
+@dataclass(frozen=True)
+class DistributedRuntime:
+    rank: int
+    local_rank: int
+    world_size: int
+    device: Any
+    control_group: Any
+    data_group: Any
+    device_row: dict[str, Any]
+    nccl_diagnostic: dict[str, Any]
 
 
 class _SingleValue(argparse.Action):
@@ -188,6 +211,40 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
         "+00:00", "Z"
     )
+
+
+def _log_phase(rank_id: int, phase: str, **details: object) -> None:
+    payload = {"at": _utc_now(), "phase": phase, "rank": rank_id, **details}
+    print(f"OPD_GPU_PREFLIGHT {_canonical_json(payload)}", file=sys.stderr, flush=True)
+
+
+def _cuda_pci_bus_id(logical_index: int) -> str:
+    try:
+        driver = ctypes.CDLL("libcuda.so.1")
+        driver.cuInit.argtypes = [ctypes.c_uint]
+        driver.cuInit.restype = ctypes.c_int
+        driver.cuDeviceGet.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+        driver.cuDeviceGet.restype = ctypes.c_int
+        driver.cuDeviceGetPCIBusId.argtypes = [
+            ctypes.POINTER(ctypes.c_char),
+            ctypes.c_int,
+            ctypes.c_int,
+        ]
+        driver.cuDeviceGetPCIBusId.restype = ctypes.c_int
+        device = ctypes.c_int()
+        buffer = ctypes.create_string_buffer(32)
+        if driver.cuInit(0) != 0:
+            raise PreflightError("CUDA driver initialization failed")
+        if driver.cuDeviceGet(ctypes.byref(device), logical_index) != 0:
+            raise PreflightError("CUDA logical device lookup failed")
+        if driver.cuDeviceGetPCIBusId(buffer, len(buffer), device) != 0:
+            raise PreflightError("CUDA PCI bus lookup failed")
+        value = buffer.value.decode("ascii", errors="strict").lower()
+    except (OSError, UnicodeDecodeError) as error:
+        raise PreflightError("CUDA PCI identity lookup failed") from error
+    if re.fullmatch(r"[0-9a-f]{4,8}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", value) is None:
+        raise PreflightError("CUDA returned a non-canonical PCI bus identity")
+    return value
 
 
 def _outer_parser() -> argparse.ArgumentParser:
@@ -549,6 +606,7 @@ def _validate_environment() -> tuple[str, ...]:
     expected_versions = {
         "accelerate": "1.10.1",
         "huggingface-hub": "0.36.2",
+        "nvidia-nccl-cu12": NCCL_VERSION,
         "numpy": "1.26.4",
         "safetensors": "0.5.3",
         "tokenizers": "0.22.0",
@@ -665,7 +723,114 @@ def _parameter_checksum(model: Any, device: Any) -> Any:
     return value
 
 
-def _rank_training(config: dict[str, Any], checkpoint_root: Path) -> dict[str, Any]:
+def _nccl_runtime_version(torch: Any) -> str:
+    value = torch.cuda.nccl.version()
+    if isinstance(value, tuple) and len(value) == 3:
+        return ".".join(str(int(item)) for item in value)
+    if isinstance(value, int) and value > 0:
+        return f"{value // 10000}.{(value // 100) % 100}.{value % 100}"
+    raise PreflightError("PyTorch did not expose a canonical NCCL runtime version")
+
+
+def _initialize_distributed() -> DistributedRuntime:
+    import torch
+    import torch.distributed as dist
+
+    rank = int(os.environ["RANK"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    if (
+        world_size != GPU_COUNT
+        or rank != local_rank
+        or not 0 <= local_rank < GPU_COUNT
+    ):
+        raise PreflightError("torchrun topology differs from the fixed four-rank contract")
+    if (
+        torch.version.cuda != "12.8"
+        or not str(torch.__version__).startswith("2.8.0+cu128")
+    ):
+        raise PreflightError("fixed runtime is not CUDA-enabled PyTorch 2.8.0")
+    if torch.cuda.device_count() != GPU_COUNT:
+        raise PreflightError("visible CUDA device count differs from the allocation")
+    torch.cuda.set_device(local_rank)
+    device = torch.device("cuda", local_rank)
+    properties = torch.cuda.get_device_properties(device)
+    if properties.name != GPU_MODEL:
+        raise PreflightError("CUDA reported an unreviewed GPU model")
+    visible_identifier = os.environ["CUDA_VISIBLE_DEVICES"].split(",")[local_rank]
+    pci_bus_id = _cuda_pci_bus_id(local_rank)
+    device_row = {
+        "capability": [properties.major, properties.minor],
+        "logical_index": local_rank,
+        "name": properties.name,
+        "pci_bus_id": pci_bus_id,
+        "rank": rank,
+        "total_memory": properties.total_memory,
+        "visible_cuda_identifier": visible_identifier,
+    }
+    _log_phase(
+        rank,
+        "cuda_ready",
+        logical_index=local_rank,
+        name=properties.name,
+        pci_bus_id=pci_bus_id,
+        visible_cuda_identifier=visible_identifier,
+    )
+    dist.init_process_group(
+        "gloo", timeout=timedelta(seconds=CONTROL_GROUP_TIMEOUT_SECONDS)
+    )
+    control_group = dist.group.WORLD
+    _log_phase(rank, "control_group_ready", backend="gloo")
+    data_group = dist.new_group(
+        ranks=list(range(GPU_COUNT)),
+        backend="nccl",
+        timeout=timedelta(seconds=NCCL_PROBE_TIMEOUT_SECONDS),
+    )
+    _log_phase(
+        rank,
+        "nccl_probe_started",
+        p2p_disabled=True,
+        timeout_seconds=NCCL_PROBE_TIMEOUT_SECONDS,
+    )
+    started = time.monotonic()
+    reduced = torch.tensor(float(rank + 1), device=device)
+    work = dist.all_reduce(reduced, group=data_group, async_op=True)
+    completed = work.wait(timeout=timedelta(seconds=NCCL_PROBE_TIMEOUT_SECONDS))
+    elapsed = time.monotonic() - started
+    if completed is False:
+        raise PreflightError("NCCL all-reduce did not complete before its fixed timeout")
+    if float(reduced.item()) != 10.0:
+        raise PreflightError("NCCL all-reduce returned an unexpected result")
+    nccl_version = _nccl_runtime_version(torch)
+    if nccl_version != NCCL_VERSION:
+        raise PreflightError("loaded NCCL runtime differs from the deployment contract")
+    diagnostic = {
+        "control_backend": "gloo",
+        "data_backend": "nccl",
+        "elapsed_seconds": round(elapsed, 6),
+        "observed_sum": float(reduced.item()),
+        "p2p_disabled": True,
+        "rank": rank,
+        "timeout_seconds": NCCL_PROBE_TIMEOUT_SECONDS,
+    }
+    _log_phase(rank, "nccl_probe_passed", **diagnostic)
+    return DistributedRuntime(
+        rank=rank,
+        local_rank=local_rank,
+        world_size=world_size,
+        device=device,
+        control_group=control_group,
+        data_group=data_group,
+        device_row=device_row,
+        nccl_diagnostic=diagnostic,
+    )
+
+
+def _rank_training(
+    config: dict[str, Any],
+    checkpoint_root: Path,
+    runtime: DistributedRuntime,
+) -> dict[str, Any]:
     import torch
     import torch.distributed as dist
     import torch.nn.functional as functional
@@ -676,54 +841,87 @@ def _rank_training(config: dict[str, Any], checkpoint_root: Path) -> dict[str, A
         StateDictType,
     )
 
-    rank = int(os.environ["RANK"])
-    local_rank = int(os.environ["LOCAL_RANK"])
-    world_size = int(os.environ["WORLD_SIZE"])
-    if world_size != GPU_COUNT or not 0 <= local_rank < GPU_COUNT:
-        raise PreflightError("torchrun topology differs from the fixed four-rank contract")
-    if (
-        torch.version.cuda != "12.8"
-        or not str(torch.__version__).startswith("2.8.0+cu128")
-    ):
-        raise PreflightError("fixed runtime is not CUDA-enabled PyTorch 2.8.0")
-    if torch.cuda.device_count() != GPU_COUNT:
-        raise PreflightError("visible CUDA device count differs from the allocation")
-    torch.cuda.set_device(local_rank)
-    dist.init_process_group("nccl")
-    device = torch.device("cuda", local_rank)
-    reduced = torch.tensor(float(rank + 1), device=device)
-    dist.all_reduce(reduced)
-    if float(reduced.item()) != 10.0:
-        raise PreflightError("NCCL all-reduce returned an unexpected result")
-
-    student_model, student_tokenizer, tokenizer_hash = _load_model(
-        config["model"], training=True
-    )
-    vocab_size = int(student_model.config.vocab_size)
-    student = FSDP(student_model, device_id=device, use_orig_params=True)
-    teacher = None
-    teacher_metadata: list[Any] = [None]
-    if rank == 0:
-        teacher, teacher_tokenizer, teacher_hash = _load_model(
-            config["teacher"], training=False
+    rank = runtime.rank
+    world_size = runtime.world_size
+    device = runtime.device
+    _log_phase(rank, "student_load_started")
+    student_error: Exception | None = None
+    student_status: dict[str, Any]
+    try:
+        student_model, student_tokenizer, tokenizer_hash = _load_model(
+            config["model"], training=True
         )
-        probes = (
-            "FACTS F01 A RULES R01 A -> Q",
-            "<proof> S01: R01(F01) -> Q </proof> <answer>1</answer>",
-        )
-        if tokenizer_hash != teacher_hash or any(
-            student_tokenizer.encode(text, add_special_tokens=False)
-            != teacher_tokenizer.encode(text, add_special_tokens=False)
-            for text in probes
-        ):
-            raise PreflightError("student and teacher tokenizers are not compatible")
-        teacher = teacher.to(device)
-        teacher_metadata[0] = {
-            "resolved_teacher_commit": _resolved_commit(teacher, TEACHER_REVISION),
-            "tokenizer_fingerprint": tokenizer_hash,
+    except Exception as error:
+        student_error = error
+        student_status = {
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "ok": False,
+            "rank": rank,
         }
-    dist.broadcast_object_list(teacher_metadata, src=0)
-    if not isinstance(teacher_metadata[0], dict):
+    else:
+        student_status = {"ok": True, "rank": rank}
+        _log_phase(rank, "student_load_completed")
+    student_statuses: list[Any] = [None] * world_size
+    dist.all_gather_object(
+        student_statuses, student_status, group=runtime.control_group
+    )
+    failed_students = [item for item in student_statuses if item.get("ok") is not True]
+    if failed_students:
+        if student_error is not None:
+            raise student_error
+        raise PreflightError(f"student load failed on rank {failed_students[0]['rank']}")
+    vocab_size = int(student_model.config.vocab_size)
+    student = FSDP(
+        student_model,
+        device_id=device,
+        process_group=runtime.data_group,
+        use_orig_params=True,
+    )
+    teacher = None
+    teacher_status: list[Any] = [None]
+    teacher_error: Exception | None = None
+    if rank == 0:
+        try:
+            _log_phase(rank, "teacher_load_started")
+            teacher, teacher_tokenizer, teacher_hash = _load_model(
+                config["teacher"], training=False
+            )
+            probes = (
+                "FACTS F01 A RULES R01 A -> Q",
+                "<proof> S01: R01(F01) -> Q </proof> <answer>1</answer>",
+            )
+            if tokenizer_hash != teacher_hash or any(
+                student_tokenizer.encode(text, add_special_tokens=False)
+                != teacher_tokenizer.encode(text, add_special_tokens=False)
+                for text in probes
+            ):
+                raise PreflightError("student and teacher tokenizers are not compatible")
+            teacher = teacher.to(device)
+            teacher_status[0] = {
+                "metadata": {
+                    "resolved_teacher_commit": _resolved_commit(
+                        teacher, TEACHER_REVISION
+                    ),
+                    "tokenizer_fingerprint": tokenizer_hash,
+                },
+                "ok": True,
+            }
+            _log_phase(rank, "teacher_load_completed")
+        except Exception as error:
+            teacher_error = error
+            teacher_status[0] = {
+                "error": str(error),
+                "error_type": type(error).__name__,
+                "ok": False,
+            }
+    dist.broadcast_object_list(teacher_status, src=0, group=runtime.control_group)
+    if not isinstance(teacher_status[0], dict) or teacher_status[0].get("ok") is not True:
+        if teacher_error is not None:
+            raise teacher_error
+        raise PreflightError("rank-zero teacher load failed")
+    teacher_metadata = teacher_status[0]["metadata"]
+    if not isinstance(teacher_metadata, dict):
         raise PreflightError("rank-zero teacher metadata broadcast failed")
 
     raw_prompt = (
@@ -737,28 +935,55 @@ def _rank_training(config: dict[str, Any], checkpoint_root: Path) -> dict[str, A
     input_ids = encoded.input_ids.to(device)
     attention_mask = encoded.attention_mask.to(device)
     prompt_hashes: list[Any] = [None] * world_size
-    dist.all_gather_object(prompt_hashes, prompt_hash)
+    dist.all_gather_object(prompt_hashes, prompt_hash, group=runtime.control_group)
     unique_prompts = len(set(str(value) for value in prompt_hashes)) == world_size
 
     gathered_ids = [torch.empty_like(input_ids) for _ in range(world_size)]
     gathered_masks = [torch.empty_like(attention_mask) for _ in range(world_size)]
-    dist.all_gather(gathered_ids, input_ids)
-    dist.all_gather(gathered_masks, attention_mask)
+    dist.all_gather(gathered_ids, input_ids, group=runtime.data_group)
+    dist.all_gather(gathered_masks, attention_mask, group=runtime.data_group)
     teacher_logits = torch.empty(
         (*input_ids.shape, vocab_size), dtype=torch.bfloat16, device=device
     )
+    teacher_forward_status: list[Any] = [None]
+    teacher_forward_error: Exception | None = None
+    scatter_rows = None
     if rank == 0:
-        if teacher is None:
-            raise PreflightError("rank zero did not load the teacher")
-        with torch.no_grad():
-            batched = teacher(
-                input_ids=torch.cat(gathered_ids, dim=0),
-                attention_mask=torch.cat(gathered_masks, dim=0),
-            ).logits
-        scatter_rows = list(batched.split(input_ids.shape[0], dim=0))
-    else:
-        scatter_rows = None
-    dist.scatter(teacher_logits, scatter_list=scatter_rows, src=0)
+        try:
+            if teacher is None:
+                raise PreflightError("rank zero did not load the teacher")
+            _log_phase(rank, "teacher_forward_started")
+            with torch.no_grad():
+                batched = teacher(
+                    input_ids=torch.cat(gathered_ids, dim=0),
+                    attention_mask=torch.cat(gathered_masks, dim=0),
+                ).logits
+            scatter_rows = list(batched.split(input_ids.shape[0], dim=0))
+            teacher_forward_status[0] = {"ok": True}
+            _log_phase(rank, "teacher_forward_completed")
+        except Exception as error:
+            teacher_forward_error = error
+            teacher_forward_status[0] = {
+                "error": str(error),
+                "error_type": type(error).__name__,
+                "ok": False,
+            }
+    dist.broadcast_object_list(
+        teacher_forward_status, src=0, group=runtime.control_group
+    )
+    if (
+        not isinstance(teacher_forward_status[0], dict)
+        or teacher_forward_status[0].get("ok") is not True
+    ):
+        if teacher_forward_error is not None:
+            raise teacher_forward_error
+        raise PreflightError("rank-zero teacher forward failed")
+    dist.scatter(
+        teacher_logits,
+        scatter_list=scatter_rows,
+        src=0,
+        group=runtime.data_group,
+    )
 
     optimizer = torch.optim.AdamW(student.parameters(), lr=1e-3)
     optimizer.zero_grad(set_to_none=True)
@@ -779,6 +1004,7 @@ def _rank_training(config: dict[str, Any], checkpoint_root: Path) -> dict[str, A
     update_nonzero = bool((after - before).abs().item() > 0.0)
 
     rank_path = checkpoint_root / f"rank-{rank:02d}.pt"
+    _log_phase(rank, "fsdp_resume_started")
     model_state_config = ShardedStateDictConfig(offload_to_cpu=True)
     optim_state_config = ShardedOptimStateDictConfig(offload_to_cpu=True)
     with FSDP.state_dict_type(
@@ -811,9 +1037,7 @@ def _rank_training(config: dict[str, Any], checkpoint_root: Path) -> dict[str, A
         and not load_result.unexpected_keys
         and bool(torch.allclose(saved, restored, rtol=0.0, atol=1e-6))
     )
-    properties = torch.cuda.get_device_properties(device)
-    if properties.name != GPU_MODEL:
-        raise PreflightError("CUDA reported an unreviewed GPU model")
+    _log_phase(rank, "fsdp_resume_completed", passed=resume_passed)
     row = {
         "chat_template_sha256": CHAT_TEMPLATE_SHA256,
         "checkpoint_sha256": checkpoint_hash,
@@ -835,20 +1059,19 @@ def _rank_training(config: dict[str, Any], checkpoint_root: Path) -> dict[str, A
         "student_revision": _resolved_commit(student_model, MODEL_REVISION),
         "teacher_forward_finite": bool(torch.isfinite(teacher_logits).all()),
         "teacher_loaded_on_this_rank": rank == 0,
-        "teacher_revision": str(teacher_metadata[0]["resolved_teacher_commit"]),
-        "tokenizer_fingerprint": str(teacher_metadata[0]["tokenizer_fingerprint"]),
+        "teacher_revision": str(teacher_metadata["resolved_teacher_commit"]),
+        "tokenizer_fingerprint": str(teacher_metadata["tokenizer_fingerprint"]),
         "tokenizer_revision": MODEL_REVISION,
         "unique_rank_prompt_shard": unique_prompts,
     }
-    device_row = {
-        "capability": [properties.major, properties.minor],
-        "name": properties.name,
-        "rank": rank,
-        "total_memory": properties.total_memory,
-    }
     del checkpoint, teacher_logits, student_logits, teacher, student, optimizer
     torch.cuda.empty_cache()
-    return {"device": device_row, "rank": row}
+    _log_phase(rank, "rank_training_completed")
+    return {
+        "device": runtime.device_row,
+        "nccl_diagnostic": runtime.nccl_diagnostic,
+        "rank": row,
+    }
 
 
 def _read_cgroup_value(path: Path) -> int | None:
@@ -975,6 +1198,120 @@ def _completion(
     return {**content, "sha256": _sha256_value(content)}
 
 
+def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) -> None:
+    rank_rows = [item["rank"] for item in gathered]
+    device_rows = [item["device"] for item in gathered]
+    nccl_rows = [item["nccl_diagnostic"] for item in gathered]
+    cgroup = _cgroup_memory()
+    process_peak = sum(int(item["process_max_rss_bytes"]) for item in rank_rows)
+    cgroup["observed_peak_bytes"] = max(int(cgroup["peak_bytes"]), process_peak)
+    cgroup["headroom_bytes"] = int(cgroup["limit_bytes"]) - int(
+        cgroup["observed_peak_bytes"]
+    )
+    cgroup["passed"] = cgroup["headroom_bytes"] >= MINIMUM_HEADROOM_BYTES
+    if not cgroup["passed"]:
+        raise PreflightError("allocation does not preserve required host-memory headroom")
+    _require_clean_git()
+    git_commit = _git("rev-parse", "HEAD")
+    prereg_commit = _git("log", "-n", "1", "--format=%H", "--", "prereg/qwen3_v2.yaml")
+    report: dict[str, Any] = {
+        "artifact_namespace": "qwen3-v2",
+        "chat_template_sha256": CHAT_TEMPLATE_SHA256,
+        "code_commit": git_commit,
+        "cgroup_memory": cgroup,
+        "created_at": _utc_now(),
+        "devices": device_rows,
+        "enable_thinking": False,
+        "execution_context": {
+            "allocation_visibility": "preserved",
+            "distributed_launcher": "environment_rank_passthrough",
+            "mode": "server_scheduler_foreground",
+            "nccl_p2p_policy": "disabled",
+            "visible_device_count": GPU_COUNT,
+        },
+        "git_commit": git_commit,
+        "model_revision": MODEL_REVISION,
+        "nccl_all_reduce": all(item["observed_sum"] == 10.0 for item in nccl_rows),
+        "nccl_diagnostics": nccl_rows,
+        "nccl_runtime_version": _nccl_runtime_version(torch),
+        "passed": True,
+        "phase": "gpu_preflight",
+        "prereg_commit": prereg_commit,
+        "prereg_path": "prereg/qwen3_v2.yaml",
+        "prereg_sha256": context["preregistration_sha256"],
+        "prereg_version": "qwen3_v2",
+        "prompt_protocol": "qwen3_non_thinking_v1",
+        "protocol_track": "qwen3_v2",
+        "qwen_forward_finite": all(
+            item["student_forward_finite"]
+            and item["teacher_forward_finite"]
+            and item["soft_teacher_loss_finite"]
+            and item["gradients_finite"]
+            and item["parameter_update_nonzero"]
+            and item["unique_rank_prompt_shard"]
+            and item["fsdp_save_resume"]
+            for item in rank_rows
+        ),
+        "rank_prompt_hashes_unique": len(
+            {item["model_facing_prompt_sha256"] for item in rank_rows}
+        )
+        == GPU_COUNT,
+        "rank_training_checks": rank_rows,
+        "rank_zero_teacher_load_count": sum(
+            int(item["teacher_loaded_on_this_rank"]) for item in rank_rows
+        ),
+        "resolved_config_sha256": context["resolved_config_sha256"],
+        "resolved_model_commit": MODEL_REVISION,
+        "resolved_teacher_commit": TEACHER_REVISION,
+        "teacher_revision": TEACHER_REVISION,
+        "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
+        "tokenizer_hash": TOKENIZER_FINGERPRINT,
+        "tokenizer_revision": MODEL_REVISION,
+        "torch_cuda_version": str(torch.version.cuda),
+        "torch_version": str(torch.__version__),
+        "visible_cuda_devices": torch.cuda.device_count(),
+        "world_size": GPU_COUNT,
+    }
+    if not report["nccl_all_reduce"]:
+        raise PreflightError("NCCL diagnostic rows are inconsistent")
+    if not report["qwen_forward_finite"]:
+        raise PreflightError("real Qwen3-v2 forward/backward or resume gate failed")
+    report["sha256"] = _sha256_value(report)
+    completed_at = _utc_now()
+    output_path = Path(context["output_path"])
+    output_descriptor = os.open(output_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        if os.listdir(output_descriptor):
+            raise PreflightError("output attempt is not empty")
+        _publish_once(output_descriptor, REPORT_NAME, report)
+        _publish_once(
+            output_descriptor,
+            COMPLETION_NAME,
+            _completion(
+                Invocation(
+                    workflow_id=context["workflow_id"],
+                    plan_sha256=context["plan_sha256"],
+                    unit_id=context["unit_id"],
+                    run_id=context["run_id"],
+                    job_id=context["job_id"],
+                    attempt=context["attempt"],
+                    execution_profile=PROFILE,
+                    manifest_sha256=context["manifest_sha256"],
+                    allocation_sha256=context["allocation_sha256"],
+                    content_handles=tuple(
+                        ContentHandle(name, digest, -1)
+                        for name, digest in sorted(context["input_hashes"].items())
+                    ),
+                    output_descriptor=output_descriptor,
+                ),
+                started_at=context["started_at"],
+                completed_at=completed_at,
+            ),
+        )
+    finally:
+        os.close(output_descriptor)
+
+
 def _worker_main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--worker-context", required=True)
@@ -982,131 +1319,72 @@ def _worker_main(argv: Sequence[str]) -> int:
     args = parser.parse_args(argv)
     if args.local_rank is not None and args.local_rank != int(os.environ["LOCAL_RANK"]):
         raise PreflightError("torchrun local-rank argument differs from its environment")
+    _validate_environment()
     context = _strict_json(
         bytes.fromhex(args.worker_context), context="internal worker context"
     )
     if not isinstance(context, dict):
         raise PreflightError("internal worker context is invalid")
     config_path = Path(context["resolved_config_path"])
-    output_path = Path(context["output_path"])
     checkpoint_root = Path(context["checkpoint_root"])
     config = _strict_json(config_path.read_bytes(), context="worker resolved config")
     if not isinstance(config, dict):
         raise PreflightError("worker resolved config is invalid")
-    row = _rank_training(config, checkpoint_root)
     import torch
     import torch.distributed as dist
 
-    gathered: list[Any] = [None] * GPU_COUNT
-    dist.all_gather_object(gathered, row)
-    if int(os.environ["RANK"]) == 0:
-        rank_rows = [item["rank"] for item in gathered]
-        device_rows = [item["device"] for item in gathered]
-        cgroup = _cgroup_memory()
-        process_peak = sum(int(item["process_max_rss_bytes"]) for item in rank_rows)
-        cgroup["observed_peak_bytes"] = max(int(cgroup["peak_bytes"]), process_peak)
-        cgroup["headroom_bytes"] = int(cgroup["limit_bytes"]) - int(
-            cgroup["observed_peak_bytes"]
+    runtime: DistributedRuntime | None = None
+    completed = False
+    try:
+        runtime = _initialize_distributed()
+        row = _rank_training(config, checkpoint_root, runtime)
+        gathered: list[Any] = [None] * GPU_COUNT
+        dist.all_gather_object(gathered, row, group=runtime.control_group)
+        final_status: list[Any] = [None]
+        publication_error: Exception | None = None
+        if runtime.rank == 0:
+            try:
+                _publish_report(context, gathered, torch)
+            except Exception as error:  # synchronize a rank-zero finalization failure
+                publication_error = error
+                final_status[0] = {
+                    "error": str(error),
+                    "error_type": type(error).__name__,
+                    "ok": False,
+                }
+            else:
+                final_status[0] = {"ok": True}
+        dist.broadcast_object_list(
+            final_status, src=0, group=runtime.control_group
         )
-        cgroup["passed"] = cgroup["headroom_bytes"] >= MINIMUM_HEADROOM_BYTES
-        if not cgroup["passed"]:
-            raise PreflightError("allocation does not preserve required host-memory headroom")
-        _require_clean_git()
-        git_commit = _git("rev-parse", "HEAD")
-        prereg_commit = _git("log", "-n", "1", "--format=%H", "--", "prereg/qwen3_v2.yaml")
-        report: dict[str, Any] = {
-            "artifact_namespace": "qwen3-v2",
-            "chat_template_sha256": CHAT_TEMPLATE_SHA256,
-            "code_commit": git_commit,
-            "cgroup_memory": cgroup,
-            "created_at": _utc_now(),
-            "devices": device_rows,
-            "enable_thinking": False,
-            "execution_context": {
-                "allocation_visibility": "preserved",
-                "distributed_launcher": "environment_rank_passthrough",
-                "mode": "server_scheduler_foreground",
-                "visible_device_count": GPU_COUNT,
-            },
-            "git_commit": git_commit,
-            "model_revision": MODEL_REVISION,
-            "nccl_all_reduce": True,
-            "passed": True,
-            "phase": "gpu_preflight",
-            "prereg_commit": prereg_commit,
-            "prereg_path": "prereg/qwen3_v2.yaml",
-            "prereg_sha256": context["preregistration_sha256"],
-            "prereg_version": "qwen3_v2",
-            "prompt_protocol": "qwen3_non_thinking_v1",
-            "protocol_track": "qwen3_v2",
-            "qwen_forward_finite": all(
-                item["student_forward_finite"]
-                and item["teacher_forward_finite"]
-                and item["soft_teacher_loss_finite"]
-                and item["gradients_finite"]
-                and item["parameter_update_nonzero"]
-                and item["unique_rank_prompt_shard"]
-                and item["fsdp_save_resume"]
-                for item in rank_rows
-            ),
-            "rank_prompt_hashes_unique": len(
-                {item["model_facing_prompt_sha256"] for item in rank_rows}
+        if not isinstance(final_status[0], dict) or final_status[0].get("ok") is not True:
+            if publication_error is not None:
+                raise publication_error
+            message = (
+                str(final_status[0].get("error"))
+                if isinstance(final_status[0], dict)
+                else "invalid rank-zero finalization status"
             )
-            == GPU_COUNT,
-            "rank_training_checks": rank_rows,
-            "rank_zero_teacher_load_count": sum(
-                int(item["teacher_loaded_on_this_rank"]) for item in rank_rows
-            ),
-            "resolved_config_sha256": context["resolved_config_sha256"],
-            "resolved_model_commit": MODEL_REVISION,
-            "resolved_teacher_commit": TEACHER_REVISION,
-            "teacher_revision": TEACHER_REVISION,
-            "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
-            "tokenizer_hash": TOKENIZER_FINGERPRINT,
-            "tokenizer_revision": MODEL_REVISION,
-            "torch_cuda_version": str(torch.version.cuda),
-            "torch_version": str(torch.__version__),
-            "visible_cuda_devices": torch.cuda.device_count(),
-            "world_size": GPU_COUNT,
-        }
-        if not report["qwen_forward_finite"]:
-            raise PreflightError("real Qwen3-v2 forward/backward or resume gate failed")
-        report["sha256"] = _sha256_value(report)
-        completed_at = _utc_now()
-        output_descriptor = os.open(output_path, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            if os.listdir(output_descriptor):
-                raise PreflightError("output attempt is not empty")
-            _publish_once(output_descriptor, REPORT_NAME, report)
-            _publish_once(
-                output_descriptor,
-                COMPLETION_NAME,
-                _completion(
-                    Invocation(
-                        workflow_id=context["workflow_id"],
-                        plan_sha256=context["plan_sha256"],
-                        unit_id=context["unit_id"],
-                        run_id=context["run_id"],
-                        job_id=context["job_id"],
-                        attempt=context["attempt"],
-                        execution_profile=PROFILE,
-                        manifest_sha256=context["manifest_sha256"],
-                        allocation_sha256=context["allocation_sha256"],
-                        content_handles=tuple(
-                            ContentHandle(name, digest, -1)
-                            for name, digest in sorted(context["input_hashes"].items())
-                        ),
-                        output_descriptor=output_descriptor,
-                    ),
-                    started_at=context["started_at"],
-                    completed_at=completed_at,
-                ),
-            )
-        finally:
-            os.close(output_descriptor)
-    dist.barrier()
-    dist.destroy_process_group()
-    return 0
+            raise PreflightError(f"rank-zero finalization failed: {message}")
+        dist.monitored_barrier(
+            group=runtime.control_group,
+            timeout=timedelta(seconds=30),
+            wait_all_ranks=True,
+        )
+        _log_phase(runtime.rank, "worker_completed")
+        completed = True
+        return 0
+    finally:
+        if completed and runtime is not None:
+            try:
+                dist.destroy_process_group(runtime.data_group)
+            except Exception:
+                pass
+        if completed and dist.is_initialized():
+            try:
+                dist.destroy_process_group()
+            except Exception:
+                pass
 
 
 def _script_parent_path() -> str:
@@ -1114,6 +1392,16 @@ def _script_parent_path() -> str:
     if match is None:
         raise PreflightError("deployment implementation must execute through a held descriptor")
     return f"/proc/{os.getpid()}/fd/{match.group(1)}"
+
+
+def _spawn_safe_script_path() -> str:
+    script_path = _script_parent_path()
+    main_module = sys.modules.get("__main__")
+    main_path = os.path.abspath(str(getattr(main_module, "__file__", "")))
+    if main_module is None or PROC_SELF_FD.fullmatch(main_path) is None:
+        raise PreflightError("supervisor main module is not the held implementation")
+    main_module.__file__ = script_path
+    return script_path
 
 
 def _supervise(argv: Sequence[str] | None) -> int:
@@ -1149,6 +1437,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
         }
         from torch.distributed.run import main as torchrun_main
 
+        script_path = _spawn_safe_script_path()
         torchrun_main(
             [
                 "--standalone",
@@ -1156,7 +1445,8 @@ def _supervise(argv: Sequence[str] | None) -> int:
                 "--nproc-per-node=4",
                 "--max-restarts=0",
                 "--monitor-interval=1",
-                _script_parent_path(),
+                "--run-path",
+                script_path,
                 "--rank-worker",
                 "--worker-context",
                 _canonical_json(context).encode("utf-8").hex(),

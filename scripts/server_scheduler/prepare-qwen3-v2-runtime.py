@@ -32,6 +32,7 @@ MODELS = (
 PYPI_PACKAGES = (
     "accelerate==1.10.1",
     "huggingface-hub==0.36.2",
+    "nvidia-nccl-cu12==2.27.3",
     "numpy==1.26.4",
     "safetensors==0.5.3",
     "tokenizers==0.22.0",
@@ -63,10 +64,12 @@ def _download_script() -> str:
 def _offline_check_script() -> str:
     rows = repr(MODELS)
     return (
+        "import importlib.metadata\n"
         "import torch\n"
         "from transformers import AutoConfig, AutoTokenizer\n"
         "assert torch.__version__.startswith('2.8.0+cu128'), torch.__version__\n"
         "assert torch.version.cuda == '12.8', torch.version.cuda\n"
+        "assert importlib.metadata.version('nvidia-nccl-cu12') == '2.27.3'\n"
         f"for repo_id, revision in {rows}:\n"
         "    AutoConfig.from_pretrained(repo_id, revision=revision, "
         "local_files_only=True, trust_remote_code=False)\n"

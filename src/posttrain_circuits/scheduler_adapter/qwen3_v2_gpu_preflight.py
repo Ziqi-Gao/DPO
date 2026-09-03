@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -21,6 +22,8 @@ GPU_COUNT = 4
 GPU_MODEL = "NVIDIA RTX PRO 6000 Blackwell Server Edition"
 GPU_MINIMUM_TOTAL_MEMORY_MIB = 97_000
 GPU_COMPUTE_CAPABILITY = (12, 0)
+NCCL_VERSION = "2.27.3"
+NCCL_PROBE_TIMEOUT_SECONDS = 120
 NODE_MEMORY_GIB = 192
 MINIMUM_HEADROOM_GIB = 32
 MINIMUM_HEADROOM_FRACTION = 0.20
@@ -60,6 +63,8 @@ REPORT_FIELDS = frozenset(
         "git_commit",
         "model_revision",
         "nccl_all_reduce",
+        "nccl_diagnostics",
+        "nccl_runtime_version",
         "passed",
         "phase",
         "prereg_commit",
@@ -86,7 +91,28 @@ REPORT_FIELDS = frozenset(
         "world_size",
     }
 )
-DEVICE_FIELDS = frozenset({"capability", "name", "rank", "total_memory"})
+DEVICE_FIELDS = frozenset(
+    {
+        "capability",
+        "logical_index",
+        "name",
+        "pci_bus_id",
+        "rank",
+        "total_memory",
+        "visible_cuda_identifier",
+    }
+)
+NCCL_DIAGNOSTIC_FIELDS = frozenset(
+    {
+        "control_backend",
+        "data_backend",
+        "elapsed_seconds",
+        "observed_sum",
+        "p2p_disabled",
+        "rank",
+        "timeout_seconds",
+    }
+)
 RANK_CHECK_FIELDS = frozenset(
     {
         "chat_template_sha256",
@@ -131,6 +157,7 @@ EXECUTION_CONTEXT = {
     "allocation_visibility": "preserved",
     "distributed_launcher": "environment_rank_passthrough",
     "mode": "server_scheduler_foreground",
+    "nccl_p2p_policy": "disabled",
     "visible_device_count": GPU_COUNT,
 }
 
@@ -181,12 +208,30 @@ def _validate_devices(value: object) -> None:
     if not isinstance(value, list) or len(value) != GPU_COUNT:
         _fail("GPU preflight must report exactly four devices")
     ranks: list[int] = []
+    pci_bus_ids: list[str] = []
+    visible_identifiers: list[str] = []
     minimum_bytes = GPU_MINIMUM_TOTAL_MEMORY_MIB * 1024**2
     for row in value:
         if not isinstance(row, dict) or set(row) != DEVICE_FIELDS:
             _fail("GPU preflight device fields differ from the reviewed contract")
         rank = _integer(row["rank"], name="GPU device rank")
         ranks.append(rank)
+        if _integer(row["logical_index"], name="GPU logical index") != rank:
+            _fail("GPU logical index differs from its single-node rank")
+        pci_bus_id = row["pci_bus_id"]
+        if not isinstance(pci_bus_id, str) or re.fullmatch(
+            r"[0-9a-f]{4,8}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", pci_bus_id
+        ) is None:
+            _fail("GPU preflight PCI bus identity is not canonical")
+        pci_bus_ids.append(pci_bus_id)
+        visible_identifier = row["visible_cuda_identifier"]
+        if (
+            not isinstance(visible_identifier, str)
+            or not visible_identifier
+            or visible_identifier.strip() != visible_identifier
+        ):
+            _fail("GPU preflight visible CUDA identity is not canonical")
+        visible_identifiers.append(visible_identifier)
         if row["name"] != GPU_MODEL:
             _fail("GPU preflight observed an unreviewed GPU model")
         if _integer(row["total_memory"], name="GPU total memory", minimum=1) < minimum_bytes:
@@ -196,6 +241,38 @@ def _validate_devices(value: object) -> None:
             _fail("GPU preflight compute capability differs from the reviewed server")
     if sorted(ranks) != list(range(GPU_COUNT)):
         _fail("GPU preflight device ranks are not exactly 0..3")
+    if len(set(pci_bus_ids)) != GPU_COUNT or len(set(visible_identifiers)) != GPU_COUNT:
+        _fail("GPU preflight device identities are not unique")
+
+
+def _validate_nccl_diagnostics(value: object) -> None:
+    if not isinstance(value, list) or len(value) != GPU_COUNT:
+        _fail("GPU preflight must report exactly four NCCL diagnostics")
+    ranks: list[int] = []
+    for row in value:
+        if not isinstance(row, dict) or set(row) != NCCL_DIAGNOSTIC_FIELDS:
+            _fail("GPU preflight NCCL diagnostic fields differ from the reviewed contract")
+        rank = _integer(row["rank"], name="NCCL diagnostic rank")
+        ranks.append(rank)
+        elapsed = row["elapsed_seconds"]
+        if (
+            isinstance(elapsed, bool)
+            or not isinstance(elapsed, (int, float))
+            or not math.isfinite(elapsed)
+            or elapsed < 0.0
+            or elapsed > NCCL_PROBE_TIMEOUT_SECONDS + 1.0
+        ):
+            _fail("GPU preflight NCCL probe elapsed time is invalid")
+        if (
+            row["control_backend"] != "gloo"
+            or row["data_backend"] != "nccl"
+            or row["p2p_disabled"] is not True
+            or row["timeout_seconds"] != NCCL_PROBE_TIMEOUT_SECONDS
+            or row["observed_sum"] != 10.0
+        ):
+            _fail("GPU preflight NCCL diagnostic did not pass its fixed contract")
+    if sorted(ranks) != list(range(GPU_COUNT)):
+        _fail("GPU preflight NCCL diagnostic ranks are not exactly 0..3")
 
 
 def _validate_rank_checks(value: object) -> list[dict[str, Any]]:
@@ -306,6 +383,7 @@ def _validate_report(
         or report["world_size"] != GPU_COUNT
         or report["visible_cuda_devices"] != GPU_COUNT
         or report["nccl_all_reduce"] is not True
+        or report["nccl_runtime_version"] != NCCL_VERSION
         or report["qwen_forward_finite"] is not True
         or report["protocol_track"] != PROTOCOL_TRACK
         or report["artifact_namespace"] != ARTIFACT_NAMESPACE
@@ -317,8 +395,7 @@ def _validate_report(
     if (
         not isinstance(torch_version, str)
         or not torch_version.startswith("2.8.0")
-        or not isinstance(cuda_version, str)
-        or not cuda_version.strip()
+        or cuda_version != "12.8"
     ):
         _fail("GPU preflight did not use the reviewed CUDA-enabled Torch release")
     if (
@@ -344,6 +421,7 @@ def _validate_report(
     _git_commit(report["prereg_commit"], name="GPU preflight prereg_commit")
     _utc_timestamp(report["created_at"], name="GPU preflight created_at")
     _validate_devices(report["devices"])
+    _validate_nccl_diagnostics(report["nccl_diagnostics"])
     rank_rows = _validate_rank_checks(report["rank_training_checks"])
     if report["rank_prompt_hashes_unique"] is not True:
         _fail("GPU preflight did not attest unique rank prompt shards")
@@ -416,6 +494,8 @@ __all__ = [
     "GPU_COUNT",
     "GPU_MODEL",
     "MODEL_REVISION",
+    "NCCL_PROBE_TIMEOUT_SECONDS",
+    "NCCL_VERSION",
     "OUTPUT_NAME",
     "PROFILE_NAME",
     "PROTOCOL_TRACK",

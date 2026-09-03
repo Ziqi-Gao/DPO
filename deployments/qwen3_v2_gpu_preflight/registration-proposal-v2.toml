@@ -18,7 +18,7 @@ allow_project_file_mutation = false
 [integration]
 entrypoint = "/home/del6500/projects/OPD/scripts/server_scheduler/opd-entrypoint"
 allowed_tasks = ["repository_preflight", "qwen3_v2_gpu_preflight"]
-notes = "Disabled complete OPD proposal for independent central review. repository_preflight retains its measured CPU-only contract. qwen3_v2_gpu_preflight accepts only workflow_id, plan_sha256, and unit_id; its code-owned handler fixes the Qwen3-v2 configs and offline environment under OPD-owned roots, preserves scheduler-provided CUDA visibility, and cannot accept commands, environment overrides, paths, or resources in job parameters. The GPU profile is an intentionally conservative first-run reservation, not a measured utilization claim. No repository snapshot hash is part of either scientific unit."
+notes = "Disabled complete OPD proposal for independent central review. repository_preflight retains its measured CPU-only contract. qwen3_v2_gpu_preflight accepts only workflow_id, plan_sha256, and unit_id; its code-owned handler fixes the Qwen3-v2 configs and offline environment under OPD-owned roots, preserves scheduler-provided CUDA visibility, and cannot accept commands, environment overrides, paths, or resources in job parameters. This host profile fixes NCCL_P2P_DISABLE=1, NCCL diagnostics, a 120-second NCCL probe timeout, and a Gloo control plane after a reproduced first-all-reduce hang on the dual-NUMA RTX PRO 6000 Blackwell topology. The GPU profile is an intentionally conservative first-run reservation, not a measured utilization claim. No repository snapshot hash is part of either scientific unit."
 
 [[tasks]]
 name = "repository_preflight"

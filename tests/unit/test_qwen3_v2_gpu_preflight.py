@@ -13,6 +13,8 @@ from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
     GATE_NAMES,
     GPU_MODEL,
     MODEL_REVISION,
+    NCCL_PROBE_TIMEOUT_SECONDS,
+    NCCL_VERSION,
     OUTPUT_NAME,
     TEACHER_REVISION,
     TOKENIZER_FINGERPRINT,
@@ -90,9 +92,12 @@ def _report(inputs: dict[str, str]) -> dict[str, object]:
         "devices": [
             {
                 "capability": [12, 0],
+                "logical_index": rank,
                 "name": GPU_MODEL,
+                "pci_bus_id": f"0000:{0x48 + rank:02x}:00.0",
                 "rank": rank,
                 "total_memory": 97_887 * 1024**2,
+                "visible_cuda_identifier": f"GPU-fixture-{rank}",
             }
             for rank in range(4)
         ],
@@ -101,11 +106,25 @@ def _report(inputs: dict[str, str]) -> dict[str, object]:
             "allocation_visibility": "preserved",
             "distributed_launcher": "environment_rank_passthrough",
             "mode": "server_scheduler_foreground",
+            "nccl_p2p_policy": "disabled",
             "visible_device_count": 4,
         },
         "git_commit": "a" * 40,
         "model_revision": MODEL_REVISION,
         "nccl_all_reduce": True,
+        "nccl_diagnostics": [
+            {
+                "control_backend": "gloo",
+                "data_backend": "nccl",
+                "elapsed_seconds": 0.25 + rank,
+                "observed_sum": 10.0,
+                "p2p_disabled": True,
+                "rank": rank,
+                "timeout_seconds": NCCL_PROBE_TIMEOUT_SECONDS,
+            }
+            for rank in range(4)
+        ],
+        "nccl_runtime_version": NCCL_VERSION,
         "passed": True,
         "phase": "gpu_preflight",
         "prereg_commit": "b" * 40,
@@ -196,6 +215,16 @@ class Qwen3V2GpuPreflightValidatorTests(unittest.TestCase):
             (
                 lambda report: report["cgroup_memory"].update({"headroom_bytes": 1}),
                 "internally inconsistent",
+            ),
+            (
+                lambda report: report["nccl_diagnostics"][1].update(
+                    {"p2p_disabled": False}
+                ),
+                "NCCL diagnostic",
+            ),
+            (
+                lambda report: report.update({"torch_cuda_version": "unreviewed"}),
+                "CUDA-enabled Torch",
             ),
         )
         for mutation, message in mutations:

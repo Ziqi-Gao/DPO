@@ -12,6 +12,10 @@
       "version": "0.36.2"
     },
     {
+      "name": "nvidia-nccl-cu12",
+      "version": "2.27.3"
+    },
+    {
       "name": "numpy",
       "version": "1.26.4"
     },

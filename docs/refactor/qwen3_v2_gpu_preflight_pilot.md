@@ -33,15 +33,31 @@ environment must contain only reviewed values such as:
 HF_HOME=/scr/del6500/OPD/cache/huggingface
 HF_HUB_CACHE=/scr/del6500/OPD/cache/huggingface/hub
 HF_HUB_OFFLINE=1
+NCCL_DEBUG=INFO
+NCCL_DEBUG_SUBSYS=INIT,ENV,GRAPH,NET,COLL
+NCCL_P2P_DISABLE=1
 PYTHONDONTWRITEBYTECODE=1
 TRANSFORMERS_OFFLINE=1
 TOKENIZERS_PARALLELISM=false
 TMPDIR=/scr/del6500/OPD/tmp
+TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+TORCH_NCCL_DUMP_ON_TIMEOUT=1
+TORCH_NCCL_TRACE_BUFFER_SIZE=1048576
 ```
 
 `CUDA_VISIBLE_DEVICES` and `CUDA_DEVICE_ORDER` are not fixed by OPD. They must
 be preserved exactly from ServerScheduler, and each rank may select only its
 logical device inside that visibility envelope.
+
+The worker uses Gloo as its explicit control plane and an explicit NCCL group
+for CUDA tensors and FSDP. Its first operation on the NCCL group is a scalar
+all-reduce with a 120-second process-group and work timeout. The report records
+the per-rank elapsed time, observed sum, logical CUDA identity, and PCI bus ID.
+`NCCL_P2P_DISABLE=1` is a fixed profile workaround for the reproduced first
+all-reduce hang on this server's dual-NUMA four-GPU Blackwell topology; it is
+not a request parameter and does not change scheduler-provided GPU visibility.
+Rank-zero-only teacher loading and inference are synchronized over Gloo before
+the remaining ranks enter the next NCCL collective.
 
 No repository snapshot digest is an input. The deployment contract binds the
 fixed runtime and implementation bundle, while the workflow binds the exact

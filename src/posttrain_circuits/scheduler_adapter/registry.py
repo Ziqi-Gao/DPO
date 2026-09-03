@@ -868,7 +868,8 @@ _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
 _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
     deployment_id="qwen3-v2-gpu-preflight-python312-cuda-v1",
     runtime_version=(
-        "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; Transformers 4.56.2"
+        "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
+        "Transformers 4.56.2"
     ),
     runtime_flags=("-I",),
     executable=GPU_RUNTIME_ROOT / "python",
@@ -879,22 +880,22 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="dfdd5edc262e896023c7679f5b25b804ff039b6d9cafc2c912372a18247988c0",
+    implementation_sha256="cd9d4bb168089ada68d252ced22b49d9006429474730dcc09b0adf3115c6693e",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
         / "qwen3_v2_gpu_preflight"
         / "dependency-lock.json"
     ),
-    dependency_lock_sha256="5d2bb96680e253ee58f711b28b17bdbf404425eece7f45a176199cde5ab6179a",
+    dependency_lock_sha256="944f22e346fbda1bd2545cdac9f8c3e9e7046a576b9afc38911fc2f89a1f735d",
     package_manifest=(
         PRODUCTION_CODE_ROOT
         / "deployments"
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="dac84af0c928e8a4c0fc2bc202a68db0a774897e11f7e1947355f7cf3dfb2d1a",
-    deployment_identity_sha256="ba8e5330b8e27b4eb6dcc1c379a234fd5a7efd5b6f62c142011e06fa44203435",
+    package_manifest_sha256="a6a92ffe6096aa4ca06bb69af26dd85ec83d914c8b864452f453e8a11bb0a67c",
+    deployment_identity_sha256="a789381cbcde3e627c6bf244acdb7f6b08077ceda5d661c790b148567d7a4998",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,
@@ -908,10 +909,16 @@ _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
             "HF_HOME": "/scr/del6500/OPD/cache/huggingface",
             "HF_HUB_CACHE": "/scr/del6500/OPD/cache/huggingface/hub",
             "HF_HUB_OFFLINE": "1",
+            "NCCL_DEBUG": "INFO",
+            "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
+            "NCCL_P2P_DISABLE": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
             "TOKENIZERS_PARALLELISM": "false",
             "TRANSFORMERS_OFFLINE": "1",
             "TMPDIR": "/scr/del6500/OPD/tmp",
+            "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+            "TORCH_NCCL_DUMP_ON_TIMEOUT": "1",
+            "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
         }
     ),
     cwd=PRODUCTION_CODE_ROOT,
