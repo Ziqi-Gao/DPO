@@ -18,6 +18,45 @@ checkpointing, outputs, and scientific completion. ServerScheduler alone owns
 queue order, physical CPU/GPU placement, leases, retries, status, logs, runtime
 calibration, and cross-project concurrency.
 
+## Mandatory current-handoff synchronization
+
+The canonical cross-session state is
+`docs/refactor/current_handoff.md`. Every top-level OPD session must read it in
+full before substantive analysis, planning, edits, or execution. Treat it as a
+current-state summary, not as authority over source code, Git, scientific
+artifacts, or central scheduler state; verify mutable claims when they matter
+to the task.
+
+This is standing authorization to edit only that handoff when a session learns
+or creates a material OPD state change, unless the user explicitly requests a
+read-only/no-write task. Update it in the same change before the final response
+when any of these change:
+
+- repository architecture or supported execution path;
+- migrated handler, task, profile, deployment, or fixed runtime;
+- scientific protocol, readiness gate, active blocker, or next required step;
+- authoritative pilot/experiment outcome or failure diagnosis;
+- verification evidence that materially changes confidence in the active path.
+
+Do not update the handoff for unchanged status, exploratory reading, routine
+formatting, or facts already recorded. Keep it concise and replace superseded
+claims instead of appending a session diary. Git remains the complete history;
+do not duplicate a changelog or add blanket hashes. Never claim an uncommitted
+candidate is committed, or external scheduler state is current, without
+verifying it.
+
+Immediately before editing the handoff, reread it and inspect current Git
+status so concurrent work is preserved. Merge non-conflicting facts; do not
+overwrite another session's updates. Delegated subagents report handoff-worthy
+facts to their parent, and the parent performs the single consolidated handoff
+edit unless it explicitly assigns one writer. Before finishing, reread the
+result and include the handoff path in the exact Git staging command given to
+the user.
+
+Codex loads `AGENTS.md` once when a run/session starts. New sessions receive
+this policy automatically; an already-running session must be restarted or
+explicitly told to reread `AGENTS.md` and the handoff before continuing.
+
 ## Filesystem and authority boundaries
 
 OPD may write only these roots:

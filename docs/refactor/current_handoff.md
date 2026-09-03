@@ -9,9 +9,8 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The committed baseline at the start of this documentation cleanup is
-`a48b918` (`docs: update OPD agent and scheduler rules`). Important preceding
-milestones are:
+The current committed baseline is `ba6820b` (`fix: use flat FSDP parameters in
+GPU preflight`). Important preceding milestones are:
 
 - `8b020de`: split scientific domains from the scheduler boundary.
 - `0b96a8e`: add the CPU repository-preflight pilot.
@@ -19,8 +18,10 @@ milestones are:
 - `e52f7f5`: add the bounded Qwen3-v2 four-GPU preflight.
 - `ecc36fb`: preserve virtual-environment interpreter identity at launch.
 - `9c0aaf6`: harden the Blackwell NCCL preflight and diagnostics.
+- `a48b918`: update the OPD agent and scheduler rules.
+- `a3db7fa`: consolidate this handoff and archive stale reports.
 
-The current GPU correction candidate developed after that baseline spans:
+The `ba6820b` GPU correction spans:
 
 - `deployments/qwen3_v2_gpu_preflight/package-manifest.json`
 - `docs/refactor/qwen3_v2_gpu_preflight_pilot.md`
@@ -29,10 +30,9 @@ The current GPU correction candidate developed after that baseline spans:
 - `tests/unit/test_qwen3_v2_gpu_preflight_handler.py`
 
 Three independent static reviews found no remaining code, scientific-contract,
-or distributed-lifecycle blocker in that candidate. Review runs reported 61
+or distributed-lifecycle blocker in that change. Review runs reported 61
 passing related unit tests and 13 passing focused scheduler-contract tests. The
-candidate is still uncommitted at this handoff boundary and therefore still
-needs one clean repository-owner commit before another GPU execution.
+repository owner committed the reviewed change as `ba6820b`.
 
 ## Current architecture
 
@@ -111,9 +111,13 @@ authorize registration edits, service operations, or submission.
   The user reported a new error, but this repository handoff does not yet have
   authoritative terminal status or stderr for that run. Do not infer its root
   cause or mark it successful.
+- `ba6820b` then changed the fully trainable student to one root FSDP unit with
+  `use_orig_params=false`, restricted the optimizer to its one nonempty flat
+  parameter shard per rank, and added phase-boundary diagnostics. This is the
+  current committed correction; it has not yet passed a fresh four-GPU pilot.
 
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
-the fixed runtime reported NCCL 2.27.3. The current candidate keeps a Gloo
+the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
 control group, creates a separate NCCL data group for CUDA tensors and FSDP,
 bounds the first NCCL probe, synchronizes distributed failure decisions, and
 avoids unsafe NCCL teardown after an unsynchronized failure. Its deployment
@@ -126,16 +130,15 @@ fresh pilot.
 The formal G0 experiment is not ready to submit. The gate opens only after all
 of the following are true:
 
-1. Capture the authoritative state and complete stderr for the latest GPU
-   preflight.
-2. Diagnose the failure and make only project-owned changes needed to correct
-   it.
-3. Review and test the current handler, registry, manifest, and completion
-   semantics, then form a clean immutable commit.
-4. Run a fresh four-GPU preflight through a separately authorized central
-   submission.
-5. Require both successful scheduler termination and a semantically valid
-   project completion artifact before treating the preflight as passed.
+1. Run the current clean commit through a fresh four-GPU preflight using a new
+   job ID and a separately authorized central submission.
+2. Capture the authoritative terminal state and complete logs for that run.
+3. If it fails, diagnose the exact phase and make only the required
+   project-owned correction before forming another clean commit.
+4. If it succeeds, independently validate the published scientific completion
+   and `gpu_preflight.json` artifact.
+5. Only then prepare the separately reviewed G0 handler/profile/request; the
+   GPU preflight task itself is not the formal experiment.
 
 Do not submit G0, the seed-42 pilot, a full seed matrix, or a Gemma replication
 until these gates and their separately required approvals are satisfied.
