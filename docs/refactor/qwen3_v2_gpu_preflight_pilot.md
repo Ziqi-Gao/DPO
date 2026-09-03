@@ -1,6 +1,6 @@
 # Qwen3-v2 GPU preflight pilot
 
-This deployment slice proposes one bounded four-GPU environment and training-path
+This deployment slice proposes one bounded two-GPU environment and training-path
 preflight. It does not authorize G0, seed-42 training, the full three-seed
 factorial, a registration change, a service change, or a scheduler submission.
 The complete proposed OPD registration remains `enabled = false` in
@@ -16,10 +16,10 @@ The complete proposed OPD registration remains `enabled = false` in
 - Prompt protocol: `qwen3_non_thinking_v1`, with `enable_thinking=false`.
 - Required result: one `gpu_preflight.json` plus a scheduler-neutral
   `ScientificCompletion` whose handler-owned gates all pass.
-- Required checks: four visible logical CUDA devices, NCCL all-reduce, pinned
+- Required checks: two visible logical CUDA devices, NCCL all-reduce, pinned
   offline student and teacher loading, a finite student/teacher forward pass,
   finite soft-teacher forward/backward and gradients, a nonzero parameter
-  update, four distinct rank prompt shards, rank-zero-only teacher loading,
+  update, two distinct rank prompt shards, rank-zero-only teacher loading,
   FSDP save/resume, finite cgroup memory evidence, and measured CPU/GPU peak
   memory evidence.
 - Retry behavior: every central attempt receives isolated staging. Temporary
@@ -55,7 +55,8 @@ all-reduce with a 120-second process-group and work timeout. The report records
 the per-rank elapsed time, observed sum, logical CUDA identity, and PCI bus ID.
 `NCCL_P2P_DISABLE=1` is a fixed profile workaround for the reproduced first
 all-reduce hang on this server's dual-NUMA four-GPU Blackwell topology; it is
-not a request parameter and does not change scheduler-provided GPU visibility.
+retained for the two-GPU pilot, is not a request parameter, and does not change
+scheduler-provided GPU visibility.
 Rank-zero-only teacher loading and inference are synchronized over Gloo before
 the remaining ranks enter the next NCCL collective.
 
@@ -83,21 +84,23 @@ scientific configuration and preregistration content needed by this task.
 
 | Resource | Proposed value |
 | --- | ---: |
-| Processes | 4 |
+| Processes | 2 |
 | CPU cores | 16 fixed |
 | Host memory | 196,608 MiB |
-| GPUs | 4 |
+| GPUs | 2 |
 | Per-GPU memory reservation | 81,920 MiB |
 | Per-GPU utilization reservation | 95% |
 | GPU model | NVIDIA RTX PRO 6000 Blackwell Server Edition |
 | GPU exclusivity | required |
-| Initial runtime estimate | 1,800 seconds |
+| Initial runtime estimate | 3,600 seconds |
 | CPU scaling efficiency | 0.0 |
 
-These are conservative admission values for the first bounded run, not measured
-workload consumption. The successful pilot must report peak GPU allocation and
-reservation, process MaxRSS, cgroup peak, runtime, and device identities. Those
-measurements may support a later separately reviewed profile change.
+These are conservative admission values for the first bounded two-GPU run, not
+measured workload consumption. The 3,600-second estimate conservatively doubles
+the earlier four-GPU estimate because no successful two-GPU timing exists. The
+successful pilot must report peak GPU allocation and reservation, process
+MaxRSS, cgroup peak, runtime, and device identities. Those measurements may
+support a later separately reviewed profile change.
 
 ## Three external readiness gates
 

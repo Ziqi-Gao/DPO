@@ -11,8 +11,10 @@ from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
     CHAT_TEMPLATE_SHA256,
     GATE_NAMES,
+    GPU_COUNT,
     GPU_MODEL,
     MODEL_REVISION,
+    NCCL_EXPECTED_SUM,
     NCCL_PROBE_TIMEOUT_SECONDS,
     NCCL_VERSION,
     OUTPUT_NAME,
@@ -70,7 +72,7 @@ def _rank_row(rank: int) -> dict[str, object]:
 
 
 def _report(inputs: dict[str, str]) -> dict[str, object]:
-    rows = [_rank_row(rank) for rank in range(4)]
+    rows = [_rank_row(rank) for rank in range(GPU_COUNT)]
     limit = 192 * 1024**3
     peak = 100 * 1024**3
     minimum = max(32 * 1024**3, int(limit * 0.20))
@@ -99,7 +101,7 @@ def _report(inputs: dict[str, str]) -> dict[str, object]:
                 "total_memory": 97_887 * 1024**2,
                 "visible_cuda_identifier": f"GPU-fixture-{rank}",
             }
-            for rank in range(4)
+            for rank in range(GPU_COUNT)
         ],
         "enable_thinking": False,
         "execution_context": {
@@ -107,7 +109,7 @@ def _report(inputs: dict[str, str]) -> dict[str, object]:
             "distributed_launcher": "environment_rank_passthrough",
             "mode": "server_scheduler_foreground",
             "nccl_p2p_policy": "disabled",
-            "visible_device_count": 4,
+            "visible_device_count": GPU_COUNT,
         },
         "git_commit": "a" * 40,
         "model_revision": MODEL_REVISION,
@@ -117,12 +119,12 @@ def _report(inputs: dict[str, str]) -> dict[str, object]:
                 "control_backend": "gloo",
                 "data_backend": "nccl",
                 "elapsed_seconds": 0.25 + rank,
-                "observed_sum": 10.0,
+                "observed_sum": NCCL_EXPECTED_SUM,
                 "p2p_disabled": True,
                 "rank": rank,
                 "timeout_seconds": NCCL_PROBE_TIMEOUT_SECONDS,
             }
-            for rank in range(4)
+            for rank in range(GPU_COUNT)
         ],
         "nccl_runtime_version": NCCL_VERSION,
         "passed": True,
@@ -146,8 +148,8 @@ def _report(inputs: dict[str, str]) -> dict[str, object]:
         "tokenizer_revision": MODEL_REVISION,
         "torch_cuda_version": "12.8",
         "torch_version": "2.8.0+cu128",
-        "visible_cuda_devices": 4,
-        "world_size": 4,
+        "visible_cuda_devices": GPU_COUNT,
+        "world_size": GPU_COUNT,
     }
     return {**content, "sha256": sha256_value(content)}
 
@@ -197,13 +199,13 @@ class Qwen3V2GpuPreflightValidatorTests(unittest.TestCase):
                 "unreviewed GPU model",
             ),
             (
-                lambda report: report["rank_training_checks"][2].update(
+                lambda report: report["rank_training_checks"][1].update(
                     {"fsdp_save_resume": False}
                 ),
                 "fsdp_save_resume",
             ),
             (
-                lambda report: report["rank_training_checks"][3].update(
+                lambda report: report["rank_training_checks"][1].update(
                     {
                         "model_facing_prompt_sha256": report["rank_training_checks"][0][
                             "model_facing_prompt_sha256"

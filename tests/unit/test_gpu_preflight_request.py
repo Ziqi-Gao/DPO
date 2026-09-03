@@ -15,6 +15,7 @@ from posttrain_circuits.scheduler_adapter.gpu_preflight_request import (
 from posttrain_circuits.scheduler_adapter.outbox import validate_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
+    GPU_COUNT,
     OUTPUT_NAME,
     PROFILE_NAME,
     TASK_NAME,
@@ -108,7 +109,7 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertEqual(
             execution["execution_context"],
             {
-                "distributed_process_count": 4,
+                "distributed_process_count": GPU_COUNT,
                 "execution_profile": PROFILE_NAME,
                 "scheduler_protocol": 2,
             },

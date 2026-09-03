@@ -13,12 +13,13 @@ from posttrain_circuits.scheduler_adapter.strict_json import read_strict_json
 
 
 TASK_NAME = "qwen3_v2_gpu_preflight"
-PROFILE_NAME = "qwen3-v2-gpu-preflight-4gpu"
+PROFILE_NAME = "qwen3-v2-gpu-preflight-2gpu"
 OUTPUT_NAME = "gpu_preflight.json"
 WORKFLOW_ID = "qwen3-v2-gpu-preflight-v1"
 UNIT_ID = "gpu-preflight"
 
-GPU_COUNT = 4
+GPU_COUNT = 2
+NCCL_EXPECTED_SUM = float(GPU_COUNT * (GPU_COUNT + 1) // 2)
 GPU_MODEL = "NVIDIA RTX PRO 6000 Blackwell Server Edition"
 GPU_MINIMUM_TOTAL_MEMORY_MIB = 97_000
 GPU_COMPUTE_CAPABILITY = (12, 0)
@@ -206,7 +207,7 @@ def _utc_timestamp(value: object, *, name: str) -> str:
 
 def _validate_devices(value: object) -> None:
     if not isinstance(value, list) or len(value) != GPU_COUNT:
-        _fail("GPU preflight must report exactly four devices")
+        _fail(f"GPU preflight must report exactly {GPU_COUNT} devices")
     ranks: list[int] = []
     pci_bus_ids: list[str] = []
     visible_identifiers: list[str] = []
@@ -240,14 +241,14 @@ def _validate_devices(value: object) -> None:
         if capability != list(GPU_COMPUTE_CAPABILITY):
             _fail("GPU preflight compute capability differs from the reviewed server")
     if sorted(ranks) != list(range(GPU_COUNT)):
-        _fail("GPU preflight device ranks are not exactly 0..3")
+        _fail(f"GPU preflight device ranks are not exactly 0..{GPU_COUNT - 1}")
     if len(set(pci_bus_ids)) != GPU_COUNT or len(set(visible_identifiers)) != GPU_COUNT:
         _fail("GPU preflight device identities are not unique")
 
 
 def _validate_nccl_diagnostics(value: object) -> None:
     if not isinstance(value, list) or len(value) != GPU_COUNT:
-        _fail("GPU preflight must report exactly four NCCL diagnostics")
+        _fail(f"GPU preflight must report exactly {GPU_COUNT} NCCL diagnostics")
     ranks: list[int] = []
     for row in value:
         if not isinstance(row, dict) or set(row) != NCCL_DIAGNOSTIC_FIELDS:
@@ -268,16 +269,18 @@ def _validate_nccl_diagnostics(value: object) -> None:
             or row["data_backend"] != "nccl"
             or row["p2p_disabled"] is not True
             or row["timeout_seconds"] != NCCL_PROBE_TIMEOUT_SECONDS
-            or row["observed_sum"] != 10.0
+            or row["observed_sum"] != NCCL_EXPECTED_SUM
         ):
             _fail("GPU preflight NCCL diagnostic did not pass its fixed contract")
     if sorted(ranks) != list(range(GPU_COUNT)):
-        _fail("GPU preflight NCCL diagnostic ranks are not exactly 0..3")
+        _fail(
+            f"GPU preflight NCCL diagnostic ranks are not exactly 0..{GPU_COUNT - 1}"
+        )
 
 
 def _validate_rank_checks(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list) or len(value) != GPU_COUNT:
-        _fail("GPU preflight must report exactly four rank training checks")
+        _fail(f"GPU preflight must report exactly {GPU_COUNT} rank training checks")
     rows: list[dict[str, Any]] = []
     ranks: list[int] = []
     prompt_hashes: list[str] = []
@@ -495,6 +498,7 @@ __all__ = [
     "GPU_MODEL",
     "MODEL_REVISION",
     "NCCL_PROBE_TIMEOUT_SECONDS",
+    "NCCL_EXPECTED_SUM",
     "NCCL_VERSION",
     "OUTPUT_NAME",
     "PROFILE_NAME",

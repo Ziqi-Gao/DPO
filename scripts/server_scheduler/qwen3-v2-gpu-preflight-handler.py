@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Fixed four-rank Qwen3-v2 GPU preflight for ServerScheduler protocol v2.
+"""Fixed two-rank Qwen3-v2 GPU preflight for ServerScheduler protocol v2.
 
 The file is both the foreground supervisor and the torchrun worker.  It is
 therefore the only project implementation byte stream in the deployment
@@ -34,7 +34,7 @@ from typing import Any, Sequence
 
 
 TASK = "qwen3_v2_gpu_preflight"
-PROFILE = "qwen3-v2-gpu-preflight-4gpu"
+PROFILE = "qwen3-v2-gpu-preflight-2gpu"
 PROJECT = "OPD"
 REPORT_NAME = "gpu_preflight.json"
 COMPLETION_NAME = ".opd-scientific-completion.json"
@@ -45,7 +45,10 @@ TOKENIZER_FINGERPRINT = "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf561
 CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
 PREREGISTRATION_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
 GPU_MODEL = "NVIDIA RTX PRO 6000 Blackwell Server Edition"
-GPU_COUNT = 4
+GPU_COUNT = 2
+CPU_CORE_COUNT = 16
+THREADS_PER_RANK = CPU_CORE_COUNT // GPU_COUNT
+NCCL_EXPECTED_SUM = float(GPU_COUNT * (GPU_COUNT + 1) // 2)
 NCCL_VERSION = "2.27.3"
 NCCL_PROBE_TIMEOUT_SECONDS = 120
 CONTROL_GROUP_TIMEOUT_SECONDS = 900
@@ -452,7 +455,7 @@ def _validate_config(
     if binding.get("storage_locators") != {"prereg_path": "prereg/qwen3_v2.yaml"}:
         raise PreflightError("ConfigBinding preregistration locator is not fixed")
     expected_execution = {
-        "distributed_process_count": 4,
+        "distributed_process_count": GPU_COUNT,
         "execution_profile": PROFILE,
         "scheduler_protocol": 2,
     }
@@ -589,8 +592,10 @@ def _validate_environment() -> tuple[str, ...]:
     for key, expected in FIXED_ENVIRONMENT.items():
         if os.environ.get(key) != expected:
             raise PreflightError(f"fixed environment {key} differs from its deployment")
-    if any(os.environ.get(key) != "4" for key in THREAD_KEYS):
-        raise PreflightError("per-rank CPU thread environment must be exactly four")
+    if any(os.environ.get(key) != str(THREADS_PER_RANK) for key in THREAD_KEYS):
+        raise PreflightError(
+            f"per-rank CPU thread environment must be exactly {THREADS_PER_RANK}"
+        )
     forbidden = sorted(
         key
         for key in os.environ
@@ -624,7 +629,9 @@ def _validate_environment() -> tuple[str, ...]:
     if len(devices) != GPU_COUNT or len(set(devices)) != GPU_COUNT or any(
         not item or item.strip() != item for item in devices
     ):
-        raise PreflightError("scheduler-provided CUDA visibility must contain four devices")
+        raise PreflightError(
+            f"scheduler-provided CUDA visibility must contain {GPU_COUNT} devices"
+        )
     return devices
 
 
@@ -764,7 +771,9 @@ def _initialize_distributed() -> DistributedRuntime:
         or rank != local_rank
         or not 0 <= local_rank < GPU_COUNT
     ):
-        raise PreflightError("torchrun topology differs from the fixed four-rank contract")
+        raise PreflightError(
+            f"torchrun topology differs from the fixed {GPU_COUNT}-rank contract"
+        )
     if (
         torch.version.cuda != "12.8"
         or not str(torch.__version__).startswith("2.8.0+cu128")
@@ -819,7 +828,7 @@ def _initialize_distributed() -> DistributedRuntime:
     elapsed = time.monotonic() - started
     if completed is False:
         raise PreflightError("NCCL all-reduce did not complete before its fixed timeout")
-    if float(reduced.item()) != 10.0:
+    if float(reduced.item()) != NCCL_EXPECTED_SUM:
         raise PreflightError("NCCL all-reduce returned an unexpected result")
     nccl_version = _nccl_runtime_version(torch)
     if nccl_version != NCCL_VERSION:
@@ -1270,7 +1279,9 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
         },
         "git_commit": git_commit,
         "model_revision": MODEL_REVISION,
-        "nccl_all_reduce": all(item["observed_sum"] == 10.0 for item in nccl_rows),
+        "nccl_all_reduce": all(
+            item["observed_sum"] == NCCL_EXPECTED_SUM for item in nccl_rows
+        ),
         "nccl_diagnostics": nccl_rows,
         "nccl_runtime_version": _nccl_runtime_version(torch),
         "passed": True,
@@ -1481,7 +1492,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             [
                 "--standalone",
                 "--nnodes=1",
-                "--nproc-per-node=4",
+                f"--nproc-per-node={GPU_COUNT}",
                 "--max-restarts=0",
                 "--monitor-interval=1",
                 "--run-path",

@@ -158,7 +158,7 @@ runtime, validator, tests, disabled proposal, and pilot.
 | Task | Profile | Fixed allocation | Result |
 | --- | --- | --- | --- |
 | `repository_preflight` | `repository-preflight-cpu` | 1 CPU core, 128 MiB, no GPU, 30 s estimate | `preflight_report.json` |
-| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-4gpu` | 16 CPU cores, 196608 MiB, 4 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 1800 s estimate | `gpu_preflight.json` |
+| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-2gpu` | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 3600 s estimate | `gpu_preflight.json` |
 
 Both request builders allow exactly `workflow_id`, `plan_sha256`, and
 `unit_id`. Their checked-in proposals are documentation/handoff artifacts and
@@ -185,7 +185,7 @@ contracts. When handler/runtime bytes change, update the relevant dependency
 lock, package manifest, implementation digest, manifest digest, and deployment
 identity; do not introduce blanket hashing of unrelated repository content.
 
-## Four-GPU Qwen3-v2 preflight
+## Two-GPU Qwen3-v2 preflight
 
 The fixed runtime is:
 
@@ -203,18 +203,20 @@ This server profile fixes `NCCL_P2P_DISABLE=1` for the reproduced dual-NUMA
 RTX PRO 6000 Blackwell first-all-reduce hang. It uses Gloo as the control plane
 and an explicit NCCL group for CUDA tensors and FSDP. The first NCCL operation
 is a scalar all-reduce with a 120-second group/work timeout. Keep NCCL timeout
-diagnostics enabled, preserve the four scheduler-assigned UUIDs, and record
+diagnostics enabled, preserve the two scheduler-assigned UUIDs, and record
 rank, logical device, PCI bus ID, NCCL version, and probe timing in the report.
 
 Student load status, rank-zero teacher load, teacher forward, and final
 publication status are synchronized over Gloo so a rank-specific failure does
-not masquerade as an NCCL success. The preflight passes only when all four
+not masquerade as an NCCL success. The preflight passes only when both
 ranks also complete real offline model forward/backward, finite soft-teacher
 loss and gradients, a nonzero update, FSDP save/resume, unique prompt shards,
 and the 192-GiB cgroup/headroom checks.
 
-Do not proceed to G0 unless the current committed handler produces a published
-`gpu_preflight.json` with `passed: true` and a valid scientific completion.
+This two-GPU pilot validates only the two-GPU handler path. It does not
+authorize the currently fail-closed G0 path, which requires its own reviewed
+two-GPU handler/profile before submission. A published `gpu_preflight.json`
+with `passed: true` and a valid scientific completion remains necessary.
 
 ## Scientific repository structure
 

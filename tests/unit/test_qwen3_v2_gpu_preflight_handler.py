@@ -5,6 +5,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -18,6 +19,12 @@ from posttrain_circuits.scheduler_adapter.registry import require_handler
 ROOT = Path(__file__).resolve().parents[2]
 HANDLER = ROOT / "scripts" / "server_scheduler" / "qwen3-v2-gpu-preflight-handler.py"
 PREPARE = ROOT / "scripts" / "server_scheduler" / "prepare-qwen3-v2-runtime.py"
+PROPOSAL = (
+    ROOT
+    / "deployments"
+    / "qwen3_v2_gpu_preflight"
+    / "registration-proposal-v2.toml"
+)
 
 
 def _load_handler():  # type: ignore[no-untyped-def]
@@ -62,6 +69,12 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
 
     def test_registry_fixes_offline_environment_and_single_implementation(self) -> None:
         handler = require_handler("qwen3_v2_gpu_preflight")
+        profile = handler.profile(self.module.PROFILE)
+        self.assertEqual(profile.process_count, 2)
+        self.assertEqual(profile.cpu_cores_min, 16)
+        self.assertEqual(profile.cpu_cores_max, 16)
+        self.assertEqual(profile.gpu_count, 2)
+        self.assertEqual(self.module.THREADS_PER_RANK, 8)
         self.assertEqual(dict(handler.fixed_environment), self.module.FIXED_ENVIRONMENT)
         self.assertEqual(
             {
@@ -87,6 +100,38 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         self.assertEqual(handler.deployment.implementation, HANDLER)
         self.assertEqual(handler.deployment.runtime_flags, ("-I",))
         self.assertEqual(handler.output_names, ("gpu_preflight.json",))
+
+    def test_disabled_registration_proposes_exact_two_gpu_profile(self) -> None:
+        with PROPOSAL.open("rb") as handle:
+            proposal = tomllib.load(handle)
+        self.assertIs(proposal["enabled"], False)
+        task = next(
+            item
+            for item in proposal["tasks"]
+            if item["name"] == "qwen3_v2_gpu_preflight"
+        )
+        self.assertEqual(
+            task["execution_profiles"],
+            [
+                {
+                    "cpu_cores_max": 16,
+                    "cpu_cores_min": 16,
+                    "cpu_cores_preferred": 16,
+                    "cpu_scaling_efficiency": 0.0,
+                    "estimated_runtime_seconds": 3600.0,
+                    "gpu_count": 2,
+                    "gpu_exclusivity": "required",
+                    "gpu_memory_mib": 81920,
+                    "gpu_models": [self.module.GPU_MODEL],
+                    "gpu_utilization_pct": 95,
+                    "kind": "gpu",
+                    "memory_mib": 196608,
+                    "name": self.module.PROFILE,
+                    "resource_mode": "fixed",
+                    "scheduling_goal": "latency",
+                }
+            ],
+        )
 
     def test_completion_draft_round_trips_through_adapter_schema(self) -> None:
         digest = "a" * 64
@@ -225,7 +270,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         torch.device = lambda kind, index: (kind, index)
         torch.tensor = lambda value, device: FakeTensor(value)
         torch.cuda = SimpleNamespace(
-            device_count=lambda: 4,
+            device_count=lambda: 2,
             get_device_properties=lambda _device: SimpleNamespace(
                 major=12,
                 minor=0,
@@ -247,7 +292,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             return data_group
 
         def all_reduce(tensor: FakeTensor, *, group: object, async_op: bool) -> FakeWork:
-            tensor.value = 10.0
+            tensor.value = self.module.NCCL_EXPECTED_SUM
             calls.append(("all_reduce", group, async_op))
             return FakeWork()
 
@@ -255,10 +300,10 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         dist.all_reduce = all_reduce
         torch.distributed = dist
         environment = {
-            "CUDA_VISIBLE_DEVICES": "GPU-0,GPU-1,GPU-2,GPU-3",
+            "CUDA_VISIBLE_DEVICES": "GPU-0,GPU-1",
             "LOCAL_RANK": "0",
             "RANK": "0",
-            "WORLD_SIZE": "4",
+            "WORLD_SIZE": "2",
         }
         with mock.patch.dict(
             sys.modules, {"torch": torch, "torch.distributed": dist}
@@ -269,9 +314,11 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
 
         self.assertIs(runtime.control_group, control_group)
         self.assertIs(runtime.data_group, data_group)
-        self.assertEqual(runtime.nccl_diagnostic["observed_sum"], 10.0)
+        self.assertEqual(
+            runtime.nccl_diagnostic["observed_sum"], self.module.NCCL_EXPECTED_SUM
+        )
         self.assertEqual(calls[1][0:2], ("init_process_group", "gloo"))
-        self.assertEqual(calls[2][0:3], ("new_group", (0, 1, 2, 3), "nccl"))
+        self.assertEqual(calls[2][0:3], ("new_group", (0, 1), "nccl"))
         self.assertEqual(calls[3], ("all_reduce", data_group, True))
         self.assertEqual(
             calls[4][1].total_seconds(), self.module.NCCL_PROBE_TIMEOUT_SECONDS

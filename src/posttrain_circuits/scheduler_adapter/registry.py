@@ -852,12 +852,12 @@ _REPOSITORY_PREFLIGHT_HANDLER = HandlerSpec(
 _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
     name=QWEN3_V2_GPU_PREFLIGHT_PROFILE_NAME,
     kind="gpu",
-    process_count=4,
+    process_count=2,
     cpu_cores_min=16,
     cpu_cores_max=16,
     memory_mib_min=196608,
     memory_mib_max=196608,
-    gpu_count=4,
+    gpu_count=2,
     gpu_memory_mib_min=81920,
     gpu_memory_mib_max=81920,
     gpu_utilization_pct_min=95,
@@ -866,7 +866,7 @@ _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
     allowed_gpu_models=(QWEN3_V2_GPU_MODEL,),
 )
 _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-gpu-preflight-python312-cuda-v1",
+    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v2",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
         "Transformers 4.56.2"
@@ -880,7 +880,7 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="793f11c069fdca2698eddee5376e73cf774efa9d5032b70779e53f1581f1f773",
+    implementation_sha256="b5b3a1f33892fa8a4ecbf1cda53144a8277a96e0907c32669e624ca44d8c88b9",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -894,8 +894,8 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="1c07a3015314df0463c0274f5c66c852d5b526894c9a8188437af6b440e659ef",
-    deployment_identity_sha256="f887f856f1627f1bb72ec985911de8e1e7ee5ab1e95672f39f0e484c4aec78cd",
+    package_manifest_sha256="13577fba4b3805e248ee7c537dc40780529c6c121e6e1d16efb1a2305c599981",
+    deployment_identity_sha256="d229fe0ed43f97badea2324cfa807a3cf94021981763bc48d79000735d9758da",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,
@@ -925,11 +925,11 @@ _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     output_names=(QWEN3_V2_GPU_PREFLIGHT_OUTPUT,),
     required_gate_names=QWEN3_V2_GPU_PREFLIGHT_GATES,
     config_hash_bindings=CONFIG_HASH_CONTENT_INPUTS,
-    semantic_validator_id="qwen3-v2-gpu-preflight-result-v1",
+    semantic_validator_id="qwen3-v2-gpu-preflight-2gpu-result-v2",
     semantic_validator=validate_qwen3_v2_gpu_preflight_completion,
 )
 
-# The CPU preflight and one bounded four-GPU preflight are migrated. Training,
+# The CPU preflight and one bounded two-GPU preflight are migrated. Training,
 # circuit analysis, G0, and factorial tasks remain fail-closed.
 HANDLER_REGISTRY: Mapping[str, HandlerSpec] = MappingProxyType(
     {

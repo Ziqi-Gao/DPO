@@ -18,6 +18,7 @@ from posttrain_circuits.scheduler_adapter.plan_store import publish_workflow_pla
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
     ARTIFACT_NAMESPACE,
     CHAT_TEMPLATE_SHA256,
+    GPU_COUNT,
     MODEL_REVISION,
     OUTPUT_NAME,
     PROFILE_NAME,
@@ -35,7 +36,7 @@ from posttrain_circuits.workflows.contracts import ContentIdentity, WorkflowPlan
 PREREG_CONTENT_NAME = "preregistration_sha256"
 PREREG_RELATIVE_PATH = Path("prereg/qwen3_v2.yaml")
 EXECUTION_CONTEXT = {
-    "distributed_process_count": 4,
+    "distributed_process_count": GPU_COUNT,
     "execution_profile": PROFILE_NAME,
     "scheduler_protocol": 2,
 }
