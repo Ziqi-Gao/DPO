@@ -102,11 +102,21 @@ Central registration is external mutable state. Reverify it in the central
 ServerScheduler session before any future submission. This repository does not
 authorize registration edits, service operations, or submission.
 
-The checked-in production scheduler configuration currently has GPU dispatch
-disabled. The central OPD registration was independently updated and enabled
-for the two-GPU profile after user approval. The checked-in project-owned
-proposal remains disabled as a handoff artifact; this session did not edit the
-central registration or global dispatch policy.
+The central OPD registration was independently updated and enabled for the
+two-GPU profile after user approval. The deployed scheduler now launches each
+job in an allocation-specific systemd scope: the authoritative running-manifest
+`allocation.memory_mib` becomes the exact `MemoryMax`, swap is disabled, and a
+launch guard verifies the cgroup before project code runs. Request-side
+`resources` is an optional sparse hint object, but current OPD requests must
+continue to omit it. OPD consumes only the documented public
+`SERVER_SCHEDULER_*` environment and must not depend on private guard metadata
+such as `SERVER_SCHEDULER_MEMORY_MAX_BYTES` or
+`SERVER_SCHEDULER_RUNTIME_UNIT`.
+
+The checked-in project-owned proposal remains disabled as a handoff artifact;
+this session did not edit the central registration or global dispatch policy.
+Central registration, dispatch, and GPU safety state remain external mutable
+state and must be reverified by a ServerScheduler operator before submission.
 
 ## Execution evidence
 
@@ -151,16 +161,32 @@ The committed two-GPU implementation passed 20 focused tests and 74 related
 handler, validator, request, adapter, and proposal tests. Syntax, the exact
 two-GPU profile, disabled proposal, package manifest, and all deployment hashes
 also validated. A tiny Qwen3 model completed a real non-reentrant
-forward/backward in the fixed runtime without using a GPU. These remain
-non-pilot results; no two-GPU allocation has run.
+forward/backward in the fixed runtime without using a GPU. These were the
+static results before the first real two-GPU allocation.
 
-A fresh two-GPU protocol-v2 request was prepared, but not centrally submitted,
-at `/scr/del6500/OPD/scheduler/outbox/opd-d4b63d5a246ed8d06b944b9063a62e1e.json`.
-Its outbox SHA-256 is
-`8500c5f459950a008fede57e8f7a63bedc668c0267b9794a2cc218b39f53c4ab`.
-Project request and published-plan validation passed; it names only the
-registered `qwen3-v2-gpu-preflight-2gpu` profile and contains no resource,
-command, path, or environment override.
+Two-GPU request `opd-d4b63d5a246ed8d06b944b9063a62e1e`, originally written
+to `/scr/del6500/OPD/scheduler/outbox/opd-d4b63d5a246ed8d06b944b9063a62e1e.json`
+with SHA-256
+`8500c5f459950a008fede57e8f7a63bedc668c0267b9794a2cc218b39f53c4ab`,
+was centrally submitted at `2026-09-03T21:19:17Z`. Its only attempt completed
+the CUDA and NCCL probes, both model loads, teacher and student forwards,
+student backward, optimizer step, nonzero update checks, and FSDP save/resume
+on the assigned two-GPU topology. Both ranks reached
+`rank_training_completed`. Final publication then failed because the old
+central launch path exposed the service cgroup's unlimited `memory.max`
+instead of an allocation-specific 196608 MiB limit. The durable scheduler
+state became terminal `failed` at `2026-09-03T21:27:04Z`; the job ID is
+permanently occupied and must never be resubmitted or reused. This is evidence
+of a then-live central isolation failure, not evidence requiring an OPD
+scientific-code change.
+
+The historical `gpu_fatal` label on that attempt was also a central classifier
+false positive: it matched the successful
+`phase=nccl_probe_passed ... timeout_seconds=120` log line. The line-local
+classifier correction and allocation-specific no-swap systemd scope/guard were
+subsequently deployed. They do not change the terminal state or make the old
+job ID reusable. A fresh request and an independently approved central pilot
+are still required.
 
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
 the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
@@ -177,16 +203,19 @@ The formal G0 experiment is not ready to submit. The gate opens only after all
 of the following are true:
 
 1. Commit this handoff synchronization so the project checkout is clean.
-2. Have the central operator verify the running dispatcher's current
-   registration, global GPU-dispatch decision, and both assigned devices'
-   safety state before validating and submitting only
-   `/scr/del6500/OPD/scheduler/outbox/opd-d4b63d5a246ed8d06b944b9063a62e1e.json`.
-3. Capture the authoritative terminal state and complete logs for that pilot.
-4. If it fails, diagnose the exact phase and make only the required
+2. From that clean committed checkout, use the project builder to prepare
+   exactly one new resource-omitting protocol-v2 request with a fresh job ID.
+   Preparing the outbox file is not submission.
+3. Have the central operator verify the running dispatcher's current
+   registration and global GPU-dispatch decision, and separately handle the
+   safety state of both allowed devices before validating and submitting only
+   the newly recorded outbox path after explicit approval.
+4. Capture the authoritative terminal state and complete logs for that pilot.
+5. If it fails, diagnose the exact phase and make only an evidence-backed
    project-owned correction before forming another clean commit.
-5. If it succeeds, independently validate the published scientific completion
+6. If it succeeds, independently validate the published scientific completion
    and `gpu_preflight.json` artifact.
-6. Only then design and separately review a two-GPU G0 handler/profile/request;
+7. Only then design and separately review a two-GPU G0 handler/profile/request;
    this preflight does not authorize the currently fail-closed formal
    experiment.
 
