@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-09-03.
+Last updated: 2026-09-04.
 
 This is the single current-state handoff for the OPD refactor and scheduler
 integration. `AGENTS.md` is authoritative for repository working rules and
@@ -9,8 +9,9 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The current committed checkout is `a30ab16`
-(`docs: record successful two-gpu preflight`). The committed GPU
+The current committed checkout is `17b0b531b552247a6faa7699b633f5e756dad7d1`
+(`feat: add two-gpu Qwen3-v2 G0 candidate`). This is implementation commit A
+for the non-self-referential amendment review. The committed GPU-preflight
 implementation baseline remains `252b02a` (`feat: convert GPU preflight to two
 GPUs`). Important preceding milestones are:
 
@@ -61,7 +62,7 @@ The registry contains the validated `repository_preflight` and
 candidate. Legacy Slurm and local scheduler scripts are historical inventory,
 not supported execution paths.
 
-An uncommitted candidate adds a third project-side handler,
+The committed implementation candidate adds a third project-side handler,
 `qwen3_v2_g0`, with profile `qwen3-v2-g0-2gpu`. It fixes 16 CPU cores,
 196608 MiB RAM, two exclusive allowed GPUs, 81920 MiB and 95% utilization per
 GPU, a 12-hour estimate, foreground Accelerate/FSDP execution, offline pinned
@@ -88,7 +89,7 @@ ServerScheduler parser accepted it and confirmed `enabled = false`; it has not
 been installed or enabled. No G0 workflow plan or outbox request has been
 created, and no G0 job has been submitted or run.
 
-The uncommitted candidate changes are limited to:
+Implementation commit A changes are limited to:
 
 - `AGENTS.md`, `configs/accelerate/fsdp_2gpu_server_scheduler.yaml`, and
   `configs/g0/qwen3_v2_eap_separation.yaml`;
@@ -122,10 +123,11 @@ The uncommitted candidate changes are limited to:
   `tests/unit/test_scheduler_adapter.py`.
 
 The non-self-referential review design requires two user-created commits. The
-first contains the complete implementation and this `proposed` amendment. An
-independent reviewer then names that already-existing implementation commit by
-changing only the amendment review block to `accepted`; that review metadata
-and any handoff update form a second commit. Validation proves ancestry,
+first is now `17b0b531b552247a6faa7699b633f5e756dad7d1`; it contains the
+complete implementation and this `proposed` amendment. An independent reviewer
+must name that already-existing implementation commit by changing only the
+amendment review block to `accepted`; that review metadata and any handoff
+update form a second commit. Validation proves ancestry,
 requires every scientific amendment field to equal the proposed document in
 the implementation commit, and permits only the amendment and handoff before
 acceptance. After acceptance, only this handoff may differ between GPU
@@ -347,12 +349,13 @@ path on the real two-GPU topology; it does not validate or authorize G0.
 
 ## Current scientific gate
 
-The bounded two-GPU preflight substrate has passed. The current uncommitted G0
-candidate and proposed-amendment design passed 110 handler, request, semantic
+The bounded two-GPU preflight substrate has passed. The committed G0 candidate
+and proposed-amendment design passed 110 handler, request, semantic
 validator, amendment, adapter, preflight, workflow, and proposal tests in
-1.149 seconds. Python compilation and both staged and unstaged diff checks
-passed. The central registration parser accepted the complete proposal and
-confirmed `enabled = false`. The frozen base preregistration retained SHA-256
+1.139 seconds from clean implementation commit A. Python compilation and
+`git diff --check` passed. The central registration parser accepted the
+complete proposal and confirmed `enabled = false`. The frozen base
+preregistration retained SHA-256
 `8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4`.
 The G0 handler, dependency lock, package manifest, and deployment identity are
 respectively bound to
@@ -367,9 +370,9 @@ The exact combined test command was:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python -m unittest tests.unit.test_protocol_amendments tests.unit.test_qwen3_v2_g0 tests.unit.test_qwen3_v2_g0_handler tests.unit.test_g0_request tests.unit.test_gpu_preflight_request tests.unit.test_qwen3_v2_gpu_preflight tests.unit.test_qwen3_v2_gpu_preflight_handler tests.unit.test_scheduler_adapter tests.unit.test_registration_proposal tests.unit.test_workflow_contracts -q
 ```
 
-It reported `Ran 110 tests in 1.149s` and `OK`. The affected Python files also
-passed `/usr/bin/python3.12 -m py_compile`; `git diff --cached --check` and
-`git diff --check` both passed. The central proposal parser command was:
+It reported `Ran 110 tests in 1.139s` and `OK`. The affected Python files also
+passed `py_compile`, and `git diff --check` passed. The central proposal parser
+command was:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/del6500/projects/ServerScheduler/src /usr/bin/python3.12 -c 'from pathlib import Path; from server_scheduler.registry import load_registration; r=load_registration(Path("deployments/qwen3_v2_g0/registration-proposal-v2.toml")); print(r.name, r.enabled, sorted(r.tasks))'
@@ -379,20 +382,25 @@ It reported `OPD False` and exactly `qwen3_v2_g0`,
 `qwen3_v2_gpu_preflight`, and `repository_preflight`.
 
 The prior global-batch/token-semantics and self-referential-commit design
-blockers now have a fail-closed candidate solution. They remain approval gates:
-the proposed amendment has not received independent scientific acceptance,
-and there is not yet a clean implementation commit for it to reference.
+blockers now have a fail-closed committed candidate solution. They remain
+approval gates: the proposed amendment has not received independent scientific
+acceptance. Any acceptance must name
+`17b0b531b552247a6faa7699b633f5e756dad7d1` as its
+`reviewed_implementation_commit`; this handoff-only synchronization is an
+allowed metadata descendant and does not alter implementation identity.
 
-The fixed runtime publication is separately incomplete. Two preparation
+The fixed runtime publication is separately incomplete. Three preparation
 attempts were safely rolled back because the login-node environment could not
-resolve the PyPI host even with approved network escalation. Neither
+resolve the PyPI host even with approved network escalation. The post-failure
+check found neither final targets nor residual staging directories. Neither
 `/scr/del6500/OPD/envs/qwen3-v2-g0-v1` nor
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
 registration until the amendment is independently accepted, the runtime is
 successfully prepared and verified, the deployment hashes pass, and the
-acceptance checkout is clean. The disabled proposal may be handed to a central
-operator for review only after the user creates the implementation commit;
-installation, enablement, and submission remain central operations.
+acceptance checkout is clean. The disabled proposal at implementation commit A
+may now be handed to a central operator for review and installation while it
+remains `enabled = false`; enablement and submission require later, separate
+approvals and remain central operations.
 
 No new preflight or G0 workflow plan, outbox request, or job ID exists. Nothing
 was submitted, no GPU was operated, and no central scheduler state was changed.
