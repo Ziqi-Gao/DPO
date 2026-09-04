@@ -188,6 +188,39 @@ subsequently deployed. They do not change the terminal state or make the old
 job ID reusable. A fresh request and an independently approved central pilot
 are still required.
 
+From clean committed HEAD `0730e566144f0482bd80a06b147d4bcf6d7f4379`, the
+project builder prepared exactly one replacement request:
+
+- Job ID: `opd-23f0d147b3eae04a4a6b402f54e18948`.
+- Outbox path:
+  `/scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948.json`.
+- Request SHA-256:
+  `f5a4b30e1870587355bf90e2d10205e88749d5f64405325e31f69459dbe2ea70`.
+- Task/profile: `qwen3_v2_gpu_preflight` with
+  `qwen3-v2-gpu-preflight-2gpu`.
+- Scientific identity: workflow `qwen3-v2-gpu-preflight-v1`, unit
+  `gpu-preflight`, and plan
+  `20fbb3315e873ed618d536412f9a53c1928248708280ef217725a17caed4f0be`.
+- Priority is zero. The request omits `resources` and contains no command,
+  path, or environment override.
+
+The exact preparation and verification commands were:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3.12 -m posttrain_circuits.scheduler_adapter.gpu_preflight_request
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/del6500/projects/ServerScheduler/src /usr/bin/python3.12 -c 'from pathlib import Path; from server_scheduler.models import JobRequest; JobRequest.from_file(Path("/scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948.json")); print("protocol-v2 schema/parser: ok")'
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3.12 -c 'from posttrain_circuits.scheduler_adapter.gpu_preflight_request import build_qwen3_v2_gpu_preflight_plan; from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout; from posttrain_circuits.scheduler_adapter.plan_store import require_published_workflow_plan; layout=WorkflowLayout.production(); require_published_workflow_plan(build_qwen3_v2_gpu_preflight_plan(layout=layout), layout=layout); print("published plan: ok")'
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3.12 -c 'from pathlib import Path; from posttrain_circuits.scheduler_adapter.outbox import validate_outbox_request; from posttrain_circuits.scheduler_adapter.strict_json import read_strict_json; payload,_=read_strict_json(Path("/scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948.json"), context="prepared request", max_bytes=131072); validate_outbox_request(payload); print("OPD request: ok")'
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3.12 -m unittest tests.unit.test_gpu_preflight_request tests.unit.test_qwen3_v2_gpu_preflight tests.unit.test_qwen3_v2_gpu_preflight_handler tests.unit.test_scheduler_adapter tests.unit.test_registration_proposal -v
+sha256sum /scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948.json
+```
+
+The schema/parser, published-plan, and project request validations passed; all
+74 related tests passed in 0.874 seconds; and the final digest matched the value
+above. The new job ID was absent from central durable jobs/history when
+checked. The request has only been generated: it has not been submitted, no
+GPU was used, and no central scheduler state was changed.
+
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
 the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
 control group, creates a separate NCCL data group for CUDA tensors and FSDP,
@@ -202,20 +235,19 @@ behavior on the real two-GPU topology still requires a fresh approved pilot.
 The formal G0 experiment is not ready to submit. The gate opens only after all
 of the following are true:
 
-1. Commit this handoff synchronization so the project checkout is clean.
-2. From that clean committed checkout, use the project builder to prepare
-   exactly one new resource-omitting protocol-v2 request with a fresh job ID.
-   Preparing the outbox file is not submission.
-3. Have the central operator verify the running dispatcher's current
+1. Commit this request handoff so the project checkout is clean. Request
+   generation is not submission.
+2. Have the central operator verify the running dispatcher's current
    registration and global GPU-dispatch decision, and separately handle the
    safety state of both allowed devices before validating and submitting only
-   the newly recorded outbox path after explicit approval.
-4. Capture the authoritative terminal state and complete logs for that pilot.
-5. If it fails, diagnose the exact phase and make only an evidence-backed
+   `/scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948.json`
+   request after explicit approval.
+3. Capture the authoritative terminal state and complete logs for that pilot.
+4. If it fails, diagnose the exact phase and make only an evidence-backed
    project-owned correction before forming another clean commit.
-6. If it succeeds, independently validate the published scientific completion
+5. If it succeeds, independently validate the published scientific completion
    and `gpu_preflight.json` artifact.
-7. Only then design and separately review a two-GPU G0 handler/profile/request;
+6. Only then design and separately review a two-GPU G0 handler/profile/request;
    this preflight does not authorize the currently fail-closed formal
    experiment.
 
