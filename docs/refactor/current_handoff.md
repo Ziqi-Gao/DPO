@@ -185,8 +185,8 @@ false positive: it matched the successful
 `phase=nccl_probe_passed ... timeout_seconds=120` log line. The line-local
 classifier correction and allocation-specific no-swap systemd scope/guard were
 subsequently deployed. They do not change the terminal state or make the old
-job ID reusable. A fresh request and an independently approved central pilot
-are still required.
+job ID reusable. The independently approved replacement pilot is recorded
+below.
 
 From clean committed HEAD `0730e566144f0482bd80a06b147d4bcf6d7f4379`, the
 project builder prepared exactly one replacement request:
@@ -217,9 +217,45 @@ sha256sum /scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948
 
 The schema/parser, published-plan, and project request validations passed; all
 74 related tests passed in 0.874 seconds; and the final digest matched the value
-above. The new job ID was absent from central durable jobs/history when
-checked. The request has only been generated: it has not been submitted, no
-GPU was used, and no central scheduler state was changed.
+above. The new job ID was absent from central durable jobs/history when first
+checked.
+
+The replacement request was later centrally submitted at
+`2026-09-04T03:35:34Z` and completed on its first attempt with exit code zero;
+central terminal history was updated at `2026-09-04T03:36:02Z`. It used the
+registered 16-CPU, 196608-MiB, two-exclusive-GPU allocation on the allowed GPU
+0/1 UUIDs. Both ranks completed the CUDA and 0.192-second NCCL probes, offline
+model loads, finite teacher/student forwards and soft-teacher losses, finite
+backward gradients, nonzero optimizer updates, unique prompt shards, and FSDP
+save/resume.
+
+The published report is
+`/data/del6500/OPD/workflows/outputs/qwen3-v2-gpu-preflight-v1/20fbb3315e873ed618d536412f9a53c1928248708280ef217725a17caed4f0be/gpu-preflight/gpu_preflight.json`
+with file SHA-256
+`c0a8d1dcf66cb278eb522ccba21382728cbe72651496cc0bf2599a7bd386b3b3`.
+It records `passed: true`, exact 192-GiB cgroup limit
+`206158430208`, peak `66826952704`, and remaining headroom
+`139331477504` bytes. The `ScientificCompletion` is
+`/data/del6500/OPD/workflows/completions/qwen3-v2-gpu-preflight-v1/20fbb3315e873ed618d536412f9a53c1928248708280ef217725a17caed4f0be/gpu-preflight.json`
+with file SHA-256
+`85951e88006a7a2881eb4c4fb0bdbf29a130014c4a22bf75a53303e3ab03bdc2`.
+It binds attempt 1 and code commit
+`634d3e86cbfa16689837cc595f48302be1f862d8` and declares all eight reviewed
+scientific gates true.
+
+The project acceptance command used the production
+`validate_unit_completion` path against the immutable published plan and
+returned `OPD semantic completion validation: accepted`. That path revalidated
+the completion schema, plan/input identities, output hash, execution
+provenance, fixed Qwen3-v2 report contract, and every handler-owned semantic
+gate. The NCCL RAS listener reported a non-blocking localhost port warning;
+the NCCL data operation and clean communicator teardown still completed. This
+OPD acceptance session performed no submission, GPU operation, or central
+scheduler mutation.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3.12 -c 'from pathlib import Path; from posttrain_circuits.scheduler_adapter.completion import validate_unit_completion; from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout; from posttrain_circuits.scheduler_adapter.strict_json import read_strict_json; from posttrain_circuits.workflows.contracts import WORKFLOW_TASK_REGISTRY, WorkflowPlan; layout=WorkflowLayout.production(); plan_path=Path("/data/del6500/OPD/workflows/plans/qwen3-v2-gpu-preflight-v1/20fbb3315e873ed618d536412f9a53c1928248708280ef217725a17caed4f0be.json"); raw,_=read_strict_json(plan_path, context="published OPD workflow plan", max_bytes=16*1024*1024); plan=WorkflowPlan.from_payload(raw, task_registry=WORKFLOW_TASK_REGISTRY); unit=plan.unit("gpu-preflight", task_registry=WORKFLOW_TASK_REGISTRY); completion=validate_unit_completion(plan, unit, plan_sha256="20fbb3315e873ed618d536412f9a53c1928248708280ef217725a17caed4f0be", layout=layout, expected_execution=None); assert completion["execution"]["job_id"]=="opd-23f0d147b3eae04a4a6b402f54e18948"; assert completion["execution"]["attempt"]==1; print("OPD semantic completion validation: accepted")'
+```
 
 After `9c0aaf6`, the focused repository test suite reported 89 passing tests and
 the fixed runtime reported NCCL 2.27.3. The current implementation keeps a Gloo
@@ -227,29 +263,23 @@ control group, creates a separate NCCL data group for CUDA tensors and FSDP,
 bounds the first NCCL probe, synchronizes distributed failure decisions, and
 avoids unsafe NCCL teardown after an unsynchronized failure. Its deployment
 contract pins CUDA 12.8 and NCCL 2.27.3. These are static and test-backed
-results. The two-GPU candidate retains that control/data-plane design, but its
-behavior on the real two-GPU topology still requires a fresh approved pilot.
+results. The successful replacement pilot now validates that bounded preflight
+path on the real two-GPU topology; it does not validate or authorize G0.
 
 ## Current scientific gate
 
-The formal G0 experiment is not ready to submit. The gate opens only after all
-of the following are true:
+The bounded two-GPU preflight gate has passed. The formal G0 experiment is
+still fail-closed and is not ready to submit. The next allowed project work is:
 
-1. Commit this request handoff so the project checkout is clean. Request
-   generation is not submission.
-2. Have the central operator verify the running dispatcher's current
-   registration and global GPU-dispatch decision, and separately handle the
-   safety state of both allowed devices before validating and submitting only
-   `/scr/del6500/OPD/scheduler/outbox/opd-23f0d147b3eae04a4a6b402f54e18948.json`
-   request after explicit approval.
-3. Capture the authoritative terminal state and complete logs for that pilot.
-4. If it fails, diagnose the exact phase and make only an evidence-backed
-   project-owned correction before forming another clean commit.
-5. If it succeeds, independently validate the published scientific completion
-   and `gpu_preflight.json` artifact.
-6. Only then design and separately review a two-GPU G0 handler/profile/request;
-   this preflight does not authorize the currently fail-closed formal
-   experiment.
+1. Commit this acceptance handoff so the project checkout is clean.
+2. Design and review a distinct two-GPU G0 handler, profile, fixed runtime,
+   semantic validator, tests, and disabled registration proposal.
+3. Obtain the separate central installation, enablement, request preparation,
+   and submission approvals required for that new task.
+
+The successful preflight is evidence for the two-GPU execution substrate only;
+it is not approval for G0, seed-42 training, the full seed matrix, replication,
+or cleanup.
 
 Do not submit G0, the seed-42 pilot, a full seed matrix, or a Gemma replication
 until these gates and their separately required approvals are satisfied.
