@@ -1,0 +1,95 @@
+{
+  "cuda_runtime": "12.8",
+  "base_runtime": "/scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1",
+  "external_sources": [
+    {
+      "name": "MIB-circuit-track",
+      "revision": "b759df34433c9e31043ba9e02908ce0bf20e894f",
+      "submodules": "gitlink-pinned-recursive"
+    }
+  ],
+  "packages": [
+    {
+      "name": "accelerate",
+      "version": "1.10.1"
+    },
+    {
+      "name": "datasets",
+      "version": "4.0.0"
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "0.36.2"
+    },
+    {
+      "name": "matplotlib",
+      "version": "3.10.5"
+    },
+    {
+      "name": "nvidia-nccl-cu12",
+      "version": "2.27.3"
+    },
+    {
+      "name": "numpy",
+      "version": "1.26.4"
+    },
+    {
+      "name": "omegaconf",
+      "version": "2.3.0"
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.2"
+    },
+    {
+      "name": "pyarrow",
+      "version": "21.0.0"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.11.7"
+    },
+    {
+      "name": "PyYAML",
+      "version": "6.0.2"
+    },
+    {
+      "name": "safetensors",
+      "version": "0.5.3"
+    },
+    {
+      "name": "scipy",
+      "version": "1.16.1"
+    },
+    {
+      "name": "statsmodels",
+      "version": "0.14.6"
+    },
+    {
+      "name": "tabulate",
+      "version": "0.9.0"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.22.0"
+    },
+    {
+      "name": "torch",
+      "version": "2.8.0+cu128"
+    },
+    {
+      "name": "transformer-lens",
+      "version": "2.16.1"
+    },
+    {
+      "name": "transformers",
+      "version": "4.56.2"
+    }
+  ],
+  "platform": "linux-x86_64",
+  "python": "3.12.13",
+  "runtime_executable": "/scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin/python",
+  "schema_version": 1,
+  "status": "fixed-direct-runtime-and-source-contract",
+  "torch_build": "2.8.0+cu128"
+}

@@ -25,6 +25,7 @@ PROPOSAL = (
     / "qwen3_v2_gpu_preflight"
     / "registration-proposal-v2.toml"
 )
+CODE_COMMIT = "a" * 40
 
 
 def _load_handler():  # type: ignore[no-untyped-def]
@@ -43,7 +44,10 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         cls.module = _load_handler()
 
     def test_handler_and_request_use_the_same_exact_scientific_config(self) -> None:
-        self.assertEqual(self.module._fixed_config(), fixed_resolved_config())
+        self.assertEqual(
+            self.module._fixed_config(code_commit=CODE_COMMIT),
+            fixed_resolved_config(code_commit=CODE_COMMIT),
+        )
         prereg = (ROOT / "prereg" / "qwen3_v2.yaml").read_bytes()
         self.assertEqual(
             self.module.PREREGISTRATION_SHA256,

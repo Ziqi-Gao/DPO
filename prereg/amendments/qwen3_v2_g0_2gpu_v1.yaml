@@ -1,0 +1,72 @@
+schema_version: 1
+amendment_id: qwen3_v2_g0_2gpu_v1
+
+base_preregistration:
+  path: prereg/qwen3_v2.yaml
+  version: qwen3_v2
+  sha256: 8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4
+  frozen_implementation_commit: b2d505b297dae1d56311616e9a68fb7df14b7bee
+
+scope:
+  task: qwen3_v2_g0
+  workflow_id: qwen3-v2-g0-v1
+  unit_id: g0
+  execution_profile: qwen3-v2-g0-2gpu
+  seed: 42
+  claim_scope: full_mechanism_pipeline_feasibility_only_not_confirmatory_primary_endpoint
+
+resource_amendment:
+  original_world_size: 4
+  amended_world_size: 2
+  host_memory_gib: 192
+  minimum_cgroup_headroom_gib: 32
+  minimum_cgroup_headroom_fraction: 0.20
+  exclusive_gpu_model: NVIDIA RTX PRO 6000 Blackwell Server Edition
+  preflight_required: successful_accepted_implementation_lineage_two_gpu_preflight
+
+batch_token_invariants:
+  per_device_batch_size: 4
+  original_gradient_accumulation_steps: 4
+  amended_gradient_accumulation_steps: 8
+  effective_global_batch_size: 64
+  effective_global_batch_formula: amended_world_size_x_per_device_batch_size_x_amended_gradient_accumulation_steps
+  token_budget: 2000000
+  token_budget_unit: global_nonpadding_model_input_tokens_processed
+  token_accounting: exact_cross_rank_sum_reserved_before_each_optimizer_boundary
+  token_stop_boundary: stop_before_an_optimizer_update_that_would_exceed_budget
+  max_optimizer_steps: 120
+  max_steps_role: independent_safety_ceiling_first_limit_reached_stops_training
+  resume_rule: consumed_tokens_and_world_size_are_checkpointed_and_must_match
+
+scientific_invariants:
+  unchanged:
+    - model_teacher_and_tokenizer_revisions
+    - prompt_and_sampling_protocols
+    - seed_42
+    - dataset_and_prerequisite_hash_bindings
+    - optimizer_and_learning_rate
+    - evaluation_and_checkpoint_cadence_in_optimizer_steps
+    - G0_gate_and_claim_scope
+    - artifact_and_completion_semantics
+  forbidden_extensions:
+    - confirmatory_primary_endpoint
+    - full_three_seed_factorial
+    - Gemma_replication
+
+implementation_acceptance:
+  mechanism: reviewed_implementation_commit_plus_metadata_only_descendant
+  allowed_post_implementation_paths:
+    - prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml
+    - docs/refactor/current_handoff.md
+  allowed_after_acceptance_paths:
+    - docs/refactor/current_handoff.md
+  proposed_document_must_preexist_in_implementation_commit: true
+  accepted_document_may_change_review_block_only: true
+  preflight_request_and_execution_must_share_accepted_implementation_lineage: true
+
+review:
+  status: proposed
+  reviewed_implementation_commit: null
+  reviewer: null
+  reviewed_at_utc: null
+  rationale: null

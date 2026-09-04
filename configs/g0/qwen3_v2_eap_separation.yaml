@@ -7,13 +7,14 @@ overrides:
   protocol_track: qwen3_v2
   prereg_path: prereg/qwen3_v2.yaml
   prereg_version: qwen3_v2
+  protocol_amendment_path: prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml
   trainer:
     backend: accelerate
     max_steps: 120
     token_budget: 2000000
     token_budget_unit: global_nonpadding_model_input_tokens_processed
     batch_size: 4
-    gradient_accumulation_steps: 4
+    gradient_accumulation_steps: 8
     checkpoint_every: 20
     evaluation_every: 20
     validation_examples: 128

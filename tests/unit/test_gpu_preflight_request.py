@@ -25,6 +25,7 @@ from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CODE_COMMIT = "a" * 40
 
 
 class GpuPreflightRequestTests(unittest.TestCase):
@@ -49,11 +50,12 @@ class GpuPreflightRequestTests(unittest.TestCase):
         return self.layout.content_path(kind="file", sha256=sha256).read_bytes()
 
     def test_fixed_config_is_complete_local_only_and_fresh(self) -> None:
-        first = fixed_resolved_config()
-        second = fixed_resolved_config()
+        first = fixed_resolved_config(code_commit=CODE_COMMIT)
+        second = fixed_resolved_config(code_commit=CODE_COMMIT)
         first["model"]["model_revision"] = "tampered"
         self.assertNotEqual(first, second)
         self.assertEqual(second["config_kind"], TASK_NAME)
+        self.assertEqual(second["code_commit"], CODE_COMMIT)
         self.assertEqual(second["resource_budget"]["node_memory_gib"], 192)
         self.assertIs(second["model"]["local_files_only"], True)
         self.assertIs(second["teacher"]["local_files_only"], True)
@@ -61,7 +63,11 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertEqual(second["teacher"]["model_name_or_path"], "Qwen/Qwen3-8B")
 
     def test_plan_binds_exact_config_and_raw_preregistration_file(self) -> None:
-        plan = build_qwen3_v2_gpu_preflight_plan(layout=self.layout)
+        with mock.patch(
+            "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+            return_value=CODE_COMMIT,
+        ):
+            plan = build_qwen3_v2_gpu_preflight_plan(layout=self.layout)
         unit = plan.unit(UNIT_ID)
         self.assertEqual(plan.workflow_id, WORKFLOW_ID)
         self.assertEqual(unit.task, TASK_NAME)
@@ -98,7 +104,7 @@ class GpuPreflightRequestTests(unittest.TestCase):
             binding["input_artifact_hashes"],
             {"prereg_path": preregistration.sha256},
         )
-        self.assertEqual(resolved, fixed_resolved_config())
+        self.assertEqual(resolved, fixed_resolved_config(code_commit=CODE_COMMIT))
         self.assertEqual(
             scientific["config"]["prereg_path"],
             {"content_sha256": preregistration.sha256},
@@ -129,9 +135,15 @@ class GpuPreflightRequestTests(unittest.TestCase):
                     raise AssertionError("request builder selected the wrong profile")
                 return object()
 
-        with mock.patch(
-            "posttrain_circuits.scheduler_adapter.outbox.require_handler",
-            return_value=FixedHandler(),
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+                return_value=CODE_COMMIT,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.outbox.require_handler",
+                return_value=FixedHandler(),
+            ),
         ):
             first = prepare_qwen3_v2_gpu_preflight_request(layout=self.layout)
             second = prepare_qwen3_v2_gpu_preflight_request(layout=self.layout)

@@ -24,6 +24,14 @@ from posttrain_circuits.scheduler_adapter.repository_preflight import (
     TASK_NAME as REPOSITORY_PREFLIGHT_TASK,
     validate_repository_preflight_completion,
 )
+from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
+    GATE_NAMES as QWEN3_V2_G0_GATES,
+    GPU_MODEL as QWEN3_V2_G0_GPU_MODEL,
+    OUTPUT_NAMES as QWEN3_V2_G0_OUTPUTS,
+    PROFILE_NAME as QWEN3_V2_G0_PROFILE_NAME,
+    TASK_NAME as QWEN3_V2_G0_TASK,
+    validate_qwen3_v2_g0_completion,
+)
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
     GATE_NAMES as QWEN3_V2_GPU_PREFLIGHT_GATES,
     GPU_MODEL as QWEN3_V2_GPU_MODEL,
@@ -111,7 +119,8 @@ PACKAGE_MANIFEST_KEYS = frozenset(
 SemanticValidator = Callable[[Mapping[str, Any], Any], None]
 FIXED_RUNTIME_ROOT = Path("/usr/bin")
 GPU_RUNTIME_ROOT = Path("/scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin")
-ADDITIONAL_RUNTIME_ROOTS = (GPU_RUNTIME_ROOT,)
+G0_RUNTIME_ROOT = Path("/scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin")
+ADDITIONAL_RUNTIME_ROOTS = (G0_RUNTIME_ROOT, GPU_RUNTIME_ROOT)
 
 
 class ConfigBindingResolver(Protocol):
@@ -866,7 +875,7 @@ _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
     allowed_gpu_models=(QWEN3_V2_GPU_MODEL,),
 )
 _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v2",
+    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v3",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
         "Transformers 4.56.2"
@@ -880,7 +889,7 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="b5b3a1f33892fa8a4ecbf1cda53144a8277a96e0907c32669e624ca44d8c88b9",
+    implementation_sha256="448b244376adf0e1cb7c47942277c2a8ef793394e29eb6da90718cf3bc0a7134",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -894,8 +903,8 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="13577fba4b3805e248ee7c537dc40780529c6c121e6e1d16efb1a2305c599981",
-    deployment_identity_sha256="d229fe0ed43f97badea2324cfa807a3cf94021981763bc48d79000735d9758da",
+    package_manifest_sha256="20c00b6f3e84dc3c78119294ad130473de22bbedc9580f8bdc0c873dcba4c17f",
+    deployment_identity_sha256="643c8f78502ca59bfbc33e03108140442a460f82cb64fd36611a9447e1b67966",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,
@@ -929,10 +938,90 @@ _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     semantic_validator=validate_qwen3_v2_gpu_preflight_completion,
 )
 
-# The CPU preflight and one bounded two-GPU preflight are migrated. Training,
-# circuit analysis, G0, and factorial tasks remain fail-closed.
+_QWEN3_V2_G0_PROFILE = ExecutionProfileContract(
+    name=QWEN3_V2_G0_PROFILE_NAME,
+    kind="gpu",
+    process_count=2,
+    cpu_cores_min=16,
+    cpu_cores_max=16,
+    memory_mib_min=196608,
+    memory_mib_max=196608,
+    gpu_count=2,
+    gpu_memory_mib_min=81920,
+    gpu_memory_mib_max=81920,
+    gpu_utilization_pct_min=95,
+    gpu_utilization_pct_max=95,
+    exclusive_gpu=True,
+    allowed_gpu_models=(QWEN3_V2_G0_GPU_MODEL,),
+)
+_QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
+    deployment_id="qwen3-v2-g0-2gpu-python312-cuda-v2",
+    runtime_version=(
+        "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
+        "Transformers 4.56.2; TransformerLens 2.16.1; MIB b759df3"
+    ),
+    runtime_flags=("-I",),
+    executable=G0_RUNTIME_ROOT / "python",
+    executable_sha256="848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
+    implementation=(
+        PRODUCTION_CODE_ROOT
+        / "scripts"
+        / "server_scheduler"
+        / "qwen3-v2-g0-handler.py"
+    ),
+    implementation_sha256="aba422f340cc6ad2da17b154bc9ede75267f9a414b79c1ed9bd24003be40d3cf",
+    dependency_lock=(
+        PRODUCTION_CODE_ROOT
+        / "deployments"
+        / "qwen3_v2_g0"
+        / "dependency-lock.json"
+    ),
+    dependency_lock_sha256="18d77da454cb86a097526fe561462f4818cb76c3ca9633481261f1e563f86d90",
+    package_manifest=(
+        PRODUCTION_CODE_ROOT
+        / "deployments"
+        / "qwen3_v2_g0"
+        / "package-manifest.json"
+    ),
+    package_manifest_sha256="66bf3353a286a8549ae73714e45bf4cb0f9914325d875332fa04b04ca037d901",
+    deployment_identity_sha256="f08cd196915c0306135faecc46414c450092cadc19a1e372e97655d1f53f6d99",
+)
+_QWEN3_V2_G0_HANDLER = HandlerSpec(
+    task=QWEN3_V2_G0_TASK,
+    deployment=_QWEN3_V2_G0_DEPLOYMENT,
+    profiles=MappingProxyType({QWEN3_V2_G0_PROFILE_NAME: _QWEN3_V2_G0_PROFILE}),
+    fixed_args=(),
+    fixed_environment=MappingProxyType(
+        {
+            "HF_HOME": "/scr/del6500/OPD/cache/huggingface",
+            "HF_HUB_CACHE": "/scr/del6500/OPD/cache/huggingface/hub",
+            "HF_HUB_OFFLINE": "1",
+            "MIB_REPOSITORY": "/scr/del6500/OPD/vendor/MIB-circuit-track-v1",
+            "NCCL_DEBUG": "INFO",
+            "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
+            "NCCL_P2P_DISABLE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "TOKENIZERS_PARALLELISM": "false",
+            "TRANSFORMERS_OFFLINE": "1",
+            "TMPDIR": "/scr/del6500/OPD/tmp",
+            "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+            "TORCH_NCCL_DUMP_ON_TIMEOUT": "1",
+            "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
+        }
+    ),
+    cwd=PRODUCTION_CODE_ROOT,
+    output_names=QWEN3_V2_G0_OUTPUTS,
+    required_gate_names=QWEN3_V2_G0_GATES,
+    config_hash_bindings=CONFIG_HASH_CONTENT_INPUTS,
+    semantic_validator_id="qwen3-v2-g0-2gpu-result-v2",
+    semantic_validator=validate_qwen3_v2_g0_completion,
+)
+
+# The CPU preflight, bounded two-GPU preflight, and G0 gate are migrated.
+# Factorial training, larger experiments, and replication remain fail-closed.
 HANDLER_REGISTRY: Mapping[str, HandlerSpec] = MappingProxyType(
     {
+        QWEN3_V2_G0_TASK: _QWEN3_V2_G0_HANDLER,
         QWEN3_V2_GPU_PREFLIGHT_TASK: _QWEN3_V2_GPU_PREFLIGHT_HANDLER,
         REPOSITORY_PREFLIGHT_TASK: _REPOSITORY_PREFLIGHT_HANDLER,
     }

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
+from posttrain_circuits.artifacts.git_provenance import require_git_output
 from posttrain_circuits.scheduler_adapter.config_resolver import ConfigBindingResolver
 from posttrain_circuits.scheduler_adapter.content_store import ContentStore
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
@@ -40,10 +42,28 @@ EXECUTION_CONTEXT = {
     "execution_profile": PROFILE_NAME,
     "scheduler_protocol": 2,
 }
+GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 
 
-def fixed_resolved_config() -> dict[str, Any]:
+def _clean_git_commit(code_root: Path) -> str:
+    status = require_git_output(
+        code_root, ("status", "--porcelain", "--untracked-files=no")
+    )
+    if status:
+        raise AdapterValidationError(
+            "GPU-preflight request preparation requires a clean tracked checkout"
+        )
+    commit = require_git_output(code_root, ("rev-parse", "HEAD"))
+    if GIT_COMMIT.fullmatch(commit) is None:
+        raise AdapterValidationError("Git did not return one immutable commit identity")
+    return commit
+
+
+def fixed_resolved_config(*, code_commit: str) -> dict[str, Any]:
     """Return the complete fixed scientific input without YAML or Hydra dependencies."""
+
+    if GIT_COMMIT.fullmatch(code_commit) is None:
+        raise AdapterValidationError("GPU-preflight code_commit is not a Git identity")
 
     prompt_protocol = {
         "add_generation_prompt": True,
@@ -62,6 +82,7 @@ def fixed_resolved_config() -> dict[str, Any]:
     }
     return {
         "artifact_namespace": ARTIFACT_NAMESPACE,
+        "code_commit": code_commit,
         "config_kind": TASK_NAME,
         "model": {
             "allow_unpinned_revision": False,
@@ -171,6 +192,7 @@ def _validate_fixed_config(config: dict[str, Any]) -> None:
         raise AdapterValidationError("fixed GPU-preflight config is incomplete") from error
     if (
         config.get("protocol_track") != PROTOCOL_TRACK
+        or GIT_COMMIT.fullmatch(str(config.get("code_commit", ""))) is None
         or config.get("artifact_namespace") != ARTIFACT_NAMESPACE
         or config.get("prereg_path") != str(PREREG_RELATIVE_PATH)
         or config.get("prereg_version") != PROTOCOL_TRACK
@@ -234,7 +256,7 @@ def build_qwen3_v2_gpu_preflight_plan(*, layout: WorkflowLayout) -> WorkflowPlan
     """Materialize the fixed config projections and raw preregistration in file CAS."""
 
     layout.validate()
-    config = fixed_resolved_config()
+    config = fixed_resolved_config(code_commit=_clean_git_commit(layout.code_root))
     _validate_fixed_config(config)
     prereg_path = layout.code_root / PREREG_RELATIVE_PATH
     prereg_raw, prereg_sha256 = read_regular_file_nofollow(

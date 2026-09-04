@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
         gpu_digest = gpu_preflight.pop("sha256", None)
         checks["gpu_preflight_hash"] = gpu_digest == sha256_value(gpu_preflight)
         checks["gpu_preflight_passed"] = gpu_preflight.get("passed") is True
-        checks["gpu_preflight_world_size"] = int(gpu_preflight.get("world_size", 0)) == 4
+        checks["gpu_preflight_world_size"] = int(gpu_preflight.get("world_size", 0)) == 2
         checks["gpu_preflight_git_commit"] = gpu_preflight.get("git_commit") == git_commit
         checks["gpu_preflight_model_revision"] = (
             gpu_preflight.get("model_revision") == config["model"]["model_revision"]
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> None:
             rank_rows = gpu_preflight.get("rank_training_checks", [])
             checks["gpu_preflight_real_training_path"] = (
                 isinstance(rank_rows, list)
-                and len(rank_rows) == 4
+                and len(rank_rows) == 2
                 and gpu_preflight.get("rank_prompt_hashes_unique") is True
                 and gpu_preflight.get("rank_zero_teacher_load_count") == 1
                 and gpu_preflight.get("cgroup_memory", {}).get("passed") is True

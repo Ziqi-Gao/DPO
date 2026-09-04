@@ -37,7 +37,7 @@ def _require_formal_binding(
     *,
     name: str,
 ) -> None:
-    keys = (
+    keys = [
         "protocol_track",
         "artifact_namespace",
         "model_revision",
@@ -52,7 +52,17 @@ def _require_formal_binding(
         "prereg_version",
         "prereg_commit",
         "prereg_sha256",
-    )
+    ]
+    if "protocol_amendment_id" in expected:
+        keys.extend(
+            (
+                "protocol_amendment_id",
+                "protocol_amendment_path",
+                "protocol_amendment_git_commit",
+                "protocol_amendment_sha256",
+                "reviewed_implementation_commit",
+            )
+        )
     mismatches = {
         key: {"expected": expected[key], "observed": artifact.get(key)}
         for key in keys
@@ -187,6 +197,8 @@ def main(argv: list[str] | None = None) -> None:
             "gpu_preflight": gpu_preflight,
         }
         for artifact_name, artifact in bound_artifacts.items():
+            if artifact_name == "gpu_preflight":
+                continue
             _require_formal_binding(artifact, formal_binding, name=artifact_name)
     final_noise = estimate_estimator_noise_floor(
         final_circuit.get("bootstrap_score_vectors", []), activation_threshold=0.0
@@ -256,7 +268,7 @@ def main(argv: list[str] | None = None) -> None:
             for artifact in (final_exact, process_exact)
         ),
         "distributed_checkpoint_resume": resume.get("passed") is True
-        and int(resume.get("world_size", 0)) == 4,
+        and int(resume.get("world_size", 0)) == 2,
         "split_probe_isolation": probes.get("frozen_before_training") is True,
         "artifact_reconstruction": all(
             circuit.get("checkpoint_sha256") == initial_checkpoint_hash
@@ -266,11 +278,12 @@ def main(argv: list[str] | None = None) -> None:
                 (process_circuit, process_exact),
             )
         ),
-        "gpu_preflight": gpu_preflight.get("passed") is True and int(gpu_preflight.get("world_size", 0)) == 4,
+        "gpu_preflight": gpu_preflight.get("passed") is True and int(gpu_preflight.get("world_size", 0)) == 2,
     }
     git_commit = require_git_output(["rev-parse", "HEAD"])
     checks["gpu_preflight_binding"] = (
-        gpu_preflight.get("git_commit") == git_commit
+        gpu_preflight.get("git_commit")
+        == config["scheduler_g0"]["gpu_preflight_git_commit"]
         and gpu_preflight.get("model_revision") == config["model"]["model_revision"]
         and gpu_preflight.get("teacher_revision") == config["teacher"]["model_revision"]
     )
@@ -296,6 +309,36 @@ def main(argv: list[str] | None = None) -> None:
             and all("pre_q_norm_pre_rope" in value for value in query_hooks)
             and all("pre_k_norm_pre_rope" in value for value in key_hooks)
         )
+    batch_token_contract = {
+        "world_size": 2,
+        "per_device_batch_size": int(config["trainer"]["batch_size"]),
+        "gradient_accumulation_steps": int(
+            config["trainer"]["gradient_accumulation_steps"]
+        ),
+        "effective_global_batch_size": (
+            2
+            * int(config["trainer"]["batch_size"])
+            * int(config["trainer"]["gradient_accumulation_steps"])
+        ),
+        "token_budget": int(config["trainer"]["token_budget"]),
+        "token_budget_unit": str(config["trainer"]["token_budget_unit"]),
+        "max_optimizer_steps": int(config["trainer"]["max_steps"]),
+    }
+    checks["protocol_amendment"] = (
+        formal_binding.get("protocol_amendment_id") == "qwen3_v2_g0_2gpu_v1"
+        and isinstance(formal_binding.get("protocol_amendment_sha256"), str)
+        and len(formal_binding["protocol_amendment_sha256"]) == 64
+        and formal_binding.get("reviewed_implementation_commit") != git_commit
+    )
+    checks["batch_token_invariants"] = batch_token_contract == {
+        "world_size": 2,
+        "per_device_batch_size": 4,
+        "gradient_accumulation_steps": 8,
+        "effective_global_batch_size": 64,
+        "token_budget": 2_000_000,
+        "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
+        "max_optimizer_steps": 120,
+    }
     payload: dict[str, Any] = {
         "format_version": 2,
         **scientific_compatibility_fields(prereg_version),
@@ -303,6 +346,7 @@ def main(argv: list[str] | None = None) -> None:
         "protocol_track": str(config.get("protocol_track", "core_v2")),
         "protocol_prereg_version": str(config.get("protocol_track", "core_v2")),
         "artifact_namespace": str(config["model"].get("artifact_namespace", "legacy")),
+        "batch_token_contract": batch_token_contract,
         "prompt_protocol": str(config["model"].get("prompt_protocol", {}).get("name", "legacy_raw_v1")),
         "enable_thinking": False,
         "chat_template_sha256": str(
@@ -341,6 +385,15 @@ def main(argv: list[str] | None = None) -> None:
         "prereg_commit": prereg_commit,
         "prereg_path": prereg_path,
         "prereg_sha256": sha256_file(Path(prereg_path)),
+        "protocol_amendment_git_commit": formal_binding[
+            "protocol_amendment_git_commit"
+        ],
+        "protocol_amendment_id": formal_binding["protocol_amendment_id"],
+        "protocol_amendment_sha256": formal_binding["protocol_amendment_sha256"],
+        "reviewed_implementation_commit": formal_binding[
+            "reviewed_implementation_commit"
+        ],
+        "request_git_commit": config["scheduler_g0"]["request_git_commit"],
         "resolved_config_sha256": sha256_value(config),
         "model_revision": str(config["model"]["model_revision"]),
         "teacher_revision": str(config["teacher"]["model_revision"]),

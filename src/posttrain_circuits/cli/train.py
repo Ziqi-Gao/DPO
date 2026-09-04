@@ -524,6 +524,11 @@ def main(argv: list[str] | None = None) -> None:
         "prereg_path": sha256_file(Path(str(config["prereg_path"]))),
         "task.dataset_family_path": str(family.manifest["sha256"]),
     }
+    amendment_path = str(config.get("protocol_amendment_path", "")).strip()
+    if amendment_path:
+        config_input_hashes["protocol_amendment_path"] = sha256_file(
+            Path(amendment_path)
+        )
     initial_checkpoint_locator = str(
         config.get("production_safety", {}).get("initial_checkpoint_path", "")
     ).strip()

@@ -13,6 +13,7 @@ _MISSING = object()
 _STORAGE_LOCATOR_PATHS: tuple[tuple[str, ...], ...] = (
     ("output_root",),
     ("prereg_path",),
+    ("protocol_amendment_path",),
     ("state_source", "store_path"),
     ("task", "dataset_family_path"),
     ("anti_shortcut", "report_path"),

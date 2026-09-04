@@ -9,9 +9,10 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The current committed repository and GPU implementation baseline is `252b02a`
-(`feat: convert GPU preflight to two GPUs`). Important preceding milestones
-are:
+The current committed checkout is `a30ab16`
+(`docs: record successful two-gpu preflight`). The committed GPU
+implementation baseline remains `252b02a` (`feat: convert GPU preflight to two
+GPUs`). Important preceding milestones are:
 
 - `8b020de`: split scientific domains from the scheduler boundary.
 - `0b96a8e`: add the CPU repository-preflight pilot.
@@ -55,10 +56,88 @@ Scientific code is separated into these domains:
 - `artifacts`: typed scientific artifact contracts and validation.
 - `scheduler_adapter`: the narrow project-owned ServerScheduler boundary.
 
-Only two tasks have completed the repository-side migration into registered
-handlers: `repository_preflight` and `qwen3_v2_gpu_preflight`. Legacy Slurm and
-local scheduler scripts are historical inventory, not supported execution
-paths.
+The registry contains the validated `repository_preflight` and
+`qwen3_v2_gpu_preflight` handlers plus an acceptance-gated `qwen3_v2_g0`
+candidate. Legacy Slurm and local scheduler scripts are historical inventory,
+not supported execution paths.
+
+An uncommitted candidate adds a third project-side handler,
+`qwen3_v2_g0`, with profile `qwen3-v2-g0-2gpu`. It fixes 16 CPU cores,
+196608 MiB RAM, two exclusive allowed GPUs, 81920 MiB and 95% utilization per
+GPU, a 12-hour estimate, foreground Accelerate/FSDP execution, offline pinned
+models, a pinned MIB/EAP-IG checkout, complete attempt isolation, an immutable
+artifact tar, and a code-owned semantic validator. The request builder binds
+the exact base preregistration, an independently accepted protocol amendment,
+and a successful two-GPU preflight from the same reviewed implementation
+lineage. It emits no command, path, environment, physical-GPU, or resource
+override.
+
+The machine-readable amendment proposal is
+`prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`, with review notes in
+`docs/refactor/qwen3_v2_g0_2gpu_amendment_review.md`. It remains `proposed` and
+has SHA-256
+`2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`.
+It leaves the frozen base preregistration unchanged, retains per-device batch
+4, changes gradient accumulation from 4 to 8 for two ranks, and therefore
+preserves effective global batch 64. The exact 2,000,000 global non-padding
+model-input-token budget and 120 optimizer-step ceiling remain unchanged.
+
+The candidate disabled full-registration proposal is
+`deployments/qwen3_v2_g0/registration-proposal-v2.toml`. The central
+ServerScheduler parser accepted it and confirmed `enabled = false`; it has not
+been installed or enabled. No G0 workflow plan or outbox request has been
+created, and no G0 job has been submitted or run.
+
+The uncommitted candidate changes are limited to:
+
+- `AGENTS.md`, `configs/accelerate/fsdp_2gpu_server_scheduler.yaml`, and
+  `configs/g0/qwen3_v2_eap_separation.yaml`;
+- `deployments/qwen3_v2_g0/dependency-lock.json`,
+  `deployments/qwen3_v2_g0/package-manifest.json`, its registration proposal,
+  and `deployments/qwen3_v2_gpu_preflight/package-manifest.json`;
+- `docs/refactor/qwen3_v2_g0_2gpu_amendment_review.md`,
+  `prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`, and this handoff;
+- `scripts/server_scheduler/prepare-qwen3-v2-g0-runtime.py`,
+  `scripts/server_scheduler/qwen3-v2-g0-handler.py`, and
+  `scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py`;
+- `src/posttrain_circuits/artifacts/config_bindings.py`,
+  `src/posttrain_circuits/artifacts/git_provenance.py`,
+  `src/posttrain_circuits/artifacts/protocol_amendments.py`,
+  `src/posttrain_circuits/artifacts/runs.py`,
+  `src/posttrain_circuits/cli/compare_distributed_resume.py`,
+  `src/posttrain_circuits/cli/finalize_g0.py`,
+  `src/posttrain_circuits/cli/preflight_g0.py`,
+  `src/posttrain_circuits/cli/train.py`,
+  `src/posttrain_circuits/scheduler_adapter/g0_request.py`,
+  `src/posttrain_circuits/scheduler_adapter/gpu_preflight_request.py`,
+  `src/posttrain_circuits/scheduler_adapter/qwen3_v2_g0.py`,
+  `src/posttrain_circuits/scheduler_adapter/registry.py`,
+  `src/posttrain_circuits/workflows/catalog.py`, and
+  `src/posttrain_circuits/workflows/contracts.py`; and
+- `tests/unit/test_g0_request.py`, `tests/unit/test_gpu_preflight_request.py`,
+  `tests/unit/test_qwen3_v2_g0.py`,
+  `tests/unit/test_qwen3_v2_g0_handler.py`,
+  `tests/unit/test_qwen3_v2_gpu_preflight_handler.py`,
+  `tests/unit/test_protocol_amendments.py`, and
+  `tests/unit/test_scheduler_adapter.py`.
+
+The non-self-referential review design requires two user-created commits. The
+first contains the complete implementation and this `proposed` amendment. An
+independent reviewer then names that already-existing implementation commit by
+changing only the amendment review block to `accepted`; that review metadata
+and any handoff update form a second commit. Validation proves ancestry,
+requires every scientific amendment field to equal the proposed document in
+the implementation commit, and permits only the amendment and handoff before
+acceptance. After acceptance, only this handoff may differ between GPU
+preflight, G0 request generation, and execution; any source, config, handler,
+test, or other protocol delta fails closed. This permits required handoff
+updates without weakening implementation identity or creating a self-hash.
+
+The candidate makes each new GPU-preflight plan bind its clean Git commit. The
+already completed preflight identity cannot be reused. After amendment
+acceptance, a fresh two-GPU preflight request, separate central submission
+approval, and successful result from the accepted implementation lineage are
+required before a G0 request can be prepared.
 
 ## Adapter contract retained from the refactor
 
@@ -268,14 +347,55 @@ path on the real two-GPU topology; it does not validate or authorize G0.
 
 ## Current scientific gate
 
-The bounded two-GPU preflight gate has passed. The formal G0 experiment is
-still fail-closed and is not ready to submit. The next allowed project work is:
+The bounded two-GPU preflight substrate has passed. The current uncommitted G0
+candidate and proposed-amendment design passed 110 handler, request, semantic
+validator, amendment, adapter, preflight, workflow, and proposal tests in
+1.149 seconds. Python compilation and both staged and unstaged diff checks
+passed. The central registration parser accepted the complete proposal and
+confirmed `enabled = false`. The frozen base preregistration retained SHA-256
+`8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4`.
+The G0 handler, dependency lock, package manifest, and deployment identity are
+respectively bound to
+`aba422f340cc6ad2da17b154bc9ede75267f9a414b79c1ed9bd24003be40d3cf`,
+`18d77da454cb86a097526fe561462f4818cb76c3ca9633481261f1e563f86d90`,
+`66bf3353a286a8549ae73714e45bf4cb0f9914325d875332fa04b04ca037d901`,
+and `f08cd196915c0306135faecc46414c450092cadc19a1e372e97655d1f53f6d99`.
 
-1. Commit this acceptance handoff so the project checkout is clean.
-2. Design and review a distinct two-GPU G0 handler, profile, fixed runtime,
-   semantic validator, tests, and disabled registration proposal.
-3. Obtain the separate central installation, enablement, request preparation,
-   and submission approvals required for that new task.
+The exact combined test command was:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python -m unittest tests.unit.test_protocol_amendments tests.unit.test_qwen3_v2_g0 tests.unit.test_qwen3_v2_g0_handler tests.unit.test_g0_request tests.unit.test_gpu_preflight_request tests.unit.test_qwen3_v2_gpu_preflight tests.unit.test_qwen3_v2_gpu_preflight_handler tests.unit.test_scheduler_adapter tests.unit.test_registration_proposal tests.unit.test_workflow_contracts -q
+```
+
+It reported `Ran 110 tests in 1.149s` and `OK`. The affected Python files also
+passed `/usr/bin/python3.12 -m py_compile`; `git diff --cached --check` and
+`git diff --check` both passed. The central proposal parser command was:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/del6500/projects/ServerScheduler/src /usr/bin/python3.12 -c 'from pathlib import Path; from server_scheduler.registry import load_registration; r=load_registration(Path("deployments/qwen3_v2_g0/registration-proposal-v2.toml")); print(r.name, r.enabled, sorted(r.tasks))'
+```
+
+It reported `OPD False` and exactly `qwen3_v2_g0`,
+`qwen3_v2_gpu_preflight`, and `repository_preflight`.
+
+The prior global-batch/token-semantics and self-referential-commit design
+blockers now have a fail-closed candidate solution. They remain approval gates:
+the proposed amendment has not received independent scientific acceptance,
+and there is not yet a clean implementation commit for it to reference.
+
+The fixed runtime publication is separately incomplete. Two preparation
+attempts were safely rolled back because the login-node environment could not
+resolve the PyPI host even with approved network escalation. Neither
+`/scr/del6500/OPD/envs/qwen3-v2-g0-v1` nor
+`/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
+registration until the amendment is independently accepted, the runtime is
+successfully prepared and verified, the deployment hashes pass, and the
+acceptance checkout is clean. The disabled proposal may be handed to a central
+operator for review only after the user creates the implementation commit;
+installation, enablement, and submission remain central operations.
+
+No new preflight or G0 workflow plan, outbox request, or job ID exists. Nothing
+was submitted, no GPU was operated, and no central scheduler state was changed.
 
 The successful preflight is evidence for the two-GPU execution substrate only;
 it is not approval for G0, seed-42 training, the full seed matrix, replication,
@@ -289,6 +409,8 @@ until these gates and their separately required approvals are satisfied.
 - Current operating rules: [`AGENTS.md`](../../AGENTS.md)
 - Current GPU pilot contract:
   [`qwen3_v2_gpu_preflight_pilot.md`](qwen3_v2_gpu_preflight_pilot.md)
+- Proposed two-GPU G0 amendment review:
+  [`qwen3_v2_g0_2gpu_amendment_review.md`](qwen3_v2_g0_2gpu_amendment_review.md)
 - Core-v2 compatibility notes: [`core_v2_migration.md`](../core_v2_migration.md)
 - Refactor baseline: [`phase0_baseline.md`](phase0_baseline.md)
 - Legacy scheduler inventory:

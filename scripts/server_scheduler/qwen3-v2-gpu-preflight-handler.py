@@ -425,7 +425,11 @@ def _read_inputs(invocation: Invocation) -> tuple[dict[str, Any], bytes]:
 
 
 def _validate_config(
-    invocation: Invocation, payloads: dict[str, Any], prereg: bytes
+    invocation: Invocation,
+    payloads: dict[str, Any],
+    prereg: bytes,
+    *,
+    code_commit: str,
 ) -> dict[str, Any]:
     binding = payloads["config_binding_sha256"]
     resolved = payloads["resolved_config_sha256"]
@@ -481,6 +485,7 @@ def _validate_config(
         raise PreflightError("resolved GPU-preflight config is incomplete")
     if (
         resolved.get("config_kind") != TASK
+        or resolved.get("code_commit") != code_commit
         or resolved.get("protocol_track") != "qwen3_v2"
         or resolved.get("artifact_namespace") != "qwen3-v2"
         or resolved.get("prereg_path") != "prereg/qwen3_v2.yaml"
@@ -522,12 +527,12 @@ def _validate_config(
     }
     if scientific != expected_scientific:
         raise PreflightError("scientific config projection is invalid")
-    if resolved != _fixed_config():
+    if resolved != _fixed_config(code_commit=code_commit):
         raise PreflightError("resolved config has fields outside the fixed preflight contract")
     return resolved
 
 
-def _fixed_config() -> dict[str, Any]:
+def _fixed_config(*, code_commit: str) -> dict[str, Any]:
     prompt = {
         "add_generation_prompt": True,
         "chat_template_sha256": CHAT_TEMPLATE_SHA256,
@@ -556,6 +561,7 @@ def _fixed_config() -> dict[str, Any]:
     }
     return {
         "artifact_namespace": "qwen3-v2",
+        "code_commit": code_commit,
         "config_kind": TASK,
         "model": {
             **copy.deepcopy(common),
@@ -1193,7 +1199,7 @@ def _git(*arguments: str) -> str:
     return value
 
 
-def _require_clean_git() -> None:
+def _require_clean_git() -> str:
     result = subprocess.run(
         ("/usr/bin/git", "status", "--porcelain", "--untracked-files=no"),
         check=True,
@@ -1202,6 +1208,7 @@ def _require_clean_git() -> None:
     )
     if result.stdout:
         raise PreflightError("GPU preflight requires a clean tracked source checkout")
+    return _git("rev-parse", "HEAD")
 
 
 def _publish_once(descriptor: int, name: str, payload: object) -> None:
@@ -1259,8 +1266,9 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
     cgroup["passed"] = cgroup["headroom_bytes"] >= MINIMUM_HEADROOM_BYTES
     if not cgroup["passed"]:
         raise PreflightError("allocation does not preserve required host-memory headroom")
-    _require_clean_git()
-    git_commit = _git("rev-parse", "HEAD")
+    git_commit = _require_clean_git()
+    if context.get("code_commit") != git_commit:
+        raise PreflightError("GPU preflight plan is bound to a different code commit")
     prereg_commit = _git("log", "-n", "1", "--format=%H", "--", "prereg/qwen3_v2.yaml")
     report: dict[str, Any] = {
         "artifact_namespace": "qwen3-v2",
@@ -1458,8 +1466,14 @@ def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
     invocation = _parse_outer(argv)
     _validate_environment()
+    code_commit = _require_clean_git()
     payloads, prereg = _read_inputs(invocation)
-    resolved = _validate_config(invocation, payloads, prereg)
+    resolved = _validate_config(
+        invocation,
+        payloads,
+        prereg,
+        code_commit=code_commit,
+    )
     temp_root = Path(FIXED_ENVIRONMENT["TMPDIR"])
     temp_root.mkdir(mode=0o750, parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix="qwen3-v2-gpu-preflight-", dir=temp_root))
@@ -1472,6 +1486,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "allocation_sha256": invocation.allocation_sha256,
             "attempt": invocation.attempt,
             "checkpoint_root": str(checkpoint_root),
+            "code_commit": code_commit,
             "input_hashes": invocation.input_hashes,
             "job_id": invocation.job_id,
             "manifest_sha256": invocation.manifest_sha256,

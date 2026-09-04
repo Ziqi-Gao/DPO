@@ -150,15 +150,17 @@ not chosen through parameters.
 
 ## Current migrated scheduler surface
 
-`src/posttrain_circuits/scheduler_adapter/registry.py` currently exposes two
-production handlers. All other G0, training, evaluation, and circuit tasks
-remain fail-closed until they receive their own reviewed handler, profile,
-runtime, validator, tests, disabled proposal, and pilot.
+`src/posttrain_circuits/scheduler_adapter/registry.py` exposes two validated
+preflight handlers and one acceptance-gated G0 handler. All other training,
+evaluation, and circuit tasks remain fail-closed until they receive their own
+reviewed handler, profile, runtime, validator, tests, disabled proposal, and
+pilot.
 
 | Task | Profile | Fixed allocation | Result |
 | --- | --- | --- | --- |
 | `repository_preflight` | `repository-preflight-cpu` | 1 CPU core, 128 MiB, no GPU, 30 s estimate | `preflight_report.json` |
 | `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-2gpu` | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 3600 s estimate | `gpu_preflight.json` |
+| `qwen3_v2_g0` | `qwen3-v2-g0-2gpu` | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 43200 s estimate | `g0.json`, `g0_artifacts.tar` |
 
 Both request builders allow exactly `workflow_id`, `plan_sha256`, and
 `unit_id`. Their checked-in proposals are documentation/handoff artifacts and
@@ -173,8 +175,12 @@ Relevant paths:
   `scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py`
 - GPU runtime preparation:
   `scripts/server_scheduler/prepare-qwen3-v2-runtime.py`
+- G0 handler and runtime preparation:
+  `scripts/server_scheduler/qwen3-v2-g0-handler.py` and
+  `scripts/server_scheduler/prepare-qwen3-v2-g0-runtime.py`
 - deployment contracts: `deployments/repository_preflight/` and
-  `deployments/qwen3_v2_gpu_preflight/`
+  `deployments/qwen3_v2_gpu_preflight/`; the G0 candidate is under
+  `deployments/qwen3_v2_g0/`
 - request builders and runtime boundary:
   `src/posttrain_circuits/scheduler_adapter/`
 - operational design notes: `docs/refactor/`
@@ -214,9 +220,39 @@ loss and gradients, a nonzero update, FSDP save/resume, unique prompt shards,
 and the 192-GiB cgroup/headroom checks.
 
 This two-GPU pilot validates only the two-GPU handler path. It does not
-authorize the currently fail-closed G0 path, which requires its own reviewed
-two-GPU handler/profile before submission. A published `gpu_preflight.json`
-with `passed: true` and a valid scientific completion remains necessary.
+authorize G0. A published `gpu_preflight.json` with `passed: true` and a valid
+scientific completion remains necessary, and the G0-specific approval gates
+below remain independent.
+
+## Two-GPU Qwen3-v2 G0 amendment
+
+The frozen base preregistration remains unchanged. The separate amendment is
+`prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`; it must remain `proposed` in the
+implementation commit. Two ranks retain per-device batch size 4 and use eight
+gradient-accumulation microsteps, preserving the four-rank protocol's effective
+global batch size of 64. The 2,000,000-token G0 budget remains an exact
+cross-rank sum of non-padding model-input tokens reserved before each optimizer
+boundary, and the 120 optimizer-step ceiling is unchanged.
+
+Acceptance uses two Git commits so no file contains its own commit identity:
+
+1. The user creates a clean implementation commit containing the complete
+   implementation and the `proposed` amendment.
+2. After independent scientific review, change only the amendment `review`
+   block to `accepted`, bind `reviewed_implementation_commit` to step 1, update
+   this handoff if needed, and create a separate acceptance commit.
+3. Runtime validation requires the implementation commit to be an ancestor and
+   permits only the amendment and handoff between implementation and
+   acceptance. After acceptance, only `docs/refactor/current_handoff.md` may
+   differ between the preflight, request-generation, and execution commits.
+   Any source, configuration, handler, test, or protocol delta fails closed.
+
+The G0 request builder rejects a proposed amendment, a dirty tracked checkout,
+missing accepted-lineage GPU preflight evidence, or an unreviewed Git delta.
+The disabled registration proposal is not authorization to install, enable, or
+submit. Amendment acceptance, central proposal installation, registration
+enablement, preflight submission, G0 request generation, and central G0
+validation/submission remain separate approval gates.
 
 ## Scientific repository structure
 

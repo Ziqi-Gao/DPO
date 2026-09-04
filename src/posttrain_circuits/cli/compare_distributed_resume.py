@@ -1,4 +1,4 @@
-"""Compare two independent four-rank resumes from the same checkpoint."""
+"""Compare two independent distributed resumes from the same checkpoint."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> None:
     right_metric = _last_metric(args.metrics_b)
     loss_error = abs(_objective_loss(left_metric) - _objective_loss(right_metric))
     checks = {
-        "world_size_four": args.world_size == 4,
+        "world_size_two": args.world_size == 2,
         "model_state_identical": state_hash(left["model"]) == state_hash(right["model"]),
         "prompt_scheduler_identical": left["prompt_scheduler"] == right["prompt_scheduler"],
         "state_source_identical": left["state_source"] == right["state_source"],

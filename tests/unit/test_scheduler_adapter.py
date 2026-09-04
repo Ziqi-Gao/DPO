@@ -1838,7 +1838,7 @@ class SchedulerAdapterTests(unittest.TestCase):
         self.assertIsInstance(HANDLER_REGISTRY, MappingProxyType)
         self.assertEqual(
             tuple(HANDLER_REGISTRY),
-            ("qwen3_v2_gpu_preflight", "repository_preflight"),
+            ("qwen3_v2_g0", "qwen3_v2_gpu_preflight", "repository_preflight"),
         )
         banned_modules = {"fcntl", "multiprocessing"}
         banned_calls = {

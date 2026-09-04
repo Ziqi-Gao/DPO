@@ -21,6 +21,10 @@ from posttrain_circuits.artifacts.config_bindings import (
 )
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
 from posttrain_circuits.artifacts.io import atomic_write_json
+from posttrain_circuits.artifacts.protocol_amendments import (
+    ProtocolAmendmentBinding,
+    resolve_accepted_protocol_amendment,
+)
 
 
 def git_output(args: list[str]) -> str | None:
@@ -124,6 +128,23 @@ class PreregistrationBinding:
     dirty: bool
 
 
+def resolve_protocol_amendment(
+    config: dict[str, Any],
+    *,
+    expected_head: str | None = None,
+) -> ProtocolAmendmentBinding | None:
+    """Resolve the configured accepted amendment, if this run declares one."""
+
+    raw_path = str(config.get("protocol_amendment_path", "")).strip()
+    if not raw_path:
+        return None
+    return resolve_accepted_protocol_amendment(
+        code_root=Path.cwd(),
+        configured_path=raw_path,
+        expected_head=expected_head,
+    )
+
+
 def resolve_preregistration(config: dict[str, Any]) -> PreregistrationBinding:
     """Resolve the preregistration exclusively from the composed run config."""
 
@@ -159,7 +180,9 @@ def formal_artifact_binding(config: dict[str, Any]) -> dict[str, Any]:
     protocol_track = str(config.get("protocol_track", prereg.version))
     if protocol_track.startswith("qwen3_") and require_git_output(["status", "--porcelain"]):
         raise RuntimeError("Qwen3 formal artifact creation refuses a dirty source checkout")
-    return {
+    code_commit = require_git_output(["rev-parse", "HEAD"])
+    amendment = resolve_protocol_amendment(config, expected_head=code_commit)
+    binding = {
         "protocol_track": protocol_track,
         "artifact_namespace": str(model.get("artifact_namespace", "legacy")),
         "model_revision": str(model.get("model_revision", "unavailable")),
@@ -169,12 +192,23 @@ def formal_artifact_binding(config: dict[str, Any]) -> dict[str, Any]:
         "chat_template_sha256": str(prompt.get("chat_template_sha256", "legacy-unrecorded")),
         "prompt_protocol": str(prompt.get("name", "legacy_raw_v1")),
         "enable_thinking": bool(prompt.get("enable_thinking", False)),
-        "code_commit": require_git_output(["rev-parse", "HEAD"]),
+        "code_commit": code_commit,
         "prereg_path": str(prereg.path),
         "prereg_version": prereg.version,
         "prereg_commit": prereg.git_commit,
         "prereg_sha256": prereg.sha256,
     }
+    if amendment is not None:
+        binding.update(
+            {
+                "protocol_amendment_id": amendment.amendment_id,
+                "protocol_amendment_path": str(amendment.path.relative_to(Path.cwd())),
+                "protocol_amendment_git_commit": amendment.git_commit,
+                "protocol_amendment_sha256": amendment.sha256,
+                "reviewed_implementation_commit": amendment.reviewed_implementation_commit,
+            }
+        )
+    return binding
 
 
 @dataclass
@@ -236,6 +270,11 @@ class RunManifest:
     prereg_dirty: bool = True
     prereg_version: str = "unbound"
     prereg_path: str = "unbound"
+    protocol_amendment_id: str = "unbound"
+    protocol_amendment_path: str = "unbound"
+    protocol_amendment_git_commit: str = "unbound"
+    protocol_amendment_sha256: str = "unbound"
+    reviewed_implementation_commit: str = "unbound"
 
     def bind_preregistration(self, binding: PreregistrationBinding) -> None:
         self.prereg_path = str(binding.path)
@@ -244,6 +283,13 @@ class RunManifest:
         self.prereg_sha256 = binding.sha256
         self.prereg_dirty = binding.dirty
         self.dirty_working_tree = bool(git_output(["status", "--porcelain"]) or "")
+
+    def bind_protocol_amendment(self, binding: ProtocolAmendmentBinding) -> None:
+        self.protocol_amendment_id = binding.amendment_id
+        self.protocol_amendment_path = str(binding.path.relative_to(Path.cwd()))
+        self.protocol_amendment_git_commit = binding.git_commit
+        self.protocol_amendment_sha256 = binding.sha256
+        self.reviewed_implementation_commit = binding.reviewed_implementation_commit
 
     def validate(self, *, require_git: bool) -> None:
         required_text = {
@@ -314,8 +360,34 @@ class RunManifest:
             if not prereg.is_file():
                 raise RuntimeError("formal run refused because its bound preregistration is missing")
             prereg_payload = yaml.safe_load(prereg.read_text(encoding="utf-8")) or {}
+            amendment: ProtocolAmendmentBinding | None = None
+            if self.protocol_amendment_path != "unbound":
+                amendment = resolve_accepted_protocol_amendment(
+                    code_root=Path.cwd(),
+                    configured_path=self.protocol_amendment_path,
+                    expected_head=self.git_commit if require_git else None,
+                )
+                observed_amendment = {
+                    "protocol_amendment_id": self.protocol_amendment_id,
+                    "protocol_amendment_path": self.protocol_amendment_path,
+                    "protocol_amendment_git_commit": self.protocol_amendment_git_commit,
+                    "protocol_amendment_sha256": self.protocol_amendment_sha256,
+                    "reviewed_implementation_commit": self.reviewed_implementation_commit,
+                }
+                expected_amendment = {
+                    "protocol_amendment_id": amendment.amendment_id,
+                    "protocol_amendment_path": str(amendment.path.relative_to(Path.cwd())),
+                    "protocol_amendment_git_commit": amendment.git_commit,
+                    "protocol_amendment_sha256": amendment.sha256,
+                    "reviewed_implementation_commit": amendment.reviewed_implementation_commit,
+                }
+                if observed_amendment != expected_amendment:
+                    raise RuntimeError(
+                        "formal run protocol-amendment binding changed"
+                    )
             if (
                 require_git
+                and amendment is None
                 and isinstance(prereg_payload, dict)
                 and not implementation_commit_is_preregistered(
                     prereg_payload,
@@ -471,6 +543,12 @@ def initialize_run_directory(
         manifest.bind_preregistration(resolve_preregistration(resolved_config))
     elif require_git:
         resolve_preregistration(resolved_config)
+    amendment = resolve_protocol_amendment(
+        resolved_config,
+        expected_head=manifest.git_commit if require_git else None,
+    )
+    if amendment is not None:
+        manifest.bind_protocol_amendment(amendment)
     manifest.package_versions = dependency_versions()
     manifest.environment = {
         "python": platform.python_version(),
