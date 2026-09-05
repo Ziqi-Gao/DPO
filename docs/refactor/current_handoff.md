@@ -9,13 +9,20 @@ must still be verified when mutable.
 
 ## Current repository state
 
-Committed HEAD is `778e6a4a9a70a7d5d190fe8710e997a3e05bb142` on `master`,
-33 commits ahead of `origin/master`. It records the rejection of candidate C.
-The current working tree is an uncommitted replacement implementation,
-candidate D. Its amendment remains proposed with SHA-256
+Committed HEAD is candidate D implementation commit
+`a8855ecab55819bbcd1a7a479d933104bb27fb81` on `master`, 34 commits
+ahead of `origin/master`. It is a single-parent descendant of candidate C's
+rejection commit and contains exactly the 17 reviewed implementation paths.
+Its committed amendment remains proposed with SHA-256
 `2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`.
-Candidate D is ready for a user-created implementation commit, but is not an
-accepted implementation and cannot yet generate or submit a request.
+
+Independent scientific review of that exact commit passed. The working tree
+now contains only the prepared acceptance metadata in the amendment and this
+handoff. The amendment binds reviewed implementation commit `a8855ec...`, and
+its accepted working-tree SHA-256 is
+`014b5dc78619870eee3a6f6175323b0418c5c597fa9625fd41c8e15ee353b6c2`.
+It is not accepted-lineage execution state until the user creates the separate
+acceptance commit.
 
 Historical candidate status:
 
@@ -30,7 +37,7 @@ Historical candidate status:
   authenticating that checkout, and `python -I` ignored its environment-only
   bytecode prohibition.
 
-Candidate D changes these paths:
+Candidate D implementation commit changes these paths:
 
 - `deployments/qwen3_v2_g0/package-manifest.json`
 - `deployments/qwen3_v2_gpu_preflight/package-manifest.json`
@@ -165,11 +172,16 @@ Candidate D static/runtime-boundary results:
 - Shared amendment suite: 21/21 passed.
 - Request/amendment focused suite: 31/31 passed.
 - Scheduler adapter suite: 50/50 passed.
-- Combined handler/request/validator/adapter/proposal/workflow suite: 148/148
-  passed in 7.745 seconds; an independent audit rerun also passed 148/148 in
-  7.601 seconds.
+- On committed implementation `a8855ec...`, the combined
+  handler/request/validator/adapter/proposal/workflow suite passed 148/148 in
+  7.564 seconds; the post-commit independent audit rerun passed 148/148 in
+  7.510 seconds.
 - Both runtime `pip check` commands passed; deployment hashes and identities,
   in-memory compilation, and `git diff --check` passed.
+- The prepared acceptance bytes passed the actual review-transition validator;
+  the amendment differs from implementation commit `a8855ec...` only in its
+  review block, and the whole working tree differs only in the amendment and
+  this handoff.
 - The current ServerScheduler proposal parser accepted both checked-in
   proposals, reported `enabled = false`, and found exactly the declared tasks.
 
@@ -183,7 +195,10 @@ the 148-test affected-surface suite and did not modify either runtime.
 
 No GPU computation, scheduler job, outbox write, central registration change,
 service operation, or process management occurred during candidate D work.
-The only external action was the unsuccessful outbound PyPI download attempt.
+The only outbound network action was the unsuccessful PyPI download attempt.
+Post-commit work made read-only central registration queries; a read-only user
+service-status query failed because no service bus was available. Neither query
+changed external state.
 
 ## Proposal, requests, and central state
 
@@ -198,8 +213,17 @@ The project-owned proposals remain unchanged and disabled:
   SHA-256
   `275035b96e9927de7b7df601e675665789562af0e45fc44a7c8f682a8392217c`.
 
-They declare `enabled = false`. Registration installation, enablement, and
-service state are external and were not reverified or changed in candidate D.
+They declare `enabled = false`. A read-only 2026-09-05 query of the current
+central repository parsed OPD as installed and disabled with the expected
+three tasks and fixed two-GPU shapes. Its current `opd.toml` SHA-256 is
+`61589533abc9d49b3bcb60e7898976eef9111199d79d21fe16e8fded45a66a74`;
+it differs from the full proposal only in older notes and omission of the two
+explicit `gpu_count_policy = "fixed"` declarations, which the parser currently
+defaults to fixed. A central operator must still review/install the exact
+current disabled proposal. Live service state was not verified because the
+project session could not connect to the user service bus; no central state was
+changed.
+
 Normal generated requests contain only the project/task/priority/fresh job ID
 and scientific identities `workflow_id`, `plan_sha256`, and `unit_id`; they
 omit `execution_profile`, `resources`, GPU count, device, memory, utilization,
@@ -224,24 +248,22 @@ preflight must run and pass before a G0 request can be created.
 
 ## Required next gates
 
-1. The user creates one clean candidate D implementation commit containing the
-   proposed amendment and all paths listed above.
-2. A separate independent scientific review validates that exact commit. Only
-   after acceptance may a second commit change the amendment review block and,
-   if needed, this handoff; it must bind the exact candidate D commit.
-3. A central operator reviews/installs the unchanged disabled proposal, and the
+1. The user creates the separate acceptance commit containing only the prepared
+   amendment review transition and this handoff. It must retain exact reviewed
+   implementation binding `a8855ecab55819bbcd1a7a479d933104bb27fb81`.
+2. A central operator reviews/installs the current disabled proposal, and the
    user separately approves registration enablement.
-4. From a clean accepted lineage, prepare exactly one fresh two-GPU preflight
+3. From a clean accepted lineage, prepare exactly one fresh two-GPU preflight
    request; report its absolute path, SHA-256, fresh job ID, project HEAD,
    worktree state, and tests. A central operator validates and submits that
    exact file.
-5. Follow the preflight to terminal state and accept it only through OPD's
+4. Follow the preflight to terminal state and accept it only through OPD's
    semantic completion validator.
-6. From the same clean accepted lineage, prepare one fresh G0 request bound to
+5. From the same clean accepted lineage, prepare one fresh G0 request bound to
    that accepted preflight. A central operator validates/submits it only after
    separate G0 approval.
 
-Until gates 1-5 complete, no Qwen3-v2 G0 job may be submitted.
+Until gates 1-4 complete, no Qwen3-v2 G0 job may be submitted.
 
 ## Quarantined legacy scheduler surface
 
