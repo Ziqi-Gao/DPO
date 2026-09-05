@@ -19,7 +19,11 @@ clean-runtime gate. The repaired clean implementation candidate B is
 `e8138997ad9465e986e1e92ffcf7fd61e8c113e8`
 (`fix: keep staged MIB checkout bytecode-free`). It prevents bytecode
 generation and rejects any source-tree contamination after offline
-verification. A future acceptance must review and bind candidate B, not A.
+verification. Independent scientific review of candidate B passed on
+2026-09-05. The amendment review block is now accepted and binds that exact
+commit in the working tree; the user must still create the separate clean
+acceptance commit containing only the amendment and this handoff before the
+accepted lineage can be used.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -82,11 +86,14 @@ and a successful two-GPU preflight from the same reviewed implementation
 lineage. Its normal request emits no `execution_profile`, `resources`, command,
 path, environment, or physical-GPU override.
 
-The machine-readable amendment proposal is
+The machine-readable amendment is
 `prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`, with review notes in
-`docs/refactor/qwen3_v2_g0_2gpu_amendment_review.md`. It remains `proposed` and
-has SHA-256
-`2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`.
+`docs/refactor/qwen3_v2_g0_2gpu_amendment_review.md`. Candidate B contains the
+proposed bytes with SHA-256
+`2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`;
+the review-only accepted working-tree bytes have SHA-256
+`86b1adf0ecd368749864478b5a6638ee84479726f3669a6875eb5b25a731f232`
+and bind candidate B exactly.
 It leaves the frozen base preregistration unchanged, retains per-device batch
 4, changes gradient accumulation from 4 to 8 for two ranks, and therefore
 preserves effective global batch 64. The exact 2,000,000 global non-padding
@@ -147,17 +154,16 @@ Implementation commit A changes are limited to:
   `tests/unit/test_protocol_amendments.py`, and
   `tests/unit/test_scheduler_adapter.py`.
 
-The non-self-referential review design was exercised against implementation
-candidate A `ab2f72f20036b6f488db5d5a335744a6a80b8b82`, but the candidate was
-not accepted. The design still requires an already-existing implementation
-commit followed by an acceptance commit that changes only the amendment review
-block and this handoff. Validation proves ancestry, requires every scientific
-amendment field to equal the proposed document in the reviewed implementation,
-and permits only the amendment and handoff before acceptance. After acceptance,
-only this handoff may differ between GPU preflight, G0 request generation, and
-execution; any source, config, handler, test, or other protocol delta fails
-closed. Candidate B now supplies that runtime repair, but it still requires a
-new independent review rather than metadata acceptance of candidate A.
+The non-self-referential review design requires an already-existing
+implementation commit followed by an acceptance commit that changes only the
+amendment review block and this handoff. Candidate B has now passed the
+independent review, and the current uncommitted transition changes only those
+two paths. Validation proves ancestry, requires every scientific amendment
+field to equal the proposed document in candidate B, and permits only the
+amendment and handoff before acceptance. After the user creates the acceptance
+commit, only this handoff may differ between GPU preflight, G0 request
+generation, and execution; any source, config, handler, test, or other protocol
+delta fails closed.
 
 The candidate makes each new GPU-preflight plan bind its clean Git commit. The
 already completed preflight identity cannot be reused. After amendment
@@ -417,15 +423,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/del6500/projects/ServerScheduler/src 
 It reported `OPD False` and exactly `qwen3_v2_g0`,
 `qwen3_v2_gpu_preflight`, and `repository_preflight`.
 
-Independent review confirmed that candidate A preserves the proposed two-GPU
-scientific terms: world size 2, per-device batch 4, accumulation 8, effective
-global batch 64, exact pre-update cross-rank reservation of the 2,000,000
-non-padding model-input-token budget, the independent 120 optimizer-step
-ceiling, and the seed-42 feasibility-only claim. The amendment and lineage
-tests passed, candidate A is an ancestor of the current checkout, and only this
-handoff differs after it. The amendment nevertheless remains `proposed`
-because the fixed runtime fails before scientific execution as described
-below.
+Independent review confirmed that candidate B preserves the two-GPU scientific
+terms: world size 2, per-device batch 4, accumulation 8, effective global batch
+64, exact pre-update cross-rank reservation of the 2,000,000 non-padding
+model-input-token budget, the independent 120 optimizer-step ceiling, and the
+seed-42 feasibility-only claim. Candidate B is an ancestor of current HEAD;
+only this handoff was committed after it, and the current acceptance edit adds
+only the allowed amendment review block.
 
 Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
 two-GPU preflight has real pilot evidence. One-GPU memory safety, three-GPU
@@ -434,7 +438,7 @@ per-rank CPU threading at three ranks, and cross-world-size checkpoint
 resharding are not implemented or reviewed. The handlers therefore continue
 to reject every allocation other than their exact fixed two-GPU contract.
 
-The fixed runtime bytes were published from clean implementation candidate A
+The fixed runtime bytes were republished from clean implementation candidate B
 at these roots:
 `/scr/del6500/OPD/envs/qwen3-v2-g0-v1` and
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1`. Both roots and the runtime
@@ -444,38 +448,30 @@ all 19 locked direct package versions match, PyTorch reports `2.8.0+cu128`
 with CUDA 12.8, and `pip check` reports no broken requirements. MIB is exactly
 `b759df34433c9e31043ba9e02908ce0bf20e894f`; its initialized EAP-IG submodule
 is at the expected gitlink
-`7af394a5662de8b23ad6154716a0cd3993d447a3`. The deployment hash identity and
-the full related static suite pass (`Ran 111 tests in 6.857s`, `OK`). However,
-the preparer's offline EAP import created seven untracked
-`EAP-IG/src/eap/__pycache__/*.pyc` files before the tree was made read-only.
-Consequently the parent MIB checkout reports ` M EAP-IG`, and a direct
-no-GPU invocation of the production handler's `_validate_environment()` fails
-with `fixed MIB checkout or submodule tree is dirty or incomplete`. This is a
-pre-payload runtime blocker even though the committed hashes, package versions,
-`pip check`, and Git-linked source revisions match.
-
-Candidate B invokes the isolated offline check with Python `-B`, because `-I`
-ignores `PYTHONDONTWRITEBYTECODE`, then checks both the EAP submodule and parent
+`7af394a5662de8b23ad6154716a0cd3993d447a3`. Candidate B invokes the isolated
+offline check with Python `-B`, then checks both the EAP submodule and parent
 MIB checkout with porcelain-v1 status, all untracked files, and no submodule
-ignoring before publication. The user moved aside candidate A's contaminated
-targets and atomically republished both fixed paths from clean candidate B.
-The final MIB parent and EAP submodule status outputs are empty, the tree
-contains no `.pyc`, and their revisions remain exactly
+ignoring before publication. Independent review reconfirmed that both status
+outputs are empty, the complete MIB tree contains no `.pyc`, and the revisions
+remain exactly
 `b759df34433c9e31043ba9e02908ce0bf20e894f` and
 `7af394a5662de8b23ad6154716a0cd3993d447a3`. A direct no-GPU invocation of the
 production `_validate_environment()` with two virtual CUDA identifiers now
-passes. The complete related suite run in the rebuilt runtime passes 112 tests
-in 6.816 seconds; Python compilation, `pip check`, executable SHA-256
+passes without a CUDA computation. The independent complete related suite
+passes 112 tests in 6.692 seconds; the nine focused amendment/lineage tests and
+eleven focused handler tests also pass. In-memory Python compilation, a direct
+two-rank token-reservation/resume probe, `pip check`, executable SHA-256
 `848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801`,
-unchanged G0 deployment identity, and `git diff --check` all pass. Candidate B
-is ready for a new independent scientific review; the amendment remains
-`proposed` until that separate review accepts it.
+unchanged G0 deployment identity
+`f08cd196915c0306135faecc46414c450092cadc19a1e372e97655d1f53f6d99`,
+and `git diff --check` all pass. The review block is accepted in the working
+tree, but runtime lineage validation intentionally remains unavailable until
+the user commits this review-only transition and restores a clean checkout.
 
-Do not enable the registration until the runtime blocker is repaired in a new
-reviewed implementation, the amendment is independently accepted, the fresh
-accepted-lineage two-GPU preflight passes, and the acceptance checkout is
-clean. The disabled proposal may be handed to a central operator for review
-and installation while it remains `enabled = false`; enablement and submission
+Do not enable the registration until the acceptance commit exists, the fresh
+accepted-lineage two-GPU preflight passes, and the checkout is clean. The
+disabled proposal may be handed to a central operator for review and
+installation while it remains `enabled = false`; enablement and submission
 require later, separate approvals and remain central operations.
 
 No new preflight or G0 workflow plan, outbox request, or job ID exists. The
@@ -498,7 +494,7 @@ until these gates and their separately required approvals are satisfied.
 - Current operating rules: [`AGENTS.md`](../../AGENTS.md)
 - Current GPU pilot contract:
   [`qwen3_v2_gpu_preflight_pilot.md`](qwen3_v2_gpu_preflight_pilot.md)
-- Proposed two-GPU G0 amendment review:
+- Two-GPU G0 amendment review:
   [`qwen3_v2_g0_2gpu_amendment_review.md`](qwen3_v2_g0_2gpu_amendment_review.md)
 - Core-v2 compatibility notes: [`core_v2_migration.md`](../core_v2_migration.md)
 - Refactor baseline: [`phase0_baseline.md`](phase0_baseline.md)
