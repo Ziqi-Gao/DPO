@@ -34,6 +34,7 @@ PYPI_PACKAGES = (
     "huggingface-hub==0.36.2",
     "nvidia-nccl-cu12==2.27.3",
     "numpy==1.26.4",
+    "PyYAML==6.0.3",
     "safetensors==0.5.3",
     "tokenizers==0.22.0",
     "transformers==4.56.2",
@@ -70,6 +71,7 @@ def _offline_check_script() -> str:
         "assert torch.__version__.startswith('2.8.0+cu128'), torch.__version__\n"
         "assert torch.version.cuda == '12.8', torch.version.cuda\n"
         "assert importlib.metadata.version('nvidia-nccl-cu12') == '2.27.3'\n"
+        "assert importlib.metadata.version('PyYAML') == '6.0.3'\n"
         f"for repo_id, revision in {rows}:\n"
         "    AutoConfig.from_pretrained(repo_id, revision=revision, "
         "local_files_only=True, trust_remote_code=False)\n"

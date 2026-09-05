@@ -20,6 +20,10 @@
       "version": "1.26.4"
     },
     {
+      "name": "PyYAML",
+      "version": "6.0.3"
+    },
+    {
       "name": "safetensors",
       "version": "0.5.3"
     },
@@ -38,6 +42,6 @@
   ],
   "runtime_executable": "/scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python",
   "schema_version": 1,
-  "status": "fixed-direct-runtime-contract",
+  "status": "fixed-direct-runtime-and-source-contract",
   "torch_build": "2.8.0+cu128"
 }

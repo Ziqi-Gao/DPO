@@ -6,12 +6,15 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
+from posttrain_circuits.artifacts.protocol_amendments import ProtocolAmendmentError
 from posttrain_circuits.scheduler_adapter.gpu_preflight_request import (
     PREREG_CONTENT_NAME,
+    _accepted_lineage_git_commit,
     build_qwen3_v2_gpu_preflight_plan,
     fixed_resolved_config,
     prepare_qwen3_v2_gpu_preflight_request,
 )
+from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
 from posttrain_circuits.scheduler_adapter.outbox import validate_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
@@ -64,7 +67,7 @@ class GpuPreflightRequestTests(unittest.TestCase):
 
     def test_plan_binds_exact_config_and_raw_preregistration_file(self) -> None:
         with mock.patch(
-            "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+            "posttrain_circuits.scheduler_adapter.gpu_preflight_request._accepted_lineage_git_commit",
             return_value=CODE_COMMIT,
         ):
             plan = build_qwen3_v2_gpu_preflight_plan(layout=self.layout)
@@ -131,7 +134,7 @@ class GpuPreflightRequestTests(unittest.TestCase):
 
         with (
             mock.patch(
-                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._accepted_lineage_git_commit",
                 return_value=CODE_COMMIT,
             ),
             mock.patch(
@@ -164,6 +167,49 @@ class GpuPreflightRequestTests(unittest.TestCase):
             & set(first_request)
         )
         self.assertNotIn("repository_snapshot", json.dumps(first_request))
+
+    def test_request_commit_requires_current_accepted_lineage(self) -> None:
+        binding = object()
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+                return_value=CODE_COMMIT,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.resolve_accepted_protocol_amendment",
+                return_value=binding,
+            ) as resolve,
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.validate_accepted_lineage_commit"
+            ) as validate,
+        ):
+            self.assertEqual(_accepted_lineage_git_commit(PROJECT_ROOT), CODE_COMMIT)
+        resolve.assert_called_once_with(
+            code_root=PROJECT_ROOT,
+            configured_path="prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml",
+            expected_head=CODE_COMMIT,
+        )
+        validate.assert_called_once_with(
+            code_root=PROJECT_ROOT,
+            candidate_commit=CODE_COMMIT,
+            current_binding=binding,
+            expected_head=CODE_COMMIT,
+            role="GPU preflight request commit",
+        )
+
+    def test_request_commit_rejects_unaccepted_lineage(self) -> None:
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+                return_value=CODE_COMMIT,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.resolve_accepted_protocol_amendment",
+                side_effect=ProtocolAmendmentError("amendment remains proposed"),
+            ),
+            self.assertRaisesRegex(AdapterValidationError, "implementation lineage"),
+        ):
+            _accepted_lineage_git_commit(PROJECT_ROOT)
 
 
 if __name__ == "__main__":

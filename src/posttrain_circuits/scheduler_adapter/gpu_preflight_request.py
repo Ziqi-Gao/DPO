@@ -11,6 +11,12 @@ from typing import Any
 
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
 from posttrain_circuits.artifacts.git_provenance import require_git_output
+from posttrain_circuits.artifacts.protocol_amendments import (
+    AMENDMENT_RELATIVE_PATH,
+    ProtocolAmendmentError,
+    resolve_accepted_protocol_amendment,
+    validate_accepted_lineage_commit,
+)
 from posttrain_circuits.scheduler_adapter.config_resolver import ConfigBindingResolver
 from posttrain_circuits.scheduler_adapter.content_store import ContentStore
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
@@ -56,6 +62,30 @@ def _clean_git_commit(code_root: Path) -> str:
     commit = require_git_output(code_root, ("rev-parse", "HEAD"))
     if GIT_COMMIT.fullmatch(commit) is None:
         raise AdapterValidationError("Git did not return one immutable commit identity")
+    return commit
+
+
+def _accepted_lineage_git_commit(code_root: Path) -> str:
+    """Return clean HEAD only when it is in the accepted amendment lineage."""
+
+    commit = _clean_git_commit(code_root)
+    try:
+        amendment = resolve_accepted_protocol_amendment(
+            code_root=code_root,
+            configured_path=str(AMENDMENT_RELATIVE_PATH),
+            expected_head=commit,
+        )
+        validate_accepted_lineage_commit(
+            code_root=code_root,
+            candidate_commit=commit,
+            current_binding=amendment,
+            expected_head=commit,
+            role="GPU preflight request commit",
+        )
+    except ProtocolAmendmentError as error:
+        raise AdapterValidationError(
+            f"GPU-preflight request implementation lineage is invalid: {error}"
+        ) from error
     return commit
 
 
@@ -256,7 +286,9 @@ def build_qwen3_v2_gpu_preflight_plan(*, layout: WorkflowLayout) -> WorkflowPlan
     """Materialize the fixed config projections and raw preregistration in file CAS."""
 
     layout.validate()
-    config = fixed_resolved_config(code_commit=_clean_git_commit(layout.code_root))
+    config = fixed_resolved_config(
+        code_commit=_accepted_lineage_git_commit(layout.code_root)
+    )
     _validate_fixed_config(config)
     prereg_path = layout.code_root / PREREG_RELATIVE_PATH
     prereg_raw, prereg_sha256 = read_regular_file_nofollow(

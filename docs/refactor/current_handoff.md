@@ -23,7 +23,13 @@ verification. Independent scientific review of candidate B passed on
 2026-09-05. Acceptance commit
 `71a86997cc3eadf55d18b9a5d0405eaaa9ada5ac` changes only the amendment
 review block and this handoff, binds candidate B exactly, and passes the clean
-accepted-amendment resolver.
+accepted-amendment resolver. That acceptance remains historical evidence for
+candidate B; it does not authorize later source changes. The current change
+prepares candidate C to fix the GPU-preflight
+exact-commit/handoff-descendant conflict and deliberately returns the amendment
+review block to `proposed`. Candidate C is not accepted; an independent review
+must bind its externally verified immutable Git identity in a later acceptance
+commit before any new preflight request can be generated or executed.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -93,7 +99,8 @@ proposed bytes with SHA-256
 `2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`;
 the review-only accepted committed bytes have SHA-256
 `86b1adf0ecd368749864478b5a6638ee84479726f3669a6875eb5b25a731f232`
-and bind candidate B exactly.
+and bind candidate B exactly. Candidate C restores the same proposed amendment
+bytes and intentionally has no reviewer or implementation-commit identity yet.
 It leaves the frozen base preregistration unchanged, retains per-device batch
 4, changes gradient accumulation from 4 to 8 for two ranks, and therefore
 preserves effective global batch 64. The exact 2,000,000 global non-padding
@@ -165,11 +172,19 @@ only this handoff may differ between GPU preflight, G0 request generation, and
 execution; any source, config, handler, test, or other protocol delta fails
 closed.
 
-The candidate makes each new GPU-preflight plan bind its clean Git commit. The
-already completed preflight identity cannot be reused. After amendment
-acceptance, a fresh two-GPU preflight request, separate central submission
-approval, and successful result from the accepted implementation lineage are
-required before a G0 request can be prepared.
+Candidate C makes request generation itself require a clean accepted lineage.
+Each new GPU-preflight plan still binds its exact request-generation commit,
+while the production handler uses the shared amendment validator to permit an
+execution commit only when it is a descendant and every intervening path is
+`docs/refactor/current_handoff.md`. It still rejects a proposed amendment,
+dirty tracked checkout, non-ancestor, different reviewed implementation,
+amendment delta, source/config/test delta, or any other post-acceptance path.
+The handler also rechecks at publication that the tracked checkout is clean and
+HEAD is still the execution commit recorded before launch. The already
+completed preflight identity cannot be reused. After candidate C acceptance, a
+fresh two-GPU preflight request, separate central submission approval, and
+successful result from that accepted implementation lineage are required before
+a G0 request can be prepared.
 
 ## Adapter contract retained from the refactor
 
@@ -204,7 +219,7 @@ the task-specific pilot document linked below.
 
 ## Scheduler integration state
 
-A read-only inspection of the current central proposal on 2026-09-04 found the
+A read-only inspection of the central registration TOML on 2026-09-05 found the
 OPD registration disabled with exactly these three tasks and profiles:
 
 - `repository_preflight` with `repository-preflight-cpu`: 1 CPU, 128 MiB RAM,
@@ -464,8 +479,37 @@ two-rank token-reservation/resume probe, `pip check`, executable SHA-256
 `848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801`,
 unchanged G0 deployment identity
 `f08cd196915c0306135faecc46414c450092cadc19a1e372e97655d1f53f6d99`,
-and `git diff --check` all pass. The committed review block and clean runtime
-lineage resolver now pass.
+and `git diff --check` all pass. For candidate B, the committed review block
+and clean runtime lineage resolver passed.
+
+Candidate C changes the GPU-preflight handler, runtime
+preparer, request builder, preflight deployment lock/manifest, registry, three
+focused test modules, the independent-review checklist, the amendment review
+block, and this handoff. It does not change the two-GPU batch, token, step,
+seed, model, allocation, output, or G0 scientific terms. Request generation now
+rejects anything outside the current accepted implementation lineage. At
+execution, the plan commit and execution HEAD may differ, but the existing
+shared validator must prove accepted
+amendment identity, reviewed-implementation ancestry, candidate ancestry, and
+an exact handoff-only path delta. The previous direct equality check is retained
+for execution-start versus publication HEAD so a mid-run checkout change still
+fails closed.
+
+The preflight deployment is now
+`qwen3-v2-gpu-preflight-2gpu-python312-cuda-v4`. Its handler, dependency lock,
+package manifest, and deployment identity are respectively
+`2301f2af8106605edbca262ff850b038ee61e6897cc0c26749ee69f36438eae2`,
+`c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f`,
+`dca84c0f63f74d39bb9ea4bea79725a1e4bca00a61d8aab26abd9088aa064b65`,
+and
+`757aae69d4f61cc0fa4ca3f2453225cd0953420582b7efa395015c499928b30c`.
+The existing fixed runtime reports PyYAML 6.0.3, which is now a direct pinned
+dependency because the handler invokes the shared amendment validator.
+Deployment hash/identity validation, in-memory compilation, `pip check`, and a
+production `_validate_environment()` call with two virtual CUDA UUIDs and no
+CUDA computation passed. The complete related static suite passes 116 tests in
+6.642 seconds, and `git diff --check` passes. No GPU, job, outbox, central
+registration, service, or process was operated.
 
 Do not enable the registration until a fresh accepted-lineage two-GPU
 preflight passes and the checkout is clean. The disabled proposal may be
@@ -473,8 +517,40 @@ handed to a central operator for review and installation while it remains
 `enabled = false`; enablement and submission require later, separate approvals
 and remain central operations.
 
-No new preflight or G0 workflow plan, outbox request, or job ID exists. The
-legacy inventory remains 20 `scripts/slurm` files, eight
+From clean accepted-lineage HEAD
+`abdf0f03e228adf275ee987a835ec70f00544ace`, the project builder prepared
+exactly one fresh GPU-preflight request:
+
+- Job ID: `opd-0399c0625f43425dd03cfcc638d234f1`.
+- Outbox path:
+  `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`.
+- Request SHA-256:
+  `b4d3322ad96145a0de8e07eb686172373bbbf3d269a0c3bcb0fcfb061ae70536`.
+- Workflow/plan/unit: `qwen3-v2-gpu-preflight-v1`,
+  `cf6313ec312d094f1270f3f7f69032288c3d6723309d88e4204b31523529e219`,
+  and `gpu-preflight`.
+- The protocol-v2 request contains only the normal scientific fields and
+  parameters; it omits `execution_profile`, `resources`, and every GPU count
+  or device selector.
+
+The accepted-lineage validator, published-plan validator, OPD outbox
+validator, and current ServerScheduler `JobRequest` parser accepted the
+request, and 74 focused request/handler/semantic/adapter/proposal tests passed.
+The central read-only `validate` command stopped because the OPD registration
+remains disabled. Candidate C resolves the exact-commit versus mandatory-
+handoff design conflict, but this old request is permanently stale: its plan
+predates candidate C, so the shared validator will correctly see intervening
+source/deployment changes rather than a handoff-only delta. Do not submit or
+reuse it, including after candidate C acceptance. The outbox file was not
+submitted, consumed, edited, or removed. After candidate C is committed and
+independently accepted, generate exactly one fresh request from the clean
+accepted lineage; recording that new request may then be committed as the
+handler-approved handoff-only execution descendant. Central registration
+enablement and submission remain separate operator actions requiring explicit
+approval.
+
+No G0 workflow plan, outbox request, or job ID exists. The legacy inventory
+remains 20 `scripts/slurm` files, eight
 `scripts/production` launch/supervision files, and three quarantined Python
 pilot/finalizer modules; none is a supported path, but cleanup still lacks the
 required caller cutover, drain, rollback, operator inventory, and explicit

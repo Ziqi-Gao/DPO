@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest import mock
 
+from posttrain_circuits.artifacts.protocol_amendments import ProtocolAmendmentError
 from posttrain_circuits.scheduler_adapter.completion import AttemptCompletionDraft
 from posttrain_circuits.scheduler_adapter.gpu_preflight_request import fixed_resolved_config
 from posttrain_circuits.scheduler_adapter.registry import require_handler
@@ -26,6 +27,7 @@ PROPOSAL = (
     / "registration-proposal-v2.toml"
 )
 CODE_COMMIT = "a" * 40
+EXECUTION_COMMIT = "b" * 40
 
 
 def _load_handler():  # type: ignore[no-untyped-def]
@@ -173,6 +175,57 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertNotIn('os.environ["cuda_visible_devices"] =', source)
         self.assertNotIn("os.environ['cuda_visible_devices'] =", source)
+
+    def test_handler_accepts_only_shared_reviewed_handoff_lineage(self) -> None:
+        binding = object()
+        with (
+            mock.patch.object(self.module, "_install_source_path") as install,
+            mock.patch(
+                "posttrain_circuits.artifacts.protocol_amendments.resolve_accepted_protocol_amendment",
+                return_value=binding,
+            ) as resolve,
+            mock.patch(
+                "posttrain_circuits.artifacts.protocol_amendments.validate_accepted_lineage_commit"
+            ) as validate,
+        ):
+            self.module._validate_plan_execution_lineage(
+                plan_commit=CODE_COMMIT,
+                execution_commit=EXECUTION_COMMIT,
+            )
+        install.assert_called_once_with()
+        resolve.assert_called_once_with(
+            code_root=self.module.SOURCE_ROOT,
+            configured_path="prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml",
+            expected_head=EXECUTION_COMMIT,
+        )
+        validate.assert_called_once_with(
+            code_root=self.module.SOURCE_ROOT,
+            candidate_commit=CODE_COMMIT,
+            current_binding=binding,
+            expected_head=EXECUTION_COMMIT,
+            role="GPU preflight plan commit",
+        )
+
+    def test_handler_rejects_invalid_or_unreviewed_plan_lineage(self) -> None:
+        with self.assertRaisesRegex(self.module.PreflightError, "not a Git identity"):
+            self.module._validate_plan_execution_lineage(
+                plan_commit="not-a-commit",
+                execution_commit=EXECUTION_COMMIT,
+            )
+        with (
+            mock.patch.object(self.module, "_install_source_path"),
+            mock.patch(
+                "posttrain_circuits.artifacts.protocol_amendments.resolve_accepted_protocol_amendment",
+                side_effect=ProtocolAmendmentError(
+                    "post-acceptance implementation changes"
+                ),
+            ),
+            self.assertRaisesRegex(self.module.PreflightError, "implementation lineage"),
+        ):
+            self.module._validate_plan_execution_lineage(
+                plan_commit=CODE_COMMIT,
+                execution_commit=EXECUTION_COMMIT,
+            )
 
     def test_handler_separates_gloo_control_from_nccl_data_plane(self) -> None:
         source = HANDLER.read_text(encoding="utf-8")
@@ -339,6 +392,9 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             self.assertEqual(main_module.__file__, expected)
 
     def test_runtime_preparation_requires_explicit_execute(self) -> None:
+        source = PREPARE.read_text(encoding="utf-8")
+        self.assertIn('"PyYAML==6.0.3"', source)
+        self.assertIn("version('PyYAML') == '6.0.3'", source)
         result = subprocess.run(
             (sys.executable, str(PREPARE)),
             check=False,

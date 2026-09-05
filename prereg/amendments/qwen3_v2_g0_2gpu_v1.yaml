@@ -65,8 +65,8 @@ implementation_acceptance:
   preflight_request_and_execution_must_share_accepted_implementation_lineage: true
 
 review:
-  status: accepted
-  reviewed_implementation_commit: e8138997ad9465e986e1e92ffcf7fd61e8c113e8
-  reviewer: OpenAI Codex independent scientific reviewer
-  reviewed_at_utc: "2026-09-05T06:01:11Z"
-  rationale: Independent review confirmed clean bytecode-free MIB and EAP checkouts, no-GPU production environment validation, preserved two-GPU batch, token, step, and seed-42 feasibility semantics, valid lineage, deployment identity, and static test evidence; this acceptance is not execution authorization.
+  status: proposed
+  reviewed_implementation_commit: null
+  reviewer: null
+  reviewed_at_utc: null
+  rationale: null

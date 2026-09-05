@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 """Fixed two-rank Qwen3-v2 GPU preflight for ServerScheduler protocol v2.
 
-The file is both the foreground supervisor and the torchrun worker.  It is
-therefore the only project implementation byte stream in the deployment
-contract.  Physical GPU selection remains entirely owned by ServerScheduler;
-workers use only their process-local logical rank inside the inherited CUDA
-visibility envelope.
+The file is both the foreground supervisor and the torchrun worker.  Its
+deployment contract also relies on the clean, accepted-lineage OPD source tree
+for protocol-amendment validation.  Physical GPU selection remains entirely
+owned by ServerScheduler; workers use only their process-local logical rank
+inside the inherited CUDA visibility envelope.
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ MAX_INPUT_BYTES = 64 * 1024 * 1024
 MAX_PREREG_BYTES = 4 * 1024 * 1024
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 PROC_SELF_FD = re.compile(r"/proc/self/fd/(0|[1-9][0-9]*)\Z")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*\Z")
 EXPECTED_INPUT_NAMES = (
@@ -100,6 +101,8 @@ FIXED_ENVIRONMENT = {
     "TORCH_NCCL_DUMP_ON_TIMEOUT": "1",
     "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
 }
+SOURCE_ROOT = Path("/home/del6500/projects/OPD")
+SOURCE_PACKAGE_ROOT = SOURCE_ROOT / "src"
 
 
 class PreflightError(RuntimeError):
@@ -619,6 +622,7 @@ def _validate_environment() -> tuple[str, ...]:
         "huggingface-hub": "0.36.2",
         "nvidia-nccl-cu12": NCCL_VERSION,
         "numpy": "1.26.4",
+        "PyYAML": "6.0.3",
         "safetensors": "0.5.3",
         "tokenizers": "0.22.0",
         "transformers": "4.56.2",
@@ -1189,12 +1193,13 @@ def _cgroup_memory() -> dict[str, int | bool]:
 def _git(*arguments: str) -> str:
     result = subprocess.run(
         ("/usr/bin/git", *arguments),
+        cwd=SOURCE_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
     value = result.stdout.strip()
-    if not re.fullmatch(r"[0-9a-f]{40}", value):
+    if GIT_COMMIT.fullmatch(value) is None:
         raise PreflightError("Git did not return one immutable commit identity")
     return value
 
@@ -1202,6 +1207,7 @@ def _git(*arguments: str) -> str:
 def _require_clean_git() -> str:
     result = subprocess.run(
         ("/usr/bin/git", "status", "--porcelain", "--untracked-files=no"),
+        cwd=SOURCE_ROOT,
         check=True,
         capture_output=True,
         text=True,
@@ -1209,6 +1215,50 @@ def _require_clean_git() -> str:
     if result.stdout:
         raise PreflightError("GPU preflight requires a clean tracked source checkout")
     return _git("rev-parse", "HEAD")
+
+
+def _install_source_path() -> None:
+    value = str(SOURCE_PACKAGE_ROOT)
+    if value not in sys.path:
+        sys.path.insert(0, value)
+
+
+def _validate_plan_execution_lineage(
+    *,
+    plan_commit: str,
+    execution_commit: str,
+) -> None:
+    """Prove that plan and execution differ only by accepted handoff metadata."""
+
+    if GIT_COMMIT.fullmatch(plan_commit) is None:
+        raise PreflightError("GPU preflight plan code_commit is not a Git identity")
+    if GIT_COMMIT.fullmatch(execution_commit) is None:
+        raise PreflightError("GPU preflight execution commit is not a Git identity")
+    _install_source_path()
+    from posttrain_circuits.artifacts.protocol_amendments import (
+        AMENDMENT_RELATIVE_PATH,
+        ProtocolAmendmentError,
+        resolve_accepted_protocol_amendment,
+        validate_accepted_lineage_commit,
+    )
+
+    try:
+        amendment = resolve_accepted_protocol_amendment(
+            code_root=SOURCE_ROOT,
+            configured_path=str(AMENDMENT_RELATIVE_PATH),
+            expected_head=execution_commit,
+        )
+        validate_accepted_lineage_commit(
+            code_root=SOURCE_ROOT,
+            candidate_commit=plan_commit,
+            current_binding=amendment,
+            expected_head=execution_commit,
+            role="GPU preflight plan commit",
+        )
+    except ProtocolAmendmentError as error:
+        raise PreflightError(
+            f"GPU preflight implementation lineage is invalid: {error}"
+        ) from error
 
 
 def _publish_once(descriptor: int, name: str, payload: object) -> None:
@@ -1466,13 +1516,25 @@ def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
     invocation = _parse_outer(argv)
     _validate_environment()
-    code_commit = _require_clean_git()
+    execution_commit = _require_clean_git()
     payloads, prereg = _read_inputs(invocation)
+    resolved_payload = payloads.get("resolved_config_sha256")
+    plan_commit = (
+        resolved_payload.get("code_commit")
+        if isinstance(resolved_payload, dict)
+        else None
+    )
+    if not isinstance(plan_commit, str):
+        raise PreflightError("resolved GPU-preflight config lacks code_commit")
     resolved = _validate_config(
         invocation,
         payloads,
         prereg,
-        code_commit=code_commit,
+        code_commit=plan_commit,
+    )
+    _validate_plan_execution_lineage(
+        plan_commit=plan_commit,
+        execution_commit=execution_commit,
     )
     temp_root = Path(FIXED_ENVIRONMENT["TMPDIR"])
     temp_root.mkdir(mode=0o750, parents=True, exist_ok=True)
@@ -1486,7 +1548,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "allocation_sha256": invocation.allocation_sha256,
             "attempt": invocation.attempt,
             "checkpoint_root": str(checkpoint_root),
-            "code_commit": code_commit,
+            "code_commit": execution_commit,
             "input_hashes": invocation.input_hashes,
             "job_id": invocation.job_id,
             "manifest_sha256": invocation.manifest_sha256,

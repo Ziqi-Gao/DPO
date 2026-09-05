@@ -63,6 +63,11 @@ protocol change after implementation review invalidates the lineage.
 - Confirm the 120-step limit remains an optimizer-step safety ceiling.
 - Confirm the claim remains seed-42 full-pipeline feasibility only.
 - Confirm the proposed amendment is present in the implementation commit.
+- Confirm GPU-preflight request generation requires the accepted implementation
+  lineage, and execution accepts a different HEAD only when the shared lineage
+  validator proves an exact handoff-only descendant.
+- Confirm non-ancestor commits and every post-acceptance amendment, source,
+  configuration, handler, test, or other path delta fail closed.
 - Confirm runtime, deployment hashes, handler, validator, and related tests.
 - Record reviewer identity, UTC review time, rationale, and the reviewed
   implementation commit only after completing the independent review.

@@ -25,7 +25,8 @@ from posttrain_circuits.core.config import compose_config
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 IMPLEMENTATION_COMMIT = "a" * 40
 ACCEPTANCE_COMMIT = "b" * 40
-EXECUTION_COMMIT = "c" * 40
+REQUEST_COMMIT = "c" * 40
+EXECUTION_COMMIT = "d" * 40
 
 
 class ProtocolAmendmentTests(unittest.TestCase):
@@ -143,17 +144,19 @@ class ProtocolAmendmentTests(unittest.TestCase):
 
         def git_result(_root: Path, *arguments: str) -> str:
             if arguments == ("rev-parse", "HEAD"):
-                return ACCEPTANCE_COMMIT
-            if arguments[:2] == ("show", f"{ACCEPTANCE_COMMIT}:{AMENDMENT_RELATIVE_PATH}"):
+                return EXECUTION_COMMIT
+            if arguments[:2] == ("show", f"{REQUEST_COMMIT}:{AMENDMENT_RELATIVE_PATH}"):
                 return accepted_raw
             if arguments[:2] == ("show", f"{IMPLEMENTATION_COMMIT}:{AMENDMENT_RELATIVE_PATH}"):
                 return proposed_raw
             if arguments[0:2] == ("diff", "--name-only"):
                 revision = arguments[3]
-                if revision == f"{IMPLEMENTATION_COMMIT}..{ACCEPTANCE_COMMIT}":
-                    return str(AMENDMENT_RELATIVE_PATH)
-                if revision == f"{ACCEPTANCE_COMMIT}..{ACCEPTANCE_COMMIT}":
-                    return ""
+                if revision == f"{IMPLEMENTATION_COMMIT}..{REQUEST_COMMIT}":
+                    return "\n".join(
+                        (str(AMENDMENT_RELATIVE_PATH), "docs/refactor/current_handoff.md")
+                    )
+                if revision == f"{REQUEST_COMMIT}..{EXECUTION_COMMIT}":
+                    return "docs/refactor/current_handoff.md"
             raise AssertionError(arguments)
 
         binding = SimpleNamespace(
@@ -171,9 +174,9 @@ class ProtocolAmendmentTests(unittest.TestCase):
         ):
             validate_accepted_lineage_commit(
                 code_root=PROJECT_ROOT,
-                candidate_commit=ACCEPTANCE_COMMIT,
+                candidate_commit=REQUEST_COMMIT,
                 current_binding=binding,
-                expected_head=ACCEPTANCE_COMMIT,
+                expected_head=EXECUTION_COMMIT,
                 role="GPU preflight commit",
             )
 

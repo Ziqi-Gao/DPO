@@ -875,10 +875,10 @@ _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
     allowed_gpu_models=(QWEN3_V2_GPU_MODEL,),
 )
 _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v3",
+    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v4",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
-        "Transformers 4.56.2"
+        "Transformers 4.56.2; PyYAML 6.0.3"
     ),
     runtime_flags=("-I",),
     executable=GPU_RUNTIME_ROOT / "python",
@@ -889,22 +889,22 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="448b244376adf0e1cb7c47942277c2a8ef793394e29eb6da90718cf3bc0a7134",
+    implementation_sha256="2301f2af8106605edbca262ff850b038ee61e6897cc0c26749ee69f36438eae2",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
         / "qwen3_v2_gpu_preflight"
         / "dependency-lock.json"
     ),
-    dependency_lock_sha256="944f22e346fbda1bd2545cdac9f8c3e9e7046a576b9afc38911fc2f89a1f735d",
+    dependency_lock_sha256="c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f",
     package_manifest=(
         PRODUCTION_CODE_ROOT
         / "deployments"
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="20c00b6f3e84dc3c78119294ad130473de22bbedc9580f8bdc0c873dcba4c17f",
-    deployment_identity_sha256="643c8f78502ca59bfbc33e03108140442a460f82cb64fd36611a9447e1b67966",
+    package_manifest_sha256="dca84c0f63f74d39bb9ea4bea79725a1e4bca00a61d8aab26abd9088aa064b65",
+    deployment_identity_sha256="757aae69d4f61cc0fa4ca3f2453225cd0953420582b7efa395015c499928b30c",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,

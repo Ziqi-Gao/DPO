@@ -1,12 +1,12 @@
 {
-  "dependency_lock_sha256": "944f22e346fbda1bd2545cdac9f8c3e9e7046a576b9afc38911fc2f89a1f735d",
-  "deployment_id": "qwen3-v2-gpu-preflight-2gpu-python312-cuda-v3",
+  "dependency_lock_sha256": "c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f",
+  "deployment_id": "qwen3-v2-gpu-preflight-2gpu-python312-cuda-v4",
   "executable_sha256": "848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
-  "implementation_sha256": "448b244376adf0e1cb7c47942277c2a8ef793394e29eb6da90718cf3bc0a7134",
+  "implementation_sha256": "2301f2af8106605edbca262ff850b038ee61e6897cc0c26749ee69f36438eae2",
   "runtime_flags": [
     "-I"
   ],
-  "runtime_version": "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; Transformers 4.56.2",
+  "runtime_version": "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; Transformers 4.56.2; PyYAML 6.0.3",
   "schema_version": 1,
   "self_contained": true
 }
