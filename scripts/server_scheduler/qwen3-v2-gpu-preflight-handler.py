@@ -2,13 +2,40 @@
 """Fixed two-rank Qwen3-v2 GPU preflight for ServerScheduler protocol v2.
 
 The file is both the foreground supervisor and the torchrun worker.  Its
-deployment contract also relies on the clean, accepted-lineage OPD source tree
-for protocol-amendment validation.  Physical GPU selection remains entirely
-owned by ServerScheduler; workers use only their process-local logical rank
-inside the inherited CUDA visibility envelope.
+hash-bound implementation validates the accepted OPD lineage before trusting
+the checkout and never imports project source.  Physical GPU selection remains
+entirely owned by ServerScheduler; workers use only their process-local logical
+rank inside the inherited CUDA visibility envelope.
 """
 
 from __future__ import annotations
+
+import atexit
+import os
+import sys
+import tempfile
+
+
+BYTECODE_CACHE_PREFIX = tempfile.mkdtemp(
+    prefix=".opd-gpu-preflight-pycache-",
+    dir="/scr/del6500/OPD/tmp",
+)
+sys.dont_write_bytecode = True
+sys.pycache_prefix = BYTECODE_CACHE_PREFIX
+
+
+def _remove_empty_bytecode_cache() -> None:
+    try:
+        os.rmdir(BYTECODE_CACHE_PREFIX)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # A non-empty directory is unexpected evidence; never delete it recursively.
+        pass
+
+
+atexit.register(_remove_empty_bytecode_cache)
+
 
 import argparse
 import copy
@@ -18,19 +45,18 @@ import hashlib
 import importlib.metadata
 import json
 import math
-import os
 import re
 import resource
 import shutil
 import stat
 import subprocess
-import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Sequence
+
+import yaml
 
 
 TASK = "qwen3_v2_gpu_preflight"
@@ -93,7 +119,6 @@ FIXED_ENVIRONMENT = {
     "NCCL_DEBUG": "INFO",
     "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
     "NCCL_P2P_DISABLE": "1",
-    "PYTHONDONTWRITEBYTECODE": "1",
     "TOKENIZERS_PARALLELISM": "false",
     "TRANSFORMERS_OFFLINE": "1",
     "TMPDIR": "/scr/del6500/OPD/tmp",
@@ -102,11 +127,41 @@ FIXED_ENVIRONMENT = {
     "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
 }
 SOURCE_ROOT = Path("/home/del6500/projects/OPD")
-SOURCE_PACKAGE_ROOT = SOURCE_ROOT / "src"
+AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml")
+HANDOFF_RELATIVE_PATH = Path("docs/refactor/current_handoff.md")
+PROPOSED_AMENDMENT_SHA256 = (
+    "2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686"
+)
+PROPOSED_REVIEW = {
+    "status": "proposed",
+    "reviewed_implementation_commit": None,
+    "reviewer": None,
+    "reviewed_at_utc": None,
+    "rationale": None,
+}
+MAX_LINEAGE_COMMITS = 256
 
 
 class PreflightError(RuntimeError):
     """Fail-closed invocation, runtime, or scientific validation error."""
+
+
+def _git_environment() -> dict[str, str]:
+    return {
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "HOME": "/nonexistent",
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+
+
+def _git_command(*arguments: str) -> tuple[str, ...]:
+    """Run Git without repository-configured filesystem monitor helpers."""
+
+    return ("/usr/bin/git", "-c", "core.fsmonitor=false", *arguments)
 
 
 @dataclass(frozen=True)
@@ -598,6 +653,11 @@ def _fixed_config(*, code_commit: str) -> dict[str, Any]:
 
 
 def _validate_environment() -> tuple[str, ...]:
+    if (
+        sys.dont_write_bytecode is not True
+        or sys.pycache_prefix != BYTECODE_CACHE_PREFIX
+    ):
+        raise PreflightError("GPU handler bytecode isolation is not active")
     for key, expected in FIXED_ENVIRONMENT.items():
         if os.environ.get(key) != expected:
             raise PreflightError(f"fixed environment {key} differs from its deployment")
@@ -1192,11 +1252,12 @@ def _cgroup_memory() -> dict[str, int | bool]:
 
 def _git(*arguments: str) -> str:
     result = subprocess.run(
-        ("/usr/bin/git", *arguments),
+        _git_command(*arguments),
         cwd=SOURCE_ROOT,
         check=True,
         capture_output=True,
         text=True,
+        env=_git_environment(),
     )
     value = result.stdout.strip()
     if GIT_COMMIT.fullmatch(value) is None:
@@ -1206,21 +1267,327 @@ def _git(*arguments: str) -> str:
 
 def _require_clean_git() -> str:
     result = subprocess.run(
-        ("/usr/bin/git", "status", "--porcelain", "--untracked-files=no"),
+        _git_command(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ),
         cwd=SOURCE_ROOT,
         check=True,
         capture_output=True,
         text=True,
+        env=_git_environment(),
     )
     if result.stdout:
-        raise PreflightError("GPU preflight requires a clean tracked source checkout")
+        raise PreflightError("GPU preflight requires a clean source checkout")
+    unsafe = _unsafe_untracked_paths()
+    if unsafe:
+        raise PreflightError(
+            f"GPU preflight checkout contains unsafe ignored files: {unsafe!r}"
+        )
     return _git("rev-parse", "HEAD")
 
 
-def _install_source_path() -> None:
-    value = str(SOURCE_PACKAGE_ROOT)
-    if value not in sys.path:
-        sys.path.insert(0, value)
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(
+    loader: _UniqueKeyLoader,
+    node: yaml.nodes.MappingNode,
+    deep: bool = False,
+) -> dict[str, Any]:
+    mapping: dict[str, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if not isinstance(key, str) or key in mapping:
+            raise PreflightError("protocol amendment contains an invalid or duplicate key")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
+def _load_amendment(raw: bytes, *, context: str) -> dict[str, Any]:
+    try:
+        payload = yaml.load(
+            raw.decode("utf-8", errors="strict"),
+            Loader=_UniqueKeyLoader,
+        )
+    except (UnicodeDecodeError, yaml.YAMLError) as error:
+        raise PreflightError(f"{context} is not strict UTF-8 YAML: {error}") from error
+    if not isinstance(payload, dict):
+        raise PreflightError(f"{context} must be a YAML mapping")
+    review = payload.get("review")
+    if not isinstance(review, dict) or set(review) != set(PROPOSED_REVIEW):
+        raise PreflightError(f"{context} review fields differ from the fixed schema")
+    return payload
+
+
+def _git_bytes(*arguments: str) -> bytes:
+    try:
+        return subprocess.run(
+            _git_command(*arguments),
+            cwd=SOURCE_ROOT,
+            check=True,
+            capture_output=True,
+            env=_git_environment(),
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise PreflightError(
+            f"GPU preflight Git validation failed: git {' '.join(arguments)}"
+        ) from error
+
+
+def _unsafe_untracked_paths() -> tuple[str, ...]:
+    """Find untracked paths without honoring any ignore or exclude source."""
+
+    raw = _git_bytes("ls-files", "--others", "-z", "--")
+    if not raw:
+        return ()
+    if not raw.endswith(b"\0"):
+        raise PreflightError("GPU preflight untracked-path output is malformed")
+    try:
+        paths = tuple(
+            item.decode("utf-8", errors="strict") for item in raw[:-1].split(b"\0")
+        )
+    except UnicodeDecodeError as error:
+        raise PreflightError("GPU preflight untracked path is not strict UTF-8") from error
+    if any(not path for path in paths):
+        raise PreflightError("GPU preflight untracked-path output contains an empty path")
+    unsafe: list[str] = []
+    for path in paths:
+        parsed = Path(path)
+        if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+            raise PreflightError("GPU preflight untracked path is not canonical")
+        if path == ".codex/config.toml":
+            continue
+        if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
+            continue
+        unsafe.append(path)
+    return tuple(unsafe)
+
+
+def _git_blob(commit: str, path: Path) -> bytes:
+    return _git_bytes("show", f"{commit}:{path}")
+
+
+def _changed_paths(older: str, newer: str) -> set[str]:
+    try:
+        text = _git_bytes(
+            "diff",
+            "--no-ext-diff",
+            "--no-renames",
+            "--name-only",
+            "-z",
+            "--diff-filter=ACDMRTUXB",
+            f"{older}..{newer}",
+            "--",
+        ).decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise PreflightError("GPU preflight Git paths are not strict UTF-8") from error
+    rows = text.split("\0")
+    if rows[-1:] != [""]:
+        raise PreflightError("GPU preflight Git path output is not NUL terminated")
+    return {row for row in rows[:-1] if row}
+
+
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        _git_command(
+            "merge-base",
+            "--is-ancestor",
+            ancestor,
+            descendant,
+        ),
+        cwd=SOURCE_ROOT,
+        capture_output=True,
+        env=_git_environment(),
+    )
+    if result.returncode not in {0, 1}:
+        raise PreflightError("GPU preflight Git ancestry validation failed")
+    return result.returncode == 0
+
+
+def _commit_parents(commit: str) -> tuple[str, ...]:
+    if GIT_COMMIT.fullmatch(commit) is None:
+        raise PreflightError("GPU preflight commit identity is invalid")
+    raw = _git_bytes("cat-file", "commit", commit)
+    header, separator, _message = raw.partition(b"\n\n")
+    if not separator:
+        raise PreflightError("GPU preflight commit object is malformed")
+    parents: list[str] = []
+    for row in header.splitlines():
+        if not row.startswith(b"parent "):
+            continue
+        try:
+            parent = row.removeprefix(b"parent ").decode("ascii", errors="strict")
+        except UnicodeDecodeError as error:
+            raise PreflightError("GPU preflight commit parent is not ASCII") from error
+        if GIT_COMMIT.fullmatch(parent) is None:
+            raise PreflightError("GPU preflight commit parent is invalid")
+        parents.append(parent)
+    return tuple(parents)
+
+
+def _linear_commit_steps(
+    older: str,
+    newer: str,
+) -> tuple[tuple[str, str, set[str]], ...]:
+    """Return every single-parent step so reverted or merged code cannot hide."""
+
+    if not _is_ancestor(older, newer):
+        raise PreflightError("GPU preflight lineage is not ancestral")
+    if older == newer:
+        return ()
+    try:
+        rows = _git_bytes(
+            "rev-list",
+            "--reverse",
+            "--ancestry-path",
+            f"--max-count={MAX_LINEAGE_COMMITS + 1}",
+            f"{older}..{newer}",
+        ).decode("ascii", errors="strict").splitlines()
+    except UnicodeDecodeError as error:
+        raise PreflightError("GPU preflight commit lineage is not ASCII") from error
+    if len(rows) > MAX_LINEAGE_COMMITS:
+        raise PreflightError("GPU preflight lineage exceeds its commit limit")
+    previous = older
+    steps: list[tuple[str, str, set[str]]] = []
+    for row in rows:
+        if GIT_COMMIT.fullmatch(row) is None or _commit_parents(row) != (previous,):
+            raise PreflightError("GPU preflight lineage must be one linear commit chain")
+        commit = row
+        steps.append((previous, commit, _changed_paths(previous, commit)))
+        previous = commit
+    if previous != newer:
+        raise PreflightError("GPU preflight lineage does not terminate at the expected commit")
+    return tuple(steps)
+
+
+def _accepted_amendment(
+    *,
+    execution_commit: str,
+) -> tuple[bytes, str]:
+    """Validate current acceptance without importing code from that checkout."""
+
+    path = SOURCE_ROOT / AMENDMENT_RELATIVE_PATH
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    identity = lambda row: (  # noqa: E731 - compact immutable inode comparison
+        row.st_dev,
+        row.st_ino,
+        row.st_mode,
+        row.st_nlink,
+        row.st_size,
+        row.st_mtime_ns,
+        row.st_ctime_ns,
+    )
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size < 1
+            or before.st_size > 1024 * 1024
+        ):
+            raise PreflightError("protocol amendment must be one bounded non-linked regular file")
+        raw = os.pread(descriptor, before.st_size, 0)
+        if len(raw) != before.st_size or identity(os.fstat(descriptor)) != identity(before):
+            raise PreflightError("protocol amendment changed while being read")
+        if _git("rev-parse", "HEAD") != execution_commit:
+            raise PreflightError("GPU preflight execution HEAD changed during lineage validation")
+        if _git_blob(execution_commit, AMENDMENT_RELATIVE_PATH) != raw:
+            raise PreflightError("protocol amendment bytes differ from execution HEAD")
+        accepted = _load_amendment(raw, context="accepted protocol amendment")
+        review = accepted["review"]
+        implementation_commit = review.get("reviewed_implementation_commit")
+        if review.get("status") != "accepted":
+            raise PreflightError("protocol amendment remains proposed")
+        if (
+            not isinstance(implementation_commit, str)
+            or GIT_COMMIT.fullmatch(implementation_commit) is None
+        ):
+            raise PreflightError("accepted amendment lacks a reviewed implementation commit")
+        for field in ("reviewer", "rationale"):
+            value = review.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise PreflightError(f"accepted amendment lacks {field}")
+        timestamp = review.get("reviewed_at_utc")
+        if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+            raise PreflightError("accepted amendment review time is not explicit UTC")
+        try:
+            parsed = datetime.fromisoformat(timestamp[:-1] + "+00:00")
+        except ValueError as error:
+            raise PreflightError("accepted amendment review time is invalid") from error
+        if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+            raise PreflightError("accepted amendment review time is not UTC")
+
+        proposed_raw = _git_blob(implementation_commit, AMENDMENT_RELATIVE_PATH)
+        if hashlib.sha256(proposed_raw).hexdigest() != PROPOSED_AMENDMENT_SHA256:
+            raise PreflightError("reviewed implementation lacks the fixed proposed amendment")
+        proposed = _load_amendment(proposed_raw, context="reviewed proposed amendment")
+        if proposed.get("review") != PROPOSED_REVIEW:
+            raise PreflightError("reviewed implementation amendment was not proposed")
+        normalized = copy.deepcopy(accepted)
+        normalized["review"] = copy.deepcopy(PROPOSED_REVIEW)
+        if normalized != proposed:
+            raise PreflightError("accepted amendment changed reviewed scientific terms")
+        if implementation_commit == execution_commit:
+            raise PreflightError("accepted amendment does not descend from its implementation")
+        after = os.fstat(descriptor)
+        pathname = path.lstat()
+        if (
+            _git("rev-parse", "HEAD") != execution_commit
+            or _git_blob(execution_commit, AMENDMENT_RELATIVE_PATH) != raw
+            or identity(after) != identity(before)
+            or identity(pathname) != identity(before)
+            or os.pread(descriptor, after.st_size, 0) != raw
+        ):
+            raise PreflightError("GPU preflight source changed during lineage validation")
+        return raw, implementation_commit
+    finally:
+        os.close(descriptor)
+
+
+def _validate_review_chain(
+    *,
+    implementation_commit: str,
+    candidate_commit: str,
+    accepted_raw: bytes,
+) -> None:
+    allowed_review = {str(AMENDMENT_RELATIVE_PATH), str(HANDOFF_RELATIVE_PATH)}
+    amendment_steps = 0
+    for parent, commit, changed in _linear_commit_steps(
+        implementation_commit, candidate_commit
+    ):
+        if not changed:
+            raise PreflightError("accepted lineage contains an empty commit")
+        if str(AMENDMENT_RELATIVE_PATH) in changed:
+            amendment_steps += 1
+            if (
+                amendment_steps != 1
+                or not changed <= allowed_review
+                or hashlib.sha256(
+                    _git_blob(parent, AMENDMENT_RELATIVE_PATH)
+                ).hexdigest()
+                != PROPOSED_AMENDMENT_SHA256
+                or _git_blob(commit, AMENDMENT_RELATIVE_PATH) != accepted_raw
+            ):
+                raise PreflightError("accepted amendment transition is not review-only")
+        elif not changed <= {str(HANDOFF_RELATIVE_PATH)}:
+            raise PreflightError("accepted lineage contains implementation changes")
+    if amendment_steps != 1:
+        raise PreflightError("accepted lineage lacks one review-only amendment transition")
+    if _git_blob(candidate_commit, AMENDMENT_RELATIVE_PATH) != accepted_raw:
+        raise PreflightError("candidate commit does not contain the accepted amendment")
 
 
 def _validate_plan_execution_lineage(
@@ -1228,37 +1595,27 @@ def _validate_plan_execution_lineage(
     plan_commit: str,
     execution_commit: str,
 ) -> None:
-    """Prove that plan and execution differ only by accepted handoff metadata."""
+    """Prove plan/execution lineage using only this hash-bound handler."""
 
     if GIT_COMMIT.fullmatch(plan_commit) is None:
         raise PreflightError("GPU preflight plan code_commit is not a Git identity")
     if GIT_COMMIT.fullmatch(execution_commit) is None:
         raise PreflightError("GPU preflight execution commit is not a Git identity")
-    _install_source_path()
-    from posttrain_circuits.artifacts.protocol_amendments import (
-        AMENDMENT_RELATIVE_PATH,
-        ProtocolAmendmentError,
-        resolve_accepted_protocol_amendment,
-        validate_accepted_lineage_commit,
+    accepted_raw, implementation_commit = _accepted_amendment(
+        execution_commit=execution_commit
     )
-
-    try:
-        amendment = resolve_accepted_protocol_amendment(
-            code_root=SOURCE_ROOT,
-            configured_path=str(AMENDMENT_RELATIVE_PATH),
-            expected_head=execution_commit,
-        )
-        validate_accepted_lineage_commit(
-            code_root=SOURCE_ROOT,
-            candidate_commit=plan_commit,
-            current_binding=amendment,
-            expected_head=execution_commit,
-            role="GPU preflight plan commit",
-        )
-    except ProtocolAmendmentError as error:
-        raise PreflightError(
-            f"GPU preflight implementation lineage is invalid: {error}"
-        ) from error
+    _validate_review_chain(
+        implementation_commit=implementation_commit,
+        candidate_commit=plan_commit,
+        accepted_raw=accepted_raw,
+    )
+    for _parent, _commit, changed in _linear_commit_steps(
+        plan_commit, execution_commit
+    ):
+        if not changed or not changed <= {str(HANDOFF_RELATIVE_PATH)}:
+            raise PreflightError(
+                "GPU preflight execution contains post-plan implementation changes"
+            )
 
 
 def _publish_once(descriptor: int, name: str, payload: object) -> None:

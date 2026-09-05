@@ -875,7 +875,7 @@ _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
     allowed_gpu_models=(QWEN3_V2_GPU_MODEL,),
 )
 _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v4",
+    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v5",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
         "Transformers 4.56.2; PyYAML 6.0.3"
@@ -889,7 +889,7 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="2301f2af8106605edbca262ff850b038ee61e6897cc0c26749ee69f36438eae2",
+    implementation_sha256="3dd7f607cb760b0bf6dd12e2000c9f826b86a30e24327131d4966fd2f0656347",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -903,8 +903,8 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="dca84c0f63f74d39bb9ea4bea79725a1e4bca00a61d8aab26abd9088aa064b65",
-    deployment_identity_sha256="757aae69d4f61cc0fa4ca3f2453225cd0953420582b7efa395015c499928b30c",
+    package_manifest_sha256="ca3a8ca2db8d8618492c5b1004cfe2cbf9a5867d8469eee00ba21b066f4c2dac",
+    deployment_identity_sha256="52357303f24328d3cd5ebe4b3174840d03fb4eacc657f87e2d6d863726594a82",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,
@@ -921,7 +921,6 @@ _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
             "NCCL_DEBUG": "INFO",
             "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
             "NCCL_P2P_DISABLE": "1",
-            "PYTHONDONTWRITEBYTECODE": "1",
             "TOKENIZERS_PARALLELISM": "false",
             "TRANSFORMERS_OFFLINE": "1",
             "TMPDIR": "/scr/del6500/OPD/tmp",
@@ -955,7 +954,7 @@ _QWEN3_V2_G0_PROFILE = ExecutionProfileContract(
     allowed_gpu_models=(QWEN3_V2_G0_GPU_MODEL,),
 )
 _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-g0-2gpu-python312-cuda-v2",
+    deployment_id="qwen3-v2-g0-2gpu-python312-cuda-v3",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
         "Transformers 4.56.2; TransformerLens 2.16.1; MIB b759df3"
@@ -969,7 +968,7 @@ _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-g0-handler.py"
     ),
-    implementation_sha256="aba422f340cc6ad2da17b154bc9ede75267f9a414b79c1ed9bd24003be40d3cf",
+    implementation_sha256="09b53ba8f5cbb2742d131f482d6046dbb2b09c1ae07417dc80c1740ddb7a3ac0",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -983,8 +982,8 @@ _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_g0"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="66bf3353a286a8549ae73714e45bf4cb0f9914325d875332fa04b04ca037d901",
-    deployment_identity_sha256="f08cd196915c0306135faecc46414c450092cadc19a1e372e97655d1f53f6d99",
+    package_manifest_sha256="7f3b74484d37bd4b4ee4fbc953b251b5c8ad04b177d5623ba3517d3f784dc2d7",
+    deployment_identity_sha256="d33e4949dd91f2dbcf280097aca77a0939d6bb16cc898c42ad215282a9c65a6a",
 )
 _QWEN3_V2_G0_HANDLER = HandlerSpec(
     task=QWEN3_V2_G0_TASK,
@@ -1000,7 +999,6 @@ _QWEN3_V2_G0_HANDLER = HandlerSpec(
             "NCCL_DEBUG": "INFO",
             "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
             "NCCL_P2P_DISABLE": "1",
-            "PYTHONDONTWRITEBYTECODE": "1",
             "TOKENIZERS_PARALLELISM": "false",
             "TRANSFORMERS_OFFLINE": "1",
             "TMPDIR": "/scr/del6500/OPD/tmp",

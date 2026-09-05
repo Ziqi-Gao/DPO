@@ -3,25 +3,144 @@
 
 import os
 import sys
-from pathlib import Path
 
 
-REJECTED_AMBIENT = (
-    "LD_AUDIT",
-    "LD_LIBRARY_PATH",
-    "LD_PRELOAD",
-    "PYTHONHOME",
-    "PYTHONPATH",
+SOURCE_ROOT = "/home/del6500/projects/OPD"
+
+
+def _outside_project_path(entry: object) -> bool:
+    if not isinstance(entry, str) or not entry:
+        return False
+    resolved = os.path.realpath(entry)
+    return resolved != SOURCE_ROOT and not resolved.startswith(SOURCE_ROOT + os.sep)
+
+
+# Isolated mode is required, but scrub the script/repository path explicitly
+# before importing any non-frozen standard-library module.  This prevents an
+# ignored file in the checkout from shadowing a bootstrap dependency.
+sys.path[:] = [entry for entry in sys.path if _outside_project_path(entry)]
+
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+
+# Isolated mode ignores PYTHONDONTWRITEBYTECODE.  Establish the bytecode
+# boundary before making any project module importable: a private, atomically
+# created empty prefix prevents reads from source-tree __pycache__ directories,
+# while dont_write_bytecode prevents creation below the prefix.
+sys.dont_write_bytecode = True
+BYTECODE_CACHE_PREFIX = tempfile.mkdtemp(
+    prefix=".opd-entrypoint-pycache-",
+    dir="/scr/del6500/OPD/tmp",
 )
-injected = [key for key in REJECTED_AMBIENT if os.environ.get(key, "")]
-if injected:
-    print(f"OPD ServerScheduler entrypoint rejected ambient injection: {injected}", file=sys.stderr)
-    raise SystemExit(2)
-
-PROJECT_SRC = Path("/home/del6500/projects/OPD/src")
-sys.path.insert(0, str(PROJECT_SRC))
-
-from posttrain_circuits.scheduler_adapter.entrypoint import main  # noqa: E402
+os.chmod(BYTECODE_CACHE_PREFIX, 0o700)
+sys.pycache_prefix = BYTECODE_CACHE_PREFIX
 
 
-raise SystemExit(main())
+def _git_environment() -> dict[str, str]:
+    return {
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "HOME": "/nonexistent",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
+def _git_bytes(*arguments: str) -> bytes:
+    result = subprocess.run(
+        (
+            "/usr/bin/git",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            SOURCE_ROOT,
+            *arguments,
+        ),
+        check=True,
+        capture_output=True,
+        env=_git_environment(),
+    )
+    return bytes(result.stdout)
+
+
+def _unsafe_untracked_paths() -> tuple[str, ...]:
+    raw = _git_bytes("ls-files", "--others", "-z", "--")
+    if raw and not raw.endswith(b"\0"):
+        raise ValueError("Git returned a malformed untracked-path stream")
+    unsafe: list[str] = []
+    for encoded in raw.split(b"\0")[:-1]:
+        if not encoded:
+            raise ValueError("Git returned an empty untracked path")
+        path = encoded.decode("utf-8", errors="strict")
+        parsed = Path(path)
+        if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+            raise ValueError("Git returned a non-canonical untracked path")
+        if path == ".codex/config.toml":
+            continue
+        if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
+            continue
+        unsafe.append(path)
+    return tuple(unsafe)
+
+
+def _require_clean_checkout_before_import() -> None:
+    status = _git_bytes(
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    )
+    if status:
+        raise ValueError("tracked checkout or submodule is dirty")
+    if _unsafe_untracked_paths():
+        raise ValueError("ignored untracked files are present")
+
+
+def _main() -> int:
+    rejected_ambient = (
+        "LD_AUDIT",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "PYTHONHOME",
+        "PYTHONPATH",
+    )
+    injected = [key for key in rejected_ambient if os.environ.get(key, "")]
+    if injected:
+        print(
+            f"OPD ServerScheduler entrypoint rejected ambient injection: {injected}",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        _require_clean_checkout_before_import()
+    except (OSError, subprocess.SubprocessError, UnicodeError, ValueError):
+        print(
+            "OPD ServerScheduler entrypoint rejected a dirty or unverifiable checkout",
+            file=sys.stderr,
+        )
+        return 2
+
+    project_src = Path(SOURCE_ROOT) / "src"
+    sys.path.insert(0, str(project_src))
+
+    from posttrain_circuits.scheduler_adapter.entrypoint import main  # noqa: E402
+
+    return main()
+
+
+try:
+    raise SystemExit(_main())
+finally:
+    try:
+        os.rmdir(BYTECODE_CACHE_PREFIX)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # Preserve unexpected non-empty evidence instead of deleting it.
+        pass

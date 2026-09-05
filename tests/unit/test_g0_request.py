@@ -15,8 +15,10 @@ from posttrain_circuits.artifacts.protocol_amendments import (
     AMENDMENT_RELATIVE_PATH,
     load_protocol_amendment_bytes,
 )
+from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
 from posttrain_circuits.scheduler_adapter.g0_request import (
     GpuPreflightEvidence,
+    _require_clean_checkout,
     build_qwen3_v2_g0_plan,
     fixed_resolved_config,
     prepare_qwen3_v2_g0_request,
@@ -87,10 +89,45 @@ class G0RequestTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_clean_commit_checks_all_untracked_files_and_submodules(self) -> None:
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.g0_request.require_git_output",
+                side_effect=("", COMMIT),
+            ) as git,
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.g0_request.unsafe_untracked_paths",
+                return_value=(),
+            ),
+        ):
+            self.assertEqual(_require_clean_checkout(PROJECT_ROOT), COMMIT)
+        self.assertEqual(
+            git.call_args_list[0].args[1],
+            (
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+            ),
+        )
+
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.g0_request.require_git_output",
+                return_value="",
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.g0_request.unsafe_untracked_paths",
+                return_value=("src/ignored.py",),
+            ),
+            self.assertRaisesRegex(AdapterValidationError, "ignored untracked"),
+        ):
+            _require_clean_checkout(PROJECT_ROOT)
+
     def _build(self):  # type: ignore[no-untyped-def]
         with (
             mock.patch(
-                "posttrain_circuits.scheduler_adapter.g0_request._require_clean_tracked_checkout",
+                "posttrain_circuits.scheduler_adapter.g0_request._require_clean_checkout",
                 return_value=COMMIT,
             ),
             mock.patch(

@@ -10,6 +10,7 @@ from posttrain_circuits.artifacts.protocol_amendments import ProtocolAmendmentEr
 from posttrain_circuits.scheduler_adapter.gpu_preflight_request import (
     PREREG_CONTENT_NAME,
     _accepted_lineage_git_commit,
+    _clean_git_commit,
     build_qwen3_v2_gpu_preflight_plan,
     fixed_resolved_config,
     prepare_qwen3_v2_gpu_preflight_request,
@@ -64,6 +65,49 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertIs(second["teacher"]["local_files_only"], True)
         self.assertEqual(second["model"]["model_name_or_path"], "Qwen/Qwen3-1.7B")
         self.assertEqual(second["teacher"]["model_name_or_path"], "Qwen/Qwen3-8B")
+
+    def test_clean_commit_checks_all_untracked_files_and_submodules(self) -> None:
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
+                side_effect=("", CODE_COMMIT),
+            ) as git,
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.unsafe_untracked_paths",
+                return_value=(),
+            ),
+        ):
+            self.assertEqual(_clean_git_commit(PROJECT_ROOT), CODE_COMMIT)
+        self.assertEqual(
+            git.call_args_list[0].args[1],
+            (
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+            ),
+        )
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
+                return_value="?? untracked.py",
+            ),
+            self.assertRaisesRegex(AdapterValidationError, "clean checkout"),
+        ):
+            _clean_git_commit(PROJECT_ROOT)
+
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
+                return_value="",
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.unsafe_untracked_paths",
+                return_value=("src/ignored.py",),
+            ),
+            self.assertRaisesRegex(AdapterValidationError, "ignored untracked"),
+        ):
+            _clean_git_commit(PROJECT_ROOT)
 
     def test_plan_binds_exact_config_and_raw_preregistration_file(self) -> None:
         with mock.patch(

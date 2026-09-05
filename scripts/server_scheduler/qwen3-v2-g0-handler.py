@@ -10,6 +10,7 @@ artifact tar.  Failed scheduler attempts never reuse a staging directory.
 from __future__ import annotations
 
 import argparse
+import atexit
 import fcntl
 import hashlib
 import importlib
@@ -47,6 +48,21 @@ TEACHER_REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
 TOKENIZER_FINGERPRINT = "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d"
 CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
 PREREGISTRATION_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
+AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml")
+HANDOFF_RELATIVE_PATH = "docs/refactor/current_handoff.md"
+PROPOSED_AMENDMENT_SHA256 = (
+    "2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686"
+)
+PROPOSED_REVIEW = {
+    "status": "proposed",
+    "reviewed_implementation_commit": None,
+    "reviewer": None,
+    "reviewed_at_utc": None,
+    "rationale": None,
+}
+ALLOWED_REVIEW_PATHS = frozenset({str(AMENDMENT_RELATIVE_PATH), HANDOFF_RELATIVE_PATH})
+ALLOWED_HANDOFF_PATHS = frozenset({HANDOFF_RELATIVE_PATH})
+MAX_LINEAGE_COMMITS = 256
 GPU_COUNT = 2
 CPU_CORE_COUNT = 16
 THREADS_PER_RANK = CPU_CORE_COUNT // GPU_COUNT
@@ -124,7 +140,6 @@ FIXED_ENVIRONMENT = {
     "NCCL_DEBUG": "INFO",
     "NCCL_DEBUG_SUBSYS": "INIT,ENV,GRAPH,NET,COLL",
     "NCCL_P2P_DISABLE": "1",
-    "PYTHONDONTWRITEBYTECODE": "1",
     "TOKENIZERS_PARALLELISM": "false",
     "TRANSFORMERS_OFFLINE": "1",
     "TMPDIR": "/scr/del6500/OPD/tmp",
@@ -132,6 +147,7 @@ FIXED_ENVIRONMENT = {
     "TORCH_NCCL_DUMP_ON_TIMEOUT": "1",
     "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
 }
+_PROCESS_PYCACHE_PREFIX: str | None = None
 BASE_CONFIG_OVERRIDES = (
     "g0=qwen3_v2_eap_separation",
     "experiment=canonical_sft",
@@ -195,6 +211,15 @@ class Invocation:
             "job_id": self.job_id,
             "manifest_sha256": self.manifest_sha256,
         }
+
+
+@dataclass(frozen=True)
+class BootstrapLineage:
+    amendment_sha256: str
+    amendment_git_commit: str
+    reviewed_implementation_commit: str
+    request_git_commit: str
+    preflight_git_commit: str
 
 
 @dataclass(frozen=True)
@@ -463,31 +488,421 @@ def _install_source_path() -> None:
         sys.path.insert(0, value)
 
 
+def _configure_bytecode_isolation() -> None:
+    """Keep every project-source import away from source-tree bytecode caches."""
+
+    global _PROCESS_PYCACHE_PREFIX
+    if _PROCESS_PYCACHE_PREFIX is None:
+        root = Path(FIXED_ENVIRONMENT["TMPDIR"])
+        root.mkdir(mode=0o750, parents=True, exist_ok=True)
+        _PROCESS_PYCACHE_PREFIX = tempfile.mkdtemp(
+            prefix=f".qwen3-v2-g0-pycache-disabled-{os.getpid()}-",
+            dir=root,
+        )
+        os.chmod(_PROCESS_PYCACHE_PREFIX, 0o700)
+        atexit.register(_remove_empty_bytecode_cache, _PROCESS_PYCACHE_PREFIX)
+    sys.dont_write_bytecode = True
+    sys.pycache_prefix = _PROCESS_PYCACHE_PREFIX
+
+
+def _remove_empty_bytecode_cache(path: str) -> None:
+    try:
+        os.rmdir(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # Never recursively remove unexpected evidence.
+        pass
+
+
+def _git_environment() -> dict[str, str]:
+    return {
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "HOME": "/nonexistent",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
+def _git_process(*arguments: str, allowed_returncodes: frozenset[int] = frozenset({0})) -> Any:
+    try:
+        result = subprocess.run(
+            ("/usr/bin/git", "-c", "core.fsmonitor=false", *arguments),
+            cwd=SOURCE_ROOT,
+            check=False,
+            capture_output=True,
+            env=_git_environment(),
+        )
+    except OSError as error:
+        raise G0Error("trusted Git lineage validation could not execute") from error
+    if result.returncode not in allowed_returncodes:
+        raise G0Error("trusted Git lineage validation failed")
+    return result
+
+
+def _git_bytes(*arguments: str) -> bytes:
+    return bytes(_git_process(*arguments).stdout)
+
+
+def _unsafe_untracked_paths() -> tuple[str, ...]:
+    """Find untracked paths without honoring any ignore or exclude source."""
+
+    raw = _git_bytes("ls-files", "--others", "-z", "--")
+    if not raw:
+        return ()
+    if not raw.endswith(b"\0"):
+        raise G0Error("Git returned a malformed untracked-path list")
+    try:
+        paths = tuple(
+            item.decode("utf-8", errors="strict") for item in raw[:-1].split(b"\0")
+        )
+    except UnicodeDecodeError as error:
+        raise G0Error("Git returned a non-UTF-8 untracked path") from error
+    if any(not path for path in paths):
+        raise G0Error("Git returned an empty untracked path")
+    unsafe: list[str] = []
+    for path in paths:
+        parsed = Path(path)
+        if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+            raise G0Error("Git returned a non-canonical untracked path")
+        if path == ".codex/config.toml":
+            continue
+        if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
+            continue
+        unsafe.append(path)
+    return tuple(unsafe)
+
+
+def _mib_git_bytes(*arguments: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ("/usr/bin/git", "-c", "core.fsmonitor=false", *arguments),
+            cwd=MIB_REPOSITORY,
+            check=False,
+            capture_output=True,
+            env=_git_environment(),
+        )
+    except OSError as error:
+        raise G0Error("fixed MIB Git validation could not execute") from error
+    if result.returncode != 0:
+        raise G0Error("fixed MIB Git validation failed")
+    return bytes(result.stdout)
+
+
 def _git(*arguments: str) -> str:
-    result = subprocess.run(
-        ("/usr/bin/git", *arguments),
-        cwd=SOURCE_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    value = result.stdout.strip()
+    try:
+        value = _git_bytes(*arguments).decode("ascii", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise G0Error("Git returned a non-ASCII commit identity") from error
     if GIT_COMMIT.fullmatch(value) is None:
         raise G0Error("Git did not return one immutable commit identity")
     return value
 
 
 def _require_clean_git() -> str:
-    result = subprocess.run(
-        ("/usr/bin/git", "status", "--porcelain", "--untracked-files=no"),
-        cwd=SOURCE_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if result.stdout:
-        raise G0Error("G0 requires a clean tracked source checkout")
+    if _git_bytes(
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    ):
+        raise G0Error("G0 requires a clean source checkout")
+    unsafe = _unsafe_untracked_paths()
+    if unsafe:
+        raise G0Error(f"G0 checkout contains unsafe ignored files: {unsafe!r}")
     return _git("rev-parse", "HEAD")
+
+
+def _git_amendment_bytes(commit: str) -> bytes:
+    if GIT_COMMIT.fullmatch(commit) is None:
+        raise G0Error("amendment lookup commit is invalid")
+    return _git_bytes("show", f"{commit}:{AMENDMENT_RELATIVE_PATH}")
+
+
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    if GIT_COMMIT.fullmatch(ancestor) is None or GIT_COMMIT.fullmatch(descendant) is None:
+        raise G0Error("lineage ancestry endpoint is invalid")
+    result = _git_process(
+        "merge-base",
+        "--is-ancestor",
+        ancestor,
+        descendant,
+        allowed_returncodes=frozenset({0, 1}),
+    )
+    return result.returncode == 0
+
+
+def _commit_parents(commit: str) -> tuple[str, ...]:
+    try:
+        value = _git_bytes("show", "-s", "--format=%P", commit).decode(
+            "ascii", errors="strict"
+        ).strip()
+    except UnicodeDecodeError as error:
+        raise G0Error("Git returned non-ASCII commit parents") from error
+    parents = tuple(value.split()) if value else ()
+    if any(GIT_COMMIT.fullmatch(parent) is None for parent in parents):
+        raise G0Error("Git returned an invalid parent identity")
+    return parents
+
+
+def _linear_commit_path(ancestor: str, descendant: str, *, role: str) -> tuple[str, ...]:
+    if not _is_ancestor(ancestor, descendant):
+        raise G0Error(f"{role} does not descend from the reviewed implementation")
+    commits: list[str] = []
+    cursor = descendant
+    while cursor != ancestor:
+        if len(commits) >= MAX_LINEAGE_COMMITS:
+            raise G0Error(f"{role} lineage exceeds the reviewed bound")
+        parents = _commit_parents(cursor)
+        if len(parents) != 1:
+            raise G0Error(f"{role} lineage is not a single-parent chain")
+        commits.append(cursor)
+        cursor = parents[0]
+    commits.reverse()
+    return tuple(commits)
+
+
+def _changed_paths(parent: str, commit: str) -> frozenset[str]:
+    raw = _git_bytes(
+        "diff",
+        "--no-ext-diff",
+        "--name-only",
+        "--no-renames",
+        "--diff-filter=ACDMRTUXB",
+        "-z",
+        parent,
+        commit,
+        "--",
+    )
+    if raw and not raw.endswith(b"\0"):
+        raise G0Error("Git returned a malformed changed-path list")
+    try:
+        return frozenset(
+            item.decode("utf-8", errors="strict")
+            for item in raw.rstrip(b"\0").split(b"\0")
+            if item
+        )
+    except UnicodeDecodeError as error:
+        raise G0Error("Git lineage contains a non-UTF-8 path") from error
+
+
+def _bootstrap_yaml(raw: bytes, *, context: str) -> dict[str, Any]:
+    # PyYAML is part of the fixed deployment, unlike any module below project src/.
+    import yaml
+
+    class UniqueKeyLoader(yaml.SafeLoader):
+        pass
+
+    def construct_mapping(
+        loader: UniqueKeyLoader,
+        node: Any,
+        deep: bool = False,
+    ) -> dict[str, Any]:
+        mapping: dict[str, Any] = {}
+        for key_node, value_node in node.value:
+            key = loader.construct_object(key_node, deep=deep)
+            if not isinstance(key, str) or key in mapping:
+                raise G0Error(f"{context} contains an invalid or duplicate key")
+            mapping[key] = loader.construct_object(value_node, deep=deep)
+        return mapping
+
+    UniqueKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        construct_mapping,
+    )
+    try:
+        payload = yaml.load(raw.decode("utf-8", errors="strict"), Loader=UniqueKeyLoader)
+    except (UnicodeDecodeError, yaml.YAMLError) as error:
+        raise G0Error(f"{context} is not strict UTF-8 YAML") from error
+    if not isinstance(payload, dict):
+        raise G0Error(f"{context} must be a YAML mapping")
+    return payload
+
+
+def _accepted_review_metadata(accepted_raw: bytes) -> tuple[dict[str, Any], str]:
+    accepted = _bootstrap_yaml(accepted_raw, context="accepted protocol amendment")
+    review = accepted.get("review")
+    if not isinstance(review, dict) or set(review) != set(PROPOSED_REVIEW):
+        raise G0Error("accepted protocol amendment review fields differ")
+    implementation = review.get("reviewed_implementation_commit")
+    if review.get("status") != "accepted" or not isinstance(implementation, str):
+        raise G0Error("protocol amendment is not accepted")
+    if GIT_COMMIT.fullmatch(implementation) is None:
+        raise G0Error("accepted protocol amendment names an invalid implementation commit")
+    for field in ("reviewer", "rationale"):
+        if not isinstance(review.get(field), str) or not review[field].strip():
+            raise G0Error(f"accepted protocol amendment lacks {field}")
+    timestamp = review.get("reviewed_at_utc")
+    if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+        raise G0Error("accepted protocol amendment review timestamp is invalid")
+    try:
+        parsed = datetime.fromisoformat(timestamp[:-1] + "+00:00")
+    except ValueError as error:
+        raise G0Error("accepted protocol amendment review timestamp is invalid") from error
+    if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise G0Error("accepted protocol amendment review timestamp is not UTC")
+    return accepted, implementation
+
+
+def _accepted_review(
+    accepted_raw: bytes,
+    proposed_payload: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    accepted, implementation = _accepted_review_metadata(accepted_raw)
+    normalized = dict(accepted)
+    normalized["review"] = dict(PROPOSED_REVIEW)
+    if normalized != proposed_payload:
+        raise G0Error("accepted protocol amendment changed reviewed scientific terms")
+    return accepted, implementation
+
+
+def _validate_accepted_commit_chain(
+    *,
+    implementation: str,
+    endpoint: str,
+    accepted_raw: bytes,
+    role: str,
+) -> str:
+    proposed_raw = _git_amendment_bytes(implementation)
+    if hashlib.sha256(proposed_raw).hexdigest() != PROPOSED_AMENDMENT_SHA256:
+        raise G0Error(f"{role} reviewed implementation amendment bytes differ")
+    proposed = _bootstrap_yaml(proposed_raw, context="reviewed proposed amendment")
+    if proposed.get("review") != PROPOSED_REVIEW:
+        raise G0Error(f"{role} implementation did not contain the proposed amendment")
+    _, reviewed_implementation = _accepted_review(accepted_raw, proposed)
+    if reviewed_implementation != implementation:
+        raise G0Error(f"{role} accepted amendment names another implementation")
+
+    transition_commit: str | None = None
+    parent = implementation
+    for commit in _linear_commit_path(implementation, endpoint, role=role):
+        changed = _changed_paths(parent, commit)
+        if not changed:
+            raise G0Error(f"{role} contains an empty commit")
+        if str(AMENDMENT_RELATIVE_PATH) in changed:
+            if transition_commit is not None or not changed <= ALLOWED_REVIEW_PATHS:
+                raise G0Error(f"{role} contains an invalid amendment transition")
+            if _git_amendment_bytes(commit) != accepted_raw:
+                raise G0Error(f"{role} amendment transition differs from accepted bytes")
+            transition_commit = commit
+        elif not changed <= ALLOWED_HANDOFF_PATHS:
+            raise G0Error(f"{role} contains a non-handoff implementation change")
+        parent = commit
+    if transition_commit is None or _git_amendment_bytes(endpoint) != accepted_raw:
+        raise G0Error(f"{role} does not contain exactly one accepted review transition")
+    return transition_commit
+
+
+def _validate_handoff_only_path(ancestor: str, descendant: str, *, role: str) -> None:
+    parent = ancestor
+    for commit in _linear_commit_path(ancestor, descendant, role=role):
+        changed = _changed_paths(parent, commit)
+        if not changed or not changed <= ALLOWED_HANDOFF_PATHS:
+            raise G0Error(f"{role} contains a post-acceptance implementation change")
+        parent = commit
+
+
+def _bootstrap_accepted_lineage(
+    *,
+    code_commit: str,
+    resolved: dict[str, Any],
+    amendment: bytes,
+) -> BootstrapLineage:
+    if _git("rev-parse", "HEAD") != code_commit:
+        raise G0Error("trusted lineage HEAD changed before source import")
+    source_path = SOURCE_ROOT / AMENDMENT_RELATIVE_PATH
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(source_path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise G0Error("protocol amendment must be one non-linked regular file")
+        source_raw = _read_held_file(
+            descriptor,
+            context="source protocol amendment",
+            max_bytes=MAX_AMENDMENT_BYTES,
+        )
+        if source_raw != amendment or _git_amendment_bytes(code_commit) != source_raw:
+            raise G0Error("held amendment differs from the clean source checkout")
+        _, implementation = _accepted_review_metadata(source_raw)
+        proposed_payload = _bootstrap_yaml(
+            _git_amendment_bytes(implementation),
+            context="reviewed proposed amendment",
+        )
+        _, implementation = _accepted_review(source_raw, proposed_payload)
+        amendment_commit = _validate_accepted_commit_chain(
+            implementation=implementation,
+            endpoint=code_commit,
+            accepted_raw=source_raw,
+            role="execution HEAD",
+        )
+
+        scheduler = resolved.get("scheduler_g0")
+        if not isinstance(scheduler, dict):
+            raise G0Error("resolved config lacks scheduler G0 provenance")
+        request_commit = scheduler.get("request_git_commit")
+        preflight_commit = scheduler.get("gpu_preflight_git_commit")
+        if (
+            not isinstance(request_commit, str)
+            or GIT_COMMIT.fullmatch(request_commit) is None
+            or not isinstance(preflight_commit, str)
+            or GIT_COMMIT.fullmatch(preflight_commit) is None
+        ):
+            raise G0Error("resolved config contains invalid request/preflight Git provenance")
+        for candidate, role in (
+            (request_commit, "G0 request commit"),
+            (preflight_commit, "GPU preflight commit"),
+        ):
+            candidate_amendment_commit = _validate_accepted_commit_chain(
+                implementation=implementation,
+                endpoint=candidate,
+                accepted_raw=source_raw,
+                role=role,
+            )
+            if candidate_amendment_commit != amendment_commit:
+                raise G0Error(f"{role} names a different acceptance transition")
+            _validate_handoff_only_path(candidate, code_commit, role=f"{role} to execution")
+
+        after = os.fstat(descriptor)
+        path_after = source_path.lstat()
+        identity = lambda row: (  # noqa: E731
+            row.st_dev,
+            row.st_ino,
+            row.st_mode,
+            row.st_nlink,
+            row.st_size,
+            row.st_mtime_ns,
+            row.st_ctime_ns,
+        )
+        if (
+            _require_clean_git() != code_commit
+            or _read_held_file(
+                descriptor,
+                context="source protocol amendment",
+                max_bytes=MAX_AMENDMENT_BYTES,
+            )
+            != source_raw
+            or identity(before) != identity(after)
+            or identity(after) != identity(path_after)
+            or _git_amendment_bytes(code_commit) != source_raw
+        ):
+            raise G0Error("trusted lineage changed during bootstrap validation")
+        return BootstrapLineage(
+            amendment_sha256=hashlib.sha256(source_raw).hexdigest(),
+            amendment_git_commit=amendment_commit,
+            reviewed_implementation_commit=implementation,
+            request_git_commit=request_commit,
+            preflight_git_commit=preflight_commit,
+        )
+    finally:
+        os.close(descriptor)
 
 
 def _validate_environment() -> tuple[str, ...]:
@@ -508,6 +923,23 @@ def _validate_environment() -> tuple[str, ...]:
         raise G0Error("PYTHONNOUSERSITE=1 is required")
     if not (sys.flags.isolated and sys.flags.ignore_environment) or sys.flags.no_site:
         raise G0Error("G0 handler requires Python -I with fixed venv site packages")
+    expected_prefix_start = (
+        f"{FIXED_ENVIRONMENT['TMPDIR']}/.qwen3-v2-g0-pycache-disabled-{os.getpid()}-"
+    )
+    prefix_path = Path(_PROCESS_PYCACHE_PREFIX) if _PROCESS_PYCACHE_PREFIX else None
+    prefix_metadata = prefix_path.lstat() if prefix_path is not None else None
+    if (
+        not sys.dont_write_bytecode
+        or _PROCESS_PYCACHE_PREFIX is None
+        or sys.pycache_prefix != _PROCESS_PYCACHE_PREFIX
+        or not _PROCESS_PYCACHE_PREFIX.startswith(expected_prefix_start)
+        or prefix_metadata is None
+        or not stat.S_ISDIR(prefix_metadata.st_mode)
+        or prefix_metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(prefix_metadata.st_mode) != 0o700
+        or bool(os.listdir(_PROCESS_PYCACHE_PREFIX))
+    ):
+        raise G0Error("G0 handler bytecode isolation is not active")
     expected_versions = {
         "accelerate": "1.10.1",
         "datasets": "4.0.0",
@@ -543,26 +975,26 @@ def _validate_environment() -> tuple[str, ...]:
         raise G0Error("two-GPU FSDP configuration differs from its reviewed digest")
     if not MIB_REPOSITORY.is_dir() or MIB_REPOSITORY.is_symlink():
         raise G0Error("fixed MIB checkout is absent or unsafe")
-    mib_commit = subprocess.run(
-        ("/usr/bin/git", "-C", str(MIB_REPOSITORY), "rev-parse", "HEAD"),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    try:
+        mib_commit = _mib_git_bytes("rev-parse", "HEAD").decode(
+            "ascii", errors="strict"
+        ).strip()
+    except UnicodeDecodeError as error:
+        raise G0Error("fixed MIB Git identity is not ASCII") from error
     if mib_commit != MIB_REVISION:
         raise G0Error("fixed MIB checkout differs from its reviewed revision")
-    mib_status = subprocess.run(
-        ("/usr/bin/git", "-C", str(MIB_REPOSITORY), "status", "--porcelain"),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    submodules = subprocess.run(
-        ("/usr/bin/git", "-C", str(MIB_REPOSITORY), "submodule", "status", "--recursive"),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.splitlines()
+    mib_status = _mib_git_bytes(
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    )
+    try:
+        submodules = _mib_git_bytes("submodule", "status", "--recursive").decode(
+            "utf-8", errors="strict"
+        ).splitlines()
+    except UnicodeDecodeError as error:
+        raise G0Error("fixed MIB submodule status is not UTF-8") from error
     if mib_status or not submodules or any(
         not row or row[0] != " " for row in submodules
     ):
@@ -580,8 +1012,8 @@ def _validate_config_and_preflight(
     raw_inputs: dict[str, bytes],
     *,
     code_commit: str,
+    bootstrap_lineage: BootstrapLineage,
 ) -> tuple[dict[str, Any], dict[str, Any], Any]:
-    _install_source_path()
     from posttrain_circuits.artifacts.config_bindings import ConfigBinding, validate_config_binding
     from posttrain_circuits.artifacts.protocol_amendments import (
         AMENDMENT_ID,
@@ -644,7 +1076,11 @@ def _validate_config_and_preflight(
         expected_head=code_commit,
     )
     if (
-        amendment_payload["review"]["status"] != "accepted"
+        amendment_binding.sha256 != bootstrap_lineage.amendment_sha256
+        or amendment_binding.git_commit != bootstrap_lineage.amendment_git_commit
+        or amendment_binding.reviewed_implementation_commit
+        != bootstrap_lineage.reviewed_implementation_commit
+        or amendment_payload["review"]["status"] != "accepted"
         or hashlib.sha256(amendment).hexdigest() != amendment_binding.sha256
         or invocation.input_hashes["protocol_amendment_sha256"]
         != amendment_binding.sha256
@@ -661,6 +1097,8 @@ def _validate_config_and_preflight(
         or GIT_COMMIT.fullmatch(request_git_commit) is None
         or not isinstance(preflight_git_commit, str)
         or GIT_COMMIT.fullmatch(preflight_git_commit) is None
+        or request_git_commit != bootstrap_lineage.request_git_commit
+        or preflight_git_commit != bootstrap_lineage.preflight_git_commit
     ):
         raise G0Error("resolved config contains invalid request/preflight Git provenance")
     try:
@@ -1053,13 +1491,33 @@ def _script_parent_path() -> str:
 
 
 def _child_environment() -> dict[str, str]:
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = str(SOURCE_PACKAGE_ROOT)
-    return environment
+    return dict(os.environ)
 
 
-def _run_stage(stage: Stage, *, script_path: str, job_id: str) -> None:
+def _run_stage(
+    stage: Stage,
+    *,
+    script_path: str,
+    job_id: str,
+    bootstrap_lineage: BootstrapLineage,
+    code_commit: str,
+) -> None:
     argv = tuple(job_id if value == "JOB_ID" else value for value in stage.argv)
+    scientific_argv = (
+        script_path,
+        "--scientific-cli",
+        stage.cli,
+        "--code-commit",
+        code_commit,
+        "--request-git-commit",
+        bootstrap_lineage.request_git_commit,
+        "--preflight-git-commit",
+        bootstrap_lineage.preflight_git_commit,
+        "--amendment-sha256",
+        bootstrap_lineage.amendment_sha256,
+        "--",
+        *argv,
+    )
     command = [sys.executable, "-I"]
     if stage.distributed:
         command.extend(
@@ -1068,15 +1526,11 @@ def _run_stage(stage: Stage, *, script_path: str, job_id: str) -> None:
                 "accelerate.commands.launch",
                 "--config_file",
                 str(FSDP_CONFIG),
-                script_path,
-                "--scientific-cli",
-                stage.cli,
-                "--",
-                *argv,
+                *scientific_argv,
             )
         )
     else:
-        command.extend((script_path, "--scientific-cli", stage.cli, "--", *argv))
+        command.extend(scientific_argv)
     _log_phase("g0_stage_started", stage=stage.name, distributed=stage.distributed)
     subprocess.run(
         command,
@@ -1282,23 +1736,66 @@ def _completion(invocation: Invocation, *, started_at: str, completed_at: str) -
 
 
 def _scientific_cli(argv: Sequence[str]) -> int:
-    if len(argv) < 2 or argv[1] != "--" or argv[0] not in SCIENTIFIC_CLIS:
+    if (
+        len(argv) < 10
+        or argv[0] not in SCIENTIFIC_CLIS
+        or argv[1] != "--code-commit"
+        or argv[3] != "--request-git-commit"
+        or argv[5] != "--preflight-git-commit"
+        or argv[7] != "--amendment-sha256"
+        or argv[9] != "--"
+    ):
         raise G0Error("scientific child invocation differs from the fixed CLI ABI")
+    _configure_bytecode_isolation()
+    code_commit = argv[2]
+    request_commit = argv[4]
+    preflight_commit = argv[6]
+    amendment_sha256 = argv[8]
+    if (
+        GIT_COMMIT.fullmatch(code_commit) is None
+        or GIT_COMMIT.fullmatch(request_commit) is None
+        or GIT_COMMIT.fullmatch(preflight_commit) is None
+        or SHA256.fullmatch(amendment_sha256) is None
+        or _require_clean_git() != code_commit
+    ):
+        raise G0Error("scientific child lineage arguments are invalid")
+    amendment = (SOURCE_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
+    lineage = _bootstrap_accepted_lineage(
+        code_commit=code_commit,
+        resolved={
+            "scheduler_g0": {
+                "request_git_commit": request_commit,
+                "gpu_preflight_git_commit": preflight_commit,
+            }
+        },
+        amendment=amendment,
+    )
+    if lineage.amendment_sha256 != amendment_sha256:
+        raise G0Error("scientific child amendment identity differs from its supervisor")
     _install_source_path()
     module = importlib.import_module(SCIENTIFIC_CLIS[argv[0]])
     main_function = getattr(module, "main", None)
     if not callable(main_function):
         raise G0Error("reviewed scientific CLI has no callable main")
-    main_function(list(argv[2:]))
+    main_function(list(argv[10:]))
+    if _require_clean_git() != code_commit:
+        raise G0Error("source checkout changed during scientific child execution")
     return 0
 
 
 def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
+    _configure_bytecode_isolation()
     invocation = _parse_outer(argv)
     _validate_environment()
     code_commit = _require_clean_git()
     payloads, prereg, amendment, raw_inputs = _read_inputs(invocation)
+    bootstrap_lineage = _bootstrap_accepted_lineage(
+        code_commit=code_commit,
+        resolved=payloads["resolved_config_sha256"],
+        amendment=amendment,
+    )
+    _install_source_path()
     resolved, preflight, amendment_binding = _validate_config_and_preflight(
         invocation,
         payloads,
@@ -1306,6 +1803,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
         amendment,
         raw_inputs,
         code_commit=code_commit,
+        bootstrap_lineage=bootstrap_lineage,
     )
     if os.listdir(invocation.output_descriptor):
         raise G0Error("output attempt is not empty")
@@ -1340,7 +1838,13 @@ def _supervise(argv: Sequence[str] | None) -> int:
                 ),
             ),
         ):
-            _run_stage(stage, script_path=_script_parent_path(), job_id=invocation.job_id)
+            _run_stage(
+                stage,
+                script_path=_script_parent_path(),
+                job_id=invocation.job_id,
+                bootstrap_lineage=bootstrap_lineage,
+                code_commit=code_commit,
+            )
         initial_hash = _sha256_file(workspace / "initial_checkpoint.pt")
         stages = _stage_plan(workspace, initial_checkpoint_sha256=initial_hash)[2:]
         script_path = _script_parent_path()
@@ -1351,7 +1855,13 @@ def _supervise(argv: Sequence[str] | None) -> int:
             elif stage.name == "compare_distributed_resume":
                 stages = _replace_checkpoint_placeholders(stages, workspace)
                 stage = next(item for item in stages if item.name == "compare_distributed_resume")
-            _run_stage(stage, script_path=script_path, job_id=invocation.job_id)
+            _run_stage(
+                stage,
+                script_path=script_path,
+                job_id=invocation.job_id,
+                bootstrap_lineage=bootstrap_lineage,
+                code_commit=code_commit,
+            )
         inner = _strict_json((workspace / "g0.json").read_bytes(), context="inner G0 report")
         inner_digest = inner.get("sha256")
         if (
@@ -1442,6 +1952,8 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "world_size": GPU_COUNT,
         }
         report["sha256"] = _sha256_value(report)
+        if _require_clean_git() != code_commit:
+            raise G0Error("source checkout changed before G0 publication")
         published_bundle = _publish_file_once(invocation.output_descriptor, BUNDLE_NAME, bundle_temp)
         if published_bundle != bundle_digest:
             raise G0Error("published G0 artifact bundle changed during copy")

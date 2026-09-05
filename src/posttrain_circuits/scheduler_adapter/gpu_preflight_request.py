@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
-from posttrain_circuits.artifacts.git_provenance import require_git_output
+from posttrain_circuits.artifacts.git_provenance import (
+    require_git_output,
+    unsafe_untracked_paths,
+)
 from posttrain_circuits.artifacts.protocol_amendments import (
     AMENDMENT_RELATIVE_PATH,
     ProtocolAmendmentError,
@@ -53,11 +56,27 @@ GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 
 def _clean_git_commit(code_root: Path) -> str:
     status = require_git_output(
-        code_root, ("status", "--porcelain", "--untracked-files=no")
+        code_root,
+        (
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ),
     )
     if status:
         raise AdapterValidationError(
-            "GPU-preflight request preparation requires a clean tracked checkout"
+            "GPU-preflight request preparation requires a clean checkout"
+        )
+    try:
+        unsafe = unsafe_untracked_paths(code_root)
+    except (OSError, UnicodeError, ValueError) as error:
+        raise AdapterValidationError(
+            "GPU-preflight request preparation could not enumerate untracked files"
+        ) from error
+    if unsafe:
+        raise AdapterValidationError(
+            "GPU-preflight request preparation rejects ignored untracked files"
         )
     commit = require_git_output(code_root, ("rev-parse", "HEAD"))
     if GIT_COMMIT.fullmatch(commit) is None:

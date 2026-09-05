@@ -12,7 +12,10 @@ from typing import Any
 
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
 from posttrain_circuits.artifacts.hashing import sha256_value
-from posttrain_circuits.artifacts.git_provenance import require_git_output
+from posttrain_circuits.artifacts.git_provenance import (
+    require_git_output,
+    unsafe_untracked_paths,
+)
 from posttrain_circuits.artifacts.protocol_amendments import (
     AMENDMENT_ID,
     AMENDMENT_RELATIVE_PATH,
@@ -111,12 +114,28 @@ class PreparedG0Request:
         }
 
 
-def _require_clean_tracked_checkout(code_root: Path) -> str:
+def _require_clean_checkout(code_root: Path) -> str:
     status = require_git_output(
-        code_root, ("status", "--porcelain", "--untracked-files=no")
+        code_root,
+        (
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ),
     )
     if status:
-        raise AdapterValidationError("G0 request preparation requires a clean tracked checkout")
+        raise AdapterValidationError("G0 request preparation requires a clean checkout")
+    try:
+        unsafe = unsafe_untracked_paths(code_root)
+    except (OSError, UnicodeError, ValueError) as error:
+        raise AdapterValidationError(
+            "G0 request preparation could not enumerate untracked files"
+        ) from error
+    if unsafe:
+        raise AdapterValidationError(
+            "G0 request preparation rejects ignored untracked files"
+        )
     value = require_git_output(code_root, ("rev-parse", "HEAD"))
     if GIT_COMMIT.fullmatch(value) is None:
         raise AdapterValidationError("Git did not return one immutable commit identity")
@@ -357,7 +376,7 @@ def build_qwen3_v2_g0_plan(
     """Materialize one accepted-lineage preflight-bound G0 plan in OPD file CAS."""
 
     layout.validate()
-    code_commit = _require_clean_tracked_checkout(layout.code_root)
+    code_commit = _require_clean_checkout(layout.code_root)
     amendment = resolve_accepted_protocol_amendment(
         code_root=layout.code_root,
         configured_path=str(AMENDMENT_RELATIVE_PATH),

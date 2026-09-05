@@ -36,6 +36,31 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         cls.prepare_module = importlib.util.module_from_spec(prepare_spec)
         prepare_spec.loader.exec_module(cls.prepare_module)
 
+    def _accepted_amendment(self, implementation_commit: str) -> tuple[bytes, bytes]:
+        proposed = (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
+        self.assertEqual(
+            hashlib.sha256(proposed).hexdigest(),
+            self.module.PROPOSED_AMENDMENT_SHA256,
+        )
+        proposed_review = (
+            b"review:\n"
+            b"  status: proposed\n"
+            b"  reviewed_implementation_commit: null\n"
+            b"  reviewer: null\n"
+            b"  reviewed_at_utc: null\n"
+            b"  rationale: null\n"
+        )
+        accepted_review = (
+            b"review:\n"
+            b"  status: accepted\n"
+            + f"  reviewed_implementation_commit: {implementation_commit}\n".encode()
+            + b"  reviewer: independent-reviewer\n"
+            + b"  reviewed_at_utc: '2026-09-05T12:00:00Z'\n"
+            + b"  rationale: Reviewed implementation accepted.\n"
+        )
+        self.assertIn(proposed_review, proposed)
+        return proposed, proposed.replace(proposed_review, accepted_review)
+
     def test_stage_plan_is_exactly_two_gpu_and_foreground(self) -> None:
         root = Path("/scr/del6500/OPD/tmp/test-qwen3-v2-g0/qwen3-v2")
         stages = self.module._stage_plan(root, initial_checkpoint_sha256="a" * 64)
@@ -76,11 +101,295 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         self.assertEqual(profile.gpu_count, 2)
         self.assertEqual(dict(handler.fixed_environment), self.module.FIXED_ENVIRONMENT)
         self.assertNotIn("CUDA_VISIBLE_DEVICES", self.module.FIXED_ENVIRONMENT)
+        self.assertNotIn("PYTHONDONTWRITEBYTECODE", self.module.FIXED_ENVIRONMENT)
         self.assertEqual(self.module.FIXED_ENVIRONMENT["NCCL_P2P_DISABLE"], "1")
         self.assertEqual(
             self.module.FIXED_ENVIRONMENT["MIB_REPOSITORY"],
             "/scr/del6500/OPD/vendor/MIB-circuit-track-v1",
         )
+
+    def test_bytecode_isolation_is_programmatic_pid_unique_and_private(self) -> None:
+        old_dont_write = sys.dont_write_bytecode
+        old_prefix = sys.pycache_prefix
+        old_module_prefix = self.module._PROCESS_PYCACHE_PREFIX
+        created_prefix: str | None = None
+        self.module._PROCESS_PYCACHE_PREFIX = None
+        try:
+            self.module._configure_bytecode_isolation()
+            created_prefix = self.module._PROCESS_PYCACHE_PREFIX
+            expected_start = (
+                "/scr/del6500/OPD/tmp/.qwen3-v2-g0-pycache-disabled-"
+                f"{self.module.os.getpid()}-"
+            )
+            self.assertTrue(sys.dont_write_bytecode)
+            self.assertIsNotNone(self.module._PROCESS_PYCACHE_PREFIX)
+            self.assertTrue(self.module._PROCESS_PYCACHE_PREFIX.startswith(expected_start))
+            self.assertEqual(sys.pycache_prefix, self.module._PROCESS_PYCACHE_PREFIX)
+            metadata = Path(sys.pycache_prefix).stat()
+            self.assertEqual(metadata.st_uid, self.module.os.geteuid())
+            self.assertEqual(metadata.st_mode & 0o777, 0o700)
+            self.assertEqual(list(Path(sys.pycache_prefix).iterdir()), [])
+        finally:
+            sys.dont_write_bytecode = old_dont_write
+            sys.pycache_prefix = old_prefix
+            self.module._PROCESS_PYCACHE_PREFIX = old_module_prefix
+            if created_prefix is not None:
+                self.module.os.rmdir(created_prefix)
+
+    def test_supervisor_bootstraps_lineage_before_installing_source(self) -> None:
+        invocation = mock.Mock()
+        events: list[str] = []
+        binding = self.module.BootstrapLineage(
+            amendment_sha256="1" * 64,
+            amendment_git_commit="2" * 40,
+            reviewed_implementation_commit="3" * 40,
+            request_git_commit="4" * 40,
+            preflight_git_commit="5" * 40,
+        )
+
+        def bootstrap(**_: object) -> object:
+            events.append("bootstrap")
+            return binding
+
+        def install() -> None:
+            events.append("install-source")
+
+        def shared(*_: object, **__: object) -> object:
+            events.append("shared-validator")
+            raise self.module.G0Error("stop after ordering probe")
+
+        with (
+            mock.patch.object(self.module, "_configure_bytecode_isolation"),
+            mock.patch.object(self.module, "_parse_outer", return_value=invocation),
+            mock.patch.object(self.module, "_validate_environment"),
+            mock.patch.object(self.module, "_require_clean_git", return_value="6" * 40),
+            mock.patch.object(
+                self.module,
+                "_read_inputs",
+                return_value=(
+                    {"resolved_config_sha256": {}},
+                    b"prereg",
+                    b"amendment",
+                    {},
+                ),
+            ),
+            mock.patch.object(
+                self.module,
+                "_bootstrap_accepted_lineage",
+                side_effect=bootstrap,
+            ),
+            mock.patch.object(self.module, "_install_source_path", side_effect=install),
+            mock.patch.object(
+                self.module,
+                "_validate_config_and_preflight",
+                side_effect=shared,
+            ),
+        ):
+            with self.assertRaisesRegex(self.module.G0Error, "ordering probe"):
+                self.module._supervise([])
+        self.assertEqual(events, ["bootstrap", "install-source", "shared-validator"])
+
+    def test_handler_rejects_untracked_files_hidden_by_ignore_rules(self) -> None:
+        raw = (
+            b".codex/config.toml\0"
+            b"src/pkg/__pycache__/safe.cpython-312.pyc\0"
+            b"src/pkg/ignored.py\0"
+        )
+        with mock.patch.object(self.module, "_git_bytes", return_value=raw):
+            self.assertEqual(
+                self.module._unsafe_untracked_paths(),
+                ("src/pkg/ignored.py",),
+            )
+
+    def test_scientific_child_bootstraps_before_installing_source(self) -> None:
+        code_commit = "a" * 40
+        request_commit = "b" * 40
+        preflight_commit = "c" * 40
+        amendment_sha256 = "d" * 64
+        events: list[str] = []
+        binding = self.module.BootstrapLineage(
+            amendment_sha256=amendment_sha256,
+            amendment_git_commit="e" * 40,
+            reviewed_implementation_commit="f" * 40,
+            request_git_commit=request_commit,
+            preflight_git_commit=preflight_commit,
+        )
+        imported = mock.Mock()
+        imported.main = mock.Mock()
+
+        def bootstrap(**_: object) -> object:
+            events.append("bootstrap")
+            return binding
+
+        def install() -> None:
+            events.append("install-source")
+
+        def import_module(_: str) -> object:
+            events.append("project-import")
+            return imported
+
+        argv = [
+            "build_splits",
+            "--code-commit",
+            code_commit,
+            "--request-git-commit",
+            request_commit,
+            "--preflight-git-commit",
+            preflight_commit,
+            "--amendment-sha256",
+            amendment_sha256,
+            "--",
+            "scientific-argument",
+        ]
+        with (
+            mock.patch.object(self.module, "_configure_bytecode_isolation"),
+            mock.patch.object(
+                self.module,
+                "_require_clean_git",
+                return_value=code_commit,
+            ),
+            mock.patch.object(
+                self.module,
+                "_bootstrap_accepted_lineage",
+                side_effect=bootstrap,
+            ),
+            mock.patch.object(self.module, "_install_source_path", side_effect=install),
+            mock.patch.object(
+                self.module.importlib,
+                "import_module",
+                side_effect=import_module,
+            ),
+        ):
+            self.assertEqual(self.module._scientific_cli(argv), 0)
+        self.assertEqual(events, ["bootstrap", "install-source", "project-import"])
+        imported.main.assert_called_once_with(["scientific-argument"])
+
+    def test_bootstrap_rejects_source_change_even_when_later_reverted(self) -> None:
+        implementation = "a" * 40
+        acceptance = "b" * 40
+        tamper = "c" * 40
+        reverted = "d" * 40
+        proposed, accepted = self._accepted_amendment(implementation)
+        amendment_by_commit = {
+            implementation: proposed,
+            acceptance: accepted,
+            tamper: accepted,
+            reverted: accepted,
+        }
+        changed_by_edge = {
+            (implementation, acceptance): frozenset(
+                {str(self.module.AMENDMENT_RELATIVE_PATH)}
+            ),
+            (acceptance, tamper): frozenset(
+                {"src/posttrain_circuits/artifacts/protocol_amendments.py"}
+            ),
+            (tamper, reverted): frozenset(
+                {"src/posttrain_circuits/artifacts/protocol_amendments.py"}
+            ),
+        }
+        with (
+            mock.patch.object(
+                self.module,
+                "_git_amendment_bytes",
+                side_effect=lambda commit: amendment_by_commit[commit],
+            ),
+            mock.patch.object(
+                self.module,
+                "_linear_commit_path",
+                return_value=(acceptance, tamper, reverted),
+            ),
+            mock.patch.object(
+                self.module,
+                "_changed_paths",
+                side_effect=lambda parent, commit: changed_by_edge[(parent, commit)],
+            ),
+        ):
+            with self.assertRaisesRegex(
+                self.module.G0Error,
+                "non-handoff implementation change",
+            ):
+                self.module._validate_accepted_commit_chain(
+                    implementation=implementation,
+                    endpoint=reverted,
+                    accepted_raw=accepted,
+                    role="test lineage",
+                )
+
+    def test_bootstrap_accepts_one_review_transition_then_handoff(self) -> None:
+        implementation = "a" * 40
+        acceptance = "b" * 40
+        handoff = "c" * 40
+        proposed, accepted = self._accepted_amendment(implementation)
+        with (
+            mock.patch.object(
+                self.module,
+                "_git_amendment_bytes",
+                side_effect=lambda commit: (
+                    proposed if commit == implementation else accepted
+                ),
+            ),
+            mock.patch.object(
+                self.module,
+                "_linear_commit_path",
+                return_value=(acceptance, handoff),
+            ),
+            mock.patch.object(
+                self.module,
+                "_changed_paths",
+                side_effect=(
+                    frozenset({str(self.module.AMENDMENT_RELATIVE_PATH)}),
+                    frozenset({self.module.HANDOFF_RELATIVE_PATH}),
+                ),
+            ),
+        ):
+            self.assertEqual(
+                self.module._validate_accepted_commit_chain(
+                    implementation=implementation,
+                    endpoint=handoff,
+                    accepted_raw=accepted,
+                    role="test lineage",
+                ),
+                acceptance,
+            )
+
+    def test_bootstrap_rejects_accepted_scientific_term_tampering(self) -> None:
+        implementation = "a" * 40
+        proposed, accepted = self._accepted_amendment(implementation)
+        tampered = accepted.replace(b"  token_budget: 2000000\n", b"  token_budget: 2000001\n")
+        self.assertNotEqual(tampered, accepted)
+        with mock.patch.object(
+            self.module,
+            "_git_amendment_bytes",
+            return_value=proposed,
+        ):
+            with self.assertRaisesRegex(
+                self.module.G0Error,
+                "changed reviewed scientific terms",
+            ):
+                self.module._validate_accepted_commit_chain(
+                    implementation=implementation,
+                    endpoint="b" * 40,
+                    accepted_raw=tampered,
+                    role="test lineage",
+                )
+
+    def test_bootstrap_rejects_merge_lineage(self) -> None:
+        implementation = "a" * 40
+        merge = "b" * 40
+        with (
+            mock.patch.object(self.module, "_is_ancestor", return_value=True),
+            mock.patch.object(
+                self.module,
+                "_commit_parents",
+                return_value=(implementation, "c" * 40),
+            ),
+        ):
+            with self.assertRaisesRegex(self.module.G0Error, "single-parent chain"):
+                self.module._linear_commit_path(
+                    implementation,
+                    merge,
+                    role="test lineage",
+                )
 
     def test_deployment_hashes_bind_handler_lock_and_manifest(self) -> None:
         deployment = require_handler("qwen3_v2_g0").deployment

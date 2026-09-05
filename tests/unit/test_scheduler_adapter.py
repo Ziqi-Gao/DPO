@@ -16,6 +16,7 @@ from pathlib import Path
 from types import MappingProxyType
 from unittest import mock
 
+from posttrain_circuits.artifacts import git_provenance
 from posttrain_circuits.artifacts.completion import (
     ExecutionIdentity,
     ScientificCompletion,
@@ -1878,6 +1879,58 @@ class SchedulerAdapterTests(unittest.TestCase):
                     [token for token in banned_command_text if token in lowered]
                 )
 
+    def test_git_provenance_disables_mutable_git_configuration(self):
+        completed = mock.Mock(stdout=b"abc123\n")
+        with mock.patch.object(
+            git_provenance.subprocess,
+            "run",
+            return_value=completed,
+        ) as run:
+            self.assertEqual(
+                git_provenance.require_git_output(PROJECT_ROOT, ("rev-parse", "HEAD")),
+                "abc123",
+            )
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command[:6],
+            (
+                "/usr/bin/git",
+                "-c",
+                "core.fsmonitor=false",
+                "-C",
+                str(PROJECT_ROOT),
+                "rev-parse",
+            ),
+        )
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(environment["GIT_CONFIG_GLOBAL"], "/dev/null")
+        self.assertEqual(environment["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(environment["GIT_NO_REPLACE_OBJECTS"], "1")
+        self.assertEqual(environment["GIT_OPTIONAL_LOCKS"], "0")
+
+    def test_git_provenance_finds_files_hidden_by_git_excludes(self):
+        with tempfile.TemporaryDirectory(
+            prefix=".git-provenance-untracked-",
+            dir=PROJECT_ROOT,
+        ) as raw_root:
+            repository = Path(raw_root)
+            subprocess.run(
+                ("/usr/bin/git", "-C", str(repository), "init", "-q"),
+                check=True,
+                capture_output=True,
+            )
+            (repository / ".git" / "info" / "exclude").write_text(
+                "src/ignored.py\n",
+                encoding="utf-8",
+            )
+            ignored = repository / "src" / "ignored.py"
+            ignored.parent.mkdir()
+            ignored.write_text("raise RuntimeError('must never import')\n", encoding="utf-8")
+            self.assertEqual(
+                git_provenance.unsafe_untracked_paths(repository),
+                ("src/ignored.py",),
+            )
+
     def test_entrypoint_imports_no_torch_or_workflow_before_validation(self):
         code = (
             "import json,sys;"
@@ -1947,6 +2000,107 @@ class SchedulerAdapterTests(unittest.TestCase):
         )
         self.assertEqual(rejected.returncode, 2)
         self.assertIn("rejected ambient injection", rejected.stderr)
+
+    def test_entrypoint_isolates_project_bytecode_before_import(self):
+        script = PROJECT_ROOT / "scripts" / "server_scheduler" / "opd-entrypoint"
+        source = script.read_text(encoding="utf-8")
+        dont_write_offset = source.index("sys.dont_write_bytecode = True")
+        prefix_offset = source.index("sys.pycache_prefix = ")
+        clean_checkout_offset = source.index("_require_clean_checkout_before_import()")
+        project_path_offset = source.index("sys.path.insert(0, str(project_src))")
+        project_import_offset = source.index(
+            "from posttrain_circuits.scheduler_adapter.entrypoint import main"
+        )
+        self.assertLess(dont_write_offset, project_path_offset)
+        self.assertLess(prefix_offset, project_path_offset)
+        self.assertLess(clean_checkout_offset, project_path_offset)
+        self.assertLess(project_path_offset, project_import_offset)
+
+        code = (
+            "import json,os,runpy,subprocess,sys,types;"
+            "real_run=subprocess.run;"
+            "subprocess.run=lambda command,*args,**kwargs: "
+            "types.SimpleNamespace(stdout=b'',returncode=0) "
+            "if command[0]=='/usr/bin/git' else real_run(command,*args,**kwargs);"
+            "exit_code=None;"
+            "\ntry:\n runpy.run_path(sys.argv[1],run_name='__main__')"
+            "\nexcept SystemExit as exc:\n exit_code=exc.code"
+            "\nprint(json.dumps({'exit_code':exit_code,"
+            "'dont_write_bytecode':sys.dont_write_bytecode,"
+            "'pycache_prefix':sys.pycache_prefix,"
+            "'prefix_exists':os.path.exists(sys.pycache_prefix)}))"
+        )
+        environment = os.environ.copy()
+        for key in (
+            "LD_AUDIT",
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "PYTHONHOME",
+            "PYTHONPATH",
+        ):
+            environment.pop(key, None)
+        result = subprocess.run(
+            [
+                "/usr/bin/python3.12",
+                "-I",
+                "-v",
+                "-c",
+                code,
+                str(script),
+                "--invalid",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        payload = json.loads(result.stdout.strip())
+        self.assertEqual(payload["exit_code"], 2)
+        self.assertIs(payload["dont_write_bytecode"], True)
+        self.assertRegex(
+            payload["pycache_prefix"],
+            r"^/scr/del6500/OPD/tmp/\.opd-entrypoint-pycache-[a-z0-9_]+$",
+        )
+        self.assertIs(payload["prefix_exists"], False)
+        self.assertIn(
+            f"code object from {SRC_ROOT}/posttrain_circuits/",
+            result.stderr,
+        )
+        self.assertNotIn(
+            f"{SRC_ROOT}/posttrain_circuits/__pycache__",
+            result.stderr,
+        )
+        self.assertNotIn(
+            f"{SRC_ROOT}/posttrain_circuits/scheduler_adapter/__pycache__",
+            result.stderr,
+        )
+
+    def test_entrypoint_rejects_tracked_source_change_before_import(self):
+        script = PROJECT_ROOT / "scripts" / "server_scheduler" / "opd-entrypoint"
+        code = (
+            "import json,runpy,subprocess,sys,types;"
+            "real_run=subprocess.run;"
+            "subprocess.run=lambda command,*args,**kwargs: "
+            "types.SimpleNamespace(stdout=b' M src/posttrain_circuits/scheduler_adapter/registry.py\\n',returncode=0) "
+            "if command[0]=='/usr/bin/git' else real_run(command,*args,**kwargs);"
+            "exit_code=None;"
+            "\ntry:\n runpy.run_path(sys.argv[1],run_name='__main__')"
+            "\nexcept SystemExit as exc:\n exit_code=exc.code"
+            "\nprint(json.dumps([exit_code,"
+            "'posttrain_circuits' in sys.modules]))"
+        )
+        environment = os.environ.copy()
+        for key in ("LD_AUDIT", "LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"):
+            environment.pop(key, None)
+        result = subprocess.run(
+            ["/usr/bin/python3.12", "-I", "-B", "-c", code, str(script)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        self.assertEqual(json.loads(result.stdout.strip()), [2, False])
+        self.assertIn("dirty or unverifiable checkout", result.stderr)
 
     def test_production_outbox_path_is_fixed_and_not_request_selectable(self):
         self.assertEqual(

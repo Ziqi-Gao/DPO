@@ -34,6 +34,17 @@ PROPOSED_REVIEW = {
     "reviewed_at_utc": None,
     "rationale": None,
 }
+MAX_LINEAGE_COMMITS = 256
+_GIT_ENVIRONMENT = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "GIT_OPTIONAL_LOCKS": "0",
+    "HOME": "/nonexistent",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "PATH": "/usr/bin:/bin",
+}
 
 
 class ProtocolAmendmentError(ValueError):
@@ -47,6 +58,13 @@ class ProtocolAmendmentBinding:
     sha256: str
     git_commit: str
     reviewed_implementation_commit: str
+
+
+@dataclass(frozen=True)
+class _CommitStep:
+    commit: str
+    parent: str
+    changed_paths: tuple[str, ...]
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -283,38 +301,287 @@ def validate_two_gpu_g0_config(config: dict[str, Any], amendment: dict[str, Any]
         raise ProtocolAmendmentError("two-GPU G0 config lacks the fixed amendment identity")
 
 
-def _git(code_root: Path, *arguments: str) -> str:
+def _git_bytes(code_root: Path, *arguments: str) -> bytes:
     try:
         result = subprocess.run(
-            ("/usr/bin/git", "-C", str(code_root), *arguments),
+            (
+                "/usr/bin/git",
+                "-c",
+                "core.fsmonitor=false",
+                "-C",
+                str(code_root),
+                *arguments,
+            ),
             check=True,
             capture_output=True,
-            text=True,
+            env=_GIT_ENVIRONMENT,
         )
     except (OSError, subprocess.CalledProcessError) as error:
         raise ProtocolAmendmentError(
             f"protocol amendment Git validation failed: git {' '.join(arguments)}"
         ) from error
-    return result.stdout.strip()
+    return result.stdout
+
+
+def _git(code_root: Path, *arguments: str) -> str:
+    try:
+        return _git_bytes(code_root, *arguments).decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise ProtocolAmendmentError(
+            f"protocol amendment Git output is not strict UTF-8: git {' '.join(arguments)}"
+        ) from error
+
+
+def _git_changed_paths(
+    code_root: Path,
+    parent_commit: str,
+    commit: str,
+) -> tuple[str, ...]:
+    raw = _git_bytes(
+        code_root,
+        "diff-tree",
+        "--no-ext-diff",
+        "--no-commit-id",
+        "--name-only",
+        "--diff-filter=ACDMRTUXB",
+        "-r",
+        "-z",
+        parent_commit,
+        commit,
+        "--",
+    )
+    if not raw:
+        return ()
+    if not raw.endswith(b"\0"):
+        raise ProtocolAmendmentError("protocol amendment Git path output is not NUL terminated")
+    encoded_paths = raw[:-1].split(b"\0")
+    if any(not path for path in encoded_paths):
+        raise ProtocolAmendmentError("protocol amendment Git path output contains an empty path")
+    try:
+        return tuple(path.decode("utf-8", errors="strict") for path in encoded_paths)
+    except UnicodeDecodeError as error:
+        raise ProtocolAmendmentError(
+            "protocol amendment Git path is not strict UTF-8"
+        ) from error
+
+
+def _unsafe_untracked_paths(code_root: Path) -> tuple[str, ...]:
+    """Enumerate untracked paths without applying ignore or exclude rules."""
+
+    raw = _git_bytes(code_root, "ls-files", "--others", "-z", "--")
+    if not raw:
+        return ()
+    if not raw.endswith(b"\0"):
+        raise ProtocolAmendmentError("protocol amendment untracked paths are malformed")
+    try:
+        paths = tuple(
+            item.decode("utf-8", errors="strict") for item in raw[:-1].split(b"\0")
+        )
+    except UnicodeDecodeError as error:
+        raise ProtocolAmendmentError(
+            "protocol amendment untracked path is not strict UTF-8"
+        ) from error
+    if any(not path for path in paths):
+        raise ProtocolAmendmentError("protocol amendment untracked paths contain an empty path")
+    unsafe: list[str] = []
+    for path in paths:
+        parsed = Path(path)
+        if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+            raise ProtocolAmendmentError(
+                "protocol amendment untracked path is not canonical"
+            )
+        if path == ".codex/config.toml":
+            continue
+        if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
+            continue
+        unsafe.append(path)
+    return tuple(unsafe)
+
+
+def _git_commit_parents(code_root: Path, commit: str) -> tuple[str, ...]:
+    raw = _git(code_root, "show", "-s", "--format=%P", commit, "--")
+    if not raw:
+        return ()
+    parents = tuple(raw.split())
+    if any(GIT_COMMIT.fullmatch(parent) is None for parent in parents):
+        raise ProtocolAmendmentError("protocol amendment Git parent output is malformed")
+    return parents
 
 
 def _is_ancestor(code_root: Path, ancestor: str, descendant: str) -> bool:
-    result = subprocess.run(
-        (
-            "/usr/bin/git",
-            "-C",
-            str(code_root),
-            "merge-base",
-            "--is-ancestor",
-            ancestor,
-            descendant,
-        ),
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            (
+                "/usr/bin/git",
+                "-c",
+                "core.fsmonitor=false",
+                "-C",
+                str(code_root),
+                "merge-base",
+                "--is-ancestor",
+                ancestor,
+                descendant,
+            ),
+            capture_output=True,
+            env=_GIT_ENVIRONMENT,
+        )
+    except OSError as error:
+        raise ProtocolAmendmentError("protocol amendment ancestry validation failed") from error
     if result.returncode not in {0, 1}:
         raise ProtocolAmendmentError("protocol amendment ancestry validation failed")
     return result.returncode == 0
+
+
+def _linear_commit_steps(
+    *,
+    code_root: Path,
+    start_commit: str,
+    end_commit: str,
+    role: str,
+    allow_empty: bool,
+) -> tuple[_CommitStep, ...]:
+    """Enumerate every commit on one unbroken, single-parent Git chain."""
+
+    if GIT_COMMIT.fullmatch(start_commit) is None or GIT_COMMIT.fullmatch(end_commit) is None:
+        raise ProtocolAmendmentError(f"{role} contains a malformed Git commit")
+    if start_commit == end_commit:
+        if allow_empty:
+            return ()
+        raise ProtocolAmendmentError(f"{role} commit chain is empty")
+    if not _is_ancestor(code_root, start_commit, end_commit):
+        raise ProtocolAmendmentError(f"{role} commit chain is disconnected")
+
+    history = _git(
+        code_root,
+        "rev-list",
+        "--reverse",
+        "--topo-order",
+        f"--max-count={MAX_LINEAGE_COMMITS + 1}",
+        f"{start_commit}..{end_commit}",
+        "--",
+    )
+    if not history:
+        raise ProtocolAmendmentError(f"{role} commit chain is empty")
+
+    rows = history.splitlines()
+    if len(rows) > MAX_LINEAGE_COMMITS:
+        raise ProtocolAmendmentError(
+            f"{role} commit chain exceeds {MAX_LINEAGE_COMMITS} commits"
+        )
+    previous = start_commit
+    steps: list[_CommitStep] = []
+    for row in rows:
+        fields = row.split()
+        if len(fields) != 1 or GIT_COMMIT.fullmatch(fields[0]) is None:
+            raise ProtocolAmendmentError(f"{role} commit chain is malformed")
+        commit = fields[0]
+        parents = _git_commit_parents(code_root, commit)
+        if len(parents) > 1:
+            raise ProtocolAmendmentError(f"{role} commit chain contains a merge")
+        if len(parents) != 1:
+            raise ProtocolAmendmentError(f"{role} commit chain contains a parentless commit")
+        parent = parents[0]
+        if parent != previous:
+            raise ProtocolAmendmentError(f"{role} commit chain is disconnected")
+        changed_paths = _git_changed_paths(code_root, parent, commit)
+        if not changed_paths:
+            raise ProtocolAmendmentError(f"{role} commit chain contains an empty commit")
+        steps.append(
+            _CommitStep(
+                commit=commit,
+                parent=parent,
+                changed_paths=changed_paths,
+            )
+        )
+        previous = commit
+    if previous != end_commit:
+        raise ProtocolAmendmentError(f"{role} commit chain does not reach its endpoint")
+    return tuple(steps)
+
+
+def _validate_acceptance_chain(
+    *,
+    code_root: Path,
+    implementation_commit: str,
+    candidate_commit: str,
+    proposed: dict[str, Any],
+    candidate: dict[str, Any],
+    role: str,
+) -> str:
+    """Require exactly one review-only acceptance on an otherwise handoff-only chain."""
+
+    steps = _linear_commit_steps(
+        code_root=code_root,
+        start_commit=implementation_commit,
+        end_commit=candidate_commit,
+        role=f"{role} implementation-to-candidate",
+        allow_empty=False,
+    )
+    amendment_path = str(AMENDMENT_RELATIVE_PATH)
+    handoff_paths = set(ALLOWED_AFTER_ACCEPTANCE_PATHS)
+    acceptance_commit: str | None = None
+    accepted_at_transition: dict[str, Any] | None = None
+    for step in steps:
+        changed = set(step.changed_paths)
+        if amendment_path in changed:
+            if acceptance_commit is not None:
+                raise ProtocolAmendmentError(
+                    f"{role} commit chain changes the amendment more than once"
+                )
+            accepted_at_transition = load_protocol_amendment_bytes(
+                _git(
+                    code_root,
+                    "show",
+                    f"{step.commit}:{AMENDMENT_RELATIVE_PATH}",
+                ).encode("utf-8")
+            )
+            validate_review_transition(
+                proposed=proposed,
+                accepted=accepted_at_transition,
+                implementation_commit=implementation_commit,
+                current_commit=step.commit,
+                changed_paths=step.changed_paths,
+                implementation_is_ancestor=True,
+            )
+            acceptance_commit = step.commit
+        elif not changed <= handoff_paths:
+            phase = "post-acceptance" if acceptance_commit is not None else "pre-acceptance"
+            raise ProtocolAmendmentError(
+                f"{role} lineage contains {phase} implementation changes"
+            )
+    if acceptance_commit is None or accepted_at_transition is None:
+        raise ProtocolAmendmentError(
+            f"{role} commit chain lacks one review-only amendment acceptance"
+        )
+    if accepted_at_transition != candidate:
+        raise ProtocolAmendmentError(
+            f"{role} accepted amendment changed after its review transition"
+        )
+    return acceptance_commit
+
+
+def _validate_handoff_only_chain(
+    *,
+    code_root: Path,
+    candidate_commit: str,
+    current_commit: str,
+    role: str,
+) -> None:
+    """Require every commit after a provenance candidate to change only the handoff."""
+
+    steps = _linear_commit_steps(
+        code_root=code_root,
+        start_commit=candidate_commit,
+        end_commit=current_commit,
+        role=f"{role} candidate-to-current",
+        allow_empty=True,
+    )
+    allowed = set(ALLOWED_AFTER_ACCEPTANCE_PATHS)
+    for step in steps:
+        if not set(step.changed_paths) <= allowed:
+            raise ProtocolAmendmentError(
+                f"{role} lineage contains post-acceptance implementation changes"
+            )
 
 
 def validate_review_transition(
@@ -373,8 +640,18 @@ def resolve_accepted_protocol_amendment(
     accepted = load_protocol_amendment_bytes(raw)
     if accepted["review"]["status"] != "accepted":
         raise ProtocolAmendmentError("protocol amendment remains proposed")
-    if _git(code_root, "status", "--porcelain", "--untracked-files=no"):
-        raise ProtocolAmendmentError("accepted amendment requires a clean tracked checkout")
+    if _git(
+        code_root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    ):
+        raise ProtocolAmendmentError("accepted amendment requires a clean checkout")
+    if unsafe := _unsafe_untracked_paths(code_root):
+        raise ProtocolAmendmentError(
+            f"accepted amendment checkout contains unsafe ignored files: {unsafe!r}"
+        )
     current_commit = _git(code_root, "rev-parse", "HEAD")
     if GIT_COMMIT.fullmatch(current_commit) is None:
         raise ProtocolAmendmentError("Git HEAD is not one immutable commit")
@@ -393,49 +670,41 @@ def resolve_accepted_protocol_amendment(
             "reviewed implementation commit lacks the proposed amendment"
         ) from error
     proposed = load_protocol_amendment_bytes(proposed_raw)
-    changed_paths = tuple(
-        row
-        for row in _git(
-            code_root,
-            "diff",
-            "--name-only",
-            "--diff-filter=ACDMRTUXB",
-            f"{implementation_commit}..{current_commit}",
-            "--",
-        ).splitlines()
-        if row
-    )
-    validate_review_transition(
-        proposed=proposed,
-        accepted=accepted,
+    acceptance_commit = _validate_acceptance_chain(
+        code_root=code_root,
         implementation_commit=implementation_commit,
-        current_commit=current_commit,
-        changed_paths=changed_paths,
-        implementation_is_ancestor=_is_ancestor(
-            code_root,
-            implementation_commit,
-            current_commit,
-        ),
+        candidate_commit=current_commit,
+        proposed=proposed,
+        candidate=accepted,
+        role="accepted amendment",
     )
     base_prereg = code_root / BASE_PREREG_RELATIVE_PATH
     if hashlib.sha256(base_prereg.read_bytes()).hexdigest() != BASE_PREREG_SHA256:
         raise ProtocolAmendmentError("base preregistration bytes changed")
-    amendment_commit = _git(
+    if _git(code_root, "rev-parse", "HEAD") != current_commit:
+        raise ProtocolAmendmentError("amendment validation HEAD changed before completion")
+    final_metadata = path.lstat()
+    if not stat.S_ISREG(final_metadata.st_mode) or final_metadata.st_nlink != 1:
+        raise ProtocolAmendmentError("protocol amendment changed file identity during validation")
+    if path.read_bytes() != raw:
+        raise ProtocolAmendmentError("protocol amendment bytes changed during validation")
+    if _git(
         code_root,
-        "log",
-        "-n",
-        "1",
-        "--format=%H",
-        "--",
-        str(AMENDMENT_RELATIVE_PATH),
-    )
-    if GIT_COMMIT.fullmatch(amendment_commit) is None:
-        raise ProtocolAmendmentError("accepted amendment has no committed Git identity")
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
+    ):
+        raise ProtocolAmendmentError("accepted amendment checkout changed during validation")
+    if unsafe := _unsafe_untracked_paths(code_root):
+        raise ProtocolAmendmentError(
+            f"accepted amendment checkout gained unsafe ignored files: {unsafe!r}"
+        )
     return ProtocolAmendmentBinding(
         path=path,
         amendment_id=AMENDMENT_ID,
         sha256=hashlib.sha256(raw).hexdigest(),
-        git_commit=amendment_commit,
+        git_commit=acceptance_commit,
         reviewed_implementation_commit=implementation_commit,
     )
 
@@ -479,41 +748,25 @@ def validate_accepted_lineage_commit(
             f"{implementation_commit}:{AMENDMENT_RELATIVE_PATH}",
         ).encode("utf-8")
     )
-    implementation_to_candidate = tuple(
-        row
-        for row in _git(
-            code_root,
-            "diff",
-            "--name-only",
-            "--diff-filter=ACDMRTUXB",
-            f"{implementation_commit}..{candidate_commit}",
-            "--",
-        ).splitlines()
-        if row
-    )
-    validate_review_transition(
-        proposed=proposed,
-        accepted=candidate,
+    _validate_acceptance_chain(
+        code_root=code_root,
         implementation_commit=implementation_commit,
-        current_commit=candidate_commit,
-        changed_paths=implementation_to_candidate,
-        implementation_is_ancestor=True,
+        candidate_commit=candidate_commit,
+        proposed=proposed,
+        candidate=candidate,
+        role=role,
     )
-    candidate_to_current = {
-        row
-        for row in _git(
-            code_root,
-            "diff",
-            "--name-only",
-            "--diff-filter=ACDMRTUXB",
-            f"{candidate_commit}..{current_commit}",
-            "--",
-        ).splitlines()
-        if row
-    }
-    if not candidate_to_current <= set(ALLOWED_AFTER_ACCEPTANCE_PATHS):
+    _validate_handoff_only_chain(
+        code_root=code_root,
+        candidate_commit=candidate_commit,
+        current_commit=current_commit,
+        role=role,
+    )
+    if _git(code_root, "rev-parse", "HEAD") != current_commit:
+        raise ProtocolAmendmentError(f"{role} validation HEAD changed before completion")
+    if unsafe := _unsafe_untracked_paths(code_root):
         raise ProtocolAmendmentError(
-            f"{role} lineage contains post-acceptance implementation changes"
+            f"{role} validation found unsafe ignored files: {unsafe!r}"
         )
 
 
