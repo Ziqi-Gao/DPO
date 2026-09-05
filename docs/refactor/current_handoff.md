@@ -9,12 +9,16 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The clean implementation commit A is
+The independently reviewed implementation candidate A is
 `ab2f72f20036b6f488db5d5a335744a6a80b8b82`
 (`fix: load pinned EAP package from src layout`). It contains the persistent
 submodule registration and the matching `EAP-IG/src` import correction in both
-the G0 runtime preparer and formal circuit runner. Future amendment acceptance
-must review and bind this exact commit.
+the G0 runtime preparer and formal circuit runner. The 2026-09-05 review did
+not accept this candidate because its published MIB tree fails the handler's
+clean-runtime gate. A future acceptance must review and bind a new repaired
+implementation commit, not candidate A. A pending uncommitted preparer repair
+prevents bytecode generation and rejects any source-tree contamination after
+offline verification; the next user-created clean commit will be candidate B.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -142,17 +146,17 @@ Implementation commit A changes are limited to:
   `tests/unit/test_protocol_amendments.py`, and
   `tests/unit/test_scheduler_adapter.py`.
 
-The non-self-referential review design now selects implementation commit A
-`ab2f72f20036b6f488db5d5a335744a6a80b8b82`. An independent reviewer must
-name that already-existing commit by changing only the amendment review block
-to `accepted`; that review metadata and any handoff update form the acceptance
-commit. Validation proves ancestry,
-requires every scientific amendment field to equal the proposed document in
-the implementation commit, and permits only the amendment and handoff before
-acceptance. After acceptance, only this handoff may differ between GPU
-preflight, G0 request generation, and execution; any source, config, handler,
-test, or other protocol delta fails closed. This permits required handoff
-updates without weakening implementation identity or creating a self-hash.
+The non-self-referential review design was exercised against implementation
+candidate A `ab2f72f20036b6f488db5d5a335744a6a80b8b82`, but the candidate was
+not accepted. The design still requires an already-existing implementation
+commit followed by an acceptance commit that changes only the amendment review
+block and this handoff. Validation proves ancestry, requires every scientific
+amendment field to equal the proposed document in the reviewed implementation,
+and permits only the amendment and handoff before acceptance. After acceptance,
+only this handoff may differ between GPU preflight, G0 request generation, and
+execution; any source, config, handler, test, or other protocol delta fails
+closed. The runtime repair therefore requires a new implementation commit and
+a new independent review rather than metadata acceptance of candidate A.
 
 The candidate makes each new GPU-preflight plan bind its clean Git commit. The
 already completed preflight identity cannot be reused. After amendment
@@ -412,11 +416,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/del6500/projects/ServerScheduler/src 
 It reported `OPD False` and exactly `qwen3_v2_g0`,
 `qwen3_v2_gpu_preflight`, and `repository_preflight`.
 
-The prior global-batch/token-semantics and self-referential-commit design
-blockers retain a fail-closed candidate solution. The proposed amendment has
-not received independent scientific acceptance. Any future acceptance must
-name `ab2f72f20036b6f488db5d5a335744a6a80b8b82` as its
-`reviewed_implementation_commit`.
+Independent review confirmed that candidate A preserves the proposed two-GPU
+scientific terms: world size 2, per-device batch 4, accumulation 8, effective
+global batch 64, exact pre-update cross-rank reservation of the 2,000,000
+non-padding model-input-token budget, the independent 120 optimizer-step
+ceiling, and the seed-42 feasibility-only claim. The amendment and lineage
+tests passed, candidate A is an ancestor of the current checkout, and only this
+handoff differs after it. The amendment nevertheless remains `proposed`
+because the fixed runtime fails before scientific execution as described
+below.
 
 Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
 two-GPU preflight has real pilot evidence. One-GPU memory safety, three-GPU
@@ -425,8 +433,8 @@ per-rank CPU threading at three ranks, and cross-world-size checkpoint
 resharding are not implemented or reviewed. The handlers therefore continue
 to reject every allocation other than their exact fixed two-GPU contract.
 
-The fixed runtime publication is complete. From clean implementation commit A,
-the user ran the networked login-node preparer, which atomically published
+The fixed runtime bytes were published from clean implementation candidate A
+at these roots:
 `/scr/del6500/OPD/envs/qwen3-v2-g0-v1` and
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1`. Both roots and the runtime
 Python are read-only mode 550. The Python executable SHA-256 is
@@ -434,17 +442,36 @@ Python are read-only mode 550. The Python executable SHA-256 is
 all 19 locked direct package versions match, PyTorch reports `2.8.0+cu128`
 with CUDA 12.8, and `pip check` reports no broken requirements. MIB is exactly
 `b759df34433c9e31043ba9e02908ce0bf20e894f`; its initialized EAP-IG submodule
-is exactly `7af394a5662de8b23ad6154716a0cd3993d447a3`. Offline EAP/MIB and
-TransformerLens imports, both pinned models' config/tokenizer loads, and the
-G0 deployment identity all pass. The full related suite run in this published
-G0 runtime reports `Ran 111 tests in 6.858s` and `OK`; changed Python files
-compile and `git diff --check` passes.
+is at the expected gitlink
+`7af394a5662de8b23ad6154716a0cd3993d447a3`. The deployment hash identity and
+the full related static suite pass (`Ran 111 tests in 6.857s`, `OK`). However,
+the preparer's offline EAP import created seven untracked
+`EAP-IG/src/eap/__pycache__/*.pyc` files before the tree was made read-only.
+Consequently the parent MIB checkout reports ` M EAP-IG`, and a direct
+no-GPU invocation of the production handler's `_validate_environment()` fails
+with `fixed MIB checkout or submodule tree is dirty or incomplete`. This is a
+pre-payload runtime blocker even though the committed hashes, package versions,
+`pip check`, and Git-linked source revisions match.
 
-Do not enable the registration until the amendment is independently accepted,
-the fresh accepted-lineage two-GPU preflight passes, and the acceptance
-checkout is clean. The disabled proposal may be handed to a central operator
-for review and installation while it remains `enabled = false`; enablement and
-submission require later, separate approvals and remain central operations.
+The pending repair invokes the isolated offline check with Python `-B`, because
+`-I` ignores `PYTHONDONTWRITEBYTECODE`, then checks both the EAP submodule and
+parent MIB checkout with porcelain-v1 status, all untracked files, and no
+submodule ignoring before publication. A real offline import and pinned-model
+metadata load against the clean probe checkout left both Git status outputs
+empty. The focused handler/preparer suite passes 11 tests; the complete
+related suite passes 112 tests in 6.839 seconds. Python compilation, unchanged
+G0 deployment identity, and `git diff --check` pass. The contaminated published
+targets have not been modified in place; after candidate B is committed they
+must be moved aside, rebuilt atomically with the repaired preparer, and the new
+immutable checkout must pass the production clean-runtime gate before another
+independent review.
+
+Do not enable the registration until the runtime blocker is repaired in a new
+reviewed implementation, the amendment is independently accepted, the fresh
+accepted-lineage two-GPU preflight passes, and the acceptance checkout is
+clean. The disabled proposal may be handed to a central operator for review
+and installation while it remains `enabled = false`; enablement and submission
+require later, separate approvals and remain central operations.
 
 No new preflight or G0 workflow plan, outbox request, or job ID exists. The
 legacy inventory remains 20 `scripts/slurm` files, eight

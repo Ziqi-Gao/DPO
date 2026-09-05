@@ -29,6 +29,12 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         cls.module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = cls.module
         spec.loader.exec_module(cls.module)
+        prepare_spec = importlib.util.spec_from_file_location(
+            "opd_g0_prepare_runtime", PREPARE
+        )
+        assert prepare_spec is not None and prepare_spec.loader is not None
+        cls.prepare_module = importlib.util.module_from_spec(prepare_spec)
+        prepare_spec.loader.exec_module(cls.prepare_module)
 
     def test_stage_plan_is_exactly_two_gpu_and_foreground(self) -> None:
         root = Path("/scr/del6500/OPD/tmp/test-qwen3-v2-g0/qwen3-v2")
@@ -119,8 +125,49 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         self.assertIn('"submodule.EAP-IG.url",\n            EAP_URL', source)
         self.assertIn('"--checkout"', source)
         self.assertIn("repository / 'EAP-IG' / 'src'", source)
+        self.assertIn('str(python),\n            "-B",\n            "-I"', source)
+        self.assertLess(
+            source.index("_offline_check_script(mib_stage)"),
+            source.index('_require_clean_git_tree(mib_stage / "EAP-IG")'),
+        )
+        self.assertLess(
+            source.index('_require_clean_git_tree(mib_stage / "EAP-IG")'),
+            source.index("_require_clean_git_tree(mib_stage)"),
+        )
         self.assertNotIn('f"submodule.EAP-IG.url={EAP_URL}"', source)
         self.assertNotIn("torch.cuda", source)
+
+    def test_runtime_preparation_rejects_dirty_source_tree(self) -> None:
+        clean = mock.Mock(stdout="")
+        with mock.patch.object(
+            self.prepare_module.subprocess,
+            "run",
+            return_value=clean,
+        ) as run:
+            self.prepare_module._require_clean_git_tree(Path("/fixed/mib"))
+        run.assert_called_once_with(
+            (
+                "/usr/bin/git",
+                "-C",
+                "/fixed/mib",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+            ),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        dirty = mock.Mock(stdout="?? src/eap/__pycache__/graph.pyc\n")
+        with mock.patch.object(
+            self.prepare_module.subprocess,
+            "run",
+            return_value=dirty,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "offline verification dirtied"):
+                self.prepare_module._require_clean_git_tree(Path("/fixed/mib/EAP-IG"))
 
     def test_circuit_runner_uses_pinned_submodule_src_layout(self) -> None:
         from posttrain_circuits.causal_circuits.model.runner import _eap_source_root

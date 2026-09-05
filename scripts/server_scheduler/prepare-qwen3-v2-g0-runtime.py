@@ -75,6 +75,25 @@ def _git_revision(path: Path) -> str:
     ).stdout.strip()
 
 
+def _require_clean_git_tree(path: Path) -> None:
+    status = subprocess.run(
+        (
+            "/usr/bin/git",
+            "-C",
+            str(path),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    if status:
+        raise RuntimeError("offline verification dirtied the staged MIB source tree")
+
+
 def _offline_check_script(repository: Path) -> str:
     return (
         "import importlib.metadata as metadata\n"
@@ -203,11 +222,14 @@ def prepare() -> None:
         }
         _run(
             str(python),
+            "-B",
             "-I",
             "-c",
             _offline_check_script(mib_stage),
             environment=offline_environment,
         )
+        _require_clean_git_tree(mib_stage / "EAP-IG")
+        _require_clean_git_tree(mib_stage)
         _make_read_only(runtime_stage)
         _make_read_only(mib_stage)
         os.rename(mib_stage, MIB_REPOSITORY)
