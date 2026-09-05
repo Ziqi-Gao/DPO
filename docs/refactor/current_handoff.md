@@ -9,12 +9,12 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The last clean implementation commit is
-`306e927` (`fix: persist MIB submodule registration`). A pending uncommitted
-correction to the pinned EAP-IG `src/eap` import layout changes both the G0
-runtime preparer and the formal circuit runner, so it supersedes `306e927` for
-any future amendment acceptance. The next user-created clean commit must
-become the new implementation commit A.
+The clean implementation commit A is
+`ab2f72f20036b6f488db5d5a335744a6a80b8b82`
+(`fix: load pinned EAP package from src layout`). It contains the persistent
+submodule registration and the matching `EAP-IG/src` import correction in both
+the G0 runtime preparer and formal circuit runner. Future amendment acceptance
+must review and bind this exact commit.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -142,13 +142,10 @@ Implementation commit A changes are limited to:
   `tests/unit/test_protocol_amendments.py`, and
   `tests/unit/test_scheduler_adapter.py`.
 
-The non-self-referential review design previously selected
-`22c215413d480317f6576d78739c630910f0a27e`; neither that commit nor
-`306e927` may be used for future acceptance because the pending EAP-IG source
-layout correction changes the formal scientific runner. After the user creates
-the clean successor implementation commit, an independent reviewer must name
-that already-existing successor by changing only the amendment review block to
-`accepted`; that review metadata and any handoff update form the acceptance
+The non-self-referential review design now selects implementation commit A
+`ab2f72f20036b6f488db5d5a335744a6a80b8b82`. An independent reviewer must
+name that already-existing commit by changing only the amendment review block
+to `accepted`; that review metadata and any handoff update form the acceptance
 commit. Validation proves ancestry,
 requires every scientific amendment field to equal the proposed document in
 the implementation commit, and permits only the amendment and handoff before
@@ -418,8 +415,7 @@ It reported `OPD False` and exactly `qwen3_v2_g0`,
 The prior global-batch/token-semantics and self-referential-commit design
 blockers retain a fail-closed candidate solution. The proposed amendment has
 not received independent scientific acceptance. Any future acceptance must
-name the pending correction's user-created clean implementation commit, not
-`22c215413d480317f6576d78739c630910f0a27e` or `306e927`, as its
+name `ab2f72f20036b6f488db5d5a335744a6a80b8b82` as its
 `reviewed_implementation_commit`.
 
 Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
@@ -429,33 +425,26 @@ per-rank CPU threading at three ranks, and cross-world-size checkpoint
 resharding are not implemented or reviewed. The handlers therefore continue
 to reject every allocation other than their exact fixed two-GPU contract.
 
-The fixed runtime publication remains incomplete. Seven sandboxed preparation
-attempts safely rolled back because the OPD Codex profile explicitly disables
-networking and gives the execution sandbox only loopback; approved command
-escalation does not override that profile. Ordinary-host-shell executions
-proved host PyPI and GitHub connectivity. The first host execution exposed and
-`306e927` fixed persistent EAP-IG submodule registration. A second execution
-then installed the packages, cloned both pinned repositories, and checked out
-EAP-IG revision `7af394a5662de8b23ad6154716a0cd3993d447a3`, but the offline
-import check failed with `ModuleNotFoundError: No module named 'eap'`. The
-pinned commit stores the package at `EAP-IG/src/eap`; both the preparer and the
-formal circuit runner had incorrectly used the submodule root. The pending
-correction inserts `EAP-IG/src` in both paths and retains the strict revision
-and submodule checks. Its 10 focused tests and complete 111-test suite pass;
-the complete suite reported 6.737 seconds. Python compilation, the unchanged
-G0 deployment identity, the pinned probe layout, both pinned models' offline
-config/tokenizer loads, and `git diff --check` also pass. The fixed MIB/EAP
-project metadata requires only `eap`, `tabulate`, `matplotlib`, and
-`transformer-lens` directly; the preparer's install/path set covers all four.
-The post-failure check found neither final target. Neither
-`/scr/del6500/OPD/envs/qwen3-v2-g0-v1` nor
-`/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
-registration until the amendment is independently accepted, the runtime is
-successfully prepared and verified, the deployment hashes pass, and the
-acceptance checkout is clean. The changed disabled proposal may now be handed
-to a central operator for review and installation while it remains
-`enabled = false`; enablement and submission require later, separate approvals
-and remain central operations.
+The fixed runtime publication is complete. From clean implementation commit A,
+the user ran the networked login-node preparer, which atomically published
+`/scr/del6500/OPD/envs/qwen3-v2-g0-v1` and
+`/scr/del6500/OPD/vendor/MIB-circuit-track-v1`. Both roots and the runtime
+Python are read-only mode 550. The Python executable SHA-256 is
+`848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801`;
+all 19 locked direct package versions match, PyTorch reports `2.8.0+cu128`
+with CUDA 12.8, and `pip check` reports no broken requirements. MIB is exactly
+`b759df34433c9e31043ba9e02908ce0bf20e894f`; its initialized EAP-IG submodule
+is exactly `7af394a5662de8b23ad6154716a0cd3993d447a3`. Offline EAP/MIB and
+TransformerLens imports, both pinned models' config/tokenizer loads, and the
+G0 deployment identity all pass. The full related suite run in this published
+G0 runtime reports `Ran 111 tests in 6.858s` and `OK`; changed Python files
+compile and `git diff --check` passes.
+
+Do not enable the registration until the amendment is independently accepted,
+the fresh accepted-lineage two-GPU preflight passes, and the acceptance
+checkout is clean. The disabled proposal may be handed to a central operator
+for review and installation while it remains `enabled = false`; enablement and
+submission require later, separate approvals and remain central operations.
 
 No new preflight or G0 workflow plan, outbox request, or job ID exists. The
 legacy inventory remains 20 `scripts/slurm` files, eight
