@@ -163,16 +163,23 @@ def prepare() -> None:
         )
         _run("/usr/bin/git", "clone", "--no-checkout", MIB_URL, str(mib_stage))
         _run("/usr/bin/git", "-C", str(mib_stage), "checkout", "--detach", MIB_REVISION)
+        _run("/usr/bin/git", "-C", str(mib_stage), "submodule", "init")
         _run(
             "/usr/bin/git",
             "-C",
             str(mib_stage),
-            "-c",
-            f"submodule.EAP-IG.url={EAP_URL}",
+            "config",
+            "submodule.EAP-IG.url",
+            EAP_URL,
+        )
+        _run(
+            "/usr/bin/git",
+            "-C",
+            str(mib_stage),
             "submodule",
             "update",
-            "--init",
             "--recursive",
+            "--checkout",
         )
         if _git_revision(mib_stage) != MIB_REVISION:
             raise RuntimeError("staged MIB checkout differs from its reviewed revision")

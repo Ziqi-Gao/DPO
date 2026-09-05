@@ -115,6 +115,9 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         self.assertIn('parser.add_argument(\n        "--execute"', source)
         self.assertIn("b759df34433c9e31043ba9e02908ce0bf20e894f", source)
         self.assertIn("submodule", source)
+        self.assertIn('"submodule.EAP-IG.url",\n            EAP_URL', source)
+        self.assertIn('"--checkout"', source)
+        self.assertNotIn('f"submodule.EAP-IG.url={EAP_URL}"', source)
         self.assertNotIn("torch.cuda", source)
 
     def test_two_gpu_accelerate_config_is_fixed(self) -> None:
