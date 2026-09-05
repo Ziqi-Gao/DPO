@@ -6,6 +6,7 @@ import sys
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from posttrain_circuits.artifacts.protocol_amendments import (
     AMENDMENT_RELATIVE_PATH,
@@ -117,8 +118,26 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         self.assertIn("submodule", source)
         self.assertIn('"submodule.EAP-IG.url",\n            EAP_URL', source)
         self.assertIn('"--checkout"', source)
+        self.assertIn("repository / 'EAP-IG' / 'src'", source)
         self.assertNotIn('f"submodule.EAP-IG.url={EAP_URL}"', source)
         self.assertNotIn("torch.cuda", source)
+
+    def test_circuit_runner_uses_pinned_submodule_src_layout(self) -> None:
+        from posttrain_circuits.causal_circuits.model.runner import _eap_source_root
+
+        repository = Path("/scr/del6500/OPD/tmp/test-mib-source-root")
+        expected = repository / "EAP-IG" / "src"
+        with mock.patch.object(
+            Path,
+            "is_dir",
+            autospec=True,
+            side_effect=lambda candidate: candidate == expected / "eap",
+        ):
+            self.assertEqual(_eap_source_root(repository), expected)
+
+        with mock.patch.object(Path, "is_dir", autospec=True, return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "EAP-IG submodule is unavailable"):
+                _eap_source_root(repository)
 
     def test_two_gpu_accelerate_config_is_fixed(self) -> None:
         path = PROJECT_ROOT / "configs" / "accelerate" / "fsdp_2gpu_server_scheduler.yaml"

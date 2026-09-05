@@ -40,6 +40,16 @@ def load_checkpoint_into_hf_model(
     return actual
 
 
+def _eap_source_root(repository: Path) -> Path:
+    source_root = repository / "EAP-IG" / "src"
+    if not (source_root / "eap").is_dir():
+        raise RuntimeError(
+            "MIB EAP-IG submodule is unavailable; run "
+            "'git submodule update --init --recursive' in the pinned checkout"
+        )
+    return source_root
+
+
 def _collate(
     rows: list[tuple[str, str, dict[str, Any]]],
 ) -> tuple[list[str], list[str], tuple[dict[str, Any], ...]]:
@@ -266,13 +276,8 @@ def main(argv: list[str] | None = None) -> None:
     ).strip()
     if actual_revision != args.expected_revision:
         raise RuntimeError("MIB revision changed after adapter validation")
-    eap_root = args.repository / "EAP-IG"
-    if not (eap_root / "eap").is_dir():
-        raise RuntimeError(
-            "MIB EAP-IG submodule is unavailable; run "
-            "'git submodule update --init --recursive' in the pinned checkout"
-        )
-    sys.path.insert(0, str(eap_root))
+    eap_source_root = _eap_source_root(args.repository)
+    sys.path.insert(0, str(eap_source_root))
     sys.path.insert(0, str(args.repository))
     from eap.attribute import attribute
     from eap.attribute_node import attribute_node

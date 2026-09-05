@@ -83,7 +83,7 @@ def _offline_check_script(repository: Path) -> str:
         "import torch\n"
         "from transformers import AutoConfig, AutoTokenizer\n"
         f"repository = pathlib.Path({str(repository)!r})\n"
-        "sys.path.insert(0, str(repository / 'EAP-IG'))\n"
+        "sys.path.insert(0, str(repository / 'EAP-IG' / 'src'))\n"
         "sys.path.insert(0, str(repository))\n"
         "from eap.attribute import attribute\n"
         "from eap.attribute_node import attribute_node\n"

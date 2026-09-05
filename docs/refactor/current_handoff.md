@@ -10,11 +10,11 @@ kept under `docs/archive/`; it is not an execution guide.
 ## Current repository baseline
 
 The last clean implementation commit is
-`22c215413d480317f6576d78739c630910f0a27e`
-(`fix: align OPD requests with scheduler v2`). It was created from a clean
-staged change on 2026-09-04. A pending uncommitted correction to the G0 runtime
-preparer and its test supersedes it for any future amendment acceptance; the
-next user-created clean commit must become the new implementation commit A.
+`306e927` (`fix: persist MIB submodule registration`). A pending uncommitted
+correction to the pinned EAP-IG `src/eap` import layout changes both the G0
+runtime preparer and the formal circuit runner, so it supersedes `306e927` for
+any future amendment acceptance. The next user-created clean commit must
+become the new implementation commit A.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -128,6 +128,7 @@ Implementation commit A changes are limited to:
   `src/posttrain_circuits/cli/finalize_g0.py`,
   `src/posttrain_circuits/cli/preflight_g0.py`,
   `src/posttrain_circuits/cli/train.py`,
+  `src/posttrain_circuits/causal_circuits/model/runner.py`,
   `src/posttrain_circuits/scheduler_adapter/g0_request.py`,
   `src/posttrain_circuits/scheduler_adapter/gpu_preflight_request.py`,
   `src/posttrain_circuits/scheduler_adapter/qwen3_v2_g0.py`,
@@ -142,12 +143,13 @@ Implementation commit A changes are limited to:
   `tests/unit/test_scheduler_adapter.py`.
 
 The non-self-referential review design previously selected
-`22c215413d480317f6576d78739c630910f0a27e`, but the pending runtime-preparer
-correction means it must not be used for future acceptance. After the user
-creates the clean successor implementation commit, an independent reviewer
-must name that already-existing successor by changing only the amendment
-review block to `accepted`; that review metadata and any handoff update form
-the acceptance commit. Validation proves ancestry,
+`22c215413d480317f6576d78739c630910f0a27e`; neither that commit nor
+`306e927` may be used for future acceptance because the pending EAP-IG source
+layout correction changes the formal scientific runner. After the user creates
+the clean successor implementation commit, an independent reviewer must name
+that already-existing successor by changing only the amendment review block to
+`accepted`; that review metadata and any handoff update form the acceptance
+commit. Validation proves ancestry,
 requires every scientific amendment field to equal the proposed document in
 the implementation commit, and permits only the amendment and handoff before
 acceptance. After acceptance, only this handoff may differ between GPU
@@ -417,7 +419,7 @@ The prior global-batch/token-semantics and self-referential-commit design
 blockers retain a fail-closed candidate solution. The proposed amendment has
 not received independent scientific acceptance. Any future acceptance must
 name the pending correction's user-created clean implementation commit, not
-`22c215413d480317f6576d78739c630910f0a27e`, as its
+`22c215413d480317f6576d78739c630910f0a27e` or `306e927`, as its
 `reviewed_implementation_commit`.
 
 Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
@@ -430,23 +432,22 @@ to reject every allocation other than their exact fixed two-GPU contract.
 The fixed runtime publication remains incomplete. Seven sandboxed preparation
 attempts safely rolled back because the OPD Codex profile explicitly disables
 networking and gives the execution sandbox only loopback; approved command
-escalation does not override that profile. An ordinary-host-shell execution
-subsequently completed the PyPI phase and cloned the pinned MIB repository,
-proving host connectivity, but rolled back at the strict
-`staged MIB submodule tree is incomplete` check. The captured probe showed the
-parent gitlink and child HEAD both at
-`7af394a5662de8b23ad6154716a0cd3993d447a3`, while `submodule status` used the
-uninitialized `-` prefix because the preparer supplied the HTTPS URL only as
-ephemeral command configuration. Persisting that URL in the staged parent's
-local config changed the status to the required clean space prefix without
-changing either revision. The pending fix now runs `submodule init`, persists
-the reviewed HTTPS URL, and uses recursive checkout before the unchanged strict
-status validation. Its focused nine tests, complete 110-test suite, Python
-compilation, deployment identity validation, and `git diff --check` pass; the
-complete suite reported 1.141 seconds. No compatible OPD-owned wheel cache,
-complete alternate runtime, or pinned MIB checkout is available. The
-post-failure check found neither final targets nor residual staging
-directories. Neither
+escalation does not override that profile. Ordinary-host-shell executions
+proved host PyPI and GitHub connectivity. The first host execution exposed and
+`306e927` fixed persistent EAP-IG submodule registration. A second execution
+then installed the packages, cloned both pinned repositories, and checked out
+EAP-IG revision `7af394a5662de8b23ad6154716a0cd3993d447a3`, but the offline
+import check failed with `ModuleNotFoundError: No module named 'eap'`. The
+pinned commit stores the package at `EAP-IG/src/eap`; both the preparer and the
+formal circuit runner had incorrectly used the submodule root. The pending
+correction inserts `EAP-IG/src` in both paths and retains the strict revision
+and submodule checks. Its 10 focused tests and complete 111-test suite pass;
+the complete suite reported 6.737 seconds. Python compilation, the unchanged
+G0 deployment identity, the pinned probe layout, both pinned models' offline
+config/tokenizer loads, and `git diff --check` also pass. The fixed MIB/EAP
+project metadata requires only `eap`, `tabulate`, `matplotlib`, and
+`transformer-lens` directly; the preparer's install/path set covers all four.
+The post-failure check found neither final target. Neither
 `/scr/del6500/OPD/envs/qwen3-v2-g0-v1` nor
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
 registration until the amendment is independently accepted, the runtime is
