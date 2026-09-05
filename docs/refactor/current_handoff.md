@@ -376,7 +376,7 @@ path on the real two-GPU topology; it does not validate or authorize G0.
 The bounded two-GPU preflight substrate has passed. The committed
 scheduler-v2 compatibility change passed 110 handler, request, semantic
 validator, amendment, adapter, preflight, workflow, and proposal tests in
-1.129 seconds in the fixed Qwen3-v2 environment. The central parser accepted
+1.128 seconds in the fixed Qwen3-v2 environment. The central parser accepted
 both changed proposals, confirmed `enabled = false`, and resolved each GPU
 profile to explicit policy `fixed` and count 2. The central `JobRequest`
 parser accepted a normal request with neither `execution_profile` nor
@@ -396,7 +396,7 @@ The exact combined test command was:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python -m unittest tests.unit.test_protocol_amendments tests.unit.test_qwen3_v2_g0 tests.unit.test_qwen3_v2_g0_handler tests.unit.test_g0_request tests.unit.test_gpu_preflight_request tests.unit.test_qwen3_v2_gpu_preflight tests.unit.test_qwen3_v2_gpu_preflight_handler tests.unit.test_scheduler_adapter tests.unit.test_registration_proposal tests.unit.test_workflow_contracts -q
 ```
 
-It reported `Ran 110 tests in 1.129s` and `OK`. An earlier attempt with system
+It reported `Ran 110 tests in 1.128s` and `OK`. An earlier attempt with system
 Python loaded 92 tests but could not import three G0 modules because that
 interpreter lacks `PyYAML`; rerunning the complete set in the fixed runtime
 resolved the environment issue. The central proposal parser command used the
@@ -422,10 +422,14 @@ per-rank CPU threading at three ranks, and cross-world-size checkpoint
 resharding are not implemented or reviewed. The handlers therefore continue
 to reject every allocation other than their exact fixed two-GPU contract.
 
-The fixed runtime publication is separately incomplete. Three preparation
-attempts were safely rolled back because the login-node environment could not
-resolve the PyPI host even with approved network escalation. The post-failure
-check found neither final targets nor residual staging directories. Neither
+The fixed runtime publication remains incomplete. Five preparation attempts
+have safely rolled back; the latest normal and approved escalated executions
+both failed while resolving the PyPI host. An approved escalated direct-IP
+HTTPS diagnostic also could not establish a connection, so the current host
+has no usable outbound dependency path rather than only a sandbox/DNS
+restriction. No compatible OPD-owned wheel cache, complete alternate runtime,
+or pinned MIB checkout is available. The post-failure check found neither
+final targets nor residual staging directories. Neither
 `/scr/del6500/OPD/envs/qwen3-v2-g0-v1` nor
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
 registration until the amendment is independently accepted, the runtime is
