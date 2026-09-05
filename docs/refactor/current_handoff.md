@@ -9,16 +9,17 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The independently reviewed implementation candidate A is
+The rejected implementation candidate A is
 `ab2f72f20036b6f488db5d5a335744a6a80b8b82`
 (`fix: load pinned EAP package from src layout`). It contains the persistent
 submodule registration and the matching `EAP-IG/src` import correction in both
 the G0 runtime preparer and formal circuit runner. The 2026-09-05 review did
 not accept this candidate because its published MIB tree fails the handler's
-clean-runtime gate. A future acceptance must review and bind a new repaired
-implementation commit, not candidate A. A pending uncommitted preparer repair
-prevents bytecode generation and rejects any source-tree contamination after
-offline verification; the next user-created clean commit will be candidate B.
+clean-runtime gate. The repaired clean implementation candidate B is
+`e8138997ad9465e986e1e92ffcf7fd61e8c113e8`
+(`fix: keep staged MIB checkout bytecode-free`). It prevents bytecode
+generation and rejects any source-tree contamination after offline
+verification. A future acceptance must review and bind candidate B, not A.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -155,8 +156,8 @@ amendment field to equal the proposed document in the reviewed implementation,
 and permits only the amendment and handoff before acceptance. After acceptance,
 only this handoff may differ between GPU preflight, G0 request generation, and
 execution; any source, config, handler, test, or other protocol delta fails
-closed. The runtime repair therefore requires a new implementation commit and
-a new independent review rather than metadata acceptance of candidate A.
+closed. Candidate B now supplies that runtime repair, but it still requires a
+new independent review rather than metadata acceptance of candidate A.
 
 The candidate makes each new GPU-preflight plan bind its clean Git commit. The
 already completed preflight identity cannot be reused. After amendment
@@ -453,18 +454,22 @@ with `fixed MIB checkout or submodule tree is dirty or incomplete`. This is a
 pre-payload runtime blocker even though the committed hashes, package versions,
 `pip check`, and Git-linked source revisions match.
 
-The pending repair invokes the isolated offline check with Python `-B`, because
-`-I` ignores `PYTHONDONTWRITEBYTECODE`, then checks both the EAP submodule and
-parent MIB checkout with porcelain-v1 status, all untracked files, and no
-submodule ignoring before publication. A real offline import and pinned-model
-metadata load against the clean probe checkout left both Git status outputs
-empty. The focused handler/preparer suite passes 11 tests; the complete
-related suite passes 112 tests in 6.839 seconds. Python compilation, unchanged
-G0 deployment identity, and `git diff --check` pass. The contaminated published
-targets have not been modified in place; after candidate B is committed they
-must be moved aside, rebuilt atomically with the repaired preparer, and the new
-immutable checkout must pass the production clean-runtime gate before another
-independent review.
+Candidate B invokes the isolated offline check with Python `-B`, because `-I`
+ignores `PYTHONDONTWRITEBYTECODE`, then checks both the EAP submodule and parent
+MIB checkout with porcelain-v1 status, all untracked files, and no submodule
+ignoring before publication. The user moved aside candidate A's contaminated
+targets and atomically republished both fixed paths from clean candidate B.
+The final MIB parent and EAP submodule status outputs are empty, the tree
+contains no `.pyc`, and their revisions remain exactly
+`b759df34433c9e31043ba9e02908ce0bf20e894f` and
+`7af394a5662de8b23ad6154716a0cd3993d447a3`. A direct no-GPU invocation of the
+production `_validate_environment()` with two virtual CUDA identifiers now
+passes. The complete related suite run in the rebuilt runtime passes 112 tests
+in 6.816 seconds; Python compilation, `pip check`, executable SHA-256
+`848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801`,
+unchanged G0 deployment identity, and `git diff --check` all pass. Candidate B
+is ready for a new independent scientific review; the amendment remains
+`proposed` until that separate review accepts it.
 
 Do not enable the registration until the runtime blocker is repaired in a new
 reviewed implementation, the amendment is independently accepted, the fresh
