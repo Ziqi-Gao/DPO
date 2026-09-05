@@ -8,8 +8,10 @@ project session. It does not grant authority over the central scheduler.
 
 Before changing or running OPD code, read these files in full:
 
+- `/home/del6500/projects/ServerScheduler/docs/project-session-scheduler-v2-guide.md`
 - `/home/del6500/projects/ServerScheduler/docs/project-integration.md`
 - `/home/del6500/projects/ServerScheduler/docs/job-contract.md`
+- `/home/del6500/projects/ServerScheduler/docs/scheduler-managed-gpu-v1.md`
 - `/home/del6500/projects/ServerScheduler/docs/project-migration-instructions.md`
 - `/home/del6500/projects/ServerScheduler/schemas/job-request-v2.schema.json`
 
@@ -144,9 +146,33 @@ project-local CPU/GPU admission control.
 
 Use the project request builders. Do not hand-edit generated outbox JSON. The
 normal request contains only protocol version, fresh job ID, project, task,
-priority, the registered execution profile when intentionally fixed, and the
-handler's allowlisted scientific identity parameters. Hardware allocation is
-not chosen through parameters.
+priority, and the handler's allowlisted scientific identity parameters. It
+omits both `execution_profile` and `resources`, including for a task whose only
+reviewed profile is fixed. An explicit profile, CPU hint, or host-memory hint
+requires a separately documented central exception; no current OPD request
+builder has one. Never hide resource steering in parameters, job IDs, request
+filenames, or request-selected configuration.
+
+ServerScheduler alone chooses concrete physical devices. For a
+scheduler-managed GPU profile it also compares the centrally permitted 1, 2,
+3, and 4 GPU allocations at claim time using predicted wait plus runtime; a
+running attempt is never resized. The OPD entrypoint must derive and
+cross-check the actual GPU count from both the running manifest and
+`SERVER_SCHEDULER_GPU_COUNT`, preserve `CUDA_VISIBLE_DEVICES`, and use only
+logical devices `0..N-1`.
+
+Do not propose `gpu_count_policy = "scheduler"` unless the same task and
+entrypoint have reviewed scientific semantics and fail-closed fixture evidence
+for every centrally permitted count 1, 2, 3, and 4, including batch/token/RNG
+semantics, CPU-thread allocation, one-GPU memory safety, the three-GPU case,
+and checkpoint/resume across changed world sizes. Otherwise declare
+`gpu_count_policy = "fixed"` with one exact registered count. The current
+Qwen3-v2 GPU preflight and G0 tasks remain fixed at two GPUs.
+
+After preparing an outbox request, report its absolute path, SHA-256, job ID,
+project HEAD, tracked-worktree state, and validation results. The outbox is not
+automatically consumed, and the file's existence is not evidence of central
+submission or status.
 
 ## Current migrated scheduler surface
 
@@ -159,13 +185,13 @@ pilot.
 | Task | Profile | Fixed allocation | Result |
 | --- | --- | --- | --- |
 | `repository_preflight` | `repository-preflight-cpu` | 1 CPU core, 128 MiB, no GPU, 30 s estimate | `preflight_report.json` |
-| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-2gpu` | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 3600 s estimate | `gpu_preflight.json` |
-| `qwen3_v2_g0` | `qwen3-v2-g0-2gpu` | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 43200 s estimate | `g0.json`, `g0_artifacts.tar` |
+| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-2gpu` (`gpu_count_policy = "fixed"`) | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 3600 s estimate | `gpu_preflight.json` |
+| `qwen3_v2_g0` | `qwen3-v2-g0-2gpu` (`gpu_count_policy = "fixed"`) | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 43200 s estimate | `g0.json`, `g0_artifacts.tar` |
 
-Both request builders allow exactly `workflow_id`, `plan_sha256`, and
-`unit_id`. Their checked-in proposals are documentation/handoff artifacts and
-remain disabled even if an independently managed central registration has a
-different live state.
+All three request builders allow exactly `workflow_id`, `plan_sha256`, and
+`unit_id` and omit `execution_profile` and `resources`. Their checked-in
+proposals are documentation/handoff artifacts and remain disabled even if an
+independently managed central registration has a different live state.
 
 Relevant paths:
 

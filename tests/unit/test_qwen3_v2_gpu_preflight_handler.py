@@ -124,6 +124,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
                     "cpu_scaling_efficiency": 0.0,
                     "estimated_runtime_seconds": 3600.0,
                     "gpu_count": 2,
+                    "gpu_count_policy": "fixed",
                     "gpu_exclusivity": "required",
                     "gpu_memory_mib": 81920,
                     "gpu_models": [self.module.GPU_MODEL],

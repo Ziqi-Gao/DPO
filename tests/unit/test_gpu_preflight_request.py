@@ -122,18 +122,12 @@ class GpuPreflightRequestTests(unittest.TestCase):
         )
         self.assertNotIn("repository_snapshot", json.dumps(plan.to_payload()))
 
-    def test_outbox_is_fresh_profile_fixed_and_has_no_hardware_or_command_surface(self) -> None:
+    def test_outbox_is_fresh_scientific_only_and_has_no_profile_or_resource_surface(self) -> None:
         class FixedHandler:
             @staticmethod
             def validate_unit_contract(unit) -> None:  # type: ignore[no-untyped-def]
                 if unit.task != TASK_NAME:
                     raise AssertionError("request builder selected the wrong task")
-
-            @staticmethod
-            def profile(name: str) -> object:
-                if name != PROFILE_NAME:
-                    raise AssertionError("request builder selected the wrong profile")
-                return object()
 
         with (
             mock.patch(
@@ -156,7 +150,6 @@ class GpuPreflightRequestTests(unittest.TestCase):
             validate_outbox_request(second_request)
         self.assertNotEqual(first_request["job_id"], second_request["job_id"])
         self.assertEqual(first_request["task"], TASK_NAME)
-        self.assertEqual(first_request["execution_profile"], PROFILE_NAME)
         self.assertEqual(
             first_request["parameters"],
             {
@@ -167,7 +160,8 @@ class GpuPreflightRequestTests(unittest.TestCase):
         )
         self.assertEqual(first_request["parameters"], second_request["parameters"])
         self.assertFalse(
-            {"command", "cwd", "env", "path", "resources"} & set(first_request)
+            {"command", "cwd", "env", "execution_profile", "path", "resources"}
+            & set(first_request)
         )
         self.assertNotIn("repository_snapshot", json.dumps(first_request))
 

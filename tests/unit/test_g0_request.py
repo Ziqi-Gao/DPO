@@ -173,16 +173,11 @@ class G0RequestTests(unittest.TestCase):
             self.amendment_sha256,
         )
 
-    def test_request_has_no_resource_command_path_or_environment_override(self) -> None:
+    def test_request_has_only_scientific_identity_and_no_profile_or_resource_override(self) -> None:
         class FixedHandler:
             @staticmethod
             def validate_unit_contract(unit) -> None:  # type: ignore[no-untyped-def]
                 self.assertEqual(unit.task, TASK_NAME)
-
-            @staticmethod
-            def profile(name: str) -> object:
-                self.assertEqual(name, PROFILE_NAME)
-                return object()
 
         with (
             mock.patch(
@@ -201,7 +196,6 @@ class G0RequestTests(unittest.TestCase):
             )
         payload = json.loads(receipt.outbox_path.read_text(encoding="utf-8"))
         validate_outbox_request(payload)
-        self.assertEqual(payload["execution_profile"], PROFILE_NAME)
         self.assertEqual(payload["task"], TASK_NAME)
         self.assertEqual(
             payload["parameters"],
@@ -211,7 +205,10 @@ class G0RequestTests(unittest.TestCase):
                 "workflow_id": WORKFLOW_ID,
             },
         )
-        self.assertFalse({"command", "cwd", "env", "path", "resources"} & set(payload))
+        self.assertFalse(
+            {"command", "cwd", "env", "execution_profile", "path", "resources"}
+            & set(payload)
+        )
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ allow_project_file_mutation = false
 [integration]
 entrypoint = "/home/del6500/projects/OPD/scripts/server_scheduler/opd-entrypoint"
 allowed_tasks = ["repository_preflight", "qwen3_v2_g0", "qwen3_v2_gpu_preflight"]
-notes = "Disabled complete OPD proposal for independent central review. The new qwen3_v2_g0 task accepts only workflow_id, plan_sha256, and unit_id. Its code-owned handler fixes the two-GPU Qwen3-v2 seed-42 G0 gate, exact offline model and MIB revisions, FSDP topology, 192-GiB memory/headroom contract, content inputs, artifact bundle, and semantic validator. It preserves scheduler-provided CUDA visibility and accepts no command, path, environment, physical-GPU, or resource override. G0 additionally requires the independently accepted qwen3_v2_g0_2gpu_v1 amendment: two ranks retain per-device batch 4, use gradient accumulation 8, preserve effective global batch 64 and the exact 2,000,000 global nonpadding-token budget, and bind preflight, request, and execution to one reviewed implementation lineage. After acceptance, only current_handoff.md may change between those gates; any implementation or configuration delta fails closed. This file remains disabled and does not authorize central installation, enablement, request generation, submission, G0 execution, or any larger experiment."
+notes = "Disabled complete OPD proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. qwen3_v2_g0 and qwen3_v2_gpu_preflight are explicitly fixed at two GPUs because OPD has not established equivalent 1/2/3/4-GPU scientific semantics. The G0 code-owned handler fixes the two-GPU Qwen3-v2 seed-42 gate, exact offline model and MIB revisions, FSDP topology, 192-GiB memory/headroom contract, content inputs, artifact bundle, and semantic validator. It preserves scheduler-provided CUDA visibility and accepts no command, path, environment, physical-GPU, or resource override. G0 additionally requires the independently accepted qwen3_v2_g0_2gpu_v1 amendment: two ranks retain per-device batch 4, use gradient accumulation 8, preserve effective global batch 64 and the exact 2,000,000 global nonpadding-token budget, and bind preflight, request, and execution to one reviewed implementation lineage. After acceptance, only current_handoff.md may change between those gates; any implementation or configuration delta fails closed. This file remains disabled and does not authorize central installation, enablement, request generation, submission, G0 execution, or any larger experiment."
 
 [[tasks]]
 name = "repository_preflight"
@@ -48,6 +48,7 @@ selection_policy = "earliest_finish"
 [[tasks.execution_profiles]]
 name = "qwen3-v2-g0-2gpu"
 kind = "gpu"
+gpu_count_policy = "fixed"
 resource_mode = "fixed"
 scheduling_goal = "latency"
 cpu_cores_min = 16
@@ -69,6 +70,7 @@ selection_policy = "earliest_finish"
 [[tasks.execution_profiles]]
 name = "qwen3-v2-gpu-preflight-2gpu"
 kind = "gpu"
+gpu_count_policy = "fixed"
 resource_mode = "fixed"
 scheduling_goal = "latency"
 cpu_cores_min = 16

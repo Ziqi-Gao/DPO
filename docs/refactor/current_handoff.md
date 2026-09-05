@@ -9,11 +9,14 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The current committed checkout is `17b0b531b552247a6faa7699b633f5e756dad7d1`
-(`feat: add two-gpu Qwen3-v2 G0 candidate`). This is implementation commit A
-for the non-self-referential amendment review. The committed GPU-preflight
-implementation baseline remains `252b02a` (`feat: convert GPU preflight to two
-GPUs`). Important preceding milestones are:
+The current committed HEAD is `17b0b531b552247a6faa7699b633f5e756dad7d1`
+(`feat: add two-gpu Qwen3-v2 G0 candidate`). The worktree now contains the
+uncommitted scheduler-v2 request/proposal compatibility change described
+below, so `17b0b531b552247a6faa7699b633f5e756dad7d1` is no longer eligible as
+the reviewed implementation commit for a future G0 acceptance. A new clean
+user-created implementation commit must replace it. The committed
+GPU-preflight implementation baseline remains `252b02a` (`feat: convert GPU
+preflight to two GPUs`). Important preceding milestones are:
 
 - `8b020de`: split scientific domains from the scheduler boundary.
 - `0b96a8e`: add the CPU repository-preflight pilot.
@@ -70,8 +73,8 @@ models, a pinned MIB/EAP-IG checkout, complete attempt isolation, an immutable
 artifact tar, and a code-owned semantic validator. The request builder binds
 the exact base preregistration, an independently accepted protocol amendment,
 and a successful two-GPU preflight from the same reviewed implementation
-lineage. It emits no command, path, environment, physical-GPU, or resource
-override.
+lineage. Its normal request emits no `execution_profile`, `resources`, command,
+path, environment, or physical-GPU override.
 
 The machine-readable amendment proposal is
 `prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`, with review notes in
@@ -84,10 +87,25 @@ preserves effective global batch 64. The exact 2,000,000 global non-padding
 model-input-token budget and 120 optimizer-step ceiling remain unchanged.
 
 The candidate disabled full-registration proposal is
-`deployments/qwen3_v2_g0/registration-proposal-v2.toml`. The central
-ServerScheduler parser accepted it and confirmed `enabled = false`; it has not
-been installed or enabled. No G0 workflow plan or outbox request has been
-created, and no G0 job has been submitted or run.
+`deployments/qwen3_v2_g0/registration-proposal-v2.toml`, with current SHA-256
+`4f5ad58d58c1c10e9e352d66f6cf8655977e6fdbe0913cac53fd53cb293cdae1`.
+The earlier preflight-only proposal has SHA-256
+`275035b96e9927de7b7df601e675665789562af0e45fc44a7c8f682a8392217c`.
+Both explicitly declare the GPU profiles as `gpu_count_policy = "fixed"` with
+`gpu_count = 2`; the central ServerScheduler parser accepted both and
+confirmed `enabled = false`. They were not installed or enabled by this
+session. No new G0 workflow plan or outbox request has been created, and no G0
+job has been submitted or run.
+
+The current uncommitted scheduler-v2 compatibility change modifies
+`AGENTS.md`, both GPU registration proposals, the GPU-preflight and G0 request
+builders, their request tests, both proposal/handler tests, and this handoff.
+The normal request builders now expose only project, task, priority, a fresh
+opaque job ID, and the exact scientific parameters `workflow_id`,
+`plan_sha256`, and `unit_id`; they omit `execution_profile` and `resources`.
+The fixed two-rank process topology remains inside the reviewed task science
+and code-owned allocation validator rather than becoming request-side resource
+steering.
 
 Implementation commit A changes are limited to:
 
@@ -122,12 +140,12 @@ Implementation commit A changes are limited to:
   `tests/unit/test_protocol_amendments.py`, and
   `tests/unit/test_scheduler_adapter.py`.
 
-The non-self-referential review design requires two user-created commits. The
-first is now `17b0b531b552247a6faa7699b633f5e756dad7d1`; it contains the
-complete implementation and this `proposed` amendment. An independent reviewer
-must name that already-existing implementation commit by changing only the
-amendment review block to `accepted`; that review metadata and any handoff
-update form a second commit. Validation proves ancestry,
+The non-self-referential review design still requires two user-created commits.
+The first must now be a new clean commit containing this compatibility change
+and the unchanged `proposed` amendment. An independent reviewer must name that
+new already-existing implementation commit by changing only the amendment
+review block to `accepted`; that review metadata and any handoff update form a
+second commit. Validation proves ancestry,
 requires every scientific amendment field to equal the proposed document in
 the implementation commit, and permits only the amendment and handoff before
 acceptance. After acceptance, only this handoff may differ between GPU
@@ -145,7 +163,10 @@ required before a G0 request can be prepared.
 
 - The stable entrypoint accepts one absolute protocol-v2 job-manifest path. It
   validates the manifest, allowlisted parameters, allocation, execution
-  profile, and scheduler-provided environment before dispatch.
+  profile, and scheduler-provided environment before dispatch. It cross-checks
+  `allocation.gpu_count` with `SERVER_SCHEDULER_GPU_COUNT`, the ordered UUID
+  arrays, and the unchanged `CUDA_VISIBLE_DEVICES` before using logical device
+  ordinals only.
 - OPD consumes the assigned GPU visibility and never selects host GPU indices.
   There is no project-local queue, lease, retry loop, detached worker, or
   resource scheduler.
@@ -159,9 +180,10 @@ required before a G0 request can be prepared.
 - Scheduler success alone is insufficient. The handler must produce the exact
   declared outputs and a fresh `ScientificCompletion` accepted by its
   code-owned semantic validator.
-- The project outbox helper only prepares a schema-valid request for a migrated
-  task. It does not submit, poll, retry, edit central registration, or manage a
-  scheduler service.
+- The project outbox helper only prepares a schema-valid, scientific-only
+  request for a migrated task. Normal OPD builders omit `execution_profile`
+  and `resources`. The helper does not submit, poll, retry, edit central
+  registration, or manage a scheduler service.
 
 The former adapter-status document described the CPU-only registry before the
 GPU preflight migration and included obsolete launcher details. The current
@@ -170,26 +192,30 @@ the task-specific pilot document linked below.
 
 ## Scheduler integration state
 
-A read-only inspection on 2026-09-03 found the central OPD registration enabled
-for exactly these two tasks and profiles:
+A read-only inspection of the current central proposal on 2026-09-04 found the
+OPD registration disabled with exactly these three tasks and profiles:
 
 - `repository_preflight` with `repository-preflight-cpu`: 1 CPU, 128 MiB RAM,
   no GPU, 30-second estimate, shareable.
 - `qwen3_v2_gpu_preflight` with `qwen3-v2-gpu-preflight-2gpu`: 16 CPUs,
   196608 MiB RAM, 2 GPUs, 81920 MiB per GPU, 95% utilization target,
   exclusive allocation, RTX PRO 6000 Blackwell, 3600-second estimate.
+- `qwen3_v2_g0` with `qwen3-v2-g0-2gpu`: 16 CPUs, 196608 MiB RAM, 2 GPUs,
+  81920 MiB per GPU, 95% utilization target, exclusive allocation, RTX PRO
+  6000 Blackwell, 43200-second estimate.
 
 Central registration is external mutable state. Reverify it in the central
 ServerScheduler session before any future submission. This repository does not
 authorize registration edits, service operations, or submission.
 
-The central OPD registration was independently updated and enabled for the
-two-GPU profile after user approval. The deployed scheduler now launches each
-job in an allocation-specific systemd scope: the authoritative running-manifest
+Earlier two-GPU pilot execution occurred while an older central registration
+was independently enabled. That historical state does not override the current
+disabled declaration. The deployed scheduler launches each job in an
+allocation-specific systemd scope: the authoritative running-manifest
 `allocation.memory_mib` becomes the exact `MemoryMax`, swap is disabled, and a
 launch guard verifies the cgroup before project code runs. Request-side
-`resources` is an optional sparse hint object, but current OPD requests must
-continue to omit it. OPD consumes only the documented public
+controls are exceptional; all current OPD builders omit both
+`execution_profile` and `resources`. OPD consumes only the documented public
 `SERVER_SCHEDULER_*` environment and must not depend on private guard metadata
 such as `SERVER_SCHEDULER_MEMORY_MAX_BYTES` or
 `SERVER_SCHEDULER_RUNTIME_UNIT`.
@@ -349,12 +375,14 @@ path on the real two-GPU topology; it does not validate or authorize G0.
 
 ## Current scientific gate
 
-The bounded two-GPU preflight substrate has passed. The committed G0 candidate
-and proposed-amendment design passed 110 handler, request, semantic
+The bounded two-GPU preflight substrate has passed. The current uncommitted
+scheduler-v2 compatibility change passed 110 handler, request, semantic
 validator, amendment, adapter, preflight, workflow, and proposal tests in
-1.139 seconds from clean implementation commit A. Python compilation and
-`git diff --check` passed. The central registration parser accepted the
-complete proposal and confirmed `enabled = false`. The frozen base
+1.129 seconds in the fixed Qwen3-v2 environment. The central parser accepted
+both changed proposals, confirmed `enabled = false`, and resolved each GPU
+profile to explicit policy `fixed` and count 2. The central `JobRequest`
+parser accepted a normal request with neither `execution_profile` nor
+`resources`; changed Python files compiled, and `git diff --check` passed. The frozen base
 preregistration retained SHA-256
 `8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4`.
 The G0 handler, dependency lock, package manifest, and deployment identity are
@@ -370,9 +398,11 @@ The exact combined test command was:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python -m unittest tests.unit.test_protocol_amendments tests.unit.test_qwen3_v2_g0 tests.unit.test_qwen3_v2_g0_handler tests.unit.test_g0_request tests.unit.test_gpu_preflight_request tests.unit.test_qwen3_v2_gpu_preflight tests.unit.test_qwen3_v2_gpu_preflight_handler tests.unit.test_scheduler_adapter tests.unit.test_registration_proposal tests.unit.test_workflow_contracts -q
 ```
 
-It reported `Ran 110 tests in 1.139s` and `OK`. The affected Python files also
-passed `py_compile`, and `git diff --check` passed. The central proposal parser
-command was:
+It reported `Ran 110 tests in 1.129s` and `OK`. An earlier attempt with system
+Python loaded 92 tests but could not import three G0 modules because that
+interpreter lacks `PyYAML`; rerunning the complete set in the fixed runtime
+resolved the environment issue. The central proposal parser command used the
+current ServerScheduler source and accepted both proposal files.
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/del6500/projects/ServerScheduler/src /usr/bin/python3.12 -c 'from pathlib import Path; from server_scheduler.registry import load_registration; r=load_registration(Path("deployments/qwen3_v2_g0/registration-proposal-v2.toml")); print(r.name, r.enabled, sorted(r.tasks))'
@@ -382,12 +412,18 @@ It reported `OPD False` and exactly `qwen3_v2_g0`,
 `qwen3_v2_gpu_preflight`, and `repository_preflight`.
 
 The prior global-batch/token-semantics and self-referential-commit design
-blockers now have a fail-closed committed candidate solution. They remain
-approval gates: the proposed amendment has not received independent scientific
-acceptance. Any acceptance must name
-`17b0b531b552247a6faa7699b633f5e756dad7d1` as its
-`reviewed_implementation_commit`; this handoff-only synchronization is an
-allowed metadata descendant and does not alter implementation identity.
+blockers retain a fail-closed candidate solution, but the compatibility change
+must first receive a new clean implementation commit. The proposed amendment
+has not received independent scientific acceptance. Any future acceptance must
+name that new commit, not `17b0b531b552247a6faa7699b633f5e756dad7d1`, as its
+`reviewed_implementation_commit`.
+
+Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
+two-GPU preflight has real pilot evidence. One-GPU memory safety, three-GPU
+exact-global-batch semantics, 1/2/3/4 batch/token/RNG equivalence, non-even
+per-rank CPU threading at three ranks, and cross-world-size checkpoint
+resharding are not implemented or reviewed. The handlers therefore continue
+to reject every allocation other than their exact fixed two-GPU contract.
 
 The fixed runtime publication is separately incomplete. Three preparation
 attempts were safely rolled back because the login-node environment could not
@@ -397,13 +433,19 @@ check found neither final targets nor residual staging directories. Neither
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
 registration until the amendment is independently accepted, the runtime is
 successfully prepared and verified, the deployment hashes pass, and the
-acceptance checkout is clean. The disabled proposal at implementation commit A
-may now be handed to a central operator for review and installation while it
-remains `enabled = false`; enablement and submission require later, separate
-approvals and remain central operations.
+acceptance checkout is clean. After the compatibility change receives its new
+implementation commit, the changed disabled proposal may be handed to a
+central operator for review and installation while it remains
+`enabled = false`; enablement and submission require later, separate approvals
+and remain central operations.
 
-No new preflight or G0 workflow plan, outbox request, or job ID exists. Nothing
-was submitted, no GPU was operated, and no central scheduler state was changed.
+No new preflight or G0 workflow plan, outbox request, or job ID exists. The
+legacy inventory remains 20 `scripts/slurm` files, eight
+`scripts/production` launch/supervision files, and three quarantined Python
+pilot/finalizer modules; none is a supported path, but cleanup still lacks the
+required caller cutover, drain, rollback, operator inventory, and explicit
+deletion approval. Nothing was submitted, no GPU was operated, no service or
+process was managed, and no central scheduler state was changed.
 
 The successful preflight is evidence for the two-GPU execution substrate only;
 it is not approval for G0, seed-42 training, the full seed matrix, replication,

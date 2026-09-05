@@ -1,4 +1,4 @@
-"""Prepare the fixed Qwen3-v2 GPU-preflight request without submitting it."""
+"""Prepare a scientific-only fixed Qwen3-v2 GPU-preflight request."""
 
 from __future__ import annotations
 
@@ -308,7 +308,6 @@ def prepare_qwen3_v2_gpu_preflight_request(
     outbox_path = prepare_outbox_request(
         plan,
         unit_id=UNIT_ID,
-        execution_profile=PROFILE_NAME,
         layout=layout,
     )
     return PreparedGpuPreflightRequest(

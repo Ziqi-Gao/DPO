@@ -149,6 +149,7 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         g0 = next(task for task in proposal["tasks"] if task["name"] == "qwen3_v2_g0")
         profile = g0["execution_profiles"][0]
         self.assertEqual(profile["name"], PROFILE_NAME)
+        self.assertEqual(profile["gpu_count_policy"], "fixed")
         self.assertEqual(profile["gpu_count"], 2)
         self.assertEqual(profile["memory_mib"], 196608)
         self.assertEqual(profile["estimated_runtime_seconds"], 43200.0)
