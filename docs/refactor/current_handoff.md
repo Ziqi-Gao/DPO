@@ -20,10 +20,10 @@ clean-runtime gate. The repaired clean implementation candidate B is
 (`fix: keep staged MIB checkout bytecode-free`). It prevents bytecode
 generation and rejects any source-tree contamination after offline
 verification. Independent scientific review of candidate B passed on
-2026-09-05. The amendment review block is now accepted and binds that exact
-commit in the working tree; the user must still create the separate clean
-acceptance commit containing only the amendment and this handoff before the
-accepted lineage can be used.
+2026-09-05. Acceptance commit
+`71a86997cc3eadf55d18b9a5d0405eaaa9ada5ac` changes only the amendment
+review block and this handoff, binds candidate B exactly, and passes the clean
+accepted-amendment resolver.
 The committed GPU-preflight implementation
 baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
 Important preceding milestones are:
@@ -91,7 +91,7 @@ The machine-readable amendment is
 `docs/refactor/qwen3_v2_g0_2gpu_amendment_review.md`. Candidate B contains the
 proposed bytes with SHA-256
 `2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`;
-the review-only accepted working-tree bytes have SHA-256
+the review-only accepted committed bytes have SHA-256
 `86b1adf0ecd368749864478b5a6638ee84479726f3669a6875eb5b25a731f232`
 and bind candidate B exactly.
 It leaves the frozen base preregistration unchanged, retains per-device batch
@@ -156,14 +156,14 @@ Implementation commit A changes are limited to:
 
 The non-self-referential review design requires an already-existing
 implementation commit followed by an acceptance commit that changes only the
-amendment review block and this handoff. Candidate B has now passed the
-independent review, and the current uncommitted transition changes only those
-two paths. Validation proves ancestry, requires every scientific amendment
-field to equal the proposed document in candidate B, and permits only the
-amendment and handoff before acceptance. After the user creates the acceptance
-commit, only this handoff may differ between GPU preflight, G0 request
-generation, and execution; any source, config, handler, test, or other protocol
-delta fails closed.
+amendment review block and this handoff. Candidate B passed the independent
+review, and acceptance commit `71a86997cc3eadf55d18b9a5d0405eaaa9ada5ac`
+changes only those two paths. Validation proves ancestry, requires every
+scientific amendment field to equal the proposed document in candidate B, and
+permits only the amendment and handoff before acceptance. After acceptance,
+only this handoff may differ between GPU preflight, G0 request generation, and
+execution; any source, config, handler, test, or other protocol delta fails
+closed.
 
 The candidate makes each new GPU-preflight plan bind its clean Git commit. The
 already completed preflight identity cannot be reused. After amendment
@@ -428,8 +428,8 @@ terms: world size 2, per-device batch 4, accumulation 8, effective global batch
 64, exact pre-update cross-rank reservation of the 2,000,000 non-padding
 model-input-token budget, the independent 120 optimizer-step ceiling, and the
 seed-42 feasibility-only claim. Candidate B is an ancestor of current HEAD;
-only this handoff was committed after it, and the current acceptance edit adds
-only the allowed amendment review block.
+the acceptance commit adds only the allowed amendment review block and this
+handoff.
 
 Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
 two-GPU preflight has real pilot evidence. One-GPU memory safety, three-GPU
@@ -464,15 +464,14 @@ two-rank token-reservation/resume probe, `pip check`, executable SHA-256
 `848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801`,
 unchanged G0 deployment identity
 `f08cd196915c0306135faecc46414c450092cadc19a1e372e97655d1f53f6d99`,
-and `git diff --check` all pass. The review block is accepted in the working
-tree, but runtime lineage validation intentionally remains unavailable until
-the user commits this review-only transition and restores a clean checkout.
+and `git diff --check` all pass. The committed review block and clean runtime
+lineage resolver now pass.
 
-Do not enable the registration until the acceptance commit exists, the fresh
-accepted-lineage two-GPU preflight passes, and the checkout is clean. The
-disabled proposal may be handed to a central operator for review and
-installation while it remains `enabled = false`; enablement and submission
-require later, separate approvals and remain central operations.
+Do not enable the registration until a fresh accepted-lineage two-GPU
+preflight passes and the checkout is clean. The disabled proposal may be
+handed to a central operator for review and installation while it remains
+`enabled = false`; enablement and submission require later, separate approvals
+and remain central operations.
 
 No new preflight or G0 workflow plan, outbox request, or job ID exists. The
 legacy inventory remains 20 `scripts/slurm` files, eight
