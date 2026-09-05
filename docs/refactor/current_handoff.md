@@ -9,20 +9,17 @@ must still be verified when mutable.
 
 ## Current repository state
 
-Committed HEAD is candidate D implementation commit
-`a8855ecab55819bbcd1a7a479d933104bb27fb81` on `master`, 34 commits
-ahead of `origin/master`. It is a single-parent descendant of candidate C's
-rejection commit and contains exactly the 17 reviewed implementation paths.
-Its committed amendment remains proposed with SHA-256
-`2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686`.
+Committed HEAD is candidate D acceptance commit
+`30bafb42344edfe2a6ceff473efe41ac0ee79750` on `master`, 35 commits
+ahead of `origin/master`. Its single parent is reviewed implementation commit
+`a8855ecab55819bbcd1a7a479d933104bb27fb81`; the acceptance commit changes
+only the amendment review block and this handoff.
 
-Independent scientific review of that exact commit passed. The working tree
-now contains only the prepared acceptance metadata in the amendment and this
-handoff. The amendment binds reviewed implementation commit `a8855ec...`, and
-its accepted working-tree SHA-256 is
+The committed amendment is accepted, binds `a8855ec...`, and has SHA-256
 `014b5dc78619870eee3a6f6175323b0418c5c597fa9625fd41c8e15ee353b6c2`.
-It is not accepted-lineage execution state until the user creates the separate
-acceptance commit.
+The actual accepted-lineage resolver and commit validator passed against
+`30bafb...` with a clean tracked checkout. The current working tree contains
+only this post-acceptance handoff update.
 
 Historical candidate status:
 
@@ -182,6 +179,9 @@ Candidate D static/runtime-boundary results:
   the amendment differs from implementation commit `a8855ec...` only in its
   review block, and the whole working tree differs only in the amendment and
   this handoff.
+- Acceptance commit `30bafb...` was then verified as a single-parent,
+  metadata-only descendant; the actual accepted-lineage resolver returned the
+  expected amendment, acceptance, and implementation identities.
 - The current ServerScheduler proposal parser accepted both checked-in
   proposals, reported `enabled = false`, and found exactly the declared tasks.
 
@@ -248,22 +248,23 @@ preflight must run and pass before a G0 request can be created.
 
 ## Required next gates
 
-1. The user creates the separate acceptance commit containing only the prepared
-   amendment review transition and this handoff. It must retain exact reviewed
-   implementation binding `a8855ecab55819bbcd1a7a479d933104bb27fb81`.
-2. A central operator reviews/installs the current disabled proposal, and the
-   user separately approves registration enablement.
-3. From a clean accepted lineage, prepare exactly one fresh two-GPU preflight
+1. The user commits this allowed handoff-only post-acceptance state update so
+   request generation can start from a clean accepted lineage.
+2. A central operator reviews/installs the current proposal while keeping it
+   disabled.
+3. The user separately approves central registration enablement, and the
+   central operator enables/deploys it.
+4. From a clean accepted lineage, prepare exactly one fresh two-GPU preflight
    request; report its absolute path, SHA-256, fresh job ID, project HEAD,
    worktree state, and tests. A central operator validates and submits that
    exact file.
-4. Follow the preflight to terminal state and accept it only through OPD's
+5. Follow the preflight to terminal state and accept it only through OPD's
    semantic completion validator.
-5. From the same clean accepted lineage, prepare one fresh G0 request bound to
+6. From the same clean accepted lineage, prepare one fresh G0 request bound to
    that accepted preflight. A central operator validates/submits it only after
    separate G0 approval.
 
-Until gates 1-4 complete, no Qwen3-v2 G0 job may be submitted.
+Until gates 1-5 complete, no Qwen3-v2 G0 job may be submitted.
 
 ## Quarantined legacy scheduler surface
 
