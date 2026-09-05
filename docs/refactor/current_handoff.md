@@ -9,14 +9,13 @@ kept under `docs/archive/`; it is not an execution guide.
 
 ## Current repository baseline
 
-The current committed HEAD is `17b0b531b552247a6faa7699b633f5e756dad7d1`
-(`feat: add two-gpu Qwen3-v2 G0 candidate`). The worktree now contains the
-uncommitted scheduler-v2 request/proposal compatibility change described
-below, so `17b0b531b552247a6faa7699b633f5e756dad7d1` is no longer eligible as
-the reviewed implementation commit for a future G0 acceptance. A new clean
-user-created implementation commit must replace it. The committed
-GPU-preflight implementation baseline remains `252b02a` (`feat: convert GPU
-preflight to two GPUs`). Important preceding milestones are:
+The current implementation commit is
+`22c215413d480317f6576d78739c630910f0a27e`
+(`fix: align OPD requests with scheduler v2`). It was created from a clean
+staged change on 2026-09-04 and is the new implementation commit A for any
+future G0 amendment acceptance. The committed GPU-preflight implementation
+baseline remains `252b02a` (`feat: convert GPU preflight to two GPUs`).
+Important preceding milestones are:
 
 - `8b020de`: split scientific domains from the scheduler boundary.
 - `0b96a8e`: add the CPU repository-preflight pilot.
@@ -97,7 +96,7 @@ confirmed `enabled = false`. They were not installed or enabled by this
 session. No new G0 workflow plan or outbox request has been created, and no G0
 job has been submitted or run.
 
-The current uncommitted scheduler-v2 compatibility change modifies
+The committed scheduler-v2 compatibility change modifies
 `AGENTS.md`, both GPU registration proposals, the GPU-preflight and G0 request
 builders, their request tests, both proposal/handler tests, and this handoff.
 The normal request builders now expose only project, task, priority, a fresh
@@ -140,12 +139,11 @@ Implementation commit A changes are limited to:
   `tests/unit/test_protocol_amendments.py`, and
   `tests/unit/test_scheduler_adapter.py`.
 
-The non-self-referential review design still requires two user-created commits.
-The first must now be a new clean commit containing this compatibility change
-and the unchanged `proposed` amendment. An independent reviewer must name that
-new already-existing implementation commit by changing only the amendment
-review block to `accepted`; that review metadata and any handoff update form a
-second commit. Validation proves ancestry,
+The non-self-referential review design now binds implementation commit A to
+`22c215413d480317f6576d78739c630910f0a27e`. An independent reviewer must name
+that already-existing commit by changing only the amendment review block to
+`accepted`; that review metadata and any handoff update form the acceptance
+commit. Validation proves ancestry,
 requires every scientific amendment field to equal the proposed document in
 the implementation commit, and permits only the amendment and handoff before
 acceptance. After acceptance, only this handoff may differ between GPU
@@ -375,7 +373,7 @@ path on the real two-GPU topology; it does not validate or authorize G0.
 
 ## Current scientific gate
 
-The bounded two-GPU preflight substrate has passed. The current uncommitted
+The bounded two-GPU preflight substrate has passed. The committed
 scheduler-v2 compatibility change passed 110 handler, request, semantic
 validator, amendment, adapter, preflight, workflow, and proposal tests in
 1.129 seconds in the fixed Qwen3-v2 environment. The central parser accepted
@@ -412,10 +410,9 @@ It reported `OPD False` and exactly `qwen3_v2_g0`,
 `qwen3_v2_gpu_preflight`, and `repository_preflight`.
 
 The prior global-batch/token-semantics and self-referential-commit design
-blockers retain a fail-closed candidate solution, but the compatibility change
-must first receive a new clean implementation commit. The proposed amendment
-has not received independent scientific acceptance. Any future acceptance must
-name that new commit, not `17b0b531b552247a6faa7699b633f5e756dad7d1`, as its
+blockers retain a fail-closed committed candidate solution. The proposed
+amendment has not received independent scientific acceptance. Any future
+acceptance must name `22c215413d480317f6576d78739c630910f0a27e` as its
 `reviewed_implementation_commit`.
 
 Neither GPU task is eligible for `gpu_count_policy = "scheduler"`. Only the
@@ -433,9 +430,8 @@ check found neither final targets nor residual staging directories. Neither
 `/scr/del6500/OPD/vendor/MIB-circuit-track-v1` exists. Do not enable the
 registration until the amendment is independently accepted, the runtime is
 successfully prepared and verified, the deployment hashes pass, and the
-acceptance checkout is clean. After the compatibility change receives its new
-implementation commit, the changed disabled proposal may be handed to a
-central operator for review and installation while it remains
+acceptance checkout is clean. The changed disabled proposal may now be handed
+to a central operator for review and installation while it remains
 `enabled = false`; enablement and submission require later, separate approvals
 and remain central operations.
 
