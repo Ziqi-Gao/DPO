@@ -10,8 +10,9 @@ must still be verified when mutable.
 ## Current repository state
 
 Committed HEAD is handoff-only commit
-`15606fd6d0dc2a3e6105247e9056b68780428e5b` on `master`. It descends through
-handoff-only commits `c3d396bea456691f2aa50609e64954ff3e00fb61`,
+`23dd9b4e775e68783281f2ce0a4adc9a2605c6f7` on `master`. It descends through
+handoff-only commits `15606fd6d0dc2a3e6105247e9056b68780428e5b`,
+`c3d396bea456691f2aa50609e64954ff3e00fb61`,
 `68f845b2390ab4ebb73c367e3aa1f57274f50845`, and
 `d9e8ab315d045c05e39885af14a2fdafcf3a06b4` from
 Candidate E acceptance commit
@@ -25,12 +26,12 @@ Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
 implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
 tracked paths and seven new paths. Acceptance commit `5c0bb34...` changes only
 the amendment review block and this handoff; `d9e8ab3...`, `68f845b...`,
-`c3d396b...`, and `15606fd...` each change only this handoff. Before this
-synchronization the tracked worktree and index were clean.
+`c3d396b...`, `15606fd...`, and `23dd9b4...` each change only this handoff.
+Before this synchronization the tracked worktree and index were clean.
 The ignored `.pytest_cache/` created by the 2026-09-06 status audit was moved,
 without deletion, to
 `/scr/del6500/OPD/tmp/pytest-cache-status-audit-20260906`. The strict
-accepted-lineage resolver passed at committed HEAD `15606fd...` with no unsafe
+accepted-lineage resolver passed at committed HEAD `23dd9b4...` with no unsafe
 untracked paths before this synchronization. The implementation changes cover:
 
 - permanent protocol rules and operational documentation in `AGENTS.md` and
@@ -288,6 +289,13 @@ request recorded below, and ran only request-structure checks plus central
 `validate`. It did not arm a constraint, submit or modify a job, query or use a
 GPU, or change central configuration or services.
 
+After the W=3 request handoff commit, this OPD session verified that independent
+W=3 and W=4 constrained preflights may be pending concurrently, generated the
+fresh count-neutral W=4 request recorded below at clean HEAD `23dd9b4...`, and
+ran only request-structure checks plus central `validate`. It did not arm a
+constraint, submit or modify a job, query or use a GPU, or change central
+configuration or services.
+
 ## Proposals, requests, and central state
 
 Candidate E project-owned proposals are disabled:
@@ -317,8 +325,8 @@ Candidate E real preflight coverage is currently:
 | --- | --- |
 | 1 | passed and semantically validated |
 | 2 | passed and semantically validated |
-| 3 | missing |
-| 4 | missing |
+| 3 | exact-count pilot submitted and pending |
+| 4 | exact-count request prepared; not submitted |
 
 The W=2 job is `opd-1f442a3c5c916a557a613b50f1459349`, attempt 1. It was
 submitted at `2026-09-06T02:58:18Z`, claimed with 24 CPU cores, 196608 MiB and
@@ -335,9 +343,8 @@ HEAD `5c0bb34...`. Its completion SHA-256 is
 `3760400728a55184dbd18a7b2e250ed919c76546d35fa8458b9f365a4d11671b`;
 the current semantic validator accepts the report/completion pair.
 
-Central durable state contains no pending or running OPD job and no OPD lease.
-It contains four completed and seven failed OPD jobs; all seven failures
-predate Candidate E. No `qwen3_v2_g0` job exists.
+The latest read-only central observation contains the pending W=3 preflight,
+no running OPD job, and no OPD lease. No `qwen3_v2_g0` job exists.
 
 ServerScheduler deployed the audited one-shot exact-job preflight constraint
 at 2026-09-06 14:38 CDT and restarted the service as PID 3288957. Its central
@@ -398,9 +405,28 @@ at plan SHA-256
 `104a13ce30dab4e3b1da8ef1f633ab514cdaa1a5a79eed16bbebc69370873e98`.
 It was generated at clean project HEAD `15606fd...`, has exactly the normal six
 top-level fields and three scientific parameters, omits `execution_profile`,
-`resources`, and any GPU-count hint, and passes central `validate`. No
-constraint has been armed and the request has not been submitted; a central
-operator must arm this exact job ID for W=3 before submitting this exact path.
+`resources`, and any GPU-count hint, and passes central `validate`. A central
+operator subsequently armed this exact job ID for W=3 and submitted it at
+`2026-09-06T20:33:14Z`. At the latest observation it remains `pending`, its
+constraint remains `armed`, and it has no attempt, allocation, lease, or log.
+
+A fresh count-neutral W=4 validation request is prepared at
+`/scr/del6500/OPD/scheduler/outbox/opd-44c3d75c1e8b9180d4e08ef55f173379.json`.
+Its SHA-256 is
+`ba34e7e8f097408343127abd21a2bcdd8d9fb3c16191e3addefaa9961f94e4db`,
+job ID is `opd-44c3d75c1e8b9180d4e08ef55f173379`, and workflow is
+`qwen3-v2-gpu-preflight-elastic-8e82f3aa463921390718f4239b941ab3`.
+Its plan is
+`/data/del6500/OPD/workflows/plans/qwen3-v2-gpu-preflight-elastic-8e82f3aa463921390718f4239b941ab3/c1c12bc34ba38d99f77f49083922f72ddfa4ba9913cba4335fb282de59b37999.json`
+at plan SHA-256
+`c1c12bc34ba38d99f77f49083922f72ddfa4ba9913cba4335fb282de59b37999`.
+It was generated at clean project HEAD `23dd9b4...`, has exactly the normal six
+top-level fields and three scientific parameters, omits `execution_profile`,
+`resources`, and any GPU-count hint, and passes central `validate`. No W=4
+constraint has been armed and this request has not been submitted. A central
+operator must arm this exact job ID for W=4 before submitting this exact path.
+W=3 and W=4 may remain pending concurrently; the central one-GPU-job
+concurrency ceiling means they will not run simultaneously.
 
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
@@ -414,10 +440,11 @@ not constitute submission.
 ## Required next gates
 
 1. After committing this handoff-only update, a central operator pre-arms job
-   `opd-3d20deb555e18b55a04873cc32769051` for W=3, verifies the constraint, and
-   only then submits its exact prepared outbox path.
-2. After terminal W=3, OPD validates its report and completion, then repeats
-   the same fresh-request sequence for W=4.
+   `opd-44c3d75c1e8b9180d4e08ef55f173379` for W=4, verifies the constraint, and
+   only then submits its exact prepared outbox path. The existing W=3 job stays
+   pending independently.
+2. OPD monitors both jobs and semantically validates each terminal report and
+   completion under its exact expected world size.
 3. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
    absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
    results must be reported; a central operator then validates and submits that
