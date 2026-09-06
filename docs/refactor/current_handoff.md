@@ -10,8 +10,9 @@ must still be verified when mutable.
 ## Current repository state
 
 Committed HEAD is handoff-only commit
-`68f845b2390ab4ebb73c367e3aa1f57274f50845` on `master`. It descends through
-handoff-only commit `d9e8ab315d045c05e39885af14a2fdafcf3a06b4` from
+`c3d396bea456691f2aa50609e64954ff3e00fb61` on `master`. It descends through
+handoff-only commits `68f845b2390ab4ebb73c367e3aa1f57274f50845`
+and `d9e8ab315d045c05e39885af14a2fdafcf3a06b4` from
 Candidate E acceptance commit
 `5c0bb34cce288aef8908e498a6f5d3259b998f5b`, whose sole parent is reviewed
 Candidate E implementation commit
@@ -22,9 +23,9 @@ historical Candidate D acceptance commit
 Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
 implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
 tracked paths and seven new paths. Acceptance commit `5c0bb34...` changes only
-the amendment review block and this handoff; `d9e8ab3...` and `68f845b...`
-each change only this handoff. Before this synchronization the tracked worktree
-and index were clean.
+the amendment review block and this handoff; `d9e8ab3...`, `68f845b...`, and
+`c3d396b...` each change only this handoff. Before this synchronization the
+tracked worktree and index were clean.
 The ignored `.pytest_cache/` created by the 2026-09-06 status audit was moved,
 without deletion, to
 `/scr/del6500/OPD/tmp/pytest-cache-status-audit-20260906`. The strict
@@ -166,9 +167,9 @@ its sole parent.
 This acceptance is static evidence, not real-GPU evidence. In particular, the
 one-GPU path fails closed at the 81920 MiB per-device reservation, verifies the
 actual peak before preflight success, and retains the 196608 MiB cgroup plus
-headroom checks, but W=1 feasibility is not claimed until its real central
-pilot passes. Distinct real scheduler-managed W=1, W=2, W=3, and W=4 pilots
-remain mandatory before G0 request generation.
+headroom checks. Its real central W=1 pilot has now passed as recorded below.
+Distinct real scheduler-managed W=3 and W=4 pilots remain mandatory before G0
+request generation.
 
 ## Deployment and runtime identities
 
@@ -249,7 +250,7 @@ The two runtime checks were:
 ```
 
 The 1/2/3/4 fixtures remain static fail-closed evidence. Candidate E now also
-has one real, semantically accepted W=2 GPU preflight; W=1, W=3, and W=4 have
+has real, semantically accepted W=1 and W=2 GPU preflights; W=3 and W=4 have
 not run successfully under Candidate E and remain required before G0.
 
 During Candidate E construction no GPU was queried or used, no job was run or
@@ -274,6 +275,11 @@ arm a constraint, submit a job, query or use a GPU, or change central
 configuration or services. An initial request-readiness probe with system
 Python failed immediately because that interpreter lacks PyYAML; the fixed OPD
 runtime succeeded and no dependency was installed.
+
+The subsequent W=1 completion audit read central durable state, audit events,
+logs, and OPD artifacts and ran the current production evidence validator. It
+did not submit, retry, cancel, or modify a job, constraint, queue, lease,
+service, configuration, or GPU.
 
 ## Proposals, requests, and central state
 
@@ -302,7 +308,7 @@ Candidate E real preflight coverage is currently:
 
 | World size | Status |
 | --- | --- |
-| 1 | missing |
+| 1 | passed and semantically validated |
 | 2 | passed and semantically validated |
 | 3 | missing |
 | 4 | missing |
@@ -323,7 +329,7 @@ HEAD `5c0bb34...`. Its completion SHA-256 is
 the current semantic validator accepts the report/completion pair.
 
 Central durable state contains no pending or running OPD job and no OPD lease.
-It contains three completed and seven failed OPD jobs; all seven failures
+It contains four completed and seven failed OPD jobs; all seven failures
 predate Candidate E. No `qwen3_v2_g0` job exists.
 
 ServerScheduler deployed the audited one-shot exact-job preflight constraint
@@ -335,7 +341,7 @@ without count fallback, is consumed after claim, and suppresses retry after
 consumption. The operator must arm the exact job ID before submitting its
 request.
 
-A fresh W=1 validation request is now prepared at
+The W=1 validation request was prepared at
 `/scr/del6500/OPD/scheduler/outbox/opd-9834cc5d0f88c91a94911fd63f06ad60.json`.
 Its SHA-256 is
 `d10602952166c84e352287270df97ef24bdb7dcbba364587dd731a91d3fc9e6e`,
@@ -346,7 +352,32 @@ SHA-256 is
 The request has only the normal six top-level fields and the three scientific
 parameters, omits `execution_profile` and `resources`, and passes the central
 `validate` command. It was generated at clean project HEAD `68f845b...`.
-No constraint has been armed and the request has not been submitted.
+The operator armed it for W=1 at `2026-09-06T19:51:11Z`, submitted it one
+second later, and the scheduler consumed the constraint at claim with one
+scheduler-selected UUID. Attempt 1 completed with exit code zero at
+`19:51:59Z`; scheduler runtime was 44.237 seconds and the scientific interval
+was 40.744 seconds. The constraint is consumed and the request must not be
+submitted again.
+
+The W=1 report is
+`/data/del6500/OPD/workflows/outputs/qwen3-v2-gpu-preflight-elastic-86b52b1018e178883638fa8667a3c407/b1f8bcaabe593566e0fc651f99114ce574f091ff9e8248816158072affbd7a72/gpu-preflight/gpu_preflight.json`
+at raw SHA-256
+`592ba2a107bf185dd5821d3e14481c5a1c8e124cbebf8924655ee0de450543e2`.
+Its completion is
+`/data/del6500/OPD/workflows/completions/qwen3-v2-gpu-preflight-elastic-86b52b1018e178883638fa8667a3c407/b1f8bcaabe593566e0fc651f99114ce574f091ff9e8248816158072affbd7a72/gpu-preflight.json`
+at raw SHA-256
+`e4357b9fab59e27bae997ef2cc3c0edb70112200d1a5dae71862be190c168bb1`.
+The current production evidence validator accepts the pair at HEAD
+`c3d396b...`. The report proves one real GPU, global batch 64 as sixteen
+microbatches of four, 98,304 model-input tokens, finite forward/backward,
+nonzero AdamW update, teacher forward, the expected `FULL_SHARD` to `NO_SHARD`
+single-rank behavior, FSDP save/resume, and memory/headroom gates.
+
+The roughly 41-second completion is expected for this one-window preflight and
+is consistent with the earlier W=2 runtime. It was not an empty or cached
+success. A nonfatal NCCL RAS port warning and post-scope `memory.events`
+telemetry warning were observed; the NCCL probe and project memory gates
+passed, and there was no OOM or retry.
 
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
@@ -359,12 +390,11 @@ not constitute submission.
 
 ## Required next gates
 
-1. A ServerScheduler operator pre-arms job
-   `opd-9834cc5d0f88c91a94911fd63f06ad60` for W=1, confirms the immutable
-   record, and only then submits the exact request path recorded above.
-2. After terminal W=1, OPD validates its report and completion. If accepted,
-   repeat with separate fresh count-neutral requests and exact-job constraints
-   for W=3 and W=4, one at a time.
+1. After committing this handoff-only update, OPD prepares one fresh
+   count-neutral W=3 preflight request. A central operator pre-arms that exact
+   job ID for W=3 and only then submits it.
+2. After terminal W=3, OPD validates its report and completion, then repeats
+   the same fresh-request sequence for W=4.
 3. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
    absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
    results must be reported; a central operator then validates and submits that
@@ -376,8 +406,8 @@ acceptance cycle while completing the current matrix, because doing so would
 make the already accepted W=2 evidence ineligible and force all four pilots to
 restart.
 
-Until gates 1-2 complete, no G0 request can be generated or submitted. W=1/3/4
-pilots are the active blockers; W=2 alone is insufficient.
+Until gates 1-2 complete, no G0 request can be generated or submitted. W=3 and
+W=4 pilots are the active blockers; W=1 and W=2 are accepted.
 
 ## Quarantined legacy scheduler surface
 
