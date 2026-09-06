@@ -10,7 +10,8 @@ must still be verified when mutable.
 ## Current repository state
 
 Committed HEAD is handoff-only commit
-`d9e8ab315d045c05e39885af14a2fdafcf3a06b4` on `master`. It descends from
+`68f845b2390ab4ebb73c367e3aa1f57274f50845` on `master`. It descends through
+handoff-only commit `d9e8ab315d045c05e39885af14a2fdafcf3a06b4` from
 Candidate E acceptance commit
 `5c0bb34cce288aef8908e498a6f5d3259b998f5b`, whose sole parent is reviewed
 Candidate E implementation commit
@@ -21,13 +22,14 @@ historical Candidate D acceptance commit
 Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
 implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
 tracked paths and seven new paths. Acceptance commit `5c0bb34...` changes only
-the amendment review block and this handoff; `d9e8ab3...` changes only this
-handoff. Before this synchronization the tracked worktree and index were clean.
+the amendment review block and this handoff; `d9e8ab3...` and `68f845b...`
+each change only this handoff. Before this synchronization the tracked worktree
+and index were clean.
 The ignored `.pytest_cache/` created by the 2026-09-06 status audit was moved,
 without deletion, to
 `/scr/del6500/OPD/tmp/pytest-cache-status-audit-20260906`. The strict
-accepted-lineage resolver then passed with no unsafe untracked paths. The
-implementation changes cover:
+accepted-lineage resolver passes at current HEAD with no unsafe untracked
+paths. The implementation changes cover:
 
 - permanent protocol rules and operational documentation in `AGENTS.md` and
   `docs/refactor/`;
@@ -265,6 +267,14 @@ it was subsequently moved to the recoverable scratch path recorded above. The
 strict accepted-lineage resolver then passed with `unsafe=()` at HEAD
 `d9e8ab3...`.
 
+After the central constraint deployment, this OPD session verified the current
+accepted lineage at HEAD `68f845b...`, generated the fresh W=1 request recorded
+below, and ran only its structural checks plus central `validate`. It did not
+arm a constraint, submit a job, query or use a GPU, or change central
+configuration or services. An initial request-readiness probe with system
+Python failed immediately because that interpreter lacks PyYAML; the fixed OPD
+runtime succeeded and no dependency was installed.
+
 ## Proposals, requests, and central state
 
 Candidate E project-owned proposals are disabled:
@@ -285,8 +295,8 @@ with `enabled = true` and integration status
 `protocol-v2-enabled-qwen3-v2-elastic-validation`. Relative to the disabled
 project proposal, only enablement/status/notes differ. The central parser
 reports both GPU profiles as scheduler-managed. Current live service PID could
-not be queried because the user service bus was unavailable, but the completed
-elastic job below proves Candidate E was used for that attempt.
+not be queried during the earlier audit; the later constraint deployment and
+service evidence are recorded below.
 
 Candidate E real preflight coverage is currently:
 
@@ -316,24 +326,27 @@ Central durable state contains no pending or running OPD job and no OPD lease.
 It contains three completed and seven failed OPD jobs; all seven failures
 predate Candidate E. No `qwen3_v2_g0` job exists.
 
-The central scheduler currently has no operator-only validation-plan or
-force-count primitive. Its normal planner must compare all allowed counts. The
-accepted W=2 pilot has a measured runtime estimate of 42.5215 seconds, whereas
-the unmeasured W=1, W=3, and W=4 fallbacks are approximately 7200, 2989, and
-2375 seconds. Whenever W=3 or W=4 is feasible, a W=2 subset is also feasible
-and has no longer wait, so W=2 dominates both choices. Repeating ordinary
-count-neutral requests would therefore be duplicate probing, not a way to
-complete the matrix. The only existing count control is the global
-`scheduler_managed_counts` policy, which affects all projects and requires a
-service deployment; it is not an acceptable implicit pilot workaround.
+ServerScheduler deployed the audited one-shot exact-job preflight constraint
+at 2026-09-06 14:38 CDT and restarted the service as PID 3288957. Its central
+suite passed 194/194. Only `OPD/qwen3_v2_gpu_preflight` is marked eligible;
+`qwen3_v2_g0` is ineligible. The constraint stays outside the request, narrows
+only the count, preserves normal admission and scheduler UUID placement, waits
+without count fallback, is consumed after claim, and suppresses retry after
+consumption. The operator must arm the exact job ID before submitting its
+request.
 
-The minimum central addition is an audited, one-shot pilot constraint keyed to
-an exact job ID and limited to registered preflight tasks and a count in the
-global 1/2/3/4 policy. The count remains absent from the project request;
-ServerScheduler still chooses concrete UUIDs and applies normal admission, and
-the constraint is consumed at claim and forbidden for G0. This is a
-ServerScheduler operator change and must be implemented, reviewed, deployed,
-and approved outside this OPD session.
+A fresh W=1 validation request is now prepared at
+`/scr/del6500/OPD/scheduler/outbox/opd-9834cc5d0f88c91a94911fd63f06ad60.json`.
+Its SHA-256 is
+`d10602952166c84e352287270df97ef24bdb7dcbba364587dd731a91d3fc9e6e`,
+workflow is
+`qwen3-v2-gpu-preflight-elastic-86b52b1018e178883638fa8667a3c407`, and plan
+SHA-256 is
+`b1f8bcaabe593566e0fc651f99114ce574f091ff9e8248816158072affbd7a72`.
+The request has only the normal six top-level fields and the three scientific
+parameters, omits `execution_profile` and `resources`, and passes the central
+`validate` command. It was generated at clean project HEAD `68f845b...`.
+No constraint has been armed and the request has not been submitted.
 
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
@@ -341,22 +354,17 @@ still must not be submitted, edited, or reused. No Candidate E preflight or G0
 request from that historical workflow may be reused. No Candidate E G0 request
 or G0 output exists. The completed W=2 request must not be resubmitted. G0
 request generation still requires the full distinct accepted-lineage
-W=1/2/3/4 matrix. The local cache blocker has been cleared, but no new
-preflight outbox should be generated until the central validation constraint
-exists; otherwise it cannot advance the matrix. File existence would not
-constitute submission in any event.
+W=1/2/3/4 matrix. The local cache blocker has been cleared. File existence does
+not constitute submission.
 
 ## Required next gates
 
-1. A ServerScheduler operator session implements and reviews the exact-job,
-   one-shot preflight validation constraint described above, then obtains the
-   separate approval required to deploy/restart it. Do not change the normal
-   project request schema or the global production count policy as a shortcut.
-2. After that capability is live, OPD generates one fresh count-neutral
-   preflight request at a time; the central operator atomically associates and
-   submits it for W=1, W=3, or W=4. Every report and completion must pass the
-   OPD semantic validator and current accepted-lineage check before preparing
-   the next request.
+1. A ServerScheduler operator pre-arms job
+   `opd-9834cc5d0f88c91a94911fd63f06ad60` for W=1, confirms the immutable
+   record, and only then submits the exact request path recorded above.
+2. After terminal W=1, OPD validates its report and completion. If accepted,
+   repeat with separate fresh count-neutral requests and exact-job constraints
+   for W=3 and W=4, one at a time.
 3. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
    absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
    results must be reported; a central operator then validates and submits that
@@ -368,9 +376,8 @@ acceptance cycle while completing the current matrix, because doing so would
 make the already accepted W=2 evidence ineligible and force all four pilots to
 restart.
 
-Until gates 1-2 complete, no G0 request can be generated or submitted. The
-missing central validation primitive and W=1/3/4 pilots are the active
-blockers; W=2 alone is insufficient.
+Until gates 1-2 complete, no G0 request can be generated or submitted. W=1/3/4
+pilots are the active blockers; W=2 alone is insufficient.
 
 ## Quarantined legacy scheduler surface
 
