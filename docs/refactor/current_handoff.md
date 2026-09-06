@@ -9,16 +9,19 @@ must still be verified when mutable.
 
 ## Current repository state
 
-Committed HEAD is
-`51783b7ab10476705916488a05477abf6cb511c1` on `master`, 36 commits ahead of
-`origin/master`. Its parent is historical Candidate D acceptance commit
-`30bafb42344edfe2a6ceff473efe41ac0ee79750`; Candidate D's reviewed
-implementation commit is
-`a8855ecab55819bbcd1a7a479d933104bb27fb81`.
+Committed HEAD is Candidate E implementation commit
+`58df5d22f7c09ac69b807eff5294296f6927bd1c` on `master`, 37 commits ahead of
+`origin/master`. It is a single-parent commit whose parent is
+`51783b7ab10476705916488a05477abf6cb511c1`; that parent descends from
+historical Candidate D acceptance commit
+`30bafb42344edfe2a6ceff473efe41ac0ee79750` and reviewed Candidate D
+implementation commit `a8855ecab55819bbcd1a7a479d933104bb27fb81`.
 
-Candidate E is a complete but **uncommitted** scheduler-managed 1/2/3/4-GPU
-implementation over that HEAD. The worktree has 73 modified tracked paths and
-seven new paths. The changes cover:
+Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
+implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
+tracked paths and seven new paths. The current worktree contains exactly the
+two allowed uncommitted acceptance changes: the Candidate E amendment review
+block and this handoff. The implementation changes cover:
 
 - permanent protocol rules and operational documentation in `AGENTS.md` and
   `docs/refactor/`;
@@ -41,12 +44,13 @@ The seven new files are:
 - `tests/unit/test_g0_factorial_run_validation.py`;
 - `tests/unit/test_g0_stage_contracts.py`.
 
-The Candidate E amendment is still `proposed`, has SHA-256
-`2d2444c9b2969b0b10a42d137184f8d11574d748ae488f6e40d5b5cc4fb6becc`,
-and has no `reviewed_implementation_commit`. It intentionally supersedes the
-accepted fixed-two-GPU amendment only after a new independent review and a
-separate acceptance commit. Candidate D remains a recoverable historical
-baseline, not acceptance evidence for Candidate E.
+The Candidate E amendment is now `accepted`, has SHA-256
+`ff34cc53a85abe409f65ebe1ad3ca4d46b08a0ecd2117b76a27e22eea633a725`,
+and binds `reviewed_implementation_commit` exactly to
+`58df5d22f7c09ac69b807eff5294296f6927bd1c`. This review transition and the
+handoff still require their separate metadata-only acceptance commit.
+Candidate D remains a recoverable historical baseline, not acceptance evidence
+for Candidate E.
 
 Historical rejected candidates remain documented in Git: Candidate A
 `ab2f72f...` polluted the immutable MIB tree with bytecode, Candidate B
@@ -132,6 +136,26 @@ The scientific claim remains seed-42 pipeline feasibility only. Candidate E
 does not authorize a confirmatory endpoint, the three-seed factorial, or Gemma
 replication.
 
+## Independent Candidate E acceptance
+
+At `2026-09-06T02:22:34Z`, an independent static scientific review accepted
+exact implementation commit
+`58df5d22f7c09ac69b807eff5294296f6927bd1c` with no blocking findings. The
+review traced the global 64-sample schedule and sequence-mean loss scaling for
+all four world sizes; exact global non-padding token reservation and rollback;
+the requested/effective FSDP wrapper contract; optimizer-boundary checkpoint,
+same-world two-resume comparison, and pre-load changed-world rejection; count-
+neutral requests; the W=3 `22/21/21` path; one-GPU sequence and memory gates;
+no-clobber output publication, marker-last completion, archive inventory, and
+semantic replay; and both hash-bound deployment identities.
+
+This acceptance is static evidence, not real-GPU evidence. In particular, the
+one-GPU path fails closed at the 81920 MiB per-device reservation, verifies the
+actual peak before preflight success, and retains the 196608 MiB cgroup plus
+headroom checks, but W=1 feasibility is not claimed until its real central
+pilot passes. Distinct real scheduler-managed W=1, W=2, W=3, and W=4 pilots
+remain mandatory before G0 request generation.
+
 ## Deployment and runtime identities
 
 GPU preflight:
@@ -161,9 +185,14 @@ files.
 
 Candidate E final static and CPU-only boundary verification:
 
-- complete test suite: 546/546 passed in 25.91 seconds; the 19 warnings were
-  dependency deprecations, expected NVML-unavailable warnings in a no-GPU test
+- complete test suite before commit: 546/546 passed in 25.91 seconds;
+- complete test suite rerun from clean implementation commit
+  `58df5d2...`: 546/546 passed in 25.74 seconds; the 19 warnings were dependency
+  deprecations, expected NVML-unavailable warnings in a no-GPU test
   environment, and one optimizer-wrapper test warning;
+- independent-review complete-suite rerun with CUDA and NVIDIA visibility
+  disabled: 546/546 passed in 25.82 seconds; its 15 warnings were dependency
+  deprecations and the expected optimizer-wrapper test warning;
 - affected scheduler/scientific suite: 290/290 passed;
 - deployment consistency suite: 26/26 passed;
 - both disabled proposals passed the actual ServerScheduler
@@ -176,11 +205,12 @@ Candidate E final static and CPU-only boundary verification:
   identities, the clean MIB/submodule check, forbidden-capability scan, and
   `git diff --check` passed.
 
-The complete-suite command was:
+The independent-review complete-suite command was:
 
 ```bash
 TMPDIR=/scr/del6500/OPD/tmp PYTHONDONTWRITEBYTECODE=1 \
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src \
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src CUDA_VISIBLE_DEVICES= \
+NVIDIA_VISIBLE_DEVICES=void \
 /scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin/python -c \
 "import sys; p='/opt/anaconda3/lib/python3.13/site-packages'; sys.path.append(p); import pytest; sys.path.remove(p); raise SystemExit(pytest.main(sys.argv[1:]))" \
 tests -q
@@ -200,7 +230,9 @@ evidence is still required separately for every world size before G0.
 During Candidate E construction no GPU was queried or used, no job was run or
 submitted, no outbox file was generated or changed, no network was accessed,
 and no central registration or service was modified. Read-only central config
-and runtime checks were performed.
+and runtime checks were performed. The independent acceptance review likewise
+did not query or use a GPU, submit a job, write an outbox file, modify central
+configuration, or operate a service.
 
 ## Proposals, requests, and central state
 
@@ -224,33 +256,32 @@ Candidate E has not been installed or enabled centrally.
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
 still must not be submitted, edited, or reused. No Candidate E preflight or G0
-request exists. The builders currently and correctly reject generation because
-the amendment is proposed and the checkout is dirty; file existence would not
+request exists. The builders currently and correctly reject generation while
+this acceptance transition is uncommitted; subsequent gates also require the
+accepted clean lineage, installed and separately enabled central registration,
+and the full real W=1/2/3/4 preflight matrix. File existence would not
 constitute submission in any event.
 
 ## Required next gates
 
-1. The user creates one clean Candidate E implementation commit containing the
-   proposed amendment and this handoff.
-2. A separate independent scientific review accepts or rejects that exact
-   implementation. Acceptance changes only the amendment review block (and,
-   if necessary, this handoff), binds the new implementation commit, and is
-   committed separately.
-3. A central ServerScheduler operator reviews and installs the full Candidate E
+1. The user creates the separate Candidate E acceptance commit containing only
+   the amendment review-block transition and this handoff.
+2. A central ServerScheduler operator reviews and installs the full Candidate E
    proposal while keeping `enabled = false`.
-4. The user separately approves central enablement; the operator enables it.
-5. Central validation arranges distinct real preflight attempts covering world
+3. The user separately approves central enablement; the operator enables it.
+4. Central validation arranges distinct real preflight attempts covering world
    sizes 1, 2, 3, and 4. Normal project requests remain count-neutral and may
    not force those allocations. Every report and completion must pass the OPD
    semantic validator and share the accepted implementation lineage.
-6. Only after that matrix is present may OPD generate one fresh G0 request. Its
+5. Only after that matrix is present may OPD generate one fresh G0 request. Its
    absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
    results must be reported; a central operator then validates and submits that
    exact file under a separate G0 approval.
 
-Until gates 1-5 complete, no Candidate E G0 request can be generated or
-submitted. This is an approval and real-GPU-evidence boundary, not a remaining
-static implementation defect.
+The independent reviewer must not bind acceptance to Candidate D or any
+earlier implementation. Until gates 1-4 complete, no Candidate E G0 request can
+be generated or submitted. This is an approval and real-GPU-evidence boundary,
+not a remaining static implementation defect.
 
 ## Quarantined legacy scheduler surface
 

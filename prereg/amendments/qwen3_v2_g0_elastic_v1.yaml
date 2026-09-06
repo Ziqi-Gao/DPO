@@ -119,8 +119,8 @@ implementation_acceptance:
   required_central_gpu_pilots_before_g0: [1, 2, 3, 4]
 
 review:
-  status: proposed
-  reviewed_implementation_commit: null
-  reviewer: null
-  reviewed_at_utc: null
-  rationale: null
+  status: accepted
+  reviewed_implementation_commit: 58df5d22f7c09ac69b807eff5294296f6927bd1c
+  reviewer: codex-independent-audit-russell
+  reviewed_at_utc: '2026-09-06T02:22:34Z'
+  rationale: Scheduler-managed 1/2/3/4-GPU seed-42 feasibility implementation independently reviewed and accepted; real W=1/2/3/4 GPU pilots remain required before G0.
