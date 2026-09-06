@@ -9,21 +9,25 @@ must still be verified when mutable.
 
 ## Current repository state
 
-Committed HEAD is Candidate E acceptance commit
-`5c0bb34cce288aef8908e498a6f5d3259b998f5b` on `master`. It is a
-single-parent commit whose parent is reviewed Candidate E implementation
-commit `58df5d22f7c09ac69b807eff5294296f6927bd1c`; that implementation descends
-from historical Candidate D acceptance commit
+Committed HEAD is handoff-only commit
+`d9e8ab315d045c05e39885af14a2fdafcf3a06b4` on `master`. It descends from
+Candidate E acceptance commit
+`5c0bb34cce288aef8908e498a6f5d3259b998f5b`, whose sole parent is reviewed
+Candidate E implementation commit
+`58df5d22f7c09ac69b807eff5294296f6927bd1c`. The implementation descends from
+historical Candidate D acceptance commit
 `30bafb42344edfe2a6ceff473efe41ac0ee79750`.
 
 Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
 implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
 tracked paths and seven new paths. Acceptance commit `5c0bb34...` changes only
-the amendment review block and this handoff. Before this handoff synchronization
-the tracked worktree and index were clean. The ignored `.pytest_cache/` created
-by the 2026-09-06 status audit is not permitted by the strict request-lineage
-gate and must be removed before further request preparation. The implementation
-changes cover:
+the amendment review block and this handoff; `d9e8ab3...` changes only this
+handoff. Before this synchronization the tracked worktree and index were clean.
+The ignored `.pytest_cache/` created by the 2026-09-06 status audit was moved,
+without deletion, to
+`/scr/del6500/OPD/tmp/pytest-cache-status-audit-20260906`. The strict
+accepted-lineage resolver then passed with no unsafe untracked paths. The
+implementation changes cover:
 
 - permanent protocol rules and operational documentation in `AGENTS.md` and
   `docs/refactor/`;
@@ -206,8 +210,12 @@ Candidate E final static and CPU-only boundary verification:
   in `test_protocol_amendments.py`, `test_qwen3_v2_gpu_preflight_handler.py`,
   and `test_qwen3_v2_g0_handler.py`: they read the checked-in accepted amendment
   as though it were still the proposed template. Production lineage,
-  deployment, and handler checks still pass, but the repository is not
-  full-suite green in its accepted state;
+  deployment, and handler checks still pass. A focused reproduction produced
+  57 passed and the same 16 fixture-only failures. The minimal repair changes
+  only those three test files, but committing it requires a new successor
+  implementation/acceptance cycle and would invalidate the existing W=2
+  evidence. It is therefore deferred until after the active Candidate E pilot
+  lineage rather than treated as a production-path blocker;
 - affected scheduler/scientific suite: 290/290 passed;
 - deployment consistency suite: 26/26 passed;
 - both disabled proposals passed the actual ServerScheduler
@@ -252,8 +260,10 @@ configuration, or operate a service.
 During the 2026-09-06 status audit no job, central state, or service was
 changed. One read-only `doctor` attempt indirectly invoked `nvidia-smi`; the
 sandboxed probe exited 9 and observed no GPUs, so it is not evidence of a host
-fault. The accepted-checkout pytest audit wrote the ignored `.pytest_cache/`
-noted above.
+fault. The accepted-checkout pytest audit wrote an ignored `.pytest_cache/`;
+it was subsequently moved to the recoverable scratch path recorded above. The
+strict accepted-lineage resolver then passed with `unsafe=()` at HEAD
+`d9e8ab3...`.
 
 ## Proposals, requests, and central state
 
@@ -306,36 +316,60 @@ Central durable state contains no pending or running OPD job and no OPD lease.
 It contains three completed and seven failed OPD jobs; all seven failures
 predate Candidate E. No `qwen3_v2_g0` job exists.
 
+The central scheduler currently has no operator-only validation-plan or
+force-count primitive. Its normal planner must compare all allowed counts. The
+accepted W=2 pilot has a measured runtime estimate of 42.5215 seconds, whereas
+the unmeasured W=1, W=3, and W=4 fallbacks are approximately 7200, 2989, and
+2375 seconds. Whenever W=3 or W=4 is feasible, a W=2 subset is also feasible
+and has no longer wait, so W=2 dominates both choices. Repeating ordinary
+count-neutral requests would therefore be duplicate probing, not a way to
+complete the matrix. The only existing count control is the global
+`scheduler_managed_counts` policy, which affects all projects and requires a
+service deployment; it is not an acceptable implicit pilot workaround.
+
+The minimum central addition is an audited, one-shot pilot constraint keyed to
+an exact job ID and limited to registered preflight tasks and a count in the
+global 1/2/3/4 policy. The count remains absent from the project request;
+ServerScheduler still chooses concrete UUIDs and applies normal admission, and
+the constraint is consumed at claim and forbidden for G0. This is a
+ServerScheduler operator change and must be implemented, reviewed, deployed,
+and approved outside this OPD session.
+
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
 still must not be submitted, edited, or reused. No Candidate E preflight or G0
 request from that historical workflow may be reused. No Candidate E G0 request
 or G0 output exists. The completed W=2 request must not be resubmitted. G0
 request generation still requires the full distinct accepted-lineage
-W=1/2/3/4 matrix; the ignored `.pytest_cache/` is an additional current
-checkout blocker. File existence would not constitute submission in any event.
+W=1/2/3/4 matrix. The local cache blocker has been cleared, but no new
+preflight outbox should be generated until the central validation constraint
+exists; otherwise it cannot advance the matrix. File existence would not
+constitute submission in any event.
 
 ## Required next gates
 
-1. Resolve the accepted-checkout 16-test regression before further pilots. A
-   direct test-file patch would violate the current post-acceptance lineage
-   allowlist, so it requires an explicitly designed and independently reviewed
-   successor implementation/acceptance chain or a formally reviewed
-   alternative; do not silently patch the accepted lineage.
-2. Remove the generated ignored `.pytest_cache/` before any request preparation
-   and rerun the strict accepted-lineage check.
-3. Central validation arranges distinct real preflight attempts for the missing
-   world sizes 1, 3, and 4. Normal project requests remain count-neutral and
-   may not force those allocations. Every report and completion must pass the
-   OPD semantic validator and share the applicable accepted implementation
-   lineage.
-4. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
+1. A ServerScheduler operator session implements and reviews the exact-job,
+   one-shot preflight validation constraint described above, then obtains the
+   separate approval required to deploy/restart it. Do not change the normal
+   project request schema or the global production count policy as a shortcut.
+2. After that capability is live, OPD generates one fresh count-neutral
+   preflight request at a time; the central operator atomically associates and
+   submits it for W=1, W=3, or W=4. Every report and completion must pass the
+   OPD semantic validator and current accepted-lineage check before preparing
+   the next request.
+3. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
    absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
    results must be reported; a central operator then validates and submits that
    exact file under a separate G0 approval.
 
-Until gates 1-3 complete, no G0 request can be generated or submitted. The
-missing W=1/3/4 pilots and accepted-checkout test regression are active
+The 16 accepted-state test-fixture failures remain recorded maintenance debt,
+not evidence of a production handler failure. Do not start their successor
+acceptance cycle while completing the current matrix, because doing so would
+make the already accepted W=2 evidence ineligible and force all four pilots to
+restart.
+
+Until gates 1-2 complete, no G0 request can be generated or submitted. The
+missing central validation primitive and W=1/3/4 pilots are the active
 blockers; W=2 alone is insufficient.
 
 ## Quarantined legacy scheduler surface
