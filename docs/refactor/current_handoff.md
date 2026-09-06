@@ -10,9 +10,10 @@ must still be verified when mutable.
 ## Current repository state
 
 Committed HEAD is handoff-only commit
-`c3d396bea456691f2aa50609e64954ff3e00fb61` on `master`. It descends through
-handoff-only commits `68f845b2390ab4ebb73c367e3aa1f57274f50845`
-and `d9e8ab315d045c05e39885af14a2fdafcf3a06b4` from
+`15606fd6d0dc2a3e6105247e9056b68780428e5b` on `master`. It descends through
+handoff-only commits `c3d396bea456691f2aa50609e64954ff3e00fb61`,
+`68f845b2390ab4ebb73c367e3aa1f57274f50845`, and
+`d9e8ab315d045c05e39885af14a2fdafcf3a06b4` from
 Candidate E acceptance commit
 `5c0bb34cce288aef8908e498a6f5d3259b998f5b`, whose sole parent is reviewed
 Candidate E implementation commit
@@ -23,14 +24,14 @@ historical Candidate D acceptance commit
 Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
 implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
 tracked paths and seven new paths. Acceptance commit `5c0bb34...` changes only
-the amendment review block and this handoff; `d9e8ab3...`, `68f845b...`, and
-`c3d396b...` each change only this handoff. Before this synchronization the
-tracked worktree and index were clean.
+the amendment review block and this handoff; `d9e8ab3...`, `68f845b...`,
+`c3d396b...`, and `15606fd...` each change only this handoff. Before this
+synchronization the tracked worktree and index were clean.
 The ignored `.pytest_cache/` created by the 2026-09-06 status audit was moved,
 without deletion, to
 `/scr/del6500/OPD/tmp/pytest-cache-status-audit-20260906`. The strict
-accepted-lineage resolver passes at current HEAD with no unsafe untracked
-paths. The implementation changes cover:
+accepted-lineage resolver passed at committed HEAD `15606fd...` with no unsafe
+untracked paths before this synchronization. The implementation changes cover:
 
 - permanent protocol rules and operational documentation in `AGENTS.md` and
   `docs/refactor/`;
@@ -281,6 +282,12 @@ logs, and OPD artifacts and ran the current production evidence validator. It
 did not submit, retry, cancel, or modify a job, constraint, queue, lease,
 service, configuration, or GPU.
 
+After the W=1 handoff commit, this OPD session verified the clean committed
+HEAD `15606fd...` and accepted lineage, generated the fresh count-neutral W=3
+request recorded below, and ran only request-structure checks plus central
+`validate`. It did not arm a constraint, submit or modify a job, query or use a
+GPU, or change central configuration or services.
+
 ## Proposals, requests, and central state
 
 Candidate E project-owned proposals are disabled:
@@ -379,6 +386,22 @@ success. A nonfatal NCCL RAS port warning and post-scope `memory.events`
 telemetry warning were observed; the NCCL probe and project memory gates
 passed, and there was no OOM or retry.
 
+A fresh count-neutral W=3 validation request is prepared at
+`/scr/del6500/OPD/scheduler/outbox/opd-3d20deb555e18b55a04873cc32769051.json`.
+Its SHA-256 is
+`1c5364ed8f540a486074f06a5a4f8322d041cd6bd85f5ffe8dad057e703babc2`,
+job ID is `opd-3d20deb555e18b55a04873cc32769051`, and workflow is
+`qwen3-v2-gpu-preflight-elastic-942cf1e93d1dbe2bea8327c3c364b531`.
+Its plan is
+`/data/del6500/OPD/workflows/plans/qwen3-v2-gpu-preflight-elastic-942cf1e93d1dbe2bea8327c3c364b531/104a13ce30dab4e3b1da8ef1f633ab514cdaa1a5a79eed16bbebc69370873e98.json`
+at plan SHA-256
+`104a13ce30dab4e3b1da8ef1f633ab514cdaa1a5a79eed16bbebc69370873e98`.
+It was generated at clean project HEAD `15606fd...`, has exactly the normal six
+top-level fields and three scientific parameters, omits `execution_profile`,
+`resources`, and any GPU-count hint, and passes central `validate`. No
+constraint has been armed and the request has not been submitted; a central
+operator must arm this exact job ID for W=3 before submitting this exact path.
+
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
 still must not be submitted, edited, or reused. No Candidate E preflight or G0
@@ -390,9 +413,9 @@ not constitute submission.
 
 ## Required next gates
 
-1. After committing this handoff-only update, OPD prepares one fresh
-   count-neutral W=3 preflight request. A central operator pre-arms that exact
-   job ID for W=3 and only then submits it.
+1. After committing this handoff-only update, a central operator pre-arms job
+   `opd-3d20deb555e18b55a04873cc32769051` for W=3, verifies the constraint, and
+   only then submits its exact prepared outbox path.
 2. After terminal W=3, OPD validates its report and completion, then repeats
    the same fresh-request sequence for W=4.
 3. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
