@@ -19,6 +19,45 @@ from posttrain_circuits.causal_circuits.metrics.probes import CIRCUIT_PROBE_SCHE
 
 MIB_REVISION = "b759df34433c9e31043ba9e02908ce0bf20e894f"
 MIB_EAP_IG_METHOD = "EAP-IG-inputs"
+GIT_EXECUTABLE = "/usr/bin/git"
+
+
+def _validated_code_src_root() -> Path:
+    """Return the repository-owned import root, never a request-provided path."""
+
+    src_root = Path(__file__).resolve().parents[4]
+    repository_root = src_root.parent
+    marker = src_root / "posttrain_circuits" / "__init__.py"
+    if marker.is_symlink() or not marker.is_file():
+        raise RuntimeError("OPD source import root is missing its package marker")
+    git_environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"GIT_DIR", "GIT_WORK_TREE"}
+    }
+    top_level = subprocess.check_output(
+        [GIT_EXECUTABLE, "-C", str(repository_root), "rev-parse", "--show-toplevel"],
+        text=True,
+        env=git_environment,
+    ).strip()
+    if Path(top_level).resolve() != repository_root.resolve():
+        raise RuntimeError("OPD source import root is not bound to the project checkout")
+    tracked = subprocess.check_output(
+        [
+            GIT_EXECUTABLE,
+            "-C",
+            str(repository_root),
+            "ls-files",
+            "--error-unmatch",
+            "--",
+            "src/posttrain_circuits/__init__.py",
+        ],
+        text=True,
+        env=git_environment,
+    ).strip()
+    if tracked != "src/posttrain_circuits/__init__.py":
+        raise RuntimeError("OPD source import root package marker is not tracked")
+    return src_root
 
 
 def write_fixed_discovery_pairs(
@@ -110,7 +149,7 @@ class MibEapIgAdapter:
         self.repository = value.resolve()
         actual = subprocess.check_output(
             [
-                "git",
+                GIT_EXECUTABLE,
                 "-C",
                 str(self.repository),
                 "rev-parse",
@@ -322,7 +361,7 @@ class MibEapIgAdapter:
         )
         subprocess.run(
             command,
-            cwd=self.repository,
+            cwd=_validated_code_src_root(),
             check=True,
         )
         if not result_path.is_file():

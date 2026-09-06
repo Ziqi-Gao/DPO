@@ -15,6 +15,7 @@ from posttrain_circuits.artifacts.compatibility import (
 )
 from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.artifacts.io import atomic_write_json, utc_now
+from posttrain_circuits.artifacts.runs import PROTOCOL_AMENDMENT_BINDING_FIELDS
 from posttrain_circuits.datasets.circuit_probes.contracts import (
     COHORTS,
     SOURCE_SPLITS,
@@ -36,6 +37,8 @@ _ANCESTRY_FIELDS = {
     "calibration_run_manifest_sha256",
     "calibration_run_id",
     "experiment_binding_sha256",
+    "factorial_update_evidence_sha256",
+    "strict_run_artifact_binding_sha256",
 }
 _PROTOCOL_BINDING_FIELDS = {
     "protocol_track",
@@ -52,6 +55,7 @@ _PROTOCOL_BINDING_FIELDS = {
     "model_revision",
     "teacher_revision",
     "tokenizer_revision",
+    *PROTOCOL_AMENDMENT_BINDING_FIELDS,
 }
 
 
@@ -587,6 +591,7 @@ def validate_probe_cohort_manifest(
     *,
     expected_initial_checkpoint_hash: str | None = None,
     expected_manifest_hash: str | None = None,
+    expected_protocol_bindings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = _validate_payload(_strict_json(path))
     if expected_manifest_hash is not None and payload["sha256"] != expected_manifest_hash:
@@ -616,6 +621,19 @@ def validate_probe_cohort_manifest(
                 }
         if mismatches:
             raise ValueError(f"Qwen3 probe cohort protocol binding mismatch: {mismatches}")
+    if expected_protocol_bindings is not None:
+        unknown = set(expected_protocol_bindings) - _PROTOCOL_BINDING_FIELDS
+        if unknown:
+            raise ValueError(
+                f"unknown expected probe protocol bindings: {sorted(unknown)}"
+            )
+        mismatches = {
+            key: {"expected": value, "observed": payload.get(key)}
+            for key, value in expected_protocol_bindings.items()
+            if payload.get(key) != value
+        }
+        if mismatches:
+            raise ValueError(f"probe cohort formal binding mismatch: {mismatches}")
     return payload
 
 
@@ -626,6 +644,7 @@ def load_probe_examples(
     subset: str,
     expected_initial_checkpoint_hash: str | None = None,
     expected_manifest_hash: str | None = None,
+    expected_protocol_bindings: dict[str, Any] | None = None,
 ) -> tuple[list[TaskExample], dict[str, Any]]:
     if cohort not in COHORTS or subset not in SUBSETS:
         raise ValueError(f"invalid probe selection {cohort}/{subset}")
@@ -633,6 +652,7 @@ def load_probe_examples(
         path,
         expected_initial_checkpoint_hash=expected_initial_checkpoint_hash,
         expected_manifest_hash=expected_manifest_hash,
+        expected_protocol_bindings=expected_protocol_bindings,
     )
     pairs = [
         _validated_pair_payload(raw, subset=subset)

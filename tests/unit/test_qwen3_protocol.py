@@ -15,7 +15,14 @@ from posttrain_circuits.artifacts.runs import (
     validate_run_manifest_payload,
 )
 from posttrain_circuits.cli.finalize_pilot import _hash_valid as pilot_hash_valid
-from posttrain_circuits.cli.train import _require_qwen3_store_binding
+from posttrain_circuits.cli.compare_distributed_resume import _validate_exact_checkpoint
+from posttrain_circuits.cli.finalize_pilot_training import (
+    _validate_factorial_rank_states,
+)
+from posttrain_circuits.cli.train import (
+    _require_qwen3_store_binding,
+    _validate_allocation_neutral_prompt_population,
+)
 from posttrain_circuits.core.config import compose_config, validate_config
 from posttrain_circuits.learning.contracts import PromptBatch, SamplingCursor, SamplingRequest
 from posttrain_circuits.models.loading import tokenizer_fingerprint
@@ -24,7 +31,12 @@ from posttrain_circuits.models.prompt_protocol import (
     format_model_prompt,
 )
 from posttrain_circuits.learning.state_sources.generation import HF_SAMPLING_PROTOCOL_ID, hf_generate_trajectories
-from posttrain_circuits.learning.training.schedules import PromptScheduler
+from posttrain_circuits.learning.training.schedules import (
+    ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+    ExactGlobalBatchPlan,
+    PromptScheduler,
+)
+from posttrain_circuits.learning.training.token_budget import TOKEN_BUDGET_UNIT
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
 
 
@@ -177,6 +189,316 @@ def test_four_rank_prompt_shards_are_disjoint_and_resume_is_rank_bound() -> None
     assert all(shards[left].isdisjoint(shards[right]) for left in range(4) for right in range(left + 1, 4))
     with pytest.raises(ValueError, match="different rank shard"):
         schedulers[1].load_state_dict(schedulers[0].state_dict())
+
+
+@pytest.mark.unit
+def test_allocation_neutral_prompt_population_is_unique_window_aligned_and_ordered() -> None:
+    prompt_ids = [f"p-{index}" for index in range(256)]
+    _validate_allocation_neutral_prompt_population(
+        prompt_ids,
+        global_batch_size=64,
+        expected_prompt_ids=list(prompt_ids),
+        expected_prompt_count=256,
+    )
+
+    duplicate = list(prompt_ids)
+    duplicate[-1] = duplicate[0]
+    with pytest.raises(ValueError, match="unique global prompt IDs"):
+        _validate_allocation_neutral_prompt_population(
+            duplicate,
+            global_batch_size=64,
+            expected_prompt_ids=duplicate,
+            expected_prompt_count=256,
+        )
+    with pytest.raises(ValueError, match="exact multiple"):
+        _validate_allocation_neutral_prompt_population(
+            prompt_ids[:-1],
+            global_batch_size=64,
+            expected_prompt_ids=prompt_ids[:-1],
+        )
+    out_of_order = list(prompt_ids)
+    out_of_order[0], out_of_order[1] = out_of_order[1], out_of_order[0]
+    with pytest.raises(ValueError, match="train-family order"):
+        _validate_allocation_neutral_prompt_population(
+            out_of_order,
+            global_batch_size=64,
+            expected_prompt_ids=prompt_ids,
+            expected_prompt_count=256,
+        )
+    with pytest.raises(ValueError, match="exactly 256"):
+        _validate_allocation_neutral_prompt_population(
+            prompt_ids[:128],
+            global_batch_size=64,
+            expected_prompt_ids=prompt_ids[:128],
+            expected_prompt_count=256,
+        )
+
+
+@pytest.mark.unit
+def test_allocation_neutral_prompt_windows_preserve_global_order_for_every_world_size() -> None:
+    prompt_ids = [f"p-{index}" for index in range(256)]
+    prompt_texts = [f"prompt-{index}" for index in range(256)]
+
+    def consume_population(world_size: int) -> list[str]:
+        plans = [ExactGlobalBatchPlan(64, 4, rank, world_size) for rank in range(world_size)]
+        schedulers = [
+            PromptScheduler.for_allocation_neutral_rank(
+                prompt_ids,
+                prompt_texts,
+                rank=rank,
+                world_size=world_size,
+                global_batch_size=64,
+                max_microbatch_size=4,
+            )
+            for rank in range(world_size)
+        ]
+        assert {plan.microsteps_per_optimizer_update for plan in plans} == {
+            {1: 16, 2: 8, 3: 6, 4: 4}[world_size]
+        }
+        assigned_slots: list[tuple[int, str]] = []
+        for window_index in range(4):
+            for microbatch_index in range(plans[0].microsteps_per_optimizer_update):
+                for rank, scheduler in enumerate(schedulers):
+                    batch = scheduler.next_batch()
+                    slots = plans[rank].global_slots_for_microbatch(microbatch_index)
+                    absolute_slots = [window_index * 64 + slot for slot in slots]
+                    assigned_slots.extend(zip(absolute_slots, batch.prompt_ids, strict=True))
+        assert all(scheduler.global_slot_cursor == 256 for scheduler in schedulers)
+        assert all(scheduler.microbatch_index == 0 for scheduler in schedulers)
+        return [prompt_id for _, prompt_id in sorted(assigned_slots)]
+
+    assert [consume_population(world_size) for world_size in (1, 2, 3, 4)] == [
+        prompt_ids,
+        prompt_ids,
+        prompt_ids,
+        prompt_ids,
+    ]
+
+
+@pytest.mark.unit
+def test_allocation_neutral_three_rank_tail_is_collective_safe() -> None:
+    plans = [ExactGlobalBatchPlan(64, 4, rank, 3) for rank in range(3)]
+    assert [plan.microbatch_sizes for plan in plans] == [
+        (4, 4, 4, 4, 4, 2),
+        (4, 4, 4, 4, 4, 1),
+        (4, 4, 4, 4, 4, 1),
+    ]
+    assert sum(plan.local_sequence_count for plan in plans) == 64
+
+
+def _exact_checkpoint_fixture(world_size: int, *, global_step: int = 1) -> dict[str, object]:
+    prompt_ids = [f"p-{index:03d}" for index in range(64)]
+    attempt_ids = [f"{prompt_id}:candidate-0000" for prompt_id in prompt_ids]
+    plans = [ExactGlobalBatchPlan(64, 4, rank, world_size) for rank in range(world_size)]
+    partition = {
+        "protocol": ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+        "global_batch_size": 64,
+        "max_microbatch_size": 4,
+        "max_model_input_length": 1536,
+        "world_size": world_size,
+        "microsteps_per_optimizer_update": plans[0].microsteps_per_optimizer_update,
+        "rank_local_sequence_counts": [plan.local_sequence_count for plan in plans],
+        "microbatch_sizes_by_rank": [list(plan.microbatch_sizes) for plan in plans],
+    }
+    budget = {
+        "budget": 2_000_000,
+        "unit": TOKEN_BUDGET_UNIT,
+        "consumed": global_step * 64,
+        "accepted_optimizer_updates": global_step,
+        "stop_reason": "max_steps_safety_limit",
+    }
+    prompt_states: list[dict[str, object]] = []
+    source_states: list[dict[str, object]] = []
+    trainer_states: list[dict[str, object]] = []
+    for rank, plan in enumerate(plans):
+        cursor: dict[str, int] = {}
+        for step in range(global_step):
+            for slot in range(rank, 64, world_size):
+                prompt_id = prompt_ids[(step * 64 + slot) % len(prompt_ids)]
+                cursor[prompt_id] = cursor.get(prompt_id, 0) + 1
+        prompt_states.append(
+            {
+                "batch_partition_protocol": ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+                "global_batch_size": 64,
+                "max_microbatch_size": 4,
+                "global_slot_cursor": global_step * 64,
+                "microbatch_index": 0,
+                "rank": rank,
+                "world_size": world_size,
+            }
+        )
+        source_states.append(
+            {
+                "kind": "teacher_demo",
+                "cursor_protocol_id": "teacher-demo-round-robin-v2-accepted-view",
+                "cursor": cursor,
+                "attempt_ids": attempt_ids,
+                "rank": rank,
+                "world_size": world_size,
+            }
+        )
+        local_sequences = global_step * plan.local_sequence_count
+        trainer_states.append(
+            {
+                "cumulative_counts": {
+                    "prompts_consumed": float(local_sequences),
+                    "trajectories_generated": float(local_sequences),
+                    "response_tokens_generated": float(local_sequences),
+                    "supervised_response_tokens": float(local_sequences),
+                    "model_facing_input_tokens_processed": float(budget["consumed"]),
+                    "forward_backward_flop_estimate": float(local_sequences),
+                },
+                "accumulation_micro_step": 0,
+                "token_budget": copy.deepcopy(budget),
+                "batch_partition": copy.deepcopy(partition),
+                "rank": rank,
+                "world_size": world_size,
+            }
+        )
+    return {
+        "world_size": world_size,
+        "global_step": global_step,
+        "optimizer": {
+            "state": {0: {"step": global_step}},
+            "param_groups": [{"params": [0]}],
+        },
+        "scheduler": {
+            "last_epoch": global_step,
+            "_step_count": global_step + 1,
+        },
+        "policy_version": 0,
+        "online_rollout_round": 0,
+        "prompt_scheduler": prompt_states[0],
+        "prompt_scheduler_by_rank": prompt_states,
+        "state_source": source_states[0],
+        "state_source_by_rank": source_states,
+        "trainer_state": trainer_states[0],
+        "trainer_state_by_rank": trainer_states,
+        "token_budget": budget,
+    }
+
+
+@pytest.mark.unit
+def test_exact_checkpoint_finalization_covers_all_world_sizes_and_rejects_tampering() -> None:
+    for world_size in (1, 2, 3, 4):
+        payload = _exact_checkpoint_fixture(world_size)
+        assert _validate_factorial_rank_states(
+            payload,
+            expected_max_steps=120,
+            expected_max_model_input_length=1536,
+        ) == world_size
+        assert (
+            _validate_exact_checkpoint(
+                payload,
+                name="fixture",
+                world_size=world_size,
+                max_steps=120,
+            )
+            is payload
+        )
+
+        production = _exact_checkpoint_fixture(world_size)
+        production["format"] = "accelerate_fsdp_full_export_v1"
+        strategy_contract = {
+            "requested_fsdp_sharding_strategy": "FULL_SHARD",
+            "effective_fsdp_sharding_strategy": (
+                "NO_SHARD" if world_size == 1 else "FULL_SHARD"
+            ),
+            "fsdp_wrapper_count": 29,
+        }
+        production["trainer_state"]["batch_partition"].update(strategy_contract)  # type: ignore[index,union-attr]
+        for trainer_state in production["trainer_state_by_rank"]:  # type: ignore[union-attr]
+            trainer_state["batch_partition"].update(strategy_contract)
+        assert _validate_factorial_rank_states(
+            production,
+            expected_max_steps=120,
+            expected_max_model_input_length=1536,
+        ) == world_size
+
+        wrong_strategy = copy.deepcopy(production)
+        wrong_strategy["trainer_state"]["batch_partition"][  # type: ignore[index,union-attr]
+            "effective_fsdp_sharding_strategy"
+        ] = "FULL_SHARD" if world_size == 1 else "NO_SHARD"
+        with pytest.raises(ValueError, match="exact batch partition"):
+            _validate_factorial_rank_states(
+                wrong_strategy,
+                expected_max_steps=120,
+                expected_max_model_input_length=1536,
+            )
+
+    tampered_cursor = _exact_checkpoint_fixture(3)
+    tampered_cursor["state_source_by_rank"][1]["cursor"] = {"not-a-prompt": 21}  # type: ignore[index]
+    with pytest.raises(ValueError, match="exact prompt schedule"):
+        _validate_factorial_rank_states(
+            tampered_cursor,
+            expected_max_steps=120,
+            expected_max_model_input_length=1536,
+        )
+
+    over_limit = _exact_checkpoint_fixture(3, global_step=121)
+    with pytest.raises(ValueError, match="optimizer-step limit"):
+        _validate_factorial_rank_states(
+            over_limit,
+            expected_max_steps=120,
+            expected_max_model_input_length=1536,
+        )
+
+    downgraded = _exact_checkpoint_fixture(3)
+    downgraded["trainer_state"].pop("batch_partition")  # type: ignore[union-attr]
+    downgraded.pop("trainer_state_by_rank")
+    with pytest.raises(ValueError, match="lacks its batch partition"):
+        _validate_factorial_rank_states(
+            downgraded,
+            expected_batch_partition_protocol=ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+            expected_max_steps=120,
+            expected_max_model_input_length=1536,
+        )
+
+    nonzero_policy = _exact_checkpoint_fixture(3)
+    nonzero_policy["policy_version"] = 1
+    with pytest.raises(ValueError, match="nonzero policy or rollout"):
+        _validate_factorial_rank_states(
+            nonzero_policy,
+            expected_max_steps=120,
+            expected_max_model_input_length=1536,
+        )
+
+
+@pytest.mark.unit
+def test_allocation_neutral_prompt_scheduler_checkpoint_is_rank_and_world_bound() -> None:
+    ids = [f"p-{index}" for index in range(128)]
+    texts = [f"prompt-{index}" for index in range(128)]
+    scheduler = PromptScheduler.for_allocation_neutral_rank(
+        ids,
+        texts,
+        rank=0,
+        world_size=3,
+        global_batch_size=64,
+        max_microbatch_size=4,
+    )
+    for _ in range(6):
+        scheduler.next_batch()
+    state = scheduler.state_dict()
+    restored = PromptScheduler.for_allocation_neutral_rank(
+        ids,
+        texts,
+        rank=0,
+        world_size=3,
+        global_batch_size=64,
+        max_microbatch_size=4,
+    )
+    restored.load_state_dict(state)
+    assert restored.next_batch() == scheduler.next_batch()
+    cross_world = PromptScheduler.for_allocation_neutral_rank(
+        ids,
+        texts,
+        rank=0,
+        world_size=2,
+        global_batch_size=64,
+        max_microbatch_size=4,
+    )
+    with pytest.raises(ValueError, match="different allocation batch partition"):
+        cross_world.load_state_dict(state)
 
 
 @pytest.mark.unit

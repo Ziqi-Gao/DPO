@@ -14,6 +14,7 @@ from unittest import mock
 
 from posttrain_circuits.scheduler_adapter.completion import AttemptCompletionDraft
 from posttrain_circuits.scheduler_adapter.gpu_preflight_request import fixed_resolved_config
+from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import training_contract
 from posttrain_circuits.scheduler_adapter.registry import require_handler
 
 
@@ -56,6 +57,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             self.module.PREREGISTRATION_SHA256,
             hashlib.sha256(prereg).hexdigest(),
         )
+        self.assertEqual(self.module._training_contract(), training_contract())
 
     def test_student_gradient_checkpointing_is_explicitly_non_reentrant(self) -> None:
         calls: list[dict[str, bool]] = []
@@ -77,11 +79,16 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
     def test_registry_fixes_offline_environment_and_single_implementation(self) -> None:
         handler = require_handler("qwen3_v2_gpu_preflight")
         profile = handler.profile(self.module.PROFILE)
-        self.assertEqual(profile.process_count, 2)
-        self.assertEqual(profile.cpu_cores_min, 16)
-        self.assertEqual(profile.cpu_cores_max, 16)
-        self.assertEqual(profile.gpu_count, 2)
-        self.assertEqual(self.module.THREADS_PER_RANK, 8)
+        self.assertEqual(profile.process_count, 0)
+        self.assertEqual(profile.cpu_cores_min, 24)
+        self.assertEqual(profile.cpu_cores_max, 24)
+        self.assertEqual(profile.gpu_count, 0)
+        self.assertEqual(profile.gpu_count_policy, "scheduler")
+        self.assertEqual(profile.scheduler_gpu_counts, (1, 2, 3, 4))
+        self.assertEqual(
+            tuple(self.module._threads_per_rank(count) for count in (1, 2, 3, 4)),
+            (24, 12, 8, 6),
+        )
         self.assertEqual(dict(handler.fixed_environment), self.module.FIXED_ENVIRONMENT)
         self.assertEqual(
             {
@@ -108,7 +115,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         self.assertEqual(handler.deployment.runtime_flags, ("-I",))
         self.assertEqual(handler.output_names, ("gpu_preflight.json",))
 
-    def test_disabled_registration_proposes_exact_two_gpu_profile(self) -> None:
+    def test_disabled_registration_proposes_scheduler_managed_gpu_profile(self) -> None:
         with PROPOSAL.open("rb") as handle:
             proposal = tomllib.load(handle)
         self.assertIs(proposal["enabled"], False)
@@ -117,29 +124,15 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             for item in proposal["tasks"]
             if item["name"] == "qwen3_v2_gpu_preflight"
         )
-        self.assertEqual(
-            task["execution_profiles"],
-            [
-                {
-                    "cpu_cores_max": 16,
-                    "cpu_cores_min": 16,
-                    "cpu_cores_preferred": 16,
-                    "cpu_scaling_efficiency": 0.0,
-                    "estimated_runtime_seconds": 3600.0,
-                    "gpu_count": 2,
-                    "gpu_count_policy": "fixed",
-                    "gpu_exclusivity": "required",
-                    "gpu_memory_mib": 81920,
-                    "gpu_models": [self.module.GPU_MODEL],
-                    "gpu_utilization_pct": 95,
-                    "kind": "gpu",
-                    "memory_mib": 196608,
-                    "name": self.module.PROFILE,
-                    "resource_mode": "fixed",
-                    "scheduling_goal": "latency",
-                }
-            ],
-        )
+        self.assertEqual(len(task["execution_profiles"]), 1)
+        profile = task["execution_profiles"][0]
+        self.assertEqual(profile["name"], self.module.PROFILE)
+        self.assertEqual(profile["kind"], "gpu")
+        self.assertEqual(profile["gpu_count_policy"], "scheduler")
+        self.assertNotIn("gpu_count", profile)
+        self.assertEqual(profile["cpu_cores_min"], 24)
+        self.assertEqual(profile["cpu_cores_max"], 24)
+        self.assertEqual(profile["cpu_cores_preferred"], 24)
 
     def test_completion_draft_round_trips_through_adapter_schema(self) -> None:
         digest = "a" * 64
@@ -148,13 +141,14 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             for index, name in enumerate(self.module.EXPECTED_INPUT_NAMES)
         }
         invocation = self.module.Invocation(
-            workflow_id="gpu-preflight",
+            workflow_id=f"{self.module.WORKFLOW_ID_PREFIX}{'a' * 32}",
             plan_sha256=digest,
             unit_id="gpu-preflight",
             run_id="b" * 64,
             job_id="opd-job",
             attempt=1,
             execution_profile=self.module.PROFILE,
+            gpu_count=3,
             manifest_sha256="c" * 64,
             allocation_sha256="d" * 64,
             content_handles=tuple(
@@ -176,6 +170,39 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertNotIn('os.environ["cuda_visible_devices"] =', source)
         self.assertNotIn("os.environ['cuda_visible_devices'] =", source)
+
+    def test_scheduler_gpu_count_drives_threads_and_rejects_other_topologies(self) -> None:
+        self.assertEqual(self.module.SUPPORTED_GPU_COUNTS, (1, 2, 3, 4))
+        self.assertEqual(
+            {
+                count: self.module._threads_per_rank(count)
+                for count in self.module.SUPPORTED_GPU_COUNTS
+            },
+            {1: 24, 2: 12, 3: 8, 4: 6},
+        )
+        for value in ("1", "2", "3", "4", 1, 2, 3, 4):
+            with self.subTest(value=value):
+                self.assertEqual(self.module._gpu_count(value), int(value))
+        for value in (True, False, 0, 5, "0", "05", "5", "", None):
+            with self.subTest(value=value), self.assertRaises(
+                self.module.PreflightError
+            ):
+                self.module._gpu_count(value)
+        valid_workflow_id = f"{self.module.WORKFLOW_ID_PREFIX}{'a' * 32}"
+        self.assertEqual(
+            self.module._preflight_workflow_id(valid_workflow_id),
+            valid_workflow_id,
+        )
+        for value in (
+            self.module.WORKFLOW_ID_PREFIX,
+            f"{self.module.WORKFLOW_ID_PREFIX}2gpu",
+            f"{self.module.WORKFLOW_ID_PREFIX}{'a' * 31}",
+            f"{self.module.WORKFLOW_ID_PREFIX}{'A' * 32}",
+        ):
+            with self.subTest(workflow_id=value), self.assertRaises(
+                self.module.PreflightError
+            ):
+                self.module._preflight_workflow_id(value)
 
     def test_handler_uses_self_contained_reviewed_handoff_lineage(self) -> None:
         accepted_raw = b"accepted-amendment\n"
@@ -224,7 +251,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
 
     def test_hash_bound_bootstrap_rejects_source_change_even_if_reverted(self) -> None:
         proposed_raw = (
-            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_2gpu_v1.yaml"
+            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
         ).read_bytes()
         proposed_review = (
             b"review:\n"
@@ -329,7 +356,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
 
     def test_real_git_lineage_accepts_handoff_and_rejects_source_revert(self) -> None:
         proposed_raw = (
-            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_2gpu_v1.yaml"
+            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
         ).read_bytes()
         proposed_review = (
             b"review:\n"
@@ -420,7 +447,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
 
     def test_real_git_lineage_rejects_merge_with_range_hidden_parent(self) -> None:
         proposed_raw = (
-            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_2gpu_v1.yaml"
+            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
         ).read_bytes()
         proposed_review = (
             b"review:\n"
@@ -564,36 +591,192 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         self.assertNotIn("dist.barrier()", source)
         self.assertIn('"--run-path",', source)
 
-    def test_optimizer_accepts_only_one_nonempty_flat_fsdp_shard(self) -> None:
-        class FakeModel:
-            def __init__(self, parameters: tuple[object, ...]) -> None:
-                self._parameters = parameters
+    def test_exact_optimizer_window_schedules_cover_64_global_slots(self) -> None:
+        expected = {
+            1: ((4,) * 16,),
+            2: ((4,) * 8, (4,) * 8),
+            3: ((4, 4, 4, 4, 4, 2), (4, 4, 4, 4, 4, 1), (4, 4, 4, 4, 4, 1)),
+            4: ((4,) * 4, (4,) * 4, (4,) * 4, (4,) * 4),
+        }
+        for gpu_count, rank_schedules in expected.items():
+            observed_slots: list[int] = []
+            for rank, rank_schedule in enumerate(rank_schedules):
+                self.assertEqual(
+                    self.module._microbatch_sizes(gpu_count, rank), rank_schedule
+                )
+                for microbatch_index in range(len(rank_schedule)):
+                    observed_slots.extend(
+                        self.module._global_slots_for_microbatch(
+                            gpu_count, rank, microbatch_index
+                        )
+                    )
+            self.assertEqual(sorted(observed_slots), list(range(64)))
 
-            def parameters(self):  # type: ignore[no-untyped-def]
-                return iter(self._parameters)
-
-        flat_parameter = SimpleNamespace(
-            _is_flat_param=True,
-            ndim=1,
-            numel=lambda: 32,
-        )
-        model = FakeModel((flat_parameter,))
+    def test_training_probe_matches_production_shape(self) -> None:
+        contract = self.module._training_contract()
+        self.assertEqual(contract["global_logical_batch_size"], 64)
+        self.assertEqual(contract["max_per_rank_microbatch_size"], 4)
+        self.assertEqual(contract["max_model_input_length"], 1536)
+        self.assertEqual(contract["gpu_memory_budget_mib"], 81920)
         self.assertEqual(
-            self.module._flat_optimizer_parameters(model), (flat_parameter,)
+            contract["fsdp_requested_sharding_strategy"], "FULL_SHARD"
+        )
+        self.assertEqual(
+            contract["fsdp_effective_sharding_strategy_by_world_size"],
+            {
+                "1": "NO_SHARD",
+                "2": "FULL_SHARD",
+                "3": "FULL_SHARD",
+                "4": "FULL_SHARD",
+            },
+        )
+        self.assertEqual(contract["fsdp_state_dict_type"], "FULL_STATE_DICT")
+        self.assertEqual(
+            contract["fsdp_auto_wrap_policy"], "TRANSFORMER_BASED_WRAP"
+        )
+        self.assertEqual(contract["fsdp_transformer_layer"], "Qwen3DecoderLayer")
+
+    def test_effective_fsdp_strategy_reads_every_wrapper_and_handles_w1(self) -> None:
+        class Qwen3DecoderLayer:
+            pass
+
+        class FakeCausalLM:
+            pass
+
+        class FakeFSDP:
+            def __init__(self, strategy: str, module: object) -> None:
+                self.sharding_strategy = SimpleNamespace(name=strategy)
+                self.module = module
+                self._module_tree: list[object] | None = None
+
+            def modules(self):  # type: ignore[no-untyped-def]
+                return iter(self._module_tree or (self, self.module))
+
+        def fake_model(
+            strategy: str,
+            *,
+            block_count: int = 2,
+            wrapped_block_count: int | None = None,
+            extra_wrappers: int = 0,
+        ) -> FakeFSDP:
+            if wrapped_block_count is None:
+                wrapped_block_count = block_count
+            blocks = [Qwen3DecoderLayer() for _ in range(block_count)]
+            root_module = FakeCausalLM()
+            root = FakeFSDP(strategy, root_module)
+            child_wrappers = [
+                FakeFSDP(strategy, block)
+                for block in blocks[:wrapped_block_count]
+            ]
+            unrelated = [
+                FakeFSDP(strategy, FakeCausalLM()) for _ in range(extra_wrappers)
+            ]
+            root._module_tree = [
+                root,
+                root_module,
+                *child_wrappers,
+                *unrelated,
+                *blocks,
+            ]
+            return root
+
+        expected = {
+            1: "NO_SHARD",
+            2: "FULL_SHARD",
+            3: "FULL_SHARD",
+            4: "FULL_SHARD",
+        }
+        for world_size, strategy in expected.items():
+            with self.subTest(world_size=world_size):
+                contract = self.module._validate_effective_fsdp_strategy(
+                    fake_model(strategy),
+                    fsdp_type=FakeFSDP,
+                    world_size=world_size,
+                )
+                self.assertEqual(
+                    contract,
+                    {
+                        "requested_fsdp_sharding_strategy": "FULL_SHARD",
+                        "effective_fsdp_sharding_strategy": strategy,
+                        "fsdp_wrapper_count": 3,
+                    },
+                )
+                for wrapped_blocks, label in ((0, "root-only"), (1, "partial")):
+                    with self.subTest(world_size=world_size, topology=label):
+                        with self.assertRaisesRegex(
+                            self.module.PreflightError,
+                            "directly wrap every",
+                        ):
+                            self.module._validate_effective_fsdp_strategy(
+                                fake_model(
+                                    strategy,
+                                    wrapped_block_count=wrapped_blocks,
+                                ),
+                                fsdp_type=FakeFSDP,
+                                world_size=world_size,
+                            )
+        with self.assertRaisesRegex(self.module.PreflightError, "wrapper count differs"):
+            self.module._validate_effective_fsdp_strategy(
+                fake_model("FULL_SHARD", extra_wrappers=1),
+                fsdp_type=FakeFSDP,
+                world_size=3,
+            )
+        with self.assertRaisesRegex(self.module.PreflightError, "directly wrap every"):
+            self.module._validate_effective_fsdp_strategy(
+                fake_model(
+                    "FULL_SHARD",
+                    wrapped_block_count=1,
+                    extra_wrappers=1,
+                ),
+                fsdp_type=FakeFSDP,
+                world_size=3,
+            )
+        mixed = fake_model("FULL_SHARD")
+        child_wrapper = next(
+            module
+            for module in mixed.modules()
+            if isinstance(module, FakeFSDP) and module is not mixed
+        )
+        child_wrapper.sharding_strategy = SimpleNamespace(name="NO_SHARD")
+        with self.assertRaisesRegex(self.module.PreflightError, "effective FSDP"):
+            self.module._validate_effective_fsdp_strategy(
+                mixed,
+                fsdp_type=FakeFSDP,
+                world_size=2,
+            )
+        with self.assertRaisesRegex(self.module.PreflightError, "no actual FSDP"):
+            self.module._validate_effective_fsdp_strategy(
+                SimpleNamespace(modules=lambda: iter(())),
+                fsdp_type=FakeFSDP,
+                world_size=1,
+            )
+        self.assertEqual(
+            self.module._full_state_dict_options(1),
+            {"offload_to_cpu": False, "rank0_only": False},
+        )
+        self.assertEqual(
+            self.module._full_state_dict_options(2),
+            {"offload_to_cpu": True, "rank0_only": True},
+        )
+        self.assertEqual(
+            self.module._full_state_dict_options(2, loading=True),
+            {"offload_to_cpu": True, "rank0_only": False},
         )
 
-        invalid_parameters = (
-            (),
-            (flat_parameter, flat_parameter),
-            (SimpleNamespace(_is_flat_param=False, ndim=1, numel=lambda: 32),),
-            (SimpleNamespace(_is_flat_param=True, ndim=2, numel=lambda: 32),),
-            (SimpleNamespace(_is_flat_param=True, ndim=1, numel=lambda: 0),),
-        )
-        for parameters in invalid_parameters:
-            with self.subTest(parameters=parameters), self.assertRaises(
-                self.module.PreflightError
+    def test_gpu_memory_envelope_rejects_invalid_or_overbudget_peaks(self) -> None:
+        budget = self.module.GPU_MEMORY_BUDGET_MIB * 1024**2
+        self.module._validate_gpu_memory_peaks(budget - 1, budget)
+        for allocated, reserved in (
+            (0, 1),
+            (2, 1),
+            (budget + 1, budget + 1),
+            (budget, budget + 1),
+            (True, 1),
+        ):
+            with self.subTest(allocated=allocated, reserved=reserved), self.assertRaisesRegex(
+                self.module.PreflightError, "memory envelope"
             ):
-                self.module._flat_optimizer_parameters(FakeModel(parameters))
+                self.module._validate_gpu_memory_peaks(allocated, reserved)
 
     def test_handler_logs_each_student_training_boundary(self) -> None:
         source = HANDLER.read_text(encoding="utf-8")
@@ -628,8 +811,6 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         self.assertEqual(self.module._nccl_runtime_version(integer_torch), "2.27.3")
 
     def test_distributed_initialization_routes_probe_to_bounded_nccl_group(self) -> None:
-        calls: list[tuple[object, ...]] = []
-
         class FakeTensor:
             def __init__(self, value: float) -> None:
                 self.value = value
@@ -642,73 +823,89 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
                 calls.append(("wait", timeout))
                 return True
 
-        torch = ModuleType("torch")
-        dist = ModuleType("torch.distributed")
-        torch.__version__ = "2.8.0+cu128"
-        torch.version = SimpleNamespace(cuda="12.8")
-        torch.device = lambda kind, index: (kind, index)
-        torch.tensor = lambda value, device: FakeTensor(value)
-        torch.cuda = SimpleNamespace(
-            device_count=lambda: 2,
-            get_device_properties=lambda _device: SimpleNamespace(
-                major=12,
-                minor=0,
-                name=self.module.GPU_MODEL,
-                total_memory=98_000 * 1024**2,
-            ),
-            nccl=SimpleNamespace(version=lambda: (2, 27, 3)),
-            set_device=lambda index: calls.append(("set_device", index)),
-        )
-        control_group = object()
-        data_group = object()
-        dist.group = SimpleNamespace(WORLD=control_group)
-        dist.init_process_group = lambda backend, timeout: calls.append(
-            ("init_process_group", backend, timeout)
-        )
+        for gpu_count in self.module.SUPPORTED_GPU_COUNTS:
+            with self.subTest(gpu_count=gpu_count):
+                calls: list[tuple[object, ...]] = []
+                expected_sum = self.module._nccl_expected_sum(gpu_count)
+                torch = ModuleType("torch")
+                dist = ModuleType("torch.distributed")
+                torch.__version__ = "2.8.0+cu128"
+                torch.version = SimpleNamespace(cuda="12.8")
+                torch.device = lambda kind, index: (kind, index)
+                torch.tensor = lambda value, device: FakeTensor(value)
+                torch.cuda = SimpleNamespace(
+                    device_count=lambda: gpu_count,
+                    get_device_properties=lambda _device: SimpleNamespace(
+                        major=12,
+                        minor=0,
+                        name=self.module.GPU_MODEL,
+                        total_memory=98_000 * 1024**2,
+                    ),
+                    nccl=SimpleNamespace(version=lambda: (2, 27, 3)),
+                    set_device=lambda index: calls.append(("set_device", index)),
+                )
+                control_group = object()
+                data_group = object()
+                dist.group = SimpleNamespace(WORLD=control_group)
+                dist.init_process_group = lambda backend, timeout: calls.append(
+                    ("init_process_group", backend, timeout)
+                )
 
-        def new_group(*, ranks: list[int], backend: str, timeout: object) -> object:
-            calls.append(("new_group", tuple(ranks), backend, timeout))
-            return data_group
+                def new_group(
+                    *, ranks: list[int], backend: str, timeout: object
+                ) -> object:
+                    calls.append(("new_group", tuple(ranks), backend, timeout))
+                    return data_group
 
-        def all_reduce(tensor: FakeTensor, *, group: object, async_op: bool) -> FakeWork:
-            tensor.value = self.module.NCCL_EXPECTED_SUM
-            calls.append(("all_reduce", group, async_op))
-            return FakeWork()
+                def all_reduce(
+                    tensor: FakeTensor, *, group: object, async_op: bool
+                ) -> FakeWork:
+                    tensor.value = expected_sum
+                    calls.append(("all_reduce", group, async_op))
+                    return FakeWork()
 
-        dist.new_group = new_group
-        dist.all_reduce = all_reduce
-        torch.distributed = dist
-        environment = {
-            "CUDA_VISIBLE_DEVICES": "GPU-0,GPU-1",
-            "LOCAL_RANK": "0",
-            "RANK": "0",
-            "WORLD_SIZE": "2",
-        }
-        with mock.patch.dict(
-            sys.modules, {"torch": torch, "torch.distributed": dist}
-        ), mock.patch.dict("os.environ", environment, clear=True), mock.patch.object(
-            self.module, "_cuda_pci_bus_id", return_value="0000:48:00.0"
-        ):
-            runtime = self.module._initialize_distributed()
+                dist.new_group = new_group
+                dist.all_reduce = all_reduce
+                torch.distributed = dist
+                environment = {
+                    "CUDA_VISIBLE_DEVICES": ",".join(
+                        f"GPU-{rank}" for rank in range(gpu_count)
+                    ),
+                    "LOCAL_RANK": "0",
+                    "RANK": "0",
+                    "WORLD_SIZE": str(gpu_count),
+                }
+                with mock.patch.dict(
+                    sys.modules, {"torch": torch, "torch.distributed": dist}
+                ), mock.patch.dict(
+                    "os.environ", environment, clear=True
+                ), mock.patch.object(
+                    self.module, "_cuda_pci_bus_id", return_value="0000:48:00.0"
+                ):
+                    runtime = self.module._initialize_distributed(gpu_count)
 
-        self.assertIs(runtime.control_group, control_group)
-        self.assertIs(runtime.data_group, data_group)
-        self.assertEqual(
-            runtime.nccl_diagnostic["observed_sum"], self.module.NCCL_EXPECTED_SUM
-        )
-        self.assertEqual(calls[1][0:2], ("init_process_group", "gloo"))
-        self.assertEqual(calls[2][0:3], ("new_group", (0, 1), "nccl"))
-        self.assertEqual(calls[3], ("all_reduce", data_group, True))
-        self.assertEqual(
-            calls[4][1].total_seconds(), self.module.NCCL_PROBE_TIMEOUT_SECONDS
-        )
+                self.assertIs(runtime.control_group, control_group)
+                self.assertIs(runtime.data_group, data_group)
+                self.assertEqual(
+                    runtime.nccl_diagnostic["observed_sum"], expected_sum
+                )
+                self.assertEqual(calls[1][0:2], ("init_process_group", "gloo"))
+                self.assertEqual(
+                    calls[2][0:3],
+                    ("new_group", tuple(range(gpu_count)), "nccl"),
+                )
+                self.assertEqual(calls[3], ("all_reduce", data_group, True))
+                self.assertEqual(
+                    calls[4][1].total_seconds(),
+                    self.module.NCCL_PROBE_TIMEOUT_SECONDS,
+                )
 
     def test_spawn_main_path_reopens_the_supervisor_held_script(self) -> None:
         expected = f"/proc/{os.getpid()}/fd/7"
         main_module = sys.modules["__main__"]
         with mock.patch.object(
             self.module, "_script_parent_path", return_value=expected
-        ), mock.patch.object(main_module, "__file__", "/proc/self/fd/7"):
+        ), mock.patch.object(main_module, "__file__", "/proc/self/fd/7", create=True):
             self.assertEqual(self.module._spawn_safe_script_path(), expected)
             self.assertEqual(main_module.__file__, expected)
 

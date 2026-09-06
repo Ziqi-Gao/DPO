@@ -1,4 +1,4 @@
-"""Code-owned handler/profile contracts; production remains intentionally empty."""
+"""Code-owned protocol-v2 handler, deployment, and allocation contracts."""
 
 from __future__ import annotations
 
@@ -93,6 +93,7 @@ ADAPTER_OWNED_OPTIONS = frozenset(
         "--attempt-completion-name",
         "--content-handle",
         "--execution-profile",
+        "--gpu-count",
         "--job-id",
         "--job-manifest",
         "--manifest-sha256",
@@ -187,12 +188,17 @@ class ExecutionProfileContract:
     gpu_utilization_pct_max: int
     exclusive_gpu: bool
     allowed_gpu_models: tuple[str, ...]
+    gpu_count_policy: str = "fixed"
+    scheduler_gpu_counts: tuple[int, ...] = ()
 
     def validate_contract(self) -> None:
         _identifier(self.name, name="execution profile name")
         if self.kind not in {"cpu", "gpu"}:
             raise AdapterValidationError("execution profile kind must be cpu or gpu")
-        _positive_integer(self.process_count, name="execution profile process_count")
+        if self.gpu_count_policy not in {"fixed", "scheduler"}:
+            raise AdapterValidationError(
+                "execution profile gpu_count_policy must be fixed or scheduler"
+            )
         for value, name in (
             (self.cpu_cores_min, "cpu_cores_min"),
             (self.cpu_cores_max, "cpu_cores_max"),
@@ -227,7 +233,22 @@ class ExecutionProfileContract:
             raise AdapterValidationError("execution profile GPU model allowlist is invalid")
         if len(set(self.allowed_gpu_models)) != len(self.allowed_gpu_models):
             raise AdapterValidationError("execution profile GPU model allowlist has duplicates")
+        if (
+            not isinstance(self.scheduler_gpu_counts, tuple)
+            or any(
+                isinstance(count, bool) or not isinstance(count, int) or count < 1
+                for count in self.scheduler_gpu_counts
+            )
+            or tuple(sorted(set(self.scheduler_gpu_counts)))
+            != self.scheduler_gpu_counts
+        ):
+            raise AdapterValidationError(
+                "execution profile scheduler GPU counts are invalid"
+            )
         if self.kind == "cpu":
+            _positive_integer(
+                self.process_count, name="execution profile process_count"
+            )
             if any(
                 value != 0
                 for value in (
@@ -237,11 +258,17 @@ class ExecutionProfileContract:
                     self.gpu_utilization_pct_min,
                     self.gpu_utilization_pct_max,
                 )
-            ) or self.allowed_gpu_models:
+            ) or (
+                self.allowed_gpu_models
+                or self.gpu_count_policy != "fixed"
+                or self.scheduler_gpu_counts
+            ):
                 raise AdapterValidationError("CPU profile must have a zero/empty GPU contract")
         else:
+            scheduler_managed = self.gpu_count_policy == "scheduler"
             if (
-                self.gpu_count < 1
+                (not scheduler_managed and self.gpu_count < 1)
+                or (scheduler_managed and self.gpu_count != 0)
                 or self.gpu_memory_mib_min < 1
                 or self.gpu_memory_mib_min > self.gpu_memory_mib_max
                 or self.gpu_utilization_pct_min < 1
@@ -249,10 +276,35 @@ class ExecutionProfileContract:
                 or not self.allowed_gpu_models
             ):
                 raise AdapterValidationError("GPU profile has an incomplete GPU contract")
-            if self.process_count != self.gpu_count:
+            if scheduler_managed:
+                if (
+                    self.process_count != 0
+                    or self.scheduler_gpu_counts != (1, 2, 3, 4)
+                ):
+                    raise AdapterValidationError(
+                        "scheduler-managed GPU profile must derive processes from counts 1..4"
+                    )
+            elif self.scheduler_gpu_counts:
+                raise AdapterValidationError(
+                    "fixed GPU profile cannot declare scheduler GPU counts"
+                )
+            elif self.process_count != self.gpu_count:
                 raise AdapterValidationError(
                     "GPU profile process_count must equal its exact gpu_count"
                 )
+
+    def process_count_for(self, manifest: RunningManifest) -> int:
+        """Return the reviewed process topology for this concrete allocation."""
+
+        self.validate_contract()
+        if self.gpu_count_policy == "scheduler":
+            count = manifest.allocation.gpu_count
+            if count not in self.scheduler_gpu_counts:
+                raise AdapterValidationError(
+                    "allocation GPU count is outside the scheduler-managed capability"
+                )
+            return count
+        return self.process_count
 
     def validate_allocation(
         self,
@@ -266,13 +318,19 @@ class ExecutionProfileContract:
         allocation = manifest.allocation
         if not self.cpu_cores_min <= allocation.cpu_cores <= self.cpu_cores_max:
             raise AdapterValidationError("allocation CPU cores are outside the profile contract")
-        if allocation.cpu_cores % self.process_count != 0:
+        process_count = self.process_count_for(manifest)
+        if allocation.cpu_cores % process_count != 0:
             raise AdapterValidationError(
-                "allocation CPU cores do not divide across the fixed process topology"
+                "allocation CPU cores do not divide across the reviewed process topology"
             )
         if not self.memory_mib_min <= allocation.memory_mib <= self.memory_mib_max:
             raise AdapterValidationError("allocation memory is outside the profile contract")
-        if allocation.gpu_count != self.gpu_count:
+        if self.gpu_count_policy == "scheduler":
+            if allocation.gpu_count not in self.scheduler_gpu_counts:
+                raise AdapterValidationError(
+                    "allocation GPU count differs from the scheduler-managed contract"
+                )
+        elif allocation.gpu_count != self.gpu_count:
             raise AdapterValidationError("allocation GPU count differs from the profile contract")
         if allocation.exclusive_gpu is not self.exclusive_gpu:
             raise AdapterValidationError("allocation GPU exclusivity differs from the profile contract")
@@ -296,7 +354,7 @@ class ExecutionProfileContract:
         # Tests and future protocol revisions may still supply a trusted
         # observation here, in which case it is checked strictly.
         if observed_gpu_models is not None:
-            if len(observed_gpu_models) != self.gpu_count or any(
+            if len(observed_gpu_models) != allocation.gpu_count or any(
                 model not in self.allowed_gpu_models for model in observed_gpu_models
             ):
                 raise AdapterValidationError(
@@ -311,6 +369,7 @@ class ExecutionProfileContract:
             "cpu_cores_min": self.cpu_cores_min,
             "exclusive_gpu": self.exclusive_gpu,
             "gpu_count": self.gpu_count,
+            "gpu_count_policy": self.gpu_count_policy,
             "gpu_memory_mib_max": self.gpu_memory_mib_max,
             "gpu_memory_mib_min": self.gpu_memory_mib_min,
             "gpu_utilization_pct_max": self.gpu_utilization_pct_max,
@@ -320,6 +379,7 @@ class ExecutionProfileContract:
             "memory_mib_min": self.memory_mib_min,
             "name": self.name,
             "process_count": self.process_count,
+            "scheduler_gpu_counts": list(self.scheduler_gpu_counts),
         }
 
 
@@ -523,6 +583,8 @@ class PreparedHandler:
             "--allocation-sha256",
             envelope.allocation_sha256,
         ]
+        if self.profile.kind == "gpu":
+            argv.extend(("--gpu-count", str(manifest.allocation.gpu_count)))
         for handle in content_handles:
             argv.extend(
                 (
@@ -861,21 +923,23 @@ _REPOSITORY_PREFLIGHT_HANDLER = HandlerSpec(
 _QWEN3_V2_GPU_PREFLIGHT_PROFILE = ExecutionProfileContract(
     name=QWEN3_V2_GPU_PREFLIGHT_PROFILE_NAME,
     kind="gpu",
-    process_count=2,
-    cpu_cores_min=16,
-    cpu_cores_max=16,
+    process_count=0,
+    cpu_cores_min=24,
+    cpu_cores_max=24,
     memory_mib_min=196608,
     memory_mib_max=196608,
-    gpu_count=2,
+    gpu_count=0,
     gpu_memory_mib_min=81920,
     gpu_memory_mib_max=81920,
     gpu_utilization_pct_min=95,
     gpu_utilization_pct_max=95,
     exclusive_gpu=True,
     allowed_gpu_models=(QWEN3_V2_GPU_MODEL,),
+    gpu_count_policy="scheduler",
+    scheduler_gpu_counts=(1, 2, 3, 4),
 )
 _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-gpu-preflight-2gpu-python312-cuda-v5",
+    deployment_id="qwen3-v2-gpu-preflight-elastic-python312-cuda-v1",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
         "Transformers 4.56.2; PyYAML 6.0.3"
@@ -889,7 +953,7 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="3dd7f607cb760b0bf6dd12e2000c9f826b86a30e24327131d4966fd2f0656347",
+    implementation_sha256="e62d370db975302e3f8321ea93d5e281894c3eb09ef814a2b615b7cf7605948c",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -903,8 +967,8 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="ca3a8ca2db8d8618492c5b1004cfe2cbf9a5867d8469eee00ba21b066f4c2dac",
-    deployment_identity_sha256="52357303f24328d3cd5ebe4b3174840d03fb4eacc657f87e2d6d863726594a82",
+    package_manifest_sha256="f17dc62af30eb7f96b94322b61b8ea7496a6fd0a1c3c31bb99e872dbd1466663",
+    deployment_identity_sha256="f0850abcf441a4dfa3134b875d2c552020115b669c5b81a93f4c62122736e16d",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,
@@ -933,28 +997,30 @@ _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     output_names=(QWEN3_V2_GPU_PREFLIGHT_OUTPUT,),
     required_gate_names=QWEN3_V2_GPU_PREFLIGHT_GATES,
     config_hash_bindings=CONFIG_HASH_CONTENT_INPUTS,
-    semantic_validator_id="qwen3-v2-gpu-preflight-2gpu-result-v2",
+    semantic_validator_id="qwen3-v2-gpu-preflight-elastic-result-v1",
     semantic_validator=validate_qwen3_v2_gpu_preflight_completion,
 )
 
 _QWEN3_V2_G0_PROFILE = ExecutionProfileContract(
     name=QWEN3_V2_G0_PROFILE_NAME,
     kind="gpu",
-    process_count=2,
-    cpu_cores_min=16,
-    cpu_cores_max=16,
+    process_count=0,
+    cpu_cores_min=24,
+    cpu_cores_max=24,
     memory_mib_min=196608,
     memory_mib_max=196608,
-    gpu_count=2,
+    gpu_count=0,
     gpu_memory_mib_min=81920,
     gpu_memory_mib_max=81920,
     gpu_utilization_pct_min=95,
     gpu_utilization_pct_max=95,
     exclusive_gpu=True,
     allowed_gpu_models=(QWEN3_V2_G0_GPU_MODEL,),
+    gpu_count_policy="scheduler",
+    scheduler_gpu_counts=(1, 2, 3, 4),
 )
 _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
-    deployment_id="qwen3-v2-g0-2gpu-python312-cuda-v3",
+    deployment_id="qwen3-v2-g0-elastic-python312-cuda-v1",
     runtime_version=(
         "Python 3.12.13; PyTorch 2.8.0+cu128; CUDA 12.8; NCCL 2.27.3; "
         "Transformers 4.56.2; TransformerLens 2.16.1; MIB b759df3"
@@ -968,7 +1034,7 @@ _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-g0-handler.py"
     ),
-    implementation_sha256="09b53ba8f5cbb2742d131f482d6046dbb2b09c1ae07417dc80c1740ddb7a3ac0",
+    implementation_sha256="a00cb4b0a59e2537bc6a6ce8daf07ed86f6dfe9d61c95f9e32223088cadb8ad4",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -982,8 +1048,8 @@ _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_g0"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="7f3b74484d37bd4b4ee4fbc953b251b5c8ad04b177d5623ba3517d3f784dc2d7",
-    deployment_identity_sha256="d33e4949dd91f2dbcf280097aca77a0939d6bb16cc898c42ad215282a9c65a6a",
+    package_manifest_sha256="432107f92111b621474d7b1aa7179284a8a5d73c774ab80d003040e381f1ca73",
+    deployment_identity_sha256="99b595c018104a1c3f176a98d4d3c6072cdda92ba1d8a4d78800e4b119de65c1",
 )
 _QWEN3_V2_G0_HANDLER = HandlerSpec(
     task=QWEN3_V2_G0_TASK,
@@ -1011,12 +1077,13 @@ _QWEN3_V2_G0_HANDLER = HandlerSpec(
     output_names=QWEN3_V2_G0_OUTPUTS,
     required_gate_names=QWEN3_V2_G0_GATES,
     config_hash_bindings=CONFIG_HASH_CONTENT_INPUTS,
-    semantic_validator_id="qwen3-v2-g0-2gpu-result-v2",
+    semantic_validator_id="qwen3-v2-g0-elastic-result-v1",
     semantic_validator=validate_qwen3_v2_g0_completion,
 )
 
-# The CPU preflight, bounded two-GPU preflight, and G0 gate are migrated.
-# Factorial training, larger experiments, and replication remain fail-closed.
+# The CPU preflight and allocation-neutral Qwen3-v2 preflight/G0 gates are
+# migrated.  G0 remains acceptance- and pilot-gated; factorial training,
+# larger experiments, and replication remain fail-closed.
 HANDLER_REGISTRY: Mapping[str, HandlerSpec] = MappingProxyType(
     {
         QWEN3_V2_G0_TASK: _QWEN3_V2_G0_HANDLER,

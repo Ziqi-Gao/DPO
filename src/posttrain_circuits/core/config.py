@@ -29,6 +29,8 @@ QWEN3_TRACKS = {
     },
 }
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_ALLOCATION_NEUTRAL_BATCH_PROTOCOL = "allocation_neutral_exact_global_batch_v1"
+_LEGACY_PHYSICAL_BATCH_KEYS = ("batch_size", "gradient_accumulation_steps")
 
 
 def _require_identifier(value: str, *, name: str) -> str:
@@ -121,6 +123,8 @@ def compose_config(
 
     config: dict[str, Any] = {}
     for group, name in default_groups.items():
+        if group in explicit_groups:
+            continue
         config[group] = _load_group(config_root, group, name)
     config = _merge(config, root)
 
@@ -152,6 +156,19 @@ def compose_config(
             config[group] = payload
         else:
             config[group] = payload
+
+    # Scheduler-managed batching derives every physical rank batch and
+    # accumulation count from the trusted running world size.  Strip inherited
+    # smoke defaults before command-line overrides so they cannot survive in a
+    # ConfigBinding or be revived as apparent scientific inputs.
+    trainer = config.get("trainer")
+    if (
+        isinstance(trainer, dict)
+        and trainer.get("batch_partition_protocol")
+        == _ALLOCATION_NEUTRAL_BATCH_PROTOCOL
+    ):
+        for legacy_key in _LEGACY_PHYSICAL_BATCH_KEYS:
+            trainer.pop(legacy_key, None)
 
     for key, value in scalar_overrides:
         _set_path(config, key, _parse_value(value))
@@ -226,6 +243,17 @@ def validate_model_revision(model: dict[str, Any]) -> None:
 
 
 def validate_config(config: dict[str, Any]) -> None:
+    trainer = config.get("trainer", {})
+    if (
+        isinstance(trainer, dict)
+        and trainer.get("batch_partition_protocol")
+        == _ALLOCATION_NEUTRAL_BATCH_PROTOCOL
+        and any(key in trainer for key in _LEGACY_PHYSICAL_BATCH_KEYS)
+    ):
+        raise ValueError(
+            "allocation-neutral batching must omit fixed batch_size and "
+            "gradient_accumulation_steps"
+        )
     if "model" in config:
         validate_model_revision(config["model"])
     experiment = config.get("experiment", {})

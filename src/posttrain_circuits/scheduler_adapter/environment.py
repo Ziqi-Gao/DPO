@@ -201,7 +201,7 @@ def configure_thread_environment(
         raise AdapterValidationError("process_count must be a positive integer")
     if process_count > cpu_cores or cpu_cores % process_count != 0:
         raise AdapterValidationError(
-            "allocated CPU cores must divide equally across the fixed process count"
+            "allocated CPU cores must divide equally across the reviewed process count"
         )
     threads_per_rank = cpu_cores // process_count
     expected = str(threads_per_rank)

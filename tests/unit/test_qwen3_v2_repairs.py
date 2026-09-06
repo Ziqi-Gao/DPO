@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import subprocess
@@ -11,6 +12,10 @@ import torch
 import yaml
 
 from posttrain_circuits.artifacts import runs as provenance
+from posttrain_circuits.artifacts.checkpoints import (
+    checkpoint_runtime_state_hashes,
+    torch_state_hash,
+)
 from posttrain_circuits.artifacts.config_bindings import bind_config
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
 from posttrain_circuits.causal_circuits.discovery.pilot_scope import resolve_pilot_circuit_scope
@@ -165,7 +170,7 @@ def test_qwen3_v2_profiles_have_no_legacy_scientific_fallback(profile: str) -> N
 @pytest.mark.unit
 def test_cgroup_memory_gate_rejects_implicit_or_insufficient_memory() -> None:
     gib = 1024**3
-    with pytest.raises(RuntimeError, match="finite Slurm cgroup"):
+    with pytest.raises(RuntimeError, match="finite allocation cgroup memory limit"):
         validate_memory_headroom(
             {"limit_bytes": None, "current_bytes": 1, "peak_bytes": 1},
             requested_gib=192,
@@ -227,7 +232,7 @@ def test_cgroup_v1_unlimited_sentinel_is_not_a_finite_limit(tmp_path: Path) -> N
     (controller / "memory.usage_in_bytes").write_text("1", encoding="utf-8")
     (controller / "memory.max_usage_in_bytes").write_text("1", encoding="utf-8")
     snapshot = cgroup_memory_snapshot(proc_cgroup=proc, cgroup_root=root)
-    with pytest.raises(RuntimeError, match="finite Slurm cgroup"):
+    with pytest.raises(RuntimeError, match="finite allocation cgroup memory limit"):
         validate_memory_headroom(
             snapshot,
             requested_gib=192,
@@ -340,7 +345,14 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
     root.mkdir(parents=True)
     method = get_method_spec("offline_hard")
     metrics = root / "metrics.jsonl"
-    metrics.write_text('{"step": 1, "validation_accuracy": 0.5}\n', encoding="utf-8")
+    metrics.write_text(
+        '{"step": 1, "validation_accuracy": 0.5, "parameter_update_norm": 0.5}\n',
+        encoding="utf-8",
+    )
+    baseline = root / "initial.pt"
+    baseline_model = {"weight": torch.tensor([1.0, 2.0])}
+    torch.save({"model": baseline_model}, baseline)
+    baseline_sha256 = sha256_file(baseline)
     state_source_protocol = {
         "name": "fixed_bank",
         "behavior_policy_id": "common_mu",
@@ -365,6 +377,9 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
         },
         "supervision": supervision_protocol,
         "protocol_track": "qwen3_v2",
+        "production_safety": {
+            "initial_checkpoint_path": str(baseline.resolve()),
+        },
     }
     resolved = root / "resolved_config.yaml"
     resolved.write_text(yaml.safe_dump(resolved_payload), encoding="utf-8")
@@ -381,7 +396,7 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
     dataset_hashes = {
         "train": "1" * 64,
         "validation": "2" * 64,
-        "initial_checkpoint": "3" * 64,
+        "initial_checkpoint": baseline_sha256,
         "probe_manifest": "4" * 64,
         "prerequisite_probe_cohorts": "4" * 64,
         "validation_manifest": "2" * 64,
@@ -453,19 +468,96 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
     )
     checkpoint = root / "checkpoints" / "step.pt"
     checkpoint.parent.mkdir()
-    torch.save(
-        {
-            "manifest_hashes": {
-                "experiment_binding": experiment_binding.scientific_sha256,
-                "factorial_design": experiment_binding.factorial_design_sha256,
-                "dataset_train": experiment_binding.train_dataset_sha256,
-                "dataset_validation": experiment_binding.validation_dataset_sha256,
-            },
-            "git_commit": experiment_binding.implementation_commit,
-            "implementation_dirty": experiment_binding.implementation_dirty,
+    final_model = {"weight": torch.tensor([1.5, 2.0])}
+    token_budget = {
+        "budget": 100,
+        "unit": TOKEN_BUDGET_UNIT,
+        "consumed": 80,
+        "accepted_optimizer_updates": 1,
+        "stop_reason": "max_steps_safety_limit",
+    }
+    prompt_state = {"position": 1, "rank": 0, "world_size": 1}
+    source_state = {"cursor": 1, "rank": 0, "world_size": 1}
+    checkpoint_payload = {
+        "model": final_model,
+        "optimizer": {
+            "state": {0: {"exp_avg": torch.tensor([0.1, 0.2])}},
+            "param_groups": [{"params": [0]}],
         },
-        checkpoint,
+        "scheduler": {"last_epoch": 1, "_step_count": 2},
+        "rng": {
+            "python": base64.b64encode(b"python").decode("ascii"),
+            "numpy": base64.b64encode(b"numpy").decode("ascii"),
+            "torch_cpu": [1, 2, 3],
+            "torch_cuda": [],
+        },
+        "global_step": 1,
+        "world_size": 1,
+        "trainer_state": {
+            "cumulative_counts": {
+                "model_facing_input_tokens_processed": 80.0,
+            },
+            "accumulation_micro_step": 0,
+            "token_budget": token_budget,
+        },
+        "token_budget": token_budget,
+        "prompt_scheduler": prompt_state,
+        "prompt_scheduler_by_rank": [prompt_state],
+        "state_source": source_state,
+        "state_source_by_rank": [source_state],
+        "rank_shard_hashes": ["9" * 64],
+        "resume_ancestry": [],
+        "parameter_update_norm": 0.5,
+        "final_model_state_hash": torch_state_hash(final_model),
+        "update_norm_baseline_checkpoint_path": str(baseline.resolve()),
+        "update_norm_baseline_checkpoint_sha256": baseline_sha256,
+        "manifest_hashes": {
+            "experiment_binding": experiment_binding.scientific_sha256,
+            "factorial_design": experiment_binding.factorial_design_sha256,
+            "method_spec": experiment_binding.method_spec_sha256,
+            "dataset_train": experiment_binding.train_dataset_sha256,
+            "dataset_validation": experiment_binding.validation_dataset_sha256,
+            "initial_checkpoint": experiment_binding.initial_checkpoint_sha256,
+            "model_facing_prompt_schedule": (
+                experiment_binding.model_facing_prompt_schedule_sha256
+            ),
+            "probe_manifest": experiment_binding.probe_manifest_sha256,
+        },
+        "git_commit": experiment_binding.implementation_commit,
+        "implementation_dirty": experiment_binding.implementation_dirty,
+    }
+    torch.save(checkpoint_payload, checkpoint)
+    update_rows = [{"step": 1, "parameter_update_norm": 0.5}]
+    update_evidence: dict[str, object] = {
+        "format_version": 1,
+        "checkpoint": str(checkpoint.resolve()),
+        "final_checkpoint_sha256": sha256_file(checkpoint),
+        "metrics_sha256": sha256_file(metrics),
+        "metric_update_rows": update_rows,
+        "metric_update_rows_sha256": sha256_value(update_rows),
+        "global_step": 1,
+        "parameter_update_norm": 0.5,
+        "final_model_state_hash": torch_state_hash(final_model),
+        "update_norm_baseline_checkpoint_path": str(baseline.resolve()),
+        "update_norm_baseline_checkpoint_sha256": baseline_sha256,
+        "token_budget": token_budget,
+        "resume_ancestry": [],
+        "checkpoint_runtime_state_hashes": checkpoint_runtime_state_hashes(
+            checkpoint_payload
+        ),
+        "manifest_hashes": checkpoint_payload["manifest_hashes"],
+        "experiment_binding_sha256": experiment_binding.scientific_sha256,
+        "factorial_design_sha256": experiment_binding.factorial_design_sha256,
+        "method_spec_sha256": experiment_binding.method_spec_sha256,
+        "git_commit": experiment_binding.implementation_commit,
+        "implementation_dirty": experiment_binding.implementation_dirty,
+    }
+    update_evidence["sha256"] = sha256_value(update_evidence)
+    (root / "factorial_update_evidence.json").write_text(
+        json.dumps(update_evidence),
+        encoding="utf-8",
     )
+    dataset_hashes["factorial_update_evidence"] = update_evidence["sha256"]
     binding: dict[str, object] = {
         "cell": "offline_hard",
         "seed": 42,
@@ -487,13 +579,13 @@ def _write_cell_chain(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
         "training_stop_reason": "max_steps_safety_limit",
         "dataset_hashes_sha256": sha256_value(dataset_hashes),
         "probe_manifest_hashes": ["4" * 64],
-        "initial_checkpoint_sha256": "3" * 64,
+        "initial_checkpoint_sha256": baseline_sha256,
         "state_source_artifact_sha256": experiment_binding.offline_bank_manifest_sha256,
         "experiment_binding_sha256": experiment_binding.scientific_sha256,
         "factorial_design_sha256": experiment_binding.factorial_design_sha256,
         "method_spec_sha256": experiment_binding.method_spec_sha256,
         "grpo_update_evidence_sha256": None,
-        "factorial_update_evidence_sha256": None,
+        "factorial_update_evidence_sha256": update_evidence["sha256"],
     }
     binding["sha256"] = sha256_value(binding)
     manifest: dict[str, object] = {

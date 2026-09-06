@@ -6,7 +6,10 @@ import argparse
 import json
 from pathlib import Path
 from posttrain_circuits.artifacts.hashing import sha256_value
-from posttrain_circuits.artifacts.runs import require_git_output
+from posttrain_circuits.artifacts.runs import (
+    PROTOCOL_AMENDMENT_BINDING_FIELDS,
+    require_git_output,
+)
 from posttrain_circuits.datasets.circuit_probes.cohorts import (
     build_probe_cohort_manifest,
     family_probe_pairs,
@@ -93,6 +96,7 @@ def main(argv: list[str] | None = None) -> None:
                 "model_revision",
                 "teacher_revision",
                 "tokenizer_revision",
+                *PROTOCOL_AMENDMENT_BINDING_FIELDS,
             )
             if key in scores_payload
         },

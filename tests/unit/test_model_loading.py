@@ -22,6 +22,7 @@ def test_production_loader_pins_revisions_and_records_resolved_commits(
     model.config._commit_hash = "resolved-model"
     tokenizer._commit_hash = "resolved-tokenizer"
     calls: dict[str, dict[str, object]] = {}
+    gradient_checkpointing_calls: list[dict[str, object]] = []
 
     def load_tokenizer(identifier: str, **kwargs: object):  # type: ignore[no-untyped-def]
         calls["tokenizer"] = {"identifier": identifier, **kwargs}
@@ -33,7 +34,13 @@ def test_production_loader_pins_revisions_and_records_resolved_commits(
 
     monkeypatch.setattr(loading.AutoTokenizer, "from_pretrained", load_tokenizer)
     monkeypatch.setattr(loading.AutoModelForCausalLM, "from_pretrained", load_model)
+    monkeypatch.setattr(
+        model,
+        "gradient_checkpointing_enable",
+        lambda **kwargs: gradient_checkpointing_calls.append(kwargs),
+    )
     config = compose_config([], config_root=Path("configs"))["model"]
+    config["gradient_checkpointing"] = True
     bundle = load_model_and_tokenizer(config, for_training=True)
     assert calls["model"]["revision"] == config["model_revision"]
     assert calls["tokenizer"]["revision"] == config["tokenizer_revision"]
@@ -41,6 +48,9 @@ def test_production_loader_pins_revisions_and_records_resolved_commits(
     assert bundle.resolved_tokenizer_commit == "resolved-tokenizer"
     assert bundle.tokenizer_hash
     assert model.config.use_cache is False
+    assert gradient_checkpointing_calls == [
+        {"gradient_checkpointing_kwargs": {"use_reentrant": False}}
+    ]
 
 
 @pytest.mark.unit

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.artifacts.io import atomic_write_json
 from posttrain_circuits.datasets.circuit_probes.cohorts import (
     build_probe_cohort_manifest,
@@ -29,6 +30,8 @@ def _ancestry() -> list[dict[str, str]]:
             "calibration_run_manifest_sha256": "b" * 64,
             "calibration_run_id": "calibration-run",
             "experiment_binding_sha256": "c" * 64,
+            "factorial_update_evidence_sha256": "d" * 64,
+            "strict_run_artifact_binding_sha256": "e" * 64,
         }
     ]
 
@@ -172,6 +175,28 @@ class ProbeCohortContractTests(unittest.TestCase):
                 limit_pairs_per_split=3,
             )
 
+    def test_eligibility_ancestry_requires_strict_run_evidence_hashes(self) -> None:
+        manifest = self._manifest()
+        self.assertEqual(manifest["eligibility_evidence_ancestry"], _ancestry())
+
+        for field in (
+            "factorial_update_evidence_sha256",
+            "strict_run_artifact_binding_sha256",
+        ):
+            ancestry = _ancestry()
+            ancestry[0][field] = "not-a-sha256"
+            with self.subTest(field=field), self.assertRaisesRegex(
+                ValueError, f"eligibility ancestry {field} is not a SHA-256"
+            ):
+                build_probe_cohort_manifest(
+                    self.family,
+                    self._scores(),
+                    initial_student_checkpoint_hash="d" * 64,
+                    scoring_manifest_hash="e" * 64,
+                    eligibility_evidence_ancestry=ancestry,
+                    limit_pairs_per_split=3,
+                )
+
     def test_writer_and_loader_preserve_complete_pairs(self) -> None:
         output = Path(self.temporary.name) / "cohort"
         manifest = self._manifest()
@@ -196,6 +221,64 @@ class ProbeCohortContractTests(unittest.TestCase):
         atomic_write_json(output / "manifest.json", tampered)
         with self.assertRaisesRegex(ValueError, "top-level manifest hash mismatch"):
             validate_probe_cohort_manifest(output / "manifest.json")
+
+    def test_amendment_binding_flows_from_cohort_builder_to_loader_and_tamper_fails(self) -> None:
+        bindings = {
+            "protocol_track": "qwen3_v2",
+            "artifact_namespace": "qwen3-v2",
+            "prompt_protocol": "qwen3_non_thinking_v1",
+            "enable_thinking": False,
+            "chat_template_sha256": "1" * 64,
+            "tokenizer_fingerprint": "2" * 64,
+            "prereg_path": "prereg/qwen3_v2.yaml",
+            "prereg_version": "qwen3_v2",
+            "prereg_commit": "test-unfrozen",
+            "prereg_sha256": "3" * 64,
+            "code_commit": "test-unfrozen",
+            "model_revision": "4" * 40,
+            "teacher_revision": "5" * 40,
+            "tokenizer_revision": "4" * 40,
+            "protocol_amendment_id": "qwen3-v2-g0-elastic-v1",
+            "protocol_amendment_path": "prereg/amendments/qwen3_v2_g0_elastic_v1.yaml",
+            "protocol_amendment_git_commit": "6" * 40,
+            "protocol_amendment_sha256": "7" * 64,
+            "reviewed_implementation_commit": "8" * 40,
+        }
+        manifest = build_probe_cohort_manifest(
+            self.family,
+            self._scores(),
+            initial_student_checkpoint_hash="d" * 64,
+            scoring_manifest_hash="e" * 64,
+            eligibility_evidence_ancestry=_ancestry(),
+            limit_pairs_per_split=3,
+            protocol_bindings=bindings,
+        )
+        output = Path(self.temporary.name) / "bound-cohort"
+        write_probe_cohort_manifest(output, manifest)
+        _, validated = load_probe_examples(
+            output / "manifest.json",
+            cohort="base_capable",
+            subset="discovery",
+            expected_protocol_bindings=bindings,
+        )
+        self.assertEqual(
+            validated["reviewed_implementation_commit"],
+            bindings["reviewed_implementation_commit"],
+        )
+
+        tampered = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+        tampered["reviewed_implementation_commit"] = "9" * 40
+        tampered["sha256"] = sha256_value(
+            {key: value for key, value in tampered.items() if key != "sha256"}
+        )
+        atomic_write_json(output / "manifest.json", tampered)
+        with self.assertRaisesRegex(ValueError, "formal binding mismatch"):
+            load_probe_examples(
+                output / "manifest.json",
+                cohort="base_capable",
+                subset="discovery",
+                expected_protocol_bindings=bindings,
+            )
 
     def test_discovery_source_uses_complete_pairs_and_no_row_dedup_helper(self) -> None:
         source_path = (

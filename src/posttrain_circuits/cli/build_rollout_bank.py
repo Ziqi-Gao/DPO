@@ -20,9 +20,83 @@ from posttrain_circuits.datasets.trajectories.contracts import TrajectoryRecord
 from posttrain_circuits.learning.contracts import PromptBatch, SamplingCursor, SamplingRequest
 from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.learning.state_sources.generation import HF_SAMPLING_PROTOCOL_ID, hf_generate_trajectories
+from posttrain_circuits.learning.training.schedules import (
+    ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+    LEGACY_BATCH_PARTITION_PROTOCOL,
+    ExactGlobalBatchPlan,
+)
 from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.utils.smoke import build_grouped_fork_bank
 from posttrain_circuits.utils.tiny_model import build_tiny_tokenizer
+
+
+def _rollout_generation_batch_contract(
+    config: dict[str, Any],
+    *,
+    example_count: int,
+    generations_per_prompt: int,
+) -> tuple[int, dict[str, Any]]:
+    """Resolve the scientific generation chunk without inventing placement hints."""
+
+    if type(example_count) is not int or example_count < 1:
+        raise ValueError("rollout generation requires a positive example count")
+    if type(generations_per_prompt) is not int or generations_per_prompt < 1:
+        raise ValueError("rollout generation requires a positive generations-per-prompt count")
+    trainer = config.get("trainer")
+    if not isinstance(trainer, dict):
+        raise ValueError("rollout generation requires trainer configuration")
+    protocol = str(
+        trainer.get("batch_partition_protocol", LEGACY_BATCH_PARTITION_PROTOCOL)
+    )
+    if protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1:
+        global_batch_size = trainer.get("global_batch_size")
+        max_microbatch_size = trainer.get("max_microbatch_size")
+        if type(global_batch_size) is not int or type(max_microbatch_size) is not int:
+            raise ValueError(
+                "allocation-neutral rollout generation requires integer global_batch_size "
+                "and max_microbatch_size"
+            )
+        # Reuse the reviewed science contract to reject a silently changed
+        # global window or microbatch ceiling.  This is not a resource request.
+        ExactGlobalBatchPlan(
+            global_batch_size=global_batch_size,
+            max_microbatch_size=max_microbatch_size,
+            rank=0,
+            world_size=1,
+        )
+        if example_count % global_batch_size:
+            raise ValueError(
+                "allocation-neutral rollout population must be an exact multiple of "
+                "the global logical batch"
+            )
+        state_source = config.get("state_source")
+        if not isinstance(state_source, dict):
+            raise ValueError(
+                "allocation-neutral rollout generation requires state_source configuration"
+            )
+        temperature = state_source.get("temperature")
+        if type(temperature) not in (int, float) or float(temperature) <= 0.0:
+            raise ValueError(
+                "allocation-neutral rollout generation requires sampled serial generation"
+            )
+        return max_microbatch_size, {
+            "batch_partition_protocol": protocol,
+            "global_logical_batch_size": global_batch_size,
+            "max_generation_prompt_chunk_size": max_microbatch_size,
+            "expanded_generation_sequences_per_full_chunk": (
+                max_microbatch_size * generations_per_prompt
+            ),
+            "max_simultaneous_generation_sequences": 1,
+        }
+    if protocol != LEGACY_BATCH_PARTITION_PROTOCOL:
+        raise ValueError(f"unsupported rollout batch_partition_protocol {protocol!r}")
+    batch_size = trainer.get("batch_size")
+    if type(batch_size) is not int or batch_size < 1:
+        raise ValueError("legacy rollout generation requires a positive trainer.batch_size")
+    return batch_size, {
+        "batch_partition_protocol": protocol,
+        "generation_batch_size": batch_size,
+    }
 
 
 def _verify_records(
@@ -66,6 +140,11 @@ def main(argv: list[str] | None = None) -> None:
     generations_per_prompt = int(config["state_source"].get("num_generations_per_prompt", 4))
     if generations_per_prompt < 1:
         raise ValueError("num_generations_per_prompt must be positive")
+    generation_batch_size, generation_batch_contract = _rollout_generation_batch_contract(
+        config,
+        example_count=len(examples),
+        generations_per_prompt=generations_per_prompt,
+    )
     if not production:
         tokenizer = build_tiny_tokenizer()
         records = build_grouped_fork_bank(
@@ -90,10 +169,9 @@ def main(argv: list[str] | None = None) -> None:
         tokenizer = loaded.tokenizer
         task = ProofGraphTask()
         examples_by_id = {example.example_id: example for example in examples}
-        batch_size = int(config["trainer"]["batch_size"])
         records = []
-        for start in range(0, len(examples), batch_size):
-            batch = examples[start : start + batch_size]
+        for start in range(0, len(examples), generation_batch_size):
+            batch = examples[start : start + generation_batch_size]
             prompts = PromptBatch(
                 tuple(example.example_id for example in batch for _ in range(generations_per_prompt)),
                 tuple(task.render(example) for example in batch for _ in range(generations_per_prompt)),
@@ -158,6 +236,7 @@ def main(argv: list[str] | None = None) -> None:
             "min_p": float(config["state_source"].get("min_p", 0.0)),
             "max_new_tokens": int(config["trainer"]["max_completion_length"]),
             "num_generations_per_prompt": generations_per_prompt,
+            **generation_batch_contract,
         },
         verifier_version="proofgraph-exact-v1",
         teacher_version=None,

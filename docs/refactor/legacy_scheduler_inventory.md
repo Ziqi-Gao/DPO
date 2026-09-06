@@ -30,12 +30,16 @@ There are eight legacy launch/supervision files under `scripts/production`:
   `run_qwen3_gpu_preflight.sh`;
 - `slurm_supervision.sh`.
 
-Three Python modules remain part of the same quarantined launch/pilot surface:
+Three Python modules retain quarantined launch/pilot surfaces:
 `src/posttrain_circuits/cli/record_qwen3_launch.py`,
 `src/posttrain_circuits/cli/finalize_pilot_training.py` and
-`src/posttrain_circuits/cli/finalize_pilot.py`. They are not console entrypoints
-or candidate ServerScheduler handlers; their terminal/job-ID protocol must be
-retired atomically with the legacy pilot caller after the cutover gates below.
+`src/posttrain_circuits/cli/finalize_pilot.py`. The first and third modules are
+not console entrypoints or candidate ServerScheduler handlers. The second is a
+hybrid: its Slurm terminal/job-ID parser remains legacy, but Candidate E's
+active `compare_distributed_resume` path imports its strict checkpoint and
+factorial-update validators. Preserve that shared validation code until it is
+split into a scheduler-neutral module; retire only the Slurm-facing portion
+atomically with its legacy caller after the cutover gates below.
 
 The direct production-to-Slurm caller edges are:
 

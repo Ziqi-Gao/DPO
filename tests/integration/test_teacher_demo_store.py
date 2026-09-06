@@ -12,6 +12,10 @@ from posttrain_circuits.datasets.teacher_demos.store import (
     read_teacher_demo_store,
     write_teacher_demo_store,
 )
+from posttrain_circuits.datasets.teacher_demos.contracts import (
+    LOGPROB_FIXTURE_UNAVAILABLE,
+    TeacherCandidateOutput,
+)
 from posttrain_circuits.learning.teacher.demo_generation import (
     TeacherDemoGenerationConfig,
     generate_teacher_demonstrations,
@@ -44,6 +48,8 @@ def test_teacher_demo_pipeline_ledgers_every_attempt_and_views_only_successes(
         temperature=0.7,
         top_p=0.9,
         candidates_per_prompt=4,
+        max_prompt_tokens=4096,
+        max_new_tokens=256,
     )
     result = generate_teacher_demonstrations(
         examples,
@@ -84,6 +90,8 @@ def test_teacher_demo_ledger_tampering_is_detected(tmp_path, tokenizer) -> None:
         temperature=1.0,
         top_p=1.0,
         candidates_per_prompt=1,
+        max_prompt_tokens=4096,
+        max_new_tokens=256,
     )
     result = generate_teacher_demonstrations(
         build_smoke_examples(1),
@@ -99,6 +107,47 @@ def test_teacher_demo_ledger_tampering_is_detected(tmp_path, tokenizer) -> None:
     ledger_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="ledger file hash"):
         read_teacher_demo_store(root, require_formal=False)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("fixture_fallback", [False, True])
+def test_teacher_demo_generation_rejects_overlength_response_immediately(
+    tokenizer,
+    fixture_fallback: bool,
+) -> None:  # type: ignore[no-untyped-def]
+    class OverlengthTeacher:
+        def __call__(self, **_kwargs):  # type: ignore[no-untyped-def]
+            response_text = "<proof>\n\n</proof>\n<answer>1</answer> extra"
+            response_ids = list(
+                tokenizer.encode(response_text, add_special_tokens=False)
+            )
+            assert len(response_ids) > 1
+            return TeacherCandidateOutput(
+                response_text=response_text,
+                response_ids=None if fixture_fallback else response_ids,
+                token_logprobs=None,
+                logprob_status=LOGPROB_FIXTURE_UNAVAILABLE,
+                finish_reason="fixture",
+            )
+
+    config = TeacherDemoGenerationConfig(
+        teacher_id="teacher/id",
+        teacher_revision="revision",
+        resolved_teacher_commit="commit",
+        sampling_request_seed=2,
+        temperature=0.0,
+        top_p=1.0,
+        candidates_per_prompt=1,
+        max_prompt_tokens=4096,
+        max_new_tokens=1,
+    )
+    with pytest.raises(ValueError, match="max_new_tokens"):
+        generate_teacher_demonstrations(
+            build_smoke_examples(1),
+            tokenizer,
+            OverlengthTeacher(),
+            config,
+        )
 
 
 @pytest.mark.integration
@@ -122,6 +171,7 @@ def test_canonical_sft_reads_only_the_teacher_demo_accepted_view(
         [
             "experiment=canonical_sft",
             f"task.dataset_family_path={dataset_family_path}",
+            "task.num_examples=2",
             f"state_source.store_path={store}",
             "trainer.batch_size=2",
             "trainer.max_steps=1",

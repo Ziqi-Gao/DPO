@@ -1,6 +1,8 @@
 name: teacher_demo
 store_path: /data/del6500/OPD/outputs/teacher_demos/canonical
 num_candidates: 8
+max_prompt_tokens: 4096
+max_new_tokens: 256
 require_exact_verifier_success: true
 require_complete_prompt_coverage: true
 require_behavior_logprobs_for_formal_sft: true

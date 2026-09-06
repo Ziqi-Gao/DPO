@@ -55,7 +55,11 @@ ProductionCli = Callable[[list[str] | None], None]
         ),
         (
             create_fork_bundle,
-            ["model=qwen25_1p5b", "teacher=qwen25_teacher_7b"],
+            [
+                "experiment=local_fork",
+                "model=qwen25_1p5b",
+                "teacher=qwen25_teacher_7b",
+            ],
         ),
     ],
 )

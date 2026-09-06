@@ -27,7 +27,6 @@ from posttrain_circuits.scheduler_adapter.outbox import validate_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
     OUTPUT_NAMES,
-    PROFILE_NAME,
     TASK_NAME,
     UNIT_ID,
     WORKFLOW_ID,
@@ -50,15 +49,23 @@ class G0RequestTests(unittest.TestCase):
         )
         self.layout.data_root.mkdir()
         self.layout.scratch_root.mkdir()
-        report_raw = b'{"report":true}\n'
-        completion_raw = b'{"completion":true}\n'
-        self.evidence = GpuPreflightEvidence(
-            report_raw=report_raw,
-            report_file_sha256=hashlib.sha256(report_raw).hexdigest(),
-            completion_raw=completion_raw,
-            completion_file_sha256=hashlib.sha256(completion_raw).hexdigest(),
-            git_commit=COMMIT,
-        )
+        self.evidence = {}
+        for world_size in (1, 2, 3, 4):
+            report_raw = f'{{"world_size":{world_size}}}\n'.encode()
+            completion_raw = f'{{"completion_world_size":{world_size}}}\n'.encode()
+            self.evidence[world_size] = GpuPreflightEvidence(
+                world_size=world_size,
+                allocation_sha256=str(world_size) * 64,
+                workflow_id=(
+                    "qwen3-v2-gpu-preflight-elastic-"
+                    + format(world_size, "032x")
+                ),
+                report_raw=report_raw,
+                report_file_sha256=hashlib.sha256(report_raw).hexdigest(),
+                completion_raw=completion_raw,
+                completion_file_sha256=hashlib.sha256(completion_raw).hexdigest(),
+                git_commit=COMMIT,
+            )
         proposed = load_protocol_amendment_bytes(
             (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
         )
@@ -68,7 +75,7 @@ class G0RequestTests(unittest.TestCase):
             "reviewed_implementation_commit": IMPLEMENTATION_COMMIT,
             "reviewer": "independent-reviewer-id",
             "reviewed_at_utc": "2026-09-04T05:00:00Z",
-            "rationale": "Bounded two-GPU G0 implementation accepted.",
+            "rationale": "Scheduler-managed G0 implementation accepted.",
         }
         self.amendment_path = root / "accepted-amendment.yaml"
         self.amendment_path.write_text(
@@ -80,7 +87,7 @@ class G0RequestTests(unittest.TestCase):
         ).hexdigest()
         self.amendment = SimpleNamespace(
             path=self.amendment_path,
-            amendment_id="qwen3_v2_g0_2gpu_v1",
+            amendment_id="qwen3_v2_g0_elastic_v1",
             sha256=self.amendment_sha256,
             git_commit="c" * 40,
             reviewed_implementation_commit=IMPLEMENTATION_COMMIT,
@@ -132,7 +139,9 @@ class G0RequestTests(unittest.TestCase):
             ),
             mock.patch(
                 "posttrain_circuits.scheduler_adapter.g0_request.validate_gpu_preflight_evidence",
-                return_value=self.evidence,
+                side_effect=lambda **kwargs: self.evidence[
+                    kwargs["expected_world_size"]
+                ],
             ),
             mock.patch(
                 "posttrain_circuits.scheduler_adapter.g0_request.resolve_accepted_protocol_amendment",
@@ -141,29 +150,29 @@ class G0RequestTests(unittest.TestCase):
         ):
             return build_qwen3_v2_g0_plan(
                 layout=self.layout,
-                gpu_preflight_report=Path("/unused/report.json"),
-                gpu_preflight_completion=Path("/unused/completion.json"),
+                gpu_preflight_reports={
+                    world_size: Path(f"/unused/w{world_size}-report.json")
+                    for world_size in (1, 2, 3, 4)
+                },
+                gpu_preflight_completions={
+                    world_size: Path(f"/unused/w{world_size}-completion.json")
+                    for world_size in (1, 2, 3, 4)
+                },
             )
 
-    def test_fixed_config_binds_commit_preflight_and_two_gpu_profile(self) -> None:
+    def test_fixed_config_binds_full_preflight_matrix_without_allocation(self) -> None:
         config = fixed_resolved_config(
             code_commit=COMMIT,
-            gpu_preflight_report_sha256=self.evidence.report_file_sha256,
-            gpu_preflight_completion_sha256=self.evidence.completion_file_sha256,
-            gpu_preflight_git_commit=self.evidence.git_commit,
+            gpu_preflight_evidence=self.evidence,
             protocol_amendment_sha256=self.amendment_sha256,
             reviewed_implementation_commit=IMPLEMENTATION_COMMIT,
         )
         self.assertEqual(config["scheduler_g0"]["request_git_commit"], COMMIT)
-        self.assertEqual(config["scheduler_g0"]["process_count"], 2)
-        self.assertEqual(config["scheduler_g0"]["execution_profile"], PROFILE_NAME)
-        self.assertEqual(config["trainer"]["gradient_accumulation_steps"], 8)
-        self.assertEqual(
-            config["scheduler_g0"]["process_count"]
-            * config["trainer"]["batch_size"]
-            * config["trainer"]["gradient_accumulation_steps"],
-            64,
-        )
+        self.assertEqual(set(config["scheduler_g0"]["gpu_preflight_matrix"]), {"1", "2", "3", "4"})
+        self.assertEqual(config["trainer"]["global_batch_size"], 64)
+        serialized = json.dumps(config, sort_keys=True)
+        for forbidden in ("execution_profile", "process_count", "gpu_count", "resource_budget"):
+            self.assertNotIn(forbidden, serialized)
         self.assertEqual(
             config["scheduler_g0"]["reviewed_implementation_commit"],
             IMPLEMENTATION_COMMIT,
@@ -181,8 +190,14 @@ class G0RequestTests(unittest.TestCase):
             (
                 "config_binding_sha256",
                 "execution_config_sha256",
-                "gpu_preflight_completion_sha256",
-                "gpu_preflight_report_sha256",
+                "gpu_preflight_w1_completion_sha256",
+                "gpu_preflight_w1_report_sha256",
+                "gpu_preflight_w2_completion_sha256",
+                "gpu_preflight_w2_report_sha256",
+                "gpu_preflight_w3_completion_sha256",
+                "gpu_preflight_w3_report_sha256",
+                "gpu_preflight_w4_completion_sha256",
+                "gpu_preflight_w4_report_sha256",
                 "preregistration_sha256",
                 "protocol_amendment_sha256",
                 "resolved_config_sha256",
@@ -228,11 +243,17 @@ class G0RequestTests(unittest.TestCase):
         ):
             receipt = prepare_qwen3_v2_g0_request(
                 layout=self.layout,
-                gpu_preflight_report=Path("/unused/report.json"),
-                gpu_preflight_completion=Path("/unused/completion.json"),
+                gpu_preflight_reports={
+                    world_size: Path(f"/unused/w{world_size}-report.json")
+                    for world_size in (1, 2, 3, 4)
+                },
+                gpu_preflight_completions={
+                    world_size: Path(f"/unused/w{world_size}-completion.json")
+                    for world_size in (1, 2, 3, 4)
+                },
             )
-        payload = json.loads(receipt.outbox_path.read_text(encoding="utf-8"))
-        validate_outbox_request(payload)
+            payload = json.loads(receipt.outbox_path.read_text(encoding="utf-8"))
+            validate_outbox_request(payload)
         self.assertEqual(payload["task"], TASK_NAME)
         self.assertEqual(
             payload["parameters"],

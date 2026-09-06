@@ -167,7 +167,11 @@ for every centrally permitted count 1, 2, 3, and 4, including batch/token/RNG
 semantics, CPU-thread allocation, one-GPU memory safety, the three-GPU case,
 and checkpoint/resume across changed world sizes. Otherwise declare
 `gpu_count_policy = "fixed"` with one exact registered count. The current
-Qwen3-v2 GPU preflight and G0 tasks remain fixed at two GPUs.
+Candidate E implementation makes both Qwen3-v2 GPU entrypoints scheduler-managed
+over exactly 1, 2, 3, and 4 GPUs. It is not operational until its proposed
+amendment is independently accepted and its disabled central registration is
+separately reviewed, installed, enabled, and piloted. Historical Candidate D
+remains only a recoverable fixed-two-GPU baseline.
 
 After preparing an outbox request, report its absolute path, SHA-256, job ID,
 project HEAD, tracked-worktree state, and validation results. The outbox is not
@@ -182,11 +186,11 @@ evaluation, and circuit tasks remain fail-closed until they receive their own
 reviewed handler, profile, runtime, validator, tests, disabled proposal, and
 pilot.
 
-| Task | Profile | Fixed allocation | Result |
+| Task | Profile | Reviewed allocation | Result |
 | --- | --- | --- | --- |
 | `repository_preflight` | `repository-preflight-cpu` | 1 CPU core, 128 MiB, no GPU, 30 s estimate | `preflight_report.json` |
-| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-2gpu` (`gpu_count_policy = "fixed"`) | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 3600 s estimate | `gpu_preflight.json` |
-| `qwen3_v2_g0` | `qwen3-v2-g0-2gpu` (`gpu_count_policy = "fixed"`) | 16 CPU cores, 196608 MiB, 2 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 43200 s estimate | `g0.json`, `g0_artifacts.tar` |
+| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-elastic` (`gpu_count_policy = "scheduler"`) | 24 CPU cores, 196608 MiB, scheduler-chosen 1/2/3/4 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 7200 s conservative one-GPU estimate | `gpu_preflight.json` |
+| `qwen3_v2_g0` | `qwen3-v2-g0-elastic` (`gpu_count_policy = "scheduler"`) | 24 CPU cores, 196608 MiB, scheduler-chosen 1/2/3/4 exclusive RTX PRO 6000 Blackwell GPUs, 81920 MiB and 95% utilization per GPU, 86400 s conservative one-GPU estimate | `g0.json`, `g0_artifacts.tar` |
 
 All three request builders allow exactly `workflow_id`, `plan_sha256`, and
 `unit_id` and omit `execution_profile` and `resources`. Their checked-in
@@ -217,7 +221,7 @@ contracts. When handler/runtime bytes change, update the relevant dependency
 lock, package manifest, implementation digest, manifest digest, and deployment
 identity; do not introduce blanket hashing of unrelated repository content.
 
-## Two-GPU Qwen3-v2 preflight
+## Scheduler-managed Qwen3-v2 preflight
 
 The fixed runtime is:
 
@@ -231,34 +235,67 @@ Transformers 4.56.2, and the remaining direct dependencies. Qwen3-1.7B and
 Qwen3-8B must already exist at their pinned revisions below the OPD Hugging
 Face cache; production loading is offline only.
 
-This server profile fixes `NCCL_P2P_DISABLE=1` for the reproduced dual-NUMA
+The server profiles fix `NCCL_P2P_DISABLE=1` for the reproduced dual-NUMA
 RTX PRO 6000 Blackwell first-all-reduce hang. It uses Gloo as the control plane
 and an explicit NCCL group for CUDA tensors and FSDP. The first NCCL operation
 is a scalar all-reduce with a 120-second group/work timeout. Keep NCCL timeout
-diagnostics enabled, preserve the two scheduler-assigned UUIDs, and record
-rank, logical device, PCI bus ID, NCCL version, and probe timing in the report.
+diagnostics enabled, preserve all scheduler-assigned UUIDs in their supplied
+order, and record the actual world size, rank, logical device, PCI bus ID, NCCL
+version, per-rank thread count, and probe timing in the report.
 
 Student load status, rank-zero teacher load, teacher forward, and final
 publication status are synchronized over Gloo so a rank-specific failure does
-not masquerade as an NCCL success. The preflight passes only when both
-ranks also complete real offline model forward/backward, finite soft-teacher
-loss and gradients, a nonzero update, FSDP save/resume, unique prompt shards,
-and the 192-GiB cgroup/headroom checks.
+not masquerade as an NCCL success. The preflight passes only when every actual
+rank also completes a production-shaped exact 64-sequence optimizer window at
+the reviewed 1,536-token model-input limit, finite response-masked canonical-SFT
+loss and gradients, a nonzero full-parameter AdamW update, FSDP full-state
+save/resume, unique prompt shards, and the 192-GiB cgroup/headroom checks. Rank
+zero additionally completes the pinned offline teacher forward. Each request
+receives a fresh opaque, count-neutral workflow ID; neither that ID nor its
+filename may encode a GPU count.
 
-This two-GPU pilot validates only the two-GPU handler path. It does not
-authorize G0. A published `gpu_preflight.json` with `passed: true` and a valid
-scientific completion remains necessary, and the G0-specific approval gates
-below remain independent.
+One pilot validates only the world size actually assigned to that attempt. G0
+requires four distinct accepted-lineage reports and completions covering world
+sizes 1, 2, 3, and 4. The project-facing request cannot force a count, so this
+matrix is a central validation-plan responsibility. Static fixtures, a single
+pilot, or repeated availability probes do not authorize G0.
 
-## Two-GPU Qwen3-v2 G0 amendment
+## Scheduler-managed Qwen3-v2 G0 amendment
 
 The frozen base preregistration remains unchanged. The separate amendment is
-`prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`; it must remain `proposed` in the
-implementation commit. Two ranks retain per-device batch size 4 and use eight
-gradient-accumulation microsteps, preserving the four-rank protocol's effective
-global batch size of 64. The 2,000,000-token G0 budget remains an exact
-cross-rank sum of non-padding model-input tokens reserved before each optimizer
-boundary, and the 120 optimizer-step ceiling is unchanged.
+`prereg/amendments/qwen3_v2_g0_elastic_v1.yaml`; it must remain `proposed` in
+the implementation commit. One global optimizer window always contains the
+same 64 logical samples. With maximum physical microbatch size 4, the reviewed
+rank-local sample totals are `64`, `32/32`, `22/21/21`, and `16/16/16/16` for
+world sizes 1, 2, 3, and 4. The three-rank tail is exactly `2/1/1`; framework
+accumulation and rank averaging are scaled back to the same global sequence
+mean. The 2,000,000-token budget remains an exact cross-rank sum of non-padding
+model-input tokens reserved before any backward in an optimizer window, and
+the 120 optimizer-step ceiling is unchanged.
+
+The active G0 state source is the deterministic accepted teacher-demo cursor
+protocol and consumes no RNG. The production prompt population is exactly 256
+unique IDs in manifest order, an integer multiple of the 64-slot optimizer
+window, so each prompt's rank-local demo cursor advances equivalently at every
+reviewed world size. Checkpoints are written only at optimizer boundaries and
+store rank-local cumulative trainer state separately while requiring one
+identical global token-budget state. Explicit same-world resume is required and
+compared twice; changed-world resume, partial-window metadata, or inconsistent
+rank cursors must fail before model, optimizer, scheduler, RNG, or source state
+is loaded. Fresh scheduler attempts use isolated workspaces and never silently
+resume. The student update is full-parameter training; configuration,
+ExperimentBinding, checkpoint evidence, and final validation must agree on that
+fact.
+
+The reviewed FSDP request remains `FULL_SHARD` for every count. PyTorch 2.8
+reduces that request to the scientifically equivalent effective `NO_SHARD`
+strategy when the assigned world size is one; effective world sizes 2, 3, and
+4 remain `FULL_SHARD`. Preflight, checkpoint, resume, and final artifact
+evidence must report both the requested and the actual effective strategy and
+must reject a missing, mixed, or count-inconsistent FSDP wrapper tree. The
+single-rank full-state export must use `offload_to_cpu=false` and
+`rank0_only=false`, matching the fixed Accelerate 1.10.1 workaround; multi-rank
+exports use rank-zero CPU offload.
 
 Acceptance uses two Git commits so no file contains its own commit identity:
 
@@ -274,7 +311,8 @@ Acceptance uses two Git commits so no file contains its own commit identity:
    Any source, configuration, handler, test, or protocol delta fails closed.
 
 The G0 request builder rejects a proposed amendment, a dirty tracked checkout,
-missing accepted-lineage GPU preflight evidence, or an unreviewed Git delta.
+anything other than a distinct accepted-lineage 1/2/3/4 GPU-preflight matrix,
+or an unreviewed Git delta.
 The disabled registration proposal is not authorization to install, enable, or
 submit. Amendment acceptance, central proposal installation, registration
 enablement, preflight submission, G0 request generation, and central G0

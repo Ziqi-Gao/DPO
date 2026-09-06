@@ -62,7 +62,19 @@ def _publish_checkpoint_tree_once(staging: Path, destination: Path) -> None:
         shutil.rmtree(staging)
 
 
-def _retarget_checkpoint_evidence(value: object, *, staging: Path, final: Path) -> None:
+def _retarget_checkpoint_evidence(
+    value: object,
+    *,
+    staging: Path,
+    final: Path,
+    _visited: set[int] | None = None,
+) -> None:
+    visited = set() if _visited is None else _visited
+    if isinstance(value, (dict, list)):
+        identity = id(value)
+        if identity in visited:
+            return
+        visited.add(identity)
     if isinstance(value, dict):
         if set(value) >= {"path", "sha256", "payload_state_sha256", "phase", "state_hashes"}:
             current = Path(str(value["path"]))
@@ -71,10 +83,20 @@ def _retarget_checkpoint_evidence(value: object, *, staging: Path, final: Path) 
             value["path"] = str(target)
             value["sha256"] = sha256_file(target)
         for child in value.values():
-            _retarget_checkpoint_evidence(child, staging=staging, final=final)
+            _retarget_checkpoint_evidence(
+                child,
+                staging=staging,
+                final=final,
+                _visited=visited,
+            )
     elif isinstance(value, list):
         for child in value:
-            _retarget_checkpoint_evidence(child, staging=staging, final=final)
+            _retarget_checkpoint_evidence(
+                child,
+                staging=staging,
+                final=final,
+                _visited=visited,
+            )
 
 
 def main(argv: list[str] | None = None) -> None:

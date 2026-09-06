@@ -143,6 +143,8 @@ def _probe_ancestry() -> list[dict[str, str]]:
             "calibration_run_manifest_sha256": "b" * 64,
             "calibration_run_id": "calibration",
             "experiment_binding_sha256": "c" * 64,
+            "factorial_update_evidence_sha256": "d" * 64,
+            "strict_run_artifact_binding_sha256": "e" * 64,
         }
     ]
 
@@ -244,6 +246,7 @@ def test_factorial_preflight_requires_both_hash_pinned_gates(tmp_path: Path) -> 
         [
             "experiment=offline_soft",
             f"model.model_revision={checkpoint_hash}",
+            f"production_safety.initial_checkpoint_hash={checkpoint_hash}",
             f"anti_shortcut.report_path={anti_path}",
             f"production_safety.probe_cohort_manifest={probe_root / 'manifest.json'}",
         ]
@@ -260,7 +263,8 @@ def test_local_fork_uses_new_to_fork_kl_and_output_kl_calibration() -> None:
     new_log = new.log_softmax(-1)
     expected = float((new_log.exp() * (new_log - fork_log)).sum())
     reverse = float((fork_log.exp() * (fork_log - new_log)).sum())
-    assert _probe_kl(fork, new) == pytest.approx(expected)
+    attention_mask = torch.ones(fork.shape[:2], dtype=torch.bool)
+    assert _probe_kl(fork, new, attention_mask) == pytest.approx(expected)
     assert expected != pytest.approx(reverse)
     calibrated = calibrate_learning_rate_for_output_kl(0.04, 0.01, 1e-4)
     assert calibrated == pytest.approx(2e-4)

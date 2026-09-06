@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 
@@ -37,6 +38,15 @@ from posttrain_circuits.experiments.protocols.specs import (
 )
 from posttrain_circuits.methods.registry import FACTORIAL_METHOD_IDS, PILOT_METHOD_IDS
 from posttrain_circuits.methods.specs import REGISTERED_CURRENT_POLICY, TRL_GRPO_BACKEND
+from posttrain_circuits.learning.training.schedules import (
+    ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+    LEGACY_BATCH_PARTITION_PROTOCOL,
+    ExactGlobalBatchPlan,
+)
+from posttrain_circuits.learning.training.fsdp_contract import (
+    REQUESTED_FSDP_SHARDING_STRATEGY,
+    effective_fsdp_sharding_strategy,
+)
 from posttrain_circuits.learning.training.token_budget import TOKEN_BUDGET_UNIT
 
 
@@ -156,6 +166,53 @@ def _require_absolute_regular_file(path: Path, *, name: str) -> Path:
     if resolved != path or not resolved.is_file():
         raise ValueError(f"{name} must be a regular non-symlink file")
     return resolved
+
+
+def _relocated_artifact_path(
+    bound_path: Path,
+    path_relocation: tuple[Path, Path] | None,
+) -> Path:
+    """Map a source-bound absolute path into an extracted replay workspace."""
+
+    bound_path = Path(bound_path)
+    if path_relocation is None:
+        return bound_path
+    source_workspace, replay_workspace = (Path(value) for value in path_relocation)
+    if (
+        not source_workspace.is_absolute()
+        or ".." in source_workspace.parts
+        or not replay_workspace.is_absolute()
+        or ".." in replay_workspace.parts
+    ):
+        raise ValueError("Factorial artifact path relocation is not canonical")
+    replay_workspace = replay_workspace.resolve(strict=True)
+    try:
+        relative = bound_path.relative_to(source_workspace)
+    except ValueError as error:
+        raise ValueError("Factorial artifact path escapes its source workspace") from error
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ValueError("Factorial artifact path has no canonical workspace-relative name")
+    return replay_workspace / relative
+
+
+def _source_bound_artifact_path(
+    replay_path: Path,
+    path_relocation: tuple[Path, Path] | None,
+) -> Path:
+    """Recover the immutable source path represented by one replay path."""
+
+    replay_path = Path(replay_path)
+    if path_relocation is None:
+        return replay_path
+    source_workspace, replay_workspace = (Path(value) for value in path_relocation)
+    replay_workspace = replay_workspace.resolve(strict=True)
+    try:
+        relative = replay_path.relative_to(replay_workspace)
+    except ValueError as error:
+        raise ValueError("Factorial replay path escapes its replay workspace") from error
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ValueError("Factorial replay path has no canonical workspace-relative name")
+    return source_workspace / relative
 
 
 def _recompute_grpo_update_norm(
@@ -287,6 +344,7 @@ def _validate_factorial_accelerator_state(
     checkpoint_path: Path,
     checkpoint_payload: dict[str, Any],
     resolved_config: dict[str, Any],
+    path_relocation: tuple[Path, Path] | None = None,
 ) -> dict[str, str] | None:
     """Validate the external Accelerate tree named by a Factorial checkpoint."""
 
@@ -312,10 +370,20 @@ def _validate_factorial_accelerator_state(
     ):
         raise ValueError("Factorial checkpoint has an invalid accelerate_state_sha256")
 
-    expected_state_path = checkpoint_path.with_suffix(".accelerate").absolute()
-    state_path = Path(state_path_value)
-    if state_path != expected_state_path or state_path_value != str(expected_state_path):
+    expected_replay_state_path = checkpoint_path.with_suffix(".accelerate").absolute()
+    expected_bound_state_path = _source_bound_artifact_path(
+        expected_replay_state_path,
+        path_relocation,
+    )
+    bound_state_path = Path(state_path_value)
+    if (
+        bound_state_path != expected_bound_state_path
+        or state_path_value != str(expected_bound_state_path)
+    ):
         raise ValueError("Factorial accelerate_state_dir differs from its checkpoint location")
+    state_path = _relocated_artifact_path(bound_state_path, path_relocation)
+    if state_path != expected_replay_state_path:
+        raise ValueError("Factorial Accelerator state relocation is inconsistent")
     return validate_accelerator_state_directory(
         state_path,
         expected_run_root=root,
@@ -324,7 +392,15 @@ def _validate_factorial_accelerator_state(
     )
 
 
-def _validate_factorial_rank_states(checkpoint_payload: dict[str, Any]) -> int:
+def _validate_factorial_rank_states(
+    checkpoint_payload: dict[str, Any],
+    *,
+    expected_batch_partition_protocol: str | None = None,
+    expected_max_steps: int | None = None,
+    expected_max_model_input_length: int | None = None,
+    expected_prompt_ids: list[str] | None = None,
+    expected_attempt_ids: list[str] | None = None,
+) -> int:
     world_size = checkpoint_payload.get("world_size")
     if type(world_size) is not int or world_size < 1:
         raise ValueError("Factorial checkpoint world_size is invalid")
@@ -356,6 +432,319 @@ def _validate_factorial_rank_states(checkpoint_payload: dict[str, Any]) -> int:
         != rank_states["state_source_by_rank"][0]
     ):
         raise ValueError("Factorial checkpoint rank-0 runtime state is inconsistent")
+
+    trainer_state = checkpoint_payload.get("trainer_state")
+    batch_partition = (
+        trainer_state.get("batch_partition")
+        if isinstance(trainer_state, Mapping)
+        else None
+    )
+    if expected_batch_partition_protocol not in {
+        None,
+        LEGACY_BATCH_PARTITION_PROTOCOL,
+        ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+    }:
+        raise ValueError("Factorial checkpoint expected batch-partition protocol is unsupported")
+    if batch_partition is None:
+        if (
+            expected_batch_partition_protocol
+            == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1
+        ):
+            raise ValueError("exact-global Factorial checkpoint lacks its batch partition")
+        if "trainer_state_by_rank" in checkpoint_payload:
+            raise ValueError(
+                "Factorial checkpoint has rank-local trainer state without an exact batch protocol"
+            )
+        return world_size
+    if (
+        not isinstance(batch_partition, Mapping)
+        or batch_partition.get("protocol")
+        != ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1
+    ):
+        raise ValueError("Factorial checkpoint batch-partition protocol is unsupported")
+    if expected_batch_partition_protocol == LEGACY_BATCH_PARTITION_PROTOCOL:
+        raise ValueError("legacy Factorial config cannot finalize an exact-global checkpoint")
+
+    if (
+        checkpoint_payload.get("policy_version") != 0
+        or type(checkpoint_payload.get("policy_version")) is not int
+        or checkpoint_payload.get("online_rollout_round") != 0
+        or type(checkpoint_payload.get("online_rollout_round")) is not int
+    ):
+        raise ValueError(
+            "exact-global teacher-demo checkpoint has nonzero policy or rollout state"
+        )
+
+    global_step = checkpoint_payload.get("global_step")
+    if type(global_step) is not int or global_step < 0:
+        raise ValueError("Factorial checkpoint global_step is invalid")
+    if type(expected_max_steps) is not int or expected_max_steps < 1:
+        raise ValueError(
+            "exact-global Factorial checkpoint validation requires a positive max-step bound"
+        )
+    if (
+        type(expected_max_model_input_length) is not int
+        or expected_max_model_input_length < 1
+    ):
+        raise ValueError(
+            "exact-global Factorial checkpoint validation requires a positive "
+            "model-input length bound"
+        )
+    if global_step > expected_max_steps:
+        raise ValueError("Factorial checkpoint exceeds its configured optimizer-step limit")
+    plans = [
+        ExactGlobalBatchPlan(
+            global_batch_size=64,
+            max_microbatch_size=4,
+            rank=rank,
+            world_size=world_size,
+        )
+        for rank in range(world_size)
+    ]
+    expected_partition = {
+        "protocol": ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+        "global_batch_size": 64,
+        "max_microbatch_size": 4,
+        "max_model_input_length": expected_max_model_input_length,
+        "world_size": world_size,
+        "microsteps_per_optimizer_update": plans[0].microsteps_per_optimizer_update,
+        "rank_local_sequence_counts": [plan.local_sequence_count for plan in plans],
+        "microbatch_sizes_by_rank": [list(plan.microbatch_sizes) for plan in plans],
+    }
+    strategy_fields = {
+        "requested_fsdp_sharding_strategy",
+        "effective_fsdp_sharding_strategy",
+        "fsdp_wrapper_count",
+    }
+    if checkpoint_payload.get("format") == "accelerate_fsdp_full_export_v1":
+        wrapper_count = batch_partition.get("fsdp_wrapper_count")
+        if type(wrapper_count) is not int or wrapper_count < 1:
+            raise ValueError("Factorial FSDP checkpoint wrapper count is invalid")
+        expected_partition.update(
+            {
+                "requested_fsdp_sharding_strategy": (
+                    REQUESTED_FSDP_SHARDING_STRATEGY
+                ),
+                "effective_fsdp_sharding_strategy": (
+                    effective_fsdp_sharding_strategy(world_size)
+                ),
+                "fsdp_wrapper_count": wrapper_count,
+            }
+        )
+    elif strategy_fields.intersection(batch_partition):
+        raise ValueError("non-FSDP Factorial fixture claims an FSDP strategy contract")
+    if dict(batch_partition) != expected_partition:
+        raise ValueError("Factorial checkpoint exact batch partition is inconsistent")
+
+    observed_trainer_states = checkpoint_payload.get("trainer_state_by_rank")
+    if (
+        not isinstance(observed_trainer_states, list)
+        or len(observed_trainer_states) != world_size
+    ):
+        raise ValueError(
+            "Factorial checkpoint trainer_state_by_rank does not cover the exact world"
+        )
+    expected_trainer_keys = {
+        "cumulative_counts",
+        "accumulation_micro_step",
+        "token_budget",
+        "batch_partition",
+        "rank",
+        "world_size",
+    }
+    expected_count_keys = {
+        "prompts_consumed",
+        "trajectories_generated",
+        "response_tokens_generated",
+        "supervised_response_tokens",
+        "model_facing_input_tokens_processed",
+        "forward_backward_flop_estimate",
+    }
+    expected_budget_keys = {
+        "budget",
+        "unit",
+        "consumed",
+        "accepted_optimizer_updates",
+        "stop_reason",
+    }
+    allowed_stop_reasons = {
+        None,
+        "token_budget_exactly_consumed",
+        "token_budget_exhausted_before_next_optimizer_update",
+        "signal_at_optimizer_boundary",
+        "max_steps_safety_limit",
+    }
+    normalized_trainer_states: list[dict[str, Any]] = []
+    budget_states: list[dict[str, Any]] = []
+    accepted_view_attempt_ids: list[str] | None = None
+    accepted_view_prompt_ids: list[str] | None = None
+    for rank, (plan, raw_trainer_state) in enumerate(
+        zip(plans, observed_trainer_states, strict=True)
+    ):
+        if not isinstance(raw_trainer_state, dict):
+            raise ValueError("Factorial checkpoint trainer_state_by_rank contains a non-mapping")
+        rank_trainer_state = dict(raw_trainer_state)
+        if set(rank_trainer_state) != expected_trainer_keys:
+            raise ValueError("Factorial checkpoint rank-local trainer state is incomplete")
+        if rank_trainer_state.get("rank") != rank or type(
+            rank_trainer_state.get("rank")
+        ) is not int:
+            raise ValueError(
+                f"Factorial checkpoint trainer_state_by_rank rank differs at index {rank}"
+            )
+        if rank_trainer_state.get("world_size") != world_size or type(
+            rank_trainer_state.get("world_size")
+        ) is not int:
+            raise ValueError(
+                f"Factorial checkpoint trainer_state_by_rank world_size differs at rank {rank}"
+            )
+        if rank_trainer_state.get("accumulation_micro_step") != 0 or type(
+            rank_trainer_state.get("accumulation_micro_step")
+        ) is not int:
+            raise ValueError(
+                "Factorial checkpoint contains a partial exact-global accumulation window"
+            )
+        if rank_trainer_state.get("batch_partition") != expected_partition:
+            raise ValueError("Factorial checkpoint rank-local batch partitions differ")
+
+        counts = rank_trainer_state.get("cumulative_counts")
+        if not isinstance(counts, dict) or set(counts) != expected_count_keys:
+            raise ValueError("Factorial checkpoint rank-local cumulative counts are incomplete")
+        if any(
+            type(value) not in (int, float)
+            or not math.isfinite(float(value))
+            or value < 0
+            for value in counts.values()
+        ):
+            raise ValueError("Factorial checkpoint rank-local cumulative count is invalid")
+        expected_local_sequences = global_step * plan.local_sequence_count
+        if (
+            counts["prompts_consumed"] != float(expected_local_sequences)
+            or counts["trajectories_generated"] != float(expected_local_sequences)
+        ):
+            raise ValueError(
+                "Factorial checkpoint rank-local counters differ from the exact batch plan"
+            )
+
+        budget = rank_trainer_state.get("token_budget")
+        if not isinstance(budget, dict) or set(budget) != expected_budget_keys:
+            raise ValueError("Factorial checkpoint rank-local token budget is incomplete")
+        if (
+            type(budget.get("budget")) is not int
+            or budget["budget"] < 1
+            or type(budget.get("consumed")) is not int
+            or not 0 <= budget["consumed"] <= budget["budget"]
+            or type(budget.get("accepted_optimizer_updates")) is not int
+            or budget["accepted_optimizer_updates"] != global_step
+            or budget.get("unit") != TOKEN_BUDGET_UNIT
+            or budget.get("stop_reason") not in allowed_stop_reasons
+        ):
+            raise ValueError("Factorial checkpoint rank-local token budget is invalid")
+        if (
+            budget["consumed"] == budget["budget"]
+            and budget.get("stop_reason") != "token_budget_exactly_consumed"
+        ) or (
+            budget["consumed"] < budget["budget"]
+            and budget.get("stop_reason") == "token_budget_exactly_consumed"
+        ):
+            raise ValueError("Factorial checkpoint token-budget stop reason is inconsistent")
+        if counts["model_facing_input_tokens_processed"] != float(budget["consumed"]):
+            raise ValueError(
+                "Factorial checkpoint token budget differs from cumulative input tokens"
+            )
+        budget_states.append(dict(budget))
+
+        expected_prompt_state = {
+            "batch_partition_protocol": ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+            "global_batch_size": 64,
+            "max_microbatch_size": 4,
+            "global_slot_cursor": global_step * 64,
+            "microbatch_index": 0,
+            "rank": rank,
+            "world_size": world_size,
+        }
+        if rank_states["prompt_scheduler_by_rank"][rank] != expected_prompt_state:
+            raise ValueError(
+                "Factorial checkpoint prompt scheduler is not at the exact optimizer boundary"
+            )
+        source_state = rank_states["state_source_by_rank"][rank]
+        if set(source_state) != {
+            "kind",
+            "cursor_protocol_id",
+            "cursor",
+            "attempt_ids",
+            "rank",
+            "world_size",
+        }:
+            raise ValueError("Factorial checkpoint teacher-demo state is incomplete")
+        cursor = source_state.get("cursor")
+        attempt_ids = source_state.get("attempt_ids")
+        if (
+            source_state.get("kind") != "teacher_demo"
+            or source_state.get("cursor_protocol_id")
+            != "teacher-demo-round-robin-v2-accepted-view"
+            or not isinstance(cursor, dict)
+            or any(
+                not isinstance(key, str)
+                or not key
+                or type(value) is not int
+                or value < 0
+                for key, value in cursor.items()
+            )
+            or not isinstance(attempt_ids, list)
+            or not attempt_ids
+            or any(not isinstance(value, str) or not value for value in attempt_ids)
+            or len(set(attempt_ids)) != len(attempt_ids)
+        ):
+            raise ValueError(
+                "Factorial checkpoint teacher-demo state differs from the exact batch plan"
+            )
+        if accepted_view_attempt_ids is None:
+            accepted_view_attempt_ids = list(attempt_ids)
+            accepted_view_prompt_ids = []
+            seen_prompt_ids: set[str] = set()
+            for attempt_id in attempt_ids:
+                prompt_id, separator, candidate = attempt_id.rpartition(":candidate-")
+                if (
+                    not separator
+                    or not prompt_id
+                    or re.fullmatch(r"[0-9]+", candidate) is None
+                    or attempt_id
+                    != f"{prompt_id}:candidate-{int(candidate):04d}"
+                ):
+                    raise ValueError(
+                        "Factorial checkpoint accepted-view attempt identity is invalid"
+                    )
+                if prompt_id not in seen_prompt_ids:
+                    seen_prompt_ids.add(prompt_id)
+                    accepted_view_prompt_ids.append(prompt_id)
+        elif attempt_ids != accepted_view_attempt_ids:
+            raise ValueError("Factorial checkpoint accepted-view order differs across ranks")
+        assert accepted_view_prompt_ids is not None
+        expected_cursor: dict[str, int] = {}
+        for step in range(global_step):
+            window_start = step * 64
+            for slot in range(rank, 64, world_size):
+                prompt_id = accepted_view_prompt_ids[
+                    (window_start + slot) % len(accepted_view_prompt_ids)
+                ]
+                expected_cursor[prompt_id] = expected_cursor.get(prompt_id, 0) + 1
+        if cursor != expected_cursor:
+            raise ValueError(
+                "Factorial checkpoint teacher-demo cursor differs from the exact prompt schedule"
+            )
+        normalized_trainer_states.append(rank_trainer_state)
+
+    if trainer_state != normalized_trainer_states[0]:
+        raise ValueError("Factorial checkpoint rank-0 trainer state is inconsistent")
+    if any(state != budget_states[0] for state in budget_states[1:]):
+        raise ValueError("Factorial checkpoint token budget differs across ranks")
+    if checkpoint_payload.get("token_budget") != budget_states[0]:
+        raise ValueError("Factorial checkpoint top-level token budget is inconsistent")
+    if expected_attempt_ids is not None and accepted_view_attempt_ids != expected_attempt_ids:
+        raise ValueError("Factorial checkpoint accepted-view attempts differ from the bound store")
+    if expected_prompt_ids is not None and accepted_view_prompt_ids != expected_prompt_ids:
+        raise ValueError("Factorial checkpoint prompt population differs from the bound store")
     return world_size
 
 
@@ -677,6 +1066,7 @@ def _validate_factorial_update_evidence(
     checkpoint_path: Path,
     checkpoint_payload: dict[str, Any],
     resolved_config: dict[str, Any],
+    path_relocation: tuple[Path, Path] | None = None,
 ) -> str:
     """Independently prove that a complete Factorial checkpoint changed its baseline."""
 
@@ -693,8 +1083,31 @@ def _validate_factorial_update_evidence(
         checkpoint_path=checkpoint_path,
         checkpoint_payload=checkpoint_payload,
         resolved_config=resolved_config,
+        path_relocation=path_relocation,
     )
-    _validate_factorial_rank_states(checkpoint_payload)
+    trainer_config = resolved_config.get("trainer")
+    configured_max_steps = (
+        trainer_config.get("max_steps")
+        if isinstance(trainer_config, dict)
+        else None
+    )
+    _validate_factorial_rank_states(
+        checkpoint_payload,
+        expected_batch_partition_protocol=(
+            trainer_config.get(
+                "batch_partition_protocol",
+                LEGACY_BATCH_PARTITION_PROTOCOL,
+            )
+            if isinstance(trainer_config, dict)
+            else None
+        ),
+        expected_max_steps=configured_max_steps,
+        expected_max_model_input_length=(
+            trainer_config.get("max_model_input_length")
+            if isinstance(trainer_config, dict)
+            else None
+        ),
+    )
 
     ancestry = checkpoint_payload.get("resume_ancestry")
     ancestry_valid = isinstance(ancestry, list) and all(
@@ -712,14 +1125,18 @@ def _validate_factorial_update_evidence(
         ancestry[-1][7:] if ancestry else binding.initial_checkpoint_sha256
     )
     baseline_hash = checkpoint_payload.get("update_norm_baseline_checkpoint_sha256")
-    baseline_path = Path(
+    bound_baseline_path = Path(
         str(checkpoint_payload.get("update_norm_baseline_checkpoint_path", ""))
+    )
+    baseline_path = _relocated_artifact_path(
+        bound_baseline_path,
+        path_relocation,
     )
     if baseline_hash != expected_baseline_hash:
         raise ValueError("Factorial update-norm baseline differs from checkpoint ancestry")
     if (
-        not baseline_path.is_absolute()
-        or ".." in baseline_path.parts
+        not bound_baseline_path.is_absolute()
+        or ".." in bound_baseline_path.parts
         or baseline_path.is_symlink()
         or not baseline_path.is_file()
         or baseline_path.resolve(strict=True) != baseline_path
@@ -735,7 +1152,7 @@ def _validate_factorial_update_evidence(
                 )
             )
         ).absolute()
-        if baseline_path != configured_baseline:
+        if bound_baseline_path != configured_baseline:
             raise ValueError("Factorial update-norm baseline is not the registered initial checkpoint")
 
     baseline_model = load_checkpoint_model_state(baseline_path)
@@ -778,9 +1195,13 @@ def _validate_factorial_update_evidence(
     state_hashes = checkpoint_runtime_state_hashes(checkpoint_payload)
     checkpoint_hash = sha256_file(checkpoint_path)
     metrics_hash = sha256_file(metrics_path)
+    bound_checkpoint_path = _source_bound_artifact_path(
+        checkpoint_path.resolve(),
+        path_relocation,
+    )
     required = {
         "format_version": 1,
-        "checkpoint": str(checkpoint_path.resolve()),
+        "checkpoint": str(bound_checkpoint_path),
         "final_checkpoint_sha256": checkpoint_hash,
         "metrics_sha256": metrics_hash,
         "metric_update_rows": update_rows,
@@ -788,7 +1209,7 @@ def _validate_factorial_update_evidence(
         "global_step": global_step,
         "parameter_update_norm": observed_norm,
         "final_model_state_hash": observed_final_hash,
-        "update_norm_baseline_checkpoint_path": str(baseline_path),
+        "update_norm_baseline_checkpoint_path": str(bound_baseline_path),
         "update_norm_baseline_checkpoint_sha256": expected_baseline_hash,
         "token_budget": checkpoint_payload.get("token_budget"),
         "resume_ancestry": ancestry,
@@ -859,6 +1280,7 @@ def _validate_factorial_update_evidence(
         "unit": manifest.get("token_budget_unit"),
         "consumed": manifest.get("token_budget_consumed"),
         "accepted_optimizer_updates": global_step,
+        "stop_reason": manifest.get("training_stop_reason"),
     }
     if not isinstance(token_state, dict) or any(
         token_state.get(key) != expected for key, expected in token_required.items()

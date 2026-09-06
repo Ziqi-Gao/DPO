@@ -149,6 +149,8 @@ class TeacherDemoGenerationConfig:
     temperature: float
     top_p: float
     candidates_per_prompt: int
+    max_prompt_tokens: int
+    max_new_tokens: int
     top_k: int = 0
     min_p: float = 0.0
     verifier_version: str = VERIFIER_VERSION
@@ -160,6 +162,10 @@ class TeacherDemoGenerationConfig:
             raise ValueError("sampling_request_seed must be an integer")
         if type(self.candidates_per_prompt) is not int or self.candidates_per_prompt < 1:
             raise ValueError("candidates_per_prompt must be positive")
+        if type(self.max_new_tokens) is not int or self.max_new_tokens < 1:
+            raise ValueError("max_new_tokens must be positive")
+        if type(self.max_prompt_tokens) is not int or self.max_prompt_tokens < 1:
+            raise ValueError("max_prompt_tokens must be positive")
         if self.temperature < 0 or not 0 < self.top_p <= 1:
             raise ValueError("teacher sampling temperature/top_p are invalid")
         if self.top_k < 0 or not 0.0 <= self.min_p <= 1.0:
@@ -212,6 +218,10 @@ def generate_teacher_demonstrations(
         input_ids = list(
             tokenizer.encode(formatted.model_facing_prompt, add_special_tokens=False)
         )
+        if len(input_ids) > config.max_prompt_tokens:
+            raise ValueError(
+                "teacher demonstration prompt exceeds the bound model-input prefix length"
+            )
         prompt_identity_sha256 = sha256_value(asdict(example))
         for candidate_index in range(config.candidates_per_prompt):
             candidate_seed = teacher_candidate_seed(
@@ -237,6 +247,11 @@ def generate_teacher_demonstrations(
                 )
             else:
                 response_ids = list(output.response_ids)
+            if len(response_ids) > config.max_new_tokens:
+                raise ValueError(
+                    "teacher demonstration response exceeds the configured "
+                    "max_new_tokens bound"
+                )
             verification = task.verify(example, task.parse_response(output.response_text))
             accepted = verification.reward == 1.0
             if accepted:

@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("pyarrow")
 
+from posttrain_circuits.artifacts.compatibility import ROLLOUT_GENERATION_VERSION
 from posttrain_circuits.cli.build_local_fork_inputs import main as build_local_fork_inputs
 from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
 from posttrain_circuits.utils.smoke import build_grouped_fork_bank, build_smoke_examples
@@ -21,10 +22,14 @@ def test_local_fork_inputs_are_mixed_multi_prompt_and_bank_hash_bound(
     records = build_grouped_fork_bank(build_smoke_examples(2, seed=17), tokenizer, 19, group_size=4)
     for record in records:
         positions = len(record.response_ids)
+        record.teacher_id = "local/fork-teacher"
+        record.teacher_revision = "teacher-pinned"
         record.teacher_topk_ids = [[1, 2] for _ in range(positions)]
         record.teacher_topk_logprobs = [[-0.2, -1.7] for _ in range(positions)]
         record.teacher_topk_mass = [0.95 for _ in range(positions)]
         record.teacher_entropy = [0.4 for _ in range(positions)]
+        record.top_k = 2
+        record.trajectory_id = record.expected_trajectory_id
     store = TrajectoryStore(tmp_path / "bank")
     manifest = store.write(
         records,
@@ -34,6 +39,9 @@ def test_local_fork_inputs_are_mixed_multi_prompt_and_bank_hash_bound(
         verifier_version="proofgraph-exact-v1",
         teacher_version="teacher-pinned",
         top_k=2,
+        extra_metadata={
+            "rollout_generation_version": ROLLOUT_GENERATION_VERSION,
+        },
     )
     monkeypatch.setattr(
         "posttrain_circuits.cli.build_local_fork_inputs.AutoTokenizer.from_pretrained",
@@ -42,6 +50,7 @@ def test_local_fork_inputs_are_mixed_multi_prompt_and_bank_hash_bound(
     output = tmp_path / "inputs"
     build_local_fork_inputs(
         [
+            "experiment=local_fork",
             "model=tiny_qwen",
             "--trajectory-store",
             str(store.root),

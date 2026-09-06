@@ -7,33 +7,33 @@ overrides:
   protocol_track: qwen3_v2
   prereg_path: prereg/qwen3_v2.yaml
   prereg_version: qwen3_v2
-  protocol_amendment_path: prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml
+  protocol_amendment_path: prereg/amendments/qwen3_v2_g0_elastic_v1.yaml
   trainer:
     backend: accelerate
     max_steps: 120
     token_budget: 2000000
     token_budget_unit: global_nonpadding_model_input_tokens_processed
-    batch_size: 4
-    gradient_accumulation_steps: 8
+    batch_partition_protocol: allocation_neutral_exact_global_batch_v1
+    global_batch_size: 64
+    max_microbatch_size: 4
+    max_model_input_length: 1536
     checkpoint_every: 20
     evaluation_every: 20
     validation_examples: 128
   task:
     dataset_family_path: /data/del6500/OPD/outputs/qwen3-v2/datasets/proofgraph
+    num_examples: 256
   anti_shortcut:
     report_path: /data/del6500/OPD/outputs/qwen3-v2/g0/anti_shortcut.json
     num_examples: 128
   state_source:
     store_path: /data/del6500/OPD/outputs/qwen3-v2/rollout_banks/common_mu
+    max_prompt_tokens: 1246
+    max_new_tokens: 256
     temperature: 0.7
     top_p: 0.8
     top_k: 20
     min_p: 0.0
-  resource_budget:
-    node_memory_gib: 192
-    minimum_headroom_gib: 32
-    minimum_headroom_fraction: 0.20
-    loading_strategy: low_cpu_mem_student_rank_zero_teacher
   production_safety:
     readiness_report: /data/del6500/OPD/outputs/qwen3-v2/readiness/readiness.json
     probe_cohort_manifest: /data/del6500/OPD/outputs/qwen3-v2/probes/proofgraph/manifest.json
@@ -45,7 +45,7 @@ overrides:
 profile_kind: qwen3_v2_production_stack_gate
 protocol_track: qwen3_v2
 artifact_namespace: qwen3-v2
-full_parameter_training: false
+full_parameter_training: true
 seed: 42
 parity_tolerance: 0.02
 minimum_bootstrap_spearman: 0.50

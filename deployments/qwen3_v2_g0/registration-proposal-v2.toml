@@ -1,7 +1,7 @@
 schema_version = 2
 name = "OPD"
 enabled = false
-integration_status = "protocol-v2-disabled-qwen3-v2-2gpu-g0-proposal"
+integration_status = "protocol-v2-disabled-qwen3-v2-elastic-g0-proposal"
 
 [paths]
 code_root = "/home/del6500/projects/OPD"
@@ -18,7 +18,7 @@ allow_project_file_mutation = false
 [integration]
 entrypoint = "/home/del6500/projects/OPD/scripts/server_scheduler/opd-entrypoint"
 allowed_tasks = ["repository_preflight", "qwen3_v2_g0", "qwen3_v2_gpu_preflight"]
-notes = "Disabled complete OPD proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. qwen3_v2_g0 and qwen3_v2_gpu_preflight are explicitly fixed at two GPUs because OPD has not established equivalent 1/2/3/4-GPU scientific semantics. The G0 code-owned handler fixes the two-GPU Qwen3-v2 seed-42 gate, exact offline model and MIB revisions, FSDP topology, 192-GiB memory/headroom contract, content inputs, artifact bundle, and semantic validator. It preserves scheduler-provided CUDA visibility and accepts no command, path, environment, physical-GPU, or resource override. G0 additionally requires the independently accepted qwen3_v2_g0_2gpu_v1 amendment: two ranks retain per-device batch 4, use gradient accumulation 8, preserve effective global batch 64 and the exact 2,000,000 global nonpadding-token budget, and bind preflight, request, and execution to one reviewed implementation lineage. After acceptance, only current_handoff.md may change between those gates; any implementation or configuration delta fails closed. This file remains disabled and does not authorize central installation, enablement, request generation, submission, G0 execution, or any larger experiment."
+notes = "Disabled OPD Candidate E proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. qwen3_v2_g0 and qwen3_v2_gpu_preflight each expose one scheduler-managed profile; their handlers derive the concrete 1/2/3/4-GPU world size only from the running manifest and scheduler environment, preserve CUDA_VISIBLE_DEVICES, and use logical devices 0..N-1. The elastic G0 protocol consumes one world-size-independent 64-slot logical batch from an ordered population of 256 unique prompts per optimizer update, preserves the exact 2,000,000 global nonpadding-input-token budget and 120-step ceiling, stores rank-local trainer counters separately, supports same-world checkpoint resume, and rejects changed-world checkpoint loads before state restoration. Static fixtures for all four counts are required before amendment acceptance; independently approved real pilots for all four counts remain required before G0 request generation. The conservative one-GPU cold-start estimates are unmeasured and will be superseded by central per-count observations. This file remains disabled and authorizes neither central installation nor enablement, submission, or execution."
 
 [[tasks]]
 name = "repository_preflight"
@@ -46,21 +46,20 @@ name = "qwen3_v2_g0"
 selection_policy = "earliest_finish"
 
 [[tasks.execution_profiles]]
-name = "qwen3-v2-g0-2gpu"
+name = "qwen3-v2-g0-elastic"
 kind = "gpu"
-gpu_count_policy = "fixed"
+gpu_count_policy = "scheduler"
 resource_mode = "fixed"
 scheduling_goal = "latency"
-cpu_cores_min = 16
-cpu_cores_preferred = 16
-cpu_cores_max = 16
+cpu_cores_min = 24
+cpu_cores_preferred = 24
+cpu_cores_max = 24
 memory_mib = 196608
-gpu_count = 2
 gpu_memory_mib = 81920
 gpu_utilization_pct = 95
 gpu_exclusivity = "required"
 gpu_models = ["NVIDIA RTX PRO 6000 Blackwell Server Edition"]
-estimated_runtime_seconds = 43200.0
+estimated_runtime_seconds = 86400.0
 cpu_scaling_efficiency = 0.0
 
 [[tasks]]
@@ -68,19 +67,18 @@ name = "qwen3_v2_gpu_preflight"
 selection_policy = "earliest_finish"
 
 [[tasks.execution_profiles]]
-name = "qwen3-v2-gpu-preflight-2gpu"
+name = "qwen3-v2-gpu-preflight-elastic"
 kind = "gpu"
-gpu_count_policy = "fixed"
+gpu_count_policy = "scheduler"
 resource_mode = "fixed"
 scheduling_goal = "latency"
-cpu_cores_min = 16
-cpu_cores_preferred = 16
-cpu_cores_max = 16
+cpu_cores_min = 24
+cpu_cores_preferred = 24
+cpu_cores_max = 24
 memory_mib = 196608
-gpu_count = 2
 gpu_memory_mib = 81920
 gpu_utilization_pct = 95
 gpu_exclusivity = "required"
 gpu_models = ["NVIDIA RTX PRO 6000 Blackwell Server Edition"]
-estimated_runtime_seconds = 3600.0
+estimated_runtime_seconds = 7200.0
 cpu_scaling_efficiency = 0.0

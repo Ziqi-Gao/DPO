@@ -39,6 +39,7 @@ from posttrain_circuits.core.config import (
     compose_config,
     is_production_scale,
 )
+from posttrain_circuits.core.readiness import require_formal_prerequisite_binding
 from posttrain_circuits.models.loading import (
     load_model_and_tokenizer,
     move_model_to_local_cuda,
@@ -115,6 +116,7 @@ def main(argv: list[str] | None = None) -> None:
         )
     if args.circuit_artifact is None:
         raise ValueError("--circuit-artifact is required outside --dry-run")
+    formal_binding = formal_artifact_binding(config)
     artifact = json.loads(args.circuit_artifact.read_text(encoding="utf-8"))
     require_scientific_artifact(
         artifact,
@@ -122,6 +124,13 @@ def main(argv: list[str] | None = None) -> None:
         require_circuit_schema=True,
         require_hash=True,
     )
+    active_qwen_v2 = config.get("protocol_track") == "qwen3_v2"
+    if active_qwen_v2:
+        require_formal_prerequisite_binding(
+            artifact,
+            formal_binding,
+            name="circuit discovery artifact",
+        )
 
     model_config = config["model"]
     if str(model_config["model_name_or_path"]).startswith("local/"):
@@ -176,6 +185,7 @@ def main(argv: list[str] | None = None) -> None:
             cohort=args.cohort,
             subset="validation",
             expected_initial_checkpoint_hash=sha256_file(args.initial_checkpoint),
+            expected_protocol_bindings=(formal_binding if active_qwen_v2 else None),
         )
         if probe_manifest["sha256"] != artifact.get("probe_cohort_manifest_hash"):
             raise ValueError("exact patching probe manifest differs from discovery")
@@ -250,6 +260,12 @@ def main(argv: list[str] | None = None) -> None:
             require_circuit_schema=True,
             require_hash=True,
         )
+        if active_qwen_v2:
+            require_formal_prerequisite_binding(
+                source_artifact,
+                formal_binding,
+                name="mask-transfer source circuit artifact",
+            )
         if source_artifact.get("probe_cohort_manifest_hash") != artifact.get(
             "probe_cohort_manifest_hash"
         ) or source_artifact.get("probe_cohort") != artifact.get("probe_cohort"):
@@ -335,7 +351,7 @@ def main(argv: list[str] | None = None) -> None:
             "stage_target_manifest_hash": artifact.get("stage_target_manifest_hash"),
         }
     )
-    evaluation.update(formal_artifact_binding(config))
+    evaluation.update(formal_binding)
     evaluation["sha256"] = sha256_value(evaluation)
     atomic_write_json(output, evaluation)
     print_json(

@@ -39,6 +39,8 @@ GENERATION_INPUT_FIELDS = {
     "top_k",
     "min_p",
     "candidates_per_prompt",
+    "max_prompt_tokens",
+    "max_new_tokens",
     "verifier_version",
 }
 MANIFEST_FIELDS = {
@@ -110,6 +112,14 @@ def _validate_generation_input(generation: dict[str, Any]) -> None:
         "candidates_per_prompt"
     ] < 1:
         raise ValueError("teacher-demo candidates_per_prompt must be positive")
+    if type(generation["max_new_tokens"]) is not int or generation[
+        "max_new_tokens"
+    ] < 1:
+        raise ValueError("teacher-demo max_new_tokens must be positive")
+    if type(generation["max_prompt_tokens"]) is not int or generation[
+        "max_prompt_tokens"
+    ] < 1:
+        raise ValueError("teacher-demo max_prompt_tokens must be positive")
 
 
 def _validate_attempt_population(
@@ -155,6 +165,10 @@ def _validate_attempt_population(
         }
         if expected != observed:
             raise ValueError("teacher-demo attempt sampling/teacher identity differs from generation")
+        if len(attempt.response_ids) > int(generation["max_new_tokens"]):
+            raise ValueError("teacher-demo response exceeds the bound generation length")
+        if len(attempt.input_ids) > int(generation["max_prompt_tokens"]):
+            raise ValueError("teacher-demo prompt exceeds the bound generation length")
     if set(prompt_identities) != prompt_id_set or any(
         len(values) != 1 for values in prompt_identities.values()
     ):

@@ -15,9 +15,9 @@ from typing import Any
 import yaml
 
 
-AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml")
+AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_elastic_v1.yaml")
 BASE_PREREG_RELATIVE_PATH = Path("prereg/qwen3_v2.yaml")
-AMENDMENT_ID = "qwen3_v2_g0_2gpu_v1"
+AMENDMENT_ID = "qwen3_v2_g0_elastic_v1"
 BASE_PREREG_VERSION = "qwen3_v2"
 BASE_PREREG_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
 FROZEN_IMPLEMENTATION_COMMIT = "b2d505b297dae1d56311616e9a68fb7df14b7bee"
@@ -104,16 +104,18 @@ def _load_yaml(raw: bytes, *, context: str) -> dict[str, Any]:
 
 
 def load_protocol_amendment_bytes(raw: bytes) -> dict[str, Any]:
-    """Parse and schema-validate the fixed two-GPU G0 amendment bytes."""
+    """Parse and schema-validate the scheduler-managed 1--4 GPU amendment."""
 
-    payload = _load_yaml(raw, context="Qwen3-v2 two-GPU G0 amendment")
+    payload = _load_yaml(raw, context="Qwen3-v2 elastic G0 amendment")
     expected_top = {
         "schema_version",
         "amendment_id",
         "base_preregistration",
+        "superseded_execution_amendment",
         "scope",
-        "resource_amendment",
+        "allocation_semantics",
         "batch_token_invariants",
+        "checkpoint_retry_invariants",
         "scientific_invariants",
         "implementation_acceptance",
         "review",
@@ -134,11 +136,23 @@ def load_protocol_amendment_bytes(raw: bytes) -> dict[str, Any]:
     if payload["base_preregistration"] != expected_base:
         raise ProtocolAmendmentError("protocol amendment base preregistration differs")
 
+    expected_superseded = {
+        "path": "prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml",
+        "amendment_id": "qwen3_v2_g0_2gpu_v1",
+        "accepted_sha256": (
+            "014b5dc78619870eee3a6f6175323b0418c5c597fa9625fd41c8e15ee353b6c2"
+        ),
+        "role": "recoverable_fixed_two_gpu_baseline_only",
+    }
+    if payload["superseded_execution_amendment"] != expected_superseded:
+        raise ProtocolAmendmentError(
+            "protocol amendment superseded-baseline binding differs"
+        )
+
     expected_scope = {
         "task": "qwen3_v2_g0",
-        "workflow_id": "qwen3-v2-g0-v1",
+        "workflow_id": "qwen3-v2-g0-elastic-v1",
         "unit_id": "g0",
-        "execution_profile": "qwen3-v2-g0-2gpu",
         "seed": 42,
         "claim_scope": (
             "full_mechanism_pipeline_feasibility_only_not_confirmatory_primary_endpoint"
@@ -147,58 +161,142 @@ def load_protocol_amendment_bytes(raw: bytes) -> dict[str, Any]:
     if payload["scope"] != expected_scope:
         raise ProtocolAmendmentError("protocol amendment scope differs from the reviewed design")
 
-    expected_resource = {
-        "original_world_size": 4,
-        "amended_world_size": 2,
-        "host_memory_gib": 192,
-        "minimum_cgroup_headroom_gib": 32,
-        "minimum_cgroup_headroom_fraction": 0.20,
-        "exclusive_gpu_model": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    expected_allocation = {
+        "allocation_source": "server_scheduler_running_manifest_and_environment",
+        "request_side_execution_profile": "forbidden",
+        "request_side_gpu_count": "forbidden",
+        "request_side_resources": "forbidden",
+        "reviewed_world_sizes": [1, 2, 3, 4],
+        "fsdp_requested_sharding_strategy": "FULL_SHARD",
+        "fsdp_effective_sharding_strategy_by_world_size": {
+            "1": "NO_SHARD",
+            "2": "FULL_SHARD",
+            "3": "FULL_SHARD",
+            "4": "FULL_SHARD",
+        },
+        "cpu_thread_partition": (
+            "allocated_cpu_cores_divided_equally_by_actual_world_size"
+        ),
+        "running_attempt_resize": "forbidden",
         "preflight_required": (
-            "successful_accepted_implementation_lineage_two_gpu_preflight"
+            "successful_accepted_implementation_lineage_elastic_gpu_preflight_matrix"
         ),
     }
-    if payload["resource_amendment"] != expected_resource:
-        raise ProtocolAmendmentError("protocol amendment resource terms differ")
+    if payload["allocation_semantics"] != expected_allocation:
+        raise ProtocolAmendmentError("protocol amendment allocation semantics differ")
 
     expected_batch = {
-        "per_device_batch_size": 4,
-        "original_gradient_accumulation_steps": 4,
-        "amended_gradient_accumulation_steps": 8,
-        "effective_global_batch_size": 64,
-        "effective_global_batch_formula": (
-            "amended_world_size_x_per_device_batch_size_x_"
-            "amended_gradient_accumulation_steps"
+        "batch_partition_protocol": "allocation_neutral_exact_global_batch_v1",
+        "global_logical_batch_size": 64,
+        "max_per_rank_microbatch_size": 4,
+        "max_model_input_length": 1536,
+        "frozen_prompt_population_max_tokens": 1246,
+        "teacher_demo_max_new_tokens": 256,
+        "derived_max_model_input_tokens": 1502,
+        "overlength_policy": (
+            "reject_without_truncation_before_any_training_forward"
+        ),
+        "preflight_model_input_tokens": 1536,
+        "prompt_population_size": 256,
+        "prompt_ids_unique": True,
+        "accepted_view_prompt_order": "exactly_manifest_ordered_prompt_ids",
+        "prompt_population_alignment": (
+            "exact_multiple_of_global_logical_batch_size"
+        ),
+        "optimizer_microsteps_by_world_size": {"1": 16, "2": 8, "3": 6, "4": 4},
+        "per_rank_samples_by_world_size": {
+            "1": [64],
+            "2": [32, 32],
+            "3": [22, 21, 21],
+            "4": [16, 16, 16, 16],
+        },
+        "three_gpu_microbatch_schedule": {
+            "rank_0": [4, 4, 4, 4, 4, 2],
+            "rank_1": [4, 4, 4, 4, 4, 1],
+            "rank_2": [4, 4, 4, 4, 4, 1],
+        },
+        "sample_order": "one_global_64_slot_window_independent_of_world_size",
+        "objective_normalization": (
+            "exact_global_sequence_mean_after_framework_accumulation_and_rank_averaging"
         ),
         "token_budget": 2_000_000,
         "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
-        "token_accounting": "exact_cross_rank_sum_reserved_before_each_optimizer_boundary",
+        "token_accounting": (
+            "exact_cross_rank_sum_reserved_before_any_backward_in_each_optimizer_window"
+        ),
         "token_stop_boundary": "stop_before_an_optimizer_update_that_would_exceed_budget",
         "max_optimizer_steps": 120,
         "max_steps_role": "independent_safety_ceiling_first_limit_reached_stops_training",
-        "resume_rule": "consumed_tokens_and_world_size_are_checkpointed_and_must_match",
     }
     if payload["batch_token_invariants"] != expected_batch:
         raise ProtocolAmendmentError("protocol amendment batch/token terms differ")
     if (
-        expected_resource["amended_world_size"]
-        * expected_batch["per_device_batch_size"]
-        * expected_batch["amended_gradient_accumulation_steps"]
-        != expected_batch["effective_global_batch_size"]
+        expected_batch["frozen_prompt_population_max_tokens"]
+        + expected_batch["teacher_demo_max_new_tokens"]
+        != expected_batch["derived_max_model_input_tokens"]
+        or expected_batch["derived_max_model_input_tokens"]
+        > expected_batch["max_model_input_length"]
+        or expected_batch["preflight_model_input_tokens"]
+        != expected_batch["max_model_input_length"]
     ):
-        raise ProtocolAmendmentError("protocol amendment global-batch formula is inconsistent")
+        raise ProtocolAmendmentError(
+            "protocol amendment model-input length bound is inconsistent"
+        )
+    for world_size_text, per_rank in expected_batch[
+        "per_rank_samples_by_world_size"
+    ].items():
+        world_size = int(world_size_text)
+        if (
+            sum(per_rank) != expected_batch["global_logical_batch_size"]
+            or len(per_rank) != world_size
+            or max(per_rank) > (
+                expected_batch["optimizer_microsteps_by_world_size"][world_size_text]
+                * expected_batch["max_per_rank_microbatch_size"]
+            )
+        ):
+            raise ProtocolAmendmentError(
+                "protocol amendment global-batch schedule is inconsistent"
+            )
+
+    expected_checkpoint = {
+        "checkpoint_boundary": "completed_optimizer_updates_only",
+        "state_source_kind": "teacher_demo",
+        "state_source_cursor_protocol": "teacher-demo-round-robin-v2-accepted-view",
+        "state_source_rng": "none",
+        "rank_local_trainer_state": "checkpointed_and_restored_per_rank",
+        "global_token_budget_state": "identical_across_all_ranks",
+        "same_world_resume": "required_and_deterministically_compared",
+        "changed_world_resume": "rejected_before_state_load",
+        "retry_policy": (
+            "every_scheduler_attempt_uses_an_isolated_workspace_and_restarts_from_frozen_inputs"
+        ),
+    }
+    if payload["checkpoint_retry_invariants"] != expected_checkpoint:
+        raise ProtocolAmendmentError(
+            "protocol amendment checkpoint/retry terms differ"
+        )
 
     expected_scientific = {
+        "full_parameter_training": True,
         "unchanged": [
             "model_teacher_and_tokenizer_revisions",
             "prompt_and_sampling_protocols",
             "seed_42",
+            "global_logical_sample_order",
+            "teacher_demo_state_source_and_sequence_normalized_canonical_sft",
             "dataset_and_prerequisite_hash_bindings",
             "optimizer_and_learning_rate",
             "evaluation_and_checkpoint_cadence_in_optimizer_steps",
             "G0_gate_and_claim_scope",
             "artifact_and_completion_semantics",
         ],
+        "numerical_equivalence": {
+            "standard": (
+                "identical_scientific_protocol_with_expected_distributed_"
+                "floating_point_reduction_variation"
+            ),
+            "bitwise_identity_across_world_sizes": False,
+        },
         "forbidden_extensions": [
             "confirmatory_primary_endpoint",
             "full_three_seed_factorial",
@@ -215,6 +313,8 @@ def load_protocol_amendment_bytes(raw: bytes) -> dict[str, Any]:
         "proposed_document_must_preexist_in_implementation_commit": True,
         "accepted_document_may_change_review_block_only": True,
         "preflight_request_and_execution_must_share_accepted_implementation_lineage": True,
+        "required_static_world_size_fixtures": [1, 2, 3, 4],
+        "required_central_gpu_pilots_before_g0": [1, 2, 3, 4],
     }
     if payload["implementation_acceptance"] != expected_acceptance:
         raise ProtocolAmendmentError("protocol amendment acceptance mechanism differs")
@@ -249,56 +349,97 @@ def load_protocol_amendment_bytes(raw: bytes) -> dict[str, Any]:
     return payload
 
 
-def validate_two_gpu_g0_config(config: dict[str, Any], amendment: dict[str, Any]) -> None:
-    """Require the resolved G0 config to implement the amendment exactly."""
+def validate_elastic_g0_config(config: dict[str, Any], amendment: dict[str, Any]) -> None:
+    """Require an allocation-neutral G0 config to implement the amendment."""
 
     load_protocol_amendment_bytes(yaml.safe_dump(amendment, sort_keys=False).encode("utf-8"))
     trainer = config.get("trainer")
     scheduler = config.get("scheduler_g0")
     if not isinstance(trainer, dict) or not isinstance(scheduler, dict):
-        raise ProtocolAmendmentError("two-GPU G0 config lacks trainer or scheduler binding")
+        raise ProtocolAmendmentError("elastic G0 config lacks trainer or scheduler binding")
+    if "batch_size" in trainer or "gradient_accumulation_steps" in trainer:
+        raise ProtocolAmendmentError(
+            "elastic G0 config must omit allocation-specific batch fields"
+        )
+    experiment = config.get("experiment")
+    task = config.get("task")
+    state_source = config.get("state_source")
+    supervision = config.get("supervision")
+    if (
+        not isinstance(experiment, dict)
+        or experiment.get("name") != "canonical_sft"
+        or not isinstance(task, dict)
+        or task.get("num_examples")
+        != amendment["batch_token_invariants"]["prompt_population_size"]
+        or not isinstance(state_source, dict)
+        or state_source.get("name") != "teacher_demo"
+        or not isinstance(supervision, dict)
+        or supervision.get("name") != "canonical_sft"
+        or supervision.get("normalization") != "sequence"
+        or config.get("g0", {}).get("full_parameter_training")
+        is not amendment["scientific_invariants"]["full_parameter_training"]
+    ):
+        raise ProtocolAmendmentError(
+            "elastic G0 requires the reviewed prompt population and deterministic "
+            "teacher-demo canonical SFT"
+        )
     expected = amendment["batch_token_invariants"]
     integer_values = (
-        scheduler.get("process_count"),
-        trainer.get("batch_size"),
-        trainer.get("gradient_accumulation_steps"),
+        trainer.get("global_batch_size"),
+        trainer.get("max_microbatch_size"),
+        trainer.get("max_model_input_length"),
         trainer.get("token_budget"),
         trainer.get("max_steps"),
+        state_source.get("max_prompt_tokens"),
+        state_source.get("max_new_tokens"),
     )
     if any(type(value) is not int for value in integer_values):
-        raise ProtocolAmendmentError("two-GPU G0 batch/token values must be integers")
+        raise ProtocolAmendmentError("elastic G0 batch/token values must be integers")
     observed = {
-        "world_size": scheduler.get("process_count"),
-        "per_device_batch_size": trainer.get("batch_size"),
-        "gradient_accumulation_steps": trainer.get("gradient_accumulation_steps"),
-        "effective_global_batch_size": (
-            scheduler["process_count"]
-            * trainer["batch_size"]
-            * trainer["gradient_accumulation_steps"]
+        "allocation_contract": scheduler.get("allocation_contract"),
+        "batch_partition_protocol": trainer.get("batch_partition_protocol"),
+        "global_logical_batch_size": trainer.get("global_batch_size"),
+        "max_per_rank_microbatch_size": trainer.get("max_microbatch_size"),
+        "max_model_input_length": trainer.get("max_model_input_length"),
+        "frozen_prompt_population_max_tokens": state_source.get(
+            "max_prompt_tokens"
         ),
+        "teacher_demo_max_new_tokens": state_source.get("max_new_tokens"),
         "token_budget": trainer.get("token_budget"),
         "token_budget_unit": trainer.get("token_budget_unit"),
         "max_optimizer_steps": trainer.get("max_steps"),
     }
     required = {
-        "world_size": amendment["resource_amendment"]["amended_world_size"],
-        "per_device_batch_size": expected["per_device_batch_size"],
-        "gradient_accumulation_steps": expected["amended_gradient_accumulation_steps"],
-        "effective_global_batch_size": expected["effective_global_batch_size"],
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
+        "batch_partition_protocol": expected["batch_partition_protocol"],
+        "global_logical_batch_size": expected["global_logical_batch_size"],
+        "max_per_rank_microbatch_size": expected["max_per_rank_microbatch_size"],
+        "max_model_input_length": expected["max_model_input_length"],
+        "frozen_prompt_population_max_tokens": expected[
+            "frozen_prompt_population_max_tokens"
+        ],
+        "teacher_demo_max_new_tokens": expected["teacher_demo_max_new_tokens"],
         "token_budget": expected["token_budget"],
         "token_budget_unit": expected["token_budget_unit"],
         "max_optimizer_steps": expected["max_optimizer_steps"],
     }
     if observed != required:
         raise ProtocolAmendmentError(
-            f"two-GPU G0 config violates batch/token invariants: {observed!r}"
+            f"elastic G0 config violates batch/token invariants: {observed!r}"
         )
     if (
         config.get("protocol_amendment_path") != str(AMENDMENT_RELATIVE_PATH)
         or config.get("protocol_track") != BASE_PREREG_VERSION
-        or scheduler.get("execution_profile") != "qwen3-v2-g0-2gpu"
+        or scheduler.get("batch_partition_protocol")
+        != expected["batch_partition_protocol"]
     ):
-        raise ProtocolAmendmentError("two-GPU G0 config lacks the fixed amendment identity")
+        raise ProtocolAmendmentError("elastic G0 config lacks the amendment identity")
+
+
+# Compatibility name for callers that have not yet migrated their import.  The
+# implementation now validates only the elastic amendment and cannot bless the
+# historical two-GPU contract.
+validate_two_gpu_g0_config = validate_elastic_g0_config
 
 
 def _git_bytes(code_root: Path, *arguments: str) -> bytes:

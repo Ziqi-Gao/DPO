@@ -13,8 +13,8 @@ from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, 
 from posttrain_circuits.datasets.proofgraph.splits import (
     build_split,
     difficulty_distribution,
-    serialize_examples,
 )
+from posttrain_circuits.datasets.proofgraph.serialization import serialize_examples
 from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
 

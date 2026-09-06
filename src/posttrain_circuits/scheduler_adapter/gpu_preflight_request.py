@@ -1,10 +1,11 @@
-"""Prepare a scientific-only fixed Qwen3-v2 GPU-preflight request."""
+"""Prepare an allocation-neutral Qwen3-v2 GPU-preflight request."""
 
 from __future__ import annotations
 
 import copy
 import json
 import re
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,16 +30,16 @@ from posttrain_circuits.scheduler_adapter.plan_store import publish_workflow_pla
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
     ARTIFACT_NAMESPACE,
     CHAT_TEMPLATE_SHA256,
-    GPU_COUNT,
     MODEL_REVISION,
     OUTPUT_NAME,
-    PROFILE_NAME,
     PROTOCOL_TRACK,
     TASK_NAME,
     TEACHER_REVISION,
     TOKENIZER_FINGERPRINT,
     UNIT_ID,
-    WORKFLOW_ID,
+    WORKFLOW_ID_PREFIX,
+    training_contract,
+    validate_preflight_workflow_id,
 )
 from posttrain_circuits.scheduler_adapter.secure_files import read_regular_file_nofollow
 from posttrain_circuits.workflows.contracts import ContentIdentity, WorkflowPlan, WorkflowUnit
@@ -47,11 +48,16 @@ from posttrain_circuits.workflows.contracts import ContentIdentity, WorkflowPlan
 PREREG_CONTENT_NAME = "preregistration_sha256"
 PREREG_RELATIVE_PATH = Path("prereg/qwen3_v2.yaml")
 EXECUTION_CONTEXT = {
-    "distributed_process_count": GPU_COUNT,
-    "execution_profile": PROFILE_NAME,
+    "allocation_contract": "manifest_driven_scheduler_gpu_v1",
     "scheduler_protocol": 2,
 }
 GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
+
+
+def _fresh_workflow_id() -> str:
+    return validate_preflight_workflow_id(
+        f"{WORKFLOW_ID_PREFIX}{secrets.token_hex(16)}"
+    )
 
 
 def _clean_git_commit(code_root: Path) -> str:
@@ -109,7 +115,7 @@ def _accepted_lineage_git_commit(code_root: Path) -> str:
 
 
 def fixed_resolved_config(*, code_commit: str) -> dict[str, Any]:
-    """Return the complete fixed scientific input without YAML or Hydra dependencies."""
+    """Return complete science inputs without fixing the eventual allocation."""
 
     if GIT_COMMIT.fullmatch(code_commit) is None:
         raise AdapterValidationError("GPU-preflight code_commit is not a Git identity")
@@ -153,12 +159,6 @@ def fixed_resolved_config(*, code_commit: str) -> dict[str, Any]:
         "prereg_path": str(PREREG_RELATIVE_PATH),
         "prereg_version": PROTOCOL_TRACK,
         "protocol_track": PROTOCOL_TRACK,
-        "resource_budget": {
-            "loading_strategy": "low_cpu_mem_student_rank_zero_teacher",
-            "minimum_headroom_fraction": 0.20,
-            "minimum_headroom_gib": 32,
-            "node_memory_gib": 192,
-        },
         "teacher": {
             "allow_unpinned_revision": False,
             "attn_implementation": "sdpa",
@@ -177,6 +177,7 @@ def fixed_resolved_config(*, code_commit: str) -> dict[str, Any]:
             "trust_remote_code": False,
             "use_cache": True,
         },
+        "training_probe": training_contract(),
     }
 
 
@@ -235,7 +236,6 @@ def _validate_fixed_config(config: dict[str, Any]) -> None:
     try:
         model = config["model"]
         teacher = config["teacher"]
-        budget = config["resource_budget"]
         prompt = model["prompt_protocol"]
     except (KeyError, TypeError) as error:
         raise AdapterValidationError("fixed GPU-preflight config is incomplete") from error
@@ -263,10 +263,6 @@ def _validate_fixed_config(config: dict[str, Any]) -> None:
         or teacher.get("local_files_only") is not True
         or teacher.get("low_cpu_mem_usage") is not True
         or teacher.get("rank_zero_only_training_load") is not True
-        or budget.get("node_memory_gib") != 192
-        or budget.get("minimum_headroom_gib") != 32
-        or budget.get("minimum_headroom_fraction") != 0.20
-        or budget.get("loading_strategy") != "low_cpu_mem_student_rank_zero_teacher"
     ):
         raise AdapterValidationError("composed config differs from the fixed Qwen3-v2 preflight")
 
@@ -301,10 +297,17 @@ def _projections(
     return scientific_projection, execution_projection
 
 
-def build_qwen3_v2_gpu_preflight_plan(*, layout: WorkflowLayout) -> WorkflowPlan:
-    """Materialize the fixed config projections and raw preregistration in file CAS."""
+def build_qwen3_v2_gpu_preflight_plan(
+    *, layout: WorkflowLayout, workflow_id: str | None = None
+) -> WorkflowPlan:
+    """Materialize one fresh, allocation-neutral preflight workflow plan."""
 
     layout.validate()
+    selected_workflow_id = (
+        _fresh_workflow_id()
+        if workflow_id is None
+        else validate_preflight_workflow_id(workflow_id)
+    )
     config = fixed_resolved_config(
         code_commit=_accepted_lineage_git_commit(layout.code_root)
     )
@@ -336,7 +339,7 @@ def build_qwen3_v2_gpu_preflight_plan(*, layout: WorkflowLayout) -> WorkflowPlan
     )
     identities = tuple(sorted((*config_identities.as_tuple(), preregistration)))
     return WorkflowPlan(
-        workflow_id=WORKFLOW_ID,
+        workflow_id=selected_workflow_id,
         units=(
             WorkflowUnit(
                 unit_id=UNIT_ID,

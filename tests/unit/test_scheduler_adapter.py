@@ -1362,7 +1362,7 @@ class SchedulerAdapterTests(unittest.TestCase):
         ), self.assertRaisesRegex(AdapterValidationError, "opaque OPD"):
             validate_outbox_request(malformed_id)
 
-    def test_outbox_accepts_only_migrated_code_owned_profile(self):
+    def test_outbox_has_no_request_side_profile_or_resource_override(self):
         plan = _plan()
         manifest = _manifest(_running_payload(self.root))
         handler = self._handler(manifest)
@@ -1370,20 +1370,37 @@ class SchedulerAdapterTests(unittest.TestCase):
         with mock.patch(
             "posttrain_circuits.scheduler_adapter.registry.HANDLER_REGISTRY", registry
         ):
-            with self.assertRaises(AdapterValidationError):
-                build_outbox_request(
-                    plan,
-                    unit_id="cell",
-                    execution_profile="invented-gpu",
-                )
-            request = build_outbox_request(
-                plan,
-                unit_id="cell",
-                execution_profile="cpu-reviewed",
-            )
-            self.assertEqual(request["execution_profile"], "cpu-reviewed")
-            default_request = build_outbox_request(plan, unit_id="cell")
-            self.assertNotIn("execution_profile", default_request)
+            request = build_outbox_request(plan, unit_id="cell")
+            self.assertNotIn("execution_profile", request)
+            self.assertNotIn("resources", request)
+            for field, value in (
+                ("execution_profile", "cpu-reviewed"),
+                ("resources", {"gpu_count": 1}),
+            ):
+                injected = dict(request)
+                injected[field] = value
+                with self.subTest(field=field), self.assertRaisesRegex(
+                    AdapterValidationError, "must omit"
+                ):
+                    validate_outbox_request(injected)
+        self.assertNotIn(
+            "execution_profile", inspect.signature(build_outbox_request).parameters
+        )
+        self.assertNotIn(
+            "execution_profile", inspect.signature(prepare_outbox_request).parameters
+        )
+
+    def test_running_manifest_rejects_request_side_resource_steering(self):
+        for field, value in (
+            ("requested_profile", "cpu-reviewed"),
+            ("resources", _running_payload(self.root)["allocation"]),
+        ):
+            payload = _running_payload(self.root)
+            payload[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                AdapterValidationError, "must omit"
+            ):
+                _manifest(payload)
 
     def test_production_registry_rejects_unmigrated_outbox_requests(self):
         plan = _plan()
@@ -1609,6 +1626,62 @@ class SchedulerAdapterTests(unittest.TestCase):
         ) as prepared:
             self.assertEqual(prepared.profile.process_count, 2)
 
+    def test_scheduler_managed_profile_derives_each_reviewed_process_count(self):
+        profile = ExecutionProfileContract(
+            name="gpu-elastic",
+            kind="gpu",
+            process_count=0,
+            cpu_cores_min=24,
+            cpu_cores_max=24,
+            memory_mib_min=4096,
+            memory_mib_max=4096,
+            gpu_count=0,
+            gpu_memory_mib_min=24000,
+            gpu_memory_mib_max=24000,
+            gpu_utilization_pct_min=90,
+            gpu_utilization_pct_max=90,
+            exclusive_gpu=True,
+            allowed_gpu_models=("Reviewed-GPU",),
+            gpu_count_policy="scheduler",
+            scheduler_gpu_counts=(1, 2, 3, 4),
+        )
+        profile.validate_contract()
+        for world_size in (1, 2, 3, 4):
+            payload = _running_payload(self.root, gpu=True)
+            payload["execution_profile"] = profile.name
+            payload["allocation"]["cpu_cores"] = 24
+            payload["allocation"]["gpu_count"] = world_size
+            payload["cpu_ids"] = list(range(24))
+            payload["gpu_indices"] = list(range(world_size))
+            payload["gpu_uuids"] = [
+                f"GPU-reviewed-{index}" for index in range(world_size)
+            ]
+            payload["gpu_pci_bus_ids"] = [
+                f"0000:{index + 1:02x}:00.0" for index in range(world_size)
+            ]
+            manifest = _manifest(payload)
+            with self.subTest(world_size=world_size):
+                self.assertEqual(profile.process_count_for(manifest), world_size)
+                profile.validate_allocation(
+                    manifest,
+                    observed_gpu_models=("Reviewed-GPU",) * world_size,
+                )
+
+        payload = _running_payload(self.root, gpu=True)
+        payload["execution_profile"] = profile.name
+        payload["allocation"]["cpu_cores"] = 24
+        payload["allocation"]["gpu_count"] = 6
+        payload["cpu_ids"] = list(range(24))
+        payload["gpu_indices"] = list(range(6))
+        payload["gpu_uuids"] = [f"GPU-reviewed-{index}" for index in range(6)]
+        payload["gpu_pci_bus_ids"] = [
+            f"0000:{index + 1:02x}:00.0" for index in range(6)
+        ]
+        with self.assertRaisesRegex(AdapterValidationError, "outside"):
+            profile.validate_allocation(
+                _manifest(payload),
+                observed_gpu_models=("Reviewed-GPU",) * 6,
+            )
     def test_handler_contract_is_immutable_and_cannot_override_adapter_fields(self):
         manifest = _manifest(_running_payload(self.root))
         handler = self._handler(manifest)
@@ -1670,6 +1743,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             ), argv)
             self.assertIn(attempt.proc_path, argv)
             self.assertIn(ATTEMPT_COMPLETION_NAME, argv)
+            self.assertNotIn("--gpu-count", argv)
             for handle in inputs.handles:
                 self.assertIn(handle.proc_path, argv)
                 self.assertIn(handle.sha256, argv)

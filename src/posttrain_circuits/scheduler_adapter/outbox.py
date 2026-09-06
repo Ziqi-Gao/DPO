@@ -33,12 +33,9 @@ def validate_outbox_request(
 
     if not isinstance(payload, dict):
         raise AdapterValidationError("ServerScheduler outbox request must be an object")
-    expected = set(REQUEST_BASE_KEYS)
-    if "execution_profile" in payload:
-        expected.add("execution_profile")
-    if set(payload) != expected:
+    if set(payload) != REQUEST_BASE_KEYS:
         raise AdapterValidationError(
-            "OPD outbox request fields differ from the reviewed protocol-v2 subset"
+            "OPD outbox request must omit execution_profile and resources"
         )
     if payload["schema_version"] != 2 or isinstance(payload["schema_version"], bool):
         raise AdapterValidationError("outbox request schema_version must be 2")
@@ -58,12 +55,7 @@ def validate_outbox_request(
     parameters = WorkflowParameters.from_payload(payload["parameters"])
     if parameters.to_payload() != payload["parameters"]:
         raise AdapterValidationError("outbox request parameters are not canonical")
-    handler = require_handler(payload["task"])
-    if "execution_profile" in payload:
-        profile = payload["execution_profile"]
-        if not isinstance(profile, str) or not IDENTIFIER.fullmatch(profile):
-            raise AdapterValidationError("outbox execution_profile is invalid")
-        handler.profile(profile)
+    require_handler(payload["task"])
     return payload
 
 
@@ -71,7 +63,6 @@ def build_outbox_request(
     plan: WorkflowPlan,
     *,
     unit_id: str,
-    execution_profile: str | None = None,
 ) -> dict[str, Any]:
     """Build one submission request without resources, commands, paths, or env."""
 
@@ -91,9 +82,6 @@ def build_outbox_request(
         "schema_version": 2,
         "task": unit.task,
     }
-    if execution_profile is not None:
-        handler.profile(execution_profile)
-        core["execution_profile"] = execution_profile
     # Scientific identity belongs to the immutable workflow parameters.  A job
     # ID identifies one scheduler submission, so a retry of the same unit must
     # receive a fresh ID instead of colliding with durable scheduler history.
@@ -105,7 +93,6 @@ def prepare_outbox_request(
     plan: WorkflowPlan,
     *,
     unit_id: str,
-    execution_profile: str | None = None,
     layout: WorkflowLayout,
 ) -> Path:
     """Atomically publish a fresh submission request and return its local path."""
@@ -115,7 +102,6 @@ def prepare_outbox_request(
     request = build_outbox_request(
         plan,
         unit_id=unit_id,
-        execution_profile=execution_profile,
     )
     target = layout.outbox_directory() / f"{request['job_id']}.json"
     try:

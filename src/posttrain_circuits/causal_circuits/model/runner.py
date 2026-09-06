@@ -265,7 +265,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     actual_revision = subprocess.check_output(
         [
-            "git",
+            "/usr/bin/git",
             "-C",
             str(args.repository),
             "rev-parse",

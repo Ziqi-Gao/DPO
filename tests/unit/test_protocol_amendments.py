@@ -20,7 +20,7 @@ from posttrain_circuits.artifacts.protocol_amendments import (
     resolve_accepted_protocol_amendment,
     validate_accepted_lineage_commit,
     validate_review_transition,
-    validate_two_gpu_g0_config,
+    validate_elastic_g0_config,
 )
 from posttrain_circuits.core.config import compose_config
 
@@ -47,7 +47,7 @@ class ProtocolAmendmentTests(unittest.TestCase):
             "reviewed_implementation_commit": IMPLEMENTATION_COMMIT,
             "reviewer": "independent-reviewer-id",
             "reviewed_at_utc": "2026-09-04T05:00:00Z",
-            "rationale": "Approved only for the bounded two-GPU seed-42 G0 gate.",
+            "rationale": "Approved only for the scheduler-managed seed-42 G0 gate.",
         }
         return accepted
 
@@ -55,12 +55,63 @@ class ProtocolAmendmentTests(unittest.TestCase):
         self.assertEqual(self.proposed["amendment_id"], AMENDMENT_ID)
         self.assertEqual(self.proposed["review"], PROPOSED_REVIEW)
         batch = self.proposed["batch_token_invariants"]
-        resource = self.proposed["resource_amendment"]
+        allocation = self.proposed["allocation_semantics"]
+        self.assertEqual(allocation["reviewed_world_sizes"], [1, 2, 3, 4])
+        self.assertEqual(allocation["request_side_gpu_count"], "forbidden")
         self.assertEqual(
-            resource["amended_world_size"]
-            * batch["per_device_batch_size"]
-            * batch["amended_gradient_accumulation_steps"],
-            batch["effective_global_batch_size"],
+            allocation["request_side_execution_profile"], "forbidden"
+        )
+        self.assertEqual(allocation["request_side_resources"], "forbidden")
+        self.assertEqual(
+            allocation["fsdp_requested_sharding_strategy"], "FULL_SHARD"
+        )
+        self.assertEqual(
+            allocation["fsdp_effective_sharding_strategy_by_world_size"],
+            {
+                "1": "NO_SHARD",
+                "2": "FULL_SHARD",
+                "3": "FULL_SHARD",
+                "4": "FULL_SHARD",
+            },
+        )
+        self.assertEqual(batch["prompt_population_size"], 256)
+        self.assertEqual(batch["max_model_input_length"], 1536)
+        self.assertEqual(batch["frozen_prompt_population_max_tokens"], 1246)
+        self.assertEqual(batch["teacher_demo_max_new_tokens"], 256)
+        self.assertEqual(batch["derived_max_model_input_tokens"], 1502)
+        self.assertEqual(batch["preflight_model_input_tokens"], 1536)
+        self.assertEqual(
+            batch["overlength_policy"],
+            "reject_without_truncation_before_any_training_forward",
+        )
+        self.assertIs(batch["prompt_ids_unique"], True)
+        self.assertEqual(
+            batch["accepted_view_prompt_order"],
+            "exactly_manifest_ordered_prompt_ids",
+        )
+        self.assertIs(
+            self.proposed["scientific_invariants"]["full_parameter_training"],
+            True,
+        )
+        for world_size in (1, 2, 3, 4):
+            self.assertEqual(
+                sum(batch["per_rank_samples_by_world_size"][str(world_size)]),
+                batch["global_logical_batch_size"],
+            )
+        checkpoint = self.proposed["checkpoint_retry_invariants"]
+        self.assertEqual(checkpoint["state_source_kind"], "teacher_demo")
+        self.assertEqual(
+            checkpoint["state_source_cursor_protocol"],
+            "teacher-demo-round-robin-v2-accepted-view",
+        )
+        self.assertEqual(checkpoint["state_source_rng"], "none")
+        self.assertEqual(
+            checkpoint["rank_local_trainer_state"],
+            "checkpointed_and_restored_per_rank",
+        )
+        self.assertEqual(
+            checkpoint["global_token_budget_state"],
+            "identical_across_all_ranks",
         )
         with self.assertRaisesRegex(ProtocolAmendmentError, "remains proposed"):
             resolve_accepted_protocol_amendment(
@@ -73,20 +124,66 @@ class ProtocolAmendmentTests(unittest.TestCase):
             [
                 "g0=qwen3_v2_eap_separation",
                 "experiment=canonical_sft",
-                "task.num_examples=256",
                 "state_source.num_candidates=8",
             ]
         )
         config["scheduler_g0"] = {
-            "process_count": 2,
-            "execution_profile": "qwen3-v2-g0-2gpu",
+            "allocation_contract": "manifest_driven_scheduler_gpu_v1",
+            "batch_partition_protocol": (
+                "allocation_neutral_exact_global_batch_v1"
+            ),
         }
-        validate_two_gpu_g0_config(config, self.proposed)
-        self.assertEqual(config["trainer"]["gradient_accumulation_steps"], 8)
+        validate_elastic_g0_config(config, self.proposed)
+        self.assertEqual(config["trainer"]["global_batch_size"], 64)
+        self.assertEqual(config["trainer"]["max_microbatch_size"], 4)
+        self.assertEqual(config["trainer"]["max_model_input_length"], 1536)
+        self.assertEqual(config["state_source"]["max_prompt_tokens"], 1246)
+        self.assertEqual(config["state_source"]["max_new_tokens"], 256)
+        self.assertIs(config["g0"]["full_parameter_training"], True)
+        self.assertNotIn("batch_size", config["trainer"])
+        self.assertNotIn("gradient_accumulation_steps", config["trainer"])
+        self.assertNotIn("execution_profile", config["scheduler_g0"])
+        self.assertNotIn("process_count", config["scheduler_g0"])
+
+        wrong_population = copy.deepcopy(config)
+        wrong_population["task"]["num_examples"] = 255
+        with self.assertRaisesRegex(ProtocolAmendmentError, "prompt population"):
+            validate_elastic_g0_config(wrong_population, self.proposed)
 
     def test_scientific_term_tampering_is_rejected(self) -> None:
         tampered = copy.deepcopy(self.proposed)
-        tampered["batch_token_invariants"]["effective_global_batch_size"] = 32
+        tampered["batch_token_invariants"]["global_logical_batch_size"] = 32
+        with self.assertRaisesRegex(ProtocolAmendmentError, "batch/token"):
+            load_protocol_amendment_bytes(
+                yaml.safe_dump(tampered, sort_keys=False).encode("utf-8")
+            )
+
+    def test_fsdp_requested_and_effective_strategy_tampering_is_rejected(self) -> None:
+        for field, replacement in (
+            ("fsdp_requested_sharding_strategy", "NO_SHARD"),
+            (
+                "fsdp_effective_sharding_strategy_by_world_size",
+                {
+                    "1": "FULL_SHARD",
+                    "2": "FULL_SHARD",
+                    "3": "FULL_SHARD",
+                    "4": "FULL_SHARD",
+                },
+            ),
+        ):
+            with self.subTest(field=field):
+                tampered = copy.deepcopy(self.proposed)
+                tampered["allocation_semantics"][field] = replacement
+                with self.assertRaisesRegex(
+                    ProtocolAmendmentError, "allocation semantics"
+                ):
+                    load_protocol_amendment_bytes(
+                        yaml.safe_dump(tampered, sort_keys=False).encode("utf-8")
+                    )
+
+    def test_model_input_bound_arithmetic_tampering_is_rejected(self) -> None:
+        tampered = copy.deepcopy(self.proposed)
+        tampered["batch_token_invariants"]["derived_max_model_input_tokens"] = 1501
         with self.assertRaisesRegex(ProtocolAmendmentError, "batch/token"):
             load_protocol_amendment_bytes(
                 yaml.safe_dump(tampered, sort_keys=False).encode("utf-8")
@@ -198,6 +295,10 @@ class ProtocolAmendmentTests(unittest.TestCase):
             mock.patch(
                 "posttrain_circuits.artifacts.protocol_amendments._git_changed_paths",
                 side_effect=lambda _root, parent, commit: changed_paths[(parent, commit)],
+            ),
+            mock.patch(
+                "posttrain_circuits.artifacts.protocol_amendments._unsafe_untracked_paths",
+                return_value=(),
             ),
         ):
             validate_accepted_lineage_commit(

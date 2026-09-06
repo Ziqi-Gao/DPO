@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> None:
         candidate_generator = HfTeacherCandidateGenerator(
             move_model_to_local_cuda(loaded_teacher.model),
             tokenizer,
+            max_new_tokens=int(state_config["max_new_tokens"]),
             model_config=teacher_config,
         )
         teacher_id = loaded_teacher.model_id
@@ -106,6 +107,8 @@ def main(argv: list[str] | None = None) -> None:
         top_k=int(teacher_config.get("top_k", 0)),
         min_p=float(teacher_config.get("min_p", 0.0)),
         candidates_per_prompt=int(state_config["num_candidates"]),
+        max_prompt_tokens=int(state_config["max_prompt_tokens"]),
+        max_new_tokens=int(state_config["max_new_tokens"]),
     )
     result = generate_teacher_demonstrations(
         examples,

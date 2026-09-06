@@ -181,7 +181,9 @@ def load_model_and_tokenizer(
     if for_training:
         _ensure_full_parameter_model(model)
         if bool(config["gradient_checkpointing"]):
-            model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
         model.train()
     else:
         model.eval()

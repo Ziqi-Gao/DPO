@@ -19,17 +19,17 @@ from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
 from posttrain_circuits.scheduler_adapter.outbox import validate_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
-    GPU_COUNT,
     OUTPUT_NAME,
-    PROFILE_NAME,
     TASK_NAME,
     UNIT_ID,
-    WORKFLOW_ID,
+    WORKFLOW_ID_PREFIX,
+    validate_preflight_workflow_id,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CODE_COMMIT = "a" * 40
+FIXTURE_WORKFLOW_ID = f"{WORKFLOW_ID_PREFIX}{'1' * 32}"
 
 
 class GpuPreflightRequestTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertEqual(second["config_kind"], TASK_NAME)
         self.assertEqual(second["code_commit"], CODE_COMMIT)
-        self.assertEqual(second["resource_budget"]["node_memory_gib"], 192)
+        self.assertNotIn("resource_budget", second)
         self.assertIs(second["model"]["local_files_only"], True)
         self.assertIs(second["teacher"]["local_files_only"], True)
         self.assertEqual(second["model"]["model_name_or_path"], "Qwen/Qwen3-1.7B")
@@ -114,9 +114,12 @@ class GpuPreflightRequestTests(unittest.TestCase):
             "posttrain_circuits.scheduler_adapter.gpu_preflight_request._accepted_lineage_git_commit",
             return_value=CODE_COMMIT,
         ):
-            plan = build_qwen3_v2_gpu_preflight_plan(layout=self.layout)
+            plan = build_qwen3_v2_gpu_preflight_plan(
+                layout=self.layout,
+                workflow_id=FIXTURE_WORKFLOW_ID,
+            )
         unit = plan.unit(UNIT_ID)
-        self.assertEqual(plan.workflow_id, WORKFLOW_ID)
+        self.assertEqual(plan.workflow_id, FIXTURE_WORKFLOW_ID)
         self.assertEqual(unit.task, TASK_NAME)
         self.assertEqual(unit.output_names, (OUTPUT_NAME,))
         self.assertEqual(
@@ -162,12 +165,16 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertEqual(
             execution["execution_context"],
             {
-                "distributed_process_count": GPU_COUNT,
-                "execution_profile": PROFILE_NAME,
+                "allocation_contract": "manifest_driven_scheduler_gpu_v1",
                 "scheduler_protocol": 2,
             },
         )
-        self.assertNotIn("repository_snapshot", json.dumps(plan.to_payload()))
+        serialized_plan = json.dumps(plan.to_payload())
+        self.assertNotIn("repository_snapshot", serialized_plan)
+        self.assertNotIn("resource_budget", serialized_plan)
+        self.assertNotIn("distributed_process_count", serialized_plan)
+        self.assertNotIn("execution_profile", serialized_plan)
+        self.assertNotIn("gpu_count", serialized_plan)
 
     def test_outbox_is_fresh_scientific_only_and_has_no_profile_or_resource_surface(self) -> None:
         class FixedHandler:
@@ -188,24 +195,38 @@ class GpuPreflightRequestTests(unittest.TestCase):
         ):
             first = prepare_qwen3_v2_gpu_preflight_request(layout=self.layout)
             second = prepare_qwen3_v2_gpu_preflight_request(layout=self.layout)
-            self.assertEqual(first.plan_sha256, second.plan_sha256)
-            self.assertEqual(first.plan_path, second.plan_path)
+            self.assertNotEqual(first.workflow_id, second.workflow_id)
+            self.assertNotEqual(first.plan_sha256, second.plan_sha256)
+            self.assertNotEqual(first.plan_path, second.plan_path)
             self.assertNotEqual(first.outbox_path, second.outbox_path)
             first_request = json.loads(first.outbox_path.read_text(encoding="utf-8"))
             second_request = json.loads(second.outbox_path.read_text(encoding="utf-8"))
             validate_outbox_request(first_request)
             validate_outbox_request(second_request)
         self.assertNotEqual(first_request["job_id"], second_request["job_id"])
+        self.assertEqual(
+            validate_preflight_workflow_id(first.workflow_id), first.workflow_id
+        )
+        self.assertEqual(
+            validate_preflight_workflow_id(second.workflow_id), second.workflow_id
+        )
         self.assertEqual(first_request["task"], TASK_NAME)
         self.assertEqual(
             first_request["parameters"],
             {
                 "plan_sha256": first.plan_sha256,
                 "unit_id": UNIT_ID,
-                "workflow_id": WORKFLOW_ID,
+                "workflow_id": first.workflow_id,
             },
         )
-        self.assertEqual(first_request["parameters"], second_request["parameters"])
+        self.assertEqual(
+            second_request["parameters"],
+            {
+                "plan_sha256": second.plan_sha256,
+                "unit_id": UNIT_ID,
+                "workflow_id": second.workflow_id,
+            },
+        )
         self.assertFalse(
             {"command", "cwd", "env", "execution_profile", "path", "resources"}
             & set(first_request)
@@ -230,7 +251,7 @@ class GpuPreflightRequestTests(unittest.TestCase):
             self.assertEqual(_accepted_lineage_git_commit(PROJECT_ROOT), CODE_COMMIT)
         resolve.assert_called_once_with(
             code_root=PROJECT_ROOT,
-            configured_path="prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml",
+            configured_path="prereg/amendments/qwen3_v2_g0_elastic_v1.yaml",
             expected_head=CODE_COMMIT,
         )
         validate.assert_called_once_with(

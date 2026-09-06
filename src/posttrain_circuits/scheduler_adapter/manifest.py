@@ -270,23 +270,19 @@ class RunningManifest:
         )
         requested_profile = payload["requested_profile"]
         if requested_profile is not None:
-            requested_profile = _identifier(requested_profile, name="requested_profile")
-        if requested_profile is not None and requested_profile != execution_profile:
             raise AdapterValidationError(
-                "running execution_profile does not match the explicitly requested profile"
+                "normal OPD requests must omit execution_profile"
             )
         raw_requested = payload["resources"]
+        if raw_requested is not None:
+            raise AdapterValidationError("normal OPD requests must omit resources")
         allocation = Allocation.from_payload(payload["allocation"], context="allocation")
         manifest = cls(
             job_id=_identifier(payload["job_id"], name="job_id"),
             task=_identifier(payload["task"], name="task"),
             parameters=WorkflowParameters.from_payload(payload["parameters"]),
             allocation=allocation,
-            requested_resources=(
-                None
-                if raw_requested is None
-                else Allocation.from_payload(raw_requested, context="resources")
-            ),
+            requested_resources=None,
             priority=_integer(payload["priority"], name="priority", minimum=-100, maximum=100),
             submitted_at=_timestamp(payload["submitted_at"], name="submitted_at"),
             updated_at=_timestamp(payload["updated_at"], name="updated_at"),

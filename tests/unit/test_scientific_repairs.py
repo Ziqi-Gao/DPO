@@ -110,6 +110,8 @@ def _probe_manifest(root: Path) -> dict[str, object]:
                 "calibration_run_manifest_sha256": "b" * 64,
                 "calibration_run_id": "calibration",
                 "experiment_binding_sha256": "c" * 64,
+                "factorial_update_evidence_sha256": "d" * 64,
+                "strict_run_artifact_binding_sha256": "e" * 64,
             }
         ],
         limit_pairs_per_split=2,

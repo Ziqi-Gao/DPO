@@ -16,6 +16,7 @@ from posttrain_circuits.artifacts.config_bindings import bind_config
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
 from posttrain_circuits.artifacts.io import publish_json_once
 from posttrain_circuits.artifacts.runs import (
+    PROTOCOL_AMENDMENT_BINDING_FIELDS,
     RunManifest,
     finalize_run_directory,
     formal_artifact_binding,
@@ -54,13 +55,60 @@ from posttrain_circuits.learning.training.evaluation import build_proofgraph_eva
 from posttrain_circuits.learning.training.factorial_trainer import FactorialTrainer, TrainerConfig
 from posttrain_circuits.learning.training.factories import build_state_source, build_supervisor
 from posttrain_circuits.learning.training.optimizer import build_adamw
-from posttrain_circuits.learning.training.schedules import PromptScheduler
+from posttrain_circuits.learning.training.schedules import (
+    ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+    LEGACY_BATCH_PARTITION_PROTOCOL,
+    PromptScheduler,
+)
 from posttrain_circuits.learning.training.local_fork import state_hash
 from posttrain_circuits.utils.smoke import (
     build_fixed_bank,
     scripted_current_policy_generator,
 )
 from posttrain_circuits.utils.tiny_model import build_tiny_qwen, build_tiny_tokenizer
+
+
+_QWEN3_V2_G0_PROMPT_POPULATION_SIZE = 256
+
+
+def _validate_allocation_neutral_prompt_population(
+    prompt_ids: list[str],
+    *,
+    global_batch_size: int,
+    expected_prompt_ids: list[str],
+    expected_prompt_count: int | None = None,
+) -> None:
+    """Fail closed when rank-local teacher cursors could change sample order.
+
+    The accepted teacher-demo cursor is rank local.  Allocation-neutral sample
+    order therefore additionally requires one unique global prompt population
+    whose length is an exact multiple of the 64-slot optimizer window.  The
+    production G0 request freezes that population at 256 prompts.
+    """
+
+    if type(global_batch_size) is not int or global_batch_size < 1:
+        raise ValueError("allocation-neutral global batch size must be a positive integer")
+    if not prompt_ids or any(
+        not isinstance(prompt_id, str) or not prompt_id for prompt_id in prompt_ids
+    ):
+        raise ValueError("allocation-neutral training requires non-empty string prompt IDs")
+    if len(set(prompt_ids)) != len(prompt_ids):
+        raise ValueError("allocation-neutral training requires unique global prompt IDs")
+    if len(prompt_ids) % global_batch_size != 0:
+        raise ValueError(
+            "allocation-neutral prompt population must be an exact multiple of "
+            "the global batch size"
+        )
+    if expected_prompt_count is not None and len(prompt_ids) != expected_prompt_count:
+        raise ValueError(
+            "production Qwen3-v2 G0 requires exactly "
+            f"{expected_prompt_count} configured train prompts"
+        )
+    if prompt_ids != expected_prompt_ids:
+        raise ValueError(
+            "allocation-neutral accepted-view prompt order differs from the configured "
+            "train-family order"
+        )
 
 
 def _trajectory_prompts(
@@ -83,6 +131,70 @@ def _teacher_demo_prompts(
     if not by_prompt:
         raise ValueError("teacher-demo accepted view has no prompts")
     return list(by_prompt), list(by_prompt.values())
+
+
+def _validate_teacher_demo_model_input_lengths(
+    attempts: list[TeacherDemoAttempt],
+    manifest: dict[str, Any],
+    *,
+    max_prompt_tokens: int,
+    max_new_tokens: int,
+    max_model_input_length: int,
+) -> dict[str, int | str]:
+    """Bind the frozen demo store to the reviewed one-GPU sequence envelope.
+
+    No truncation is scientifically acceptable here: prompt and response IDs
+    are already part of each accepted demonstration's identity.  The complete
+    store is checked before any training forward, while the trainer separately
+    checks every materialized supervision tensor.
+    """
+
+    limits = (max_prompt_tokens, max_new_tokens, max_model_input_length)
+    if any(type(value) is not int or value < 1 for value in limits):
+        raise ValueError("teacher-demo model-input length limits must be positive integers")
+    if max_prompt_tokens + max_new_tokens > max_model_input_length:
+        raise ValueError("teacher-demo prompt/response bounds exceed the model-input limit")
+    generation = manifest.get("teacher_demo_generation")
+    if not isinstance(generation, dict) or (
+        generation.get("max_prompt_tokens") != max_prompt_tokens
+        or generation.get("max_new_tokens") != max_new_tokens
+    ):
+        raise ValueError(
+            "teacher-demo generation length contract differs from the reviewed G0 config"
+        )
+    if not attempts:
+        raise ValueError("teacher-demo accepted view is empty")
+    observed_prompt = 0
+    observed_response = 0
+    observed_total = 0
+    for attempt in attempts:
+        prompt_tokens = len(attempt.input_ids)
+        response_tokens = len(attempt.response_ids)
+        total_tokens = prompt_tokens + response_tokens
+        if prompt_tokens > max_prompt_tokens:
+            raise ValueError(
+                f"teacher-demo prompt exceeds max_prompt_tokens: {attempt.attempt_id}"
+            )
+        if response_tokens > max_new_tokens:
+            raise ValueError(
+                f"teacher-demo response exceeds max_new_tokens: {attempt.attempt_id}"
+            )
+        if total_tokens > max_model_input_length:
+            raise ValueError(
+                f"teacher-demo model input exceeds max_model_input_length: {attempt.attempt_id}"
+            )
+        observed_prompt = max(observed_prompt, prompt_tokens)
+        observed_response = max(observed_response, response_tokens)
+        observed_total = max(observed_total, total_tokens)
+    return {
+        "max_model_input_length": max_model_input_length,
+        "max_new_tokens": max_new_tokens,
+        "max_prompt_tokens": max_prompt_tokens,
+        "observed_max_model_input_tokens": observed_total,
+        "observed_max_prompt_tokens": observed_prompt,
+        "observed_max_response_tokens": observed_response,
+        "overlength_policy": "reject_without_truncation_before_any_training_forward",
+    }
 
 
 def _require_qwen3_store_binding(
@@ -110,6 +222,11 @@ def _require_qwen3_store_binding(
                 "prereg_commit": binding["prereg_commit"],
                 "prereg_sha256": binding["prereg_sha256"],
                 "code_commit": binding["code_commit"],
+                **{
+                    key: binding[key]
+                    for key in PROTOCOL_AMENDMENT_BINDING_FIELDS
+                    if key in binding
+                },
             }
         )
     protocol_bindings = manifest.get("protocol_bindings")
@@ -193,7 +310,41 @@ def main(argv: list[str] | None = None) -> None:
         initial_checkpoint_hash = state_hash(model.state_dict())
     state_source_name = str(config["state_source"]["name"])
     supervision_name = str(config["supervision"]["name"])
-    batch_size = int(config["trainer"]["batch_size"])
+    trainer_settings = config["trainer"]
+    batch_partition_protocol = str(
+        trainer_settings.get("batch_partition_protocol", LEGACY_BATCH_PARTITION_PROTOCOL)
+    )
+    global_batch_size: int | None = None
+    max_microbatch_size: int | None = None
+    max_model_input_length: int | None = None
+    if batch_partition_protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1:
+        global_batch_size = trainer_settings.get("global_batch_size")
+        max_microbatch_size = trainer_settings.get("max_microbatch_size")
+        max_model_input_length = trainer_settings.get("max_model_input_length")
+        if any(
+            type(value) is not int
+            for value in (
+                global_batch_size,
+                max_microbatch_size,
+                max_model_input_length,
+            )
+        ):
+            raise ValueError(
+                "allocation-neutral training requires integer global_batch_size, "
+                "max_microbatch_size, and max_model_input_length"
+            )
+        if state_source_name != "teacher_demo" or supervision_name != "canonical_sft":
+            raise ValueError(
+                "allocation-neutral exact-global batching is reviewed only for the deterministic "
+                "teacher_demo/canonical_sft training path"
+            )
+        # The physical prompt batches are planned from the scheduler-owned
+        # runtime world size below; there is no fixed per-rank batch size.
+        batch_size = max_microbatch_size
+    elif batch_partition_protocol == LEGACY_BATCH_PARTITION_PROTOCOL:
+        batch_size = int(trainer_settings["batch_size"])
+    else:
+        raise ValueError(f"unsupported trainer batch_partition_protocol {batch_partition_protocol!r}")
     family_path = Path(str(config["task"].get("dataset_family_path", "")))
     family = load_dataset_family(family_path)
     family_train = family.examples("train")
@@ -213,6 +364,7 @@ def main(argv: list[str] | None = None) -> None:
     fixed_bank_manifest: dict[str, Any] | None = None
     teacher_demos: list[TeacherDemoAttempt] | None = None
     teacher_demo_manifest: dict[str, Any] | None = None
+    teacher_demo_length_contract: dict[str, int | str] | None = None
     current_generator = None
     if state_source_name == "teacher_demo":
         store_path = Path(str(config["state_source"]["store_path"]))
@@ -248,6 +400,15 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError(
                 "teacher-demo accepted view does not exactly cover configured train prompts: "
                 f"missing={sorted(missing)}, extra={sorted(extra)}"
+            )
+        if batch_partition_protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1:
+            assert max_model_input_length is not None
+            teacher_demo_length_contract = _validate_teacher_demo_model_input_lengths(
+                teacher_demos,
+                teacher_demo_manifest,
+                max_prompt_tokens=config["state_source"].get("max_prompt_tokens"),
+                max_new_tokens=config["state_source"].get("max_new_tokens"),
+                max_model_input_length=max_model_input_length,
             )
         prompt_ids, prompt_texts = _teacher_demo_prompts(teacher_demos)
     else:
@@ -318,15 +479,39 @@ def main(argv: list[str] | None = None) -> None:
 
     global_prompt_ids = list(prompt_ids)
     global_prompt_texts = list(prompt_texts)
+    if batch_partition_protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1:
+        assert global_batch_size is not None
+        _validate_allocation_neutral_prompt_population(
+            global_prompt_ids,
+            global_batch_size=global_batch_size,
+            expected_prompt_ids=[example.example_id for example in examples],
+            expected_prompt_count=(
+                _QWEN3_V2_G0_PROMPT_POPULATION_SIZE
+                if production_scale and config.get("protocol_track") == "qwen3_v2"
+                else None
+            ),
+        )
     launch_rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    prompt_scheduler = PromptScheduler.for_distributed_rank(
-        global_prompt_ids,
-        global_prompt_texts,
-        min(batch_size, len(global_prompt_ids)),
-        rank=launch_rank,
-        world_size=world_size,
-    )
+    if batch_partition_protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1:
+        assert global_batch_size is not None
+        assert max_microbatch_size is not None
+        prompt_scheduler = PromptScheduler.for_allocation_neutral_rank(
+            global_prompt_ids,
+            global_prompt_texts,
+            rank=launch_rank,
+            world_size=world_size,
+            global_batch_size=global_batch_size,
+            max_microbatch_size=max_microbatch_size,
+        )
+    else:
+        prompt_scheduler = PromptScheduler.for_distributed_rank(
+            global_prompt_ids,
+            global_prompt_texts,
+            min(batch_size, len(global_prompt_ids)),
+            rank=launch_rank,
+            world_size=world_size,
+        )
     state_source = build_state_source(
         config["state_source"],
         fixed_bank=fixed_bank,
@@ -591,13 +776,27 @@ def main(argv: list[str] | None = None) -> None:
             "eps": optimizer.defaults["eps"],
         },
         scheduler_spec={"class": "torch.optim.lr_scheduler.LambdaLR", "schedule": "constant_1.0"},
-        resolved_batch_contract={
-            "execution_backend": config["trainer"]["backend"],
-            "world_size": world_size,
-            "per_rank_batch_size": batch_size,
-            "gradient_accumulation_steps": config["trainer"]["gradient_accumulation_steps"],
-            "steps_per_round": config["trainer"]["steps_per_round"],
-        },
+        resolved_batch_contract=(
+            {
+                "execution_backend": config["trainer"]["backend"],
+                "batch_partition_protocol": ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1,
+                "global_batch_size": global_batch_size,
+                "max_microbatch_size": max_microbatch_size,
+                "max_model_input_length": max_model_input_length,
+                "teacher_demo_length_contract": teacher_demo_length_contract,
+                "prompt_assignment": "global_logical_slots_strided_by_runtime_rank_v1",
+                "accumulation_schedule": "derived_from_runtime_world_size_v1",
+                "steps_per_round": config["trainer"]["steps_per_round"],
+            }
+            if batch_partition_protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1
+            else {
+                "execution_backend": config["trainer"]["backend"],
+                "world_size": world_size,
+                "per_rank_batch_size": batch_size,
+                "gradient_accumulation_steps": config["trainer"]["gradient_accumulation_steps"],
+                "steps_per_round": config["trainer"]["steps_per_round"],
+            }
+        ),
         full_parameter_training=full_parameter_training,
         offline_bank_manifest=fixed_bank_manifest,
         offline_bank_initial_cursor=offline_cursor,
@@ -666,7 +865,11 @@ def main(argv: list[str] | None = None) -> None:
         checkpoint_every=int(config["trainer"]["checkpoint_every"]),
         evaluation_every=int(config["trainer"].get("evaluation_every", 1)),
         backend=str(config["trainer"]["backend"]),
-        gradient_accumulation_steps=int(config["trainer"]["gradient_accumulation_steps"]),
+        gradient_accumulation_steps=int(config["trainer"].get("gradient_accumulation_steps", 1)),
+        batch_partition_protocol=batch_partition_protocol,
+        global_batch_size=global_batch_size,
+        max_microbatch_size=max_microbatch_size,
+        max_model_input_length=max_model_input_length,
         max_completion_length=int(config["trainer"]["max_completion_length"]),
         require_evaluation_metrics=production_scale,
     )
@@ -729,15 +932,9 @@ def main(argv: list[str] | None = None) -> None:
         trainer.resume(args.resume)
     history = trainer.train()
     if trainer.is_main_process:
-        final_checkpoint = output / "checkpoints" / f"step-{trainer.global_step:08d}.pt"
-        if not final_checkpoint.is_file():
+        final_checkpoint = trainer.final_checkpoint_path
+        if final_checkpoint is None or not final_checkpoint.is_file():
             raise RuntimeError("training completed without a final optimizer-boundary checkpoint")
-        manifest.token_budget_consumed = trainer.token_budget.consumed
-        manifest.training_stop_reason = trainer.token_budget.stop_reason
-        manifest.metrics_sha256 = sha256_file(output / "metrics.jsonl")
-        manifest.final_checkpoint_path = str(final_checkpoint)
-        manifest.final_checkpoint_sha256 = sha256_file(final_checkpoint)
-        manifest.resume_ancestry = list(trainer.resume_ancestry)
         checkpoint_payload = torch.load(
             final_checkpoint,
             map_location="cpu",
@@ -745,6 +942,21 @@ def main(argv: list[str] | None = None) -> None:
         )
         if not isinstance(checkpoint_payload, dict):
             raise RuntimeError("final Factorial checkpoint payload is not a mapping")
+        final_token_budget = trainer.token_budget.state_dict()
+        if checkpoint_payload.get("token_budget") != final_token_budget:
+            raise RuntimeError(
+                "final Factorial checkpoint token budget differs from the training manifest state"
+            )
+        if checkpoint_payload.get("global_step") != trainer.global_step:
+            raise RuntimeError(
+                "final Factorial checkpoint optimizer step differs from the training manifest state"
+            )
+        manifest.token_budget_consumed = trainer.token_budget.consumed
+        manifest.training_stop_reason = trainer.token_budget.stop_reason
+        manifest.metrics_sha256 = sha256_file(output / "metrics.jsonl")
+        manifest.final_checkpoint_path = str(final_checkpoint)
+        manifest.final_checkpoint_sha256 = sha256_file(final_checkpoint)
+        manifest.resume_ancestry = list(trainer.resume_ancestry)
         metric_rows = [
             json.loads(line)
             for line in (output / "metrics.jsonl").read_text(encoding="utf-8").splitlines()

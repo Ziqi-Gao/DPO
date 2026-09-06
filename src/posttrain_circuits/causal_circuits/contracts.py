@@ -140,6 +140,11 @@ class CircuitArtifact:
     prereg_path: str = ""
     prereg_commit: str = ""
     prereg_sha256: str = ""
+    protocol_amendment_id: str = ""
+    protocol_amendment_path: str = ""
+    protocol_amendment_git_commit: str = ""
+    protocol_amendment_sha256: str = ""
+    reviewed_implementation_commit: str = ""
     created_at: str = field(default_factory=utc_now)
 
     def __post_init__(self) -> None:
@@ -156,6 +161,26 @@ class CircuitArtifact:
                 "circuit discovery artifact requires embedded structured inputs: "
                 + ", ".join(empty)
             )
+        amendment = {
+            "protocol_amendment_id": self.protocol_amendment_id,
+            "protocol_amendment_path": self.protocol_amendment_path,
+            "protocol_amendment_git_commit": self.protocol_amendment_git_commit,
+            "protocol_amendment_sha256": self.protocol_amendment_sha256,
+            "reviewed_implementation_commit": self.reviewed_implementation_commit,
+        }
+        if any(amendment.values()) and not all(amendment.values()):
+            raise ValueError("circuit amendment binding must be complete or omitted")
+        if all(amendment.values()):
+            for name, length in (
+                ("protocol_amendment_git_commit", 40),
+                ("reviewed_implementation_commit", 40),
+                ("protocol_amendment_sha256", 64),
+            ):
+                value = amendment[name]
+                if not isinstance(value, str) or len(value) != length or any(
+                    character not in "0123456789abcdef" for character in value
+                ):
+                    raise ValueError(f"circuit {name} is not a lowercase hexadecimal binding")
 
     def write(self, path: Path) -> None:
         payload = asdict(self)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +11,12 @@ import torch
 from posttrain_circuits.artifacts.compatibility import scientific_compatibility_fields
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
 from posttrain_circuits.artifacts.io import atomic_write_json
-from posttrain_circuits.artifacts.runs import (
-    formal_artifact_binding,
-    validate_run_manifest_payload,
-)
+from posttrain_circuits.artifacts.runs import formal_artifact_binding
 from posttrain_circuits.causal_circuits.model.runner import load_checkpoint_into_hf_model
 from posttrain_circuits.core.config import compose_config
+from posttrain_circuits.cli.factorial_run_validation import (
+    validate_factorial_run_artifacts,
+)
 from posttrain_circuits.datasets.circuit_probes.cohorts import (
     family_probe_pairs,
     flatten_pairs,
@@ -74,6 +73,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--initial-checkpoint", type=Path, required=True)
     parser.add_argument("--calibration-checkpoint", type=Path, required=True)
     parser.add_argument("--calibration-run-manifest", type=Path, required=True)
+    parser.add_argument("--world-size", type=int, required=True)
     parser.add_argument("--dataset-family", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
@@ -85,6 +85,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--task-validation-limit", type=int, required=True)
     args = parser.parse_args(argv)
     config = compose_config(args.overrides)
+    formal_binding = formal_artifact_binding(config)
+    calibration_artifacts = validate_factorial_run_artifacts(
+        args.calibration_run_manifest.parent.absolute(),
+        expected_world_size=args.world_size,
+        expected_resolved_config=config,
+        expected_checkpoint_path=args.calibration_checkpoint,
+        expected_code_commit=str(formal_binding["code_commit"]),
+        expected_resume_ancestry=(),
+    )
+    if args.calibration_run_manifest.absolute() != calibration_artifacts.manifest_path:
+        raise ValueError("calibration manifest path differs from its strict run root")
     if str(config["model"]["model_name_or_path"]).startswith("local/"):
         raise ValueError("production probe scoring cannot use a tiny model")
     family = load_dataset_family(args.dataset_family)
@@ -123,12 +134,9 @@ def main(argv: list[str] | None = None) -> None:
         max_new_tokens=max_new_tokens,
         model_config=config["model"],
     )
-    calibration_hash = sha256_file(args.calibration_checkpoint)
-    calibration_run = validate_run_manifest_payload(
-        json.loads(args.calibration_run_manifest.read_text(encoding="utf-8"))
-    )
-    if calibration_run.get("final_checkpoint_sha256") != calibration_hash:
-        raise ValueError("calibration run manifest does not bind the scoring checkpoint")
+    calibration_hash = sha256_file(calibration_artifacts.checkpoint_path)
+    calibration_run = calibration_artifacts.manifest
+    calibration_binding = calibration_artifacts.content_binding()
     eligibility_evidence_ancestry = [
         {
             "calibration_checkpoint_sha256": calibration_hash,
@@ -137,9 +145,17 @@ def main(argv: list[str] | None = None) -> None:
             "experiment_binding_sha256": str(
                 calibration_run.get("experiment_binding_sha256", "")
             ),
+            "factorial_update_evidence_sha256": str(
+                calibration_artifacts.evidence["sha256"]
+            ),
+            "strict_run_artifact_binding_sha256": calibration_binding["sha256"],
         }
     ]
-    load_checkpoint_into_hf_model(model, args.calibration_checkpoint, expected_sha256=calibration_hash)
+    load_checkpoint_into_hf_model(
+        model,
+        calibration_artifacts.checkpoint_path,
+        expected_sha256=calibration_hash,
+    )
     calibrated_probe, _ = _score_examples(
         model,
         loaded.tokenizer,
@@ -165,7 +181,7 @@ def main(argv: list[str] | None = None) -> None:
     payload = {
         "format_version": 2,
         **scientific_compatibility_fields(str(config["prereg_version"])),
-        **formal_artifact_binding(config),
+        **formal_binding,
         "scores": rows,
         "initial_validation_metrics": metrics,
         "calibrated_validation_metrics": aggregate_verification(calibrated_validation_results),
@@ -178,6 +194,7 @@ def main(argv: list[str] | None = None) -> None:
         "chat_template_sha256": loaded.chat_template_sha256,
         "tokenizer_fingerprint": loaded.tokenizer_hash,
         "calibration_checkpoint_sha256": calibration_hash,
+        "calibration_run_artifact_binding": calibration_binding,
         "eligibility_evidence_ancestry": eligibility_evidence_ancestry,
         "source_dataset_family_hash": family.manifest["sha256"],
         "source_split_hashes": {

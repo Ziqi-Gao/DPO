@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 from dataclasses import asdict
-from datetime import UTC, datetime
 from typing import Any
 
 from transformers import PreTrainedTokenizerBase
@@ -20,6 +19,7 @@ from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.datasets.proofgraph.contracts import TaskExample
 
 SMOKE_SAMPLING_PROTOCOL_ID = "smoke-fixture-v1-stable-cursor"
+SMOKE_CREATED_AT = "1970-01-01T00:00:00+00:00"
 
 
 def build_smoke_examples(count: int = 4, seed: int = 42) -> list[TaskExample]:
@@ -88,7 +88,7 @@ def make_trajectory(
         generation_group_id=generation_group_id,
         generation_group_index=generation_group_index,
         prompt_group_size=prompt_group_size,
-        created_at=datetime.now(UTC).isoformat(),
+        created_at=SMOKE_CREATED_AT,
     )
     record.trajectory_id = record.expected_trajectory_id
     record.validate()

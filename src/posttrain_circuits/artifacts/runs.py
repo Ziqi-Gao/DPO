@@ -27,6 +27,15 @@ from posttrain_circuits.artifacts.protocol_amendments import (
 )
 
 
+PROTOCOL_AMENDMENT_BINDING_FIELDS = (
+    "protocol_amendment_id",
+    "protocol_amendment_path",
+    "protocol_amendment_git_commit",
+    "protocol_amendment_sha256",
+    "reviewed_implementation_commit",
+)
+
+
 def git_output(args: list[str]) -> str | None:
     """Run Git against either a conventional checkout or this repo's .opd-git metadata."""
 

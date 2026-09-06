@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Foreground, fixed two-GPU Qwen3-v2 G0 handler for protocol v2.
+"""Foreground, scheduler-managed Qwen3-v2 G0 handler for protocol v2.
 
 ServerScheduler owns the physical allocation.  This supervisor accepts only
 adapter-held content descriptors, preserves CUDA visibility, runs the reviewed
@@ -27,11 +27,11 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 
 TASK = "qwen3_v2_g0"
-PROFILE = "qwen3-v2-g0-2gpu"
+PROFILE = "qwen3-v2-g0-elastic"
 PROJECT = "OPD"
 REPORT_NAME = "g0.json"
 BUNDLE_NAME = "g0_artifacts.tar"
@@ -39,8 +39,8 @@ COMPLETION_NAME = ".opd-scientific-completion.json"
 COMPLETION_KIND = "scientific_attempt"
 SOURCE_ROOT = Path("/home/del6500/projects/OPD")
 SOURCE_PACKAGE_ROOT = SOURCE_ROOT / "src"
-FSDP_CONFIG = SOURCE_ROOT / "configs" / "accelerate" / "fsdp_2gpu_server_scheduler.yaml"
-FSDP_CONFIG_SHA256 = "9315ae24072cfc7bb54fb78a18c633b05e89a4b6659b5a946dee783cfe47a609"
+FSDP_CONFIG = SOURCE_ROOT / "configs" / "accelerate" / "fsdp_server_scheduler.yaml"
+FSDP_CONFIG_SHA256 = "7fe87d579ed92c4cca91ab719a7cf267e5491ba3b520b4a05f28c1e442ffb46a"
 MIB_REPOSITORY = Path("/scr/del6500/OPD/vendor/MIB-circuit-track-v1")
 MIB_REVISION = "b759df34433c9e31043ba9e02908ce0bf20e894f"
 MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
@@ -48,10 +48,10 @@ TEACHER_REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
 TOKENIZER_FINGERPRINT = "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d"
 CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
 PREREGISTRATION_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
-AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml")
+AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_elastic_v1.yaml")
 HANDOFF_RELATIVE_PATH = "docs/refactor/current_handoff.md"
 PROPOSED_AMENDMENT_SHA256 = (
-    "2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686"
+    "2d2444c9b2969b0b10a42d137184f8d11574d748ae488f6e40d5b5cc4fb6becc"
 )
 PROPOSED_REVIEW = {
     "status": "proposed",
@@ -63,9 +63,10 @@ PROPOSED_REVIEW = {
 ALLOWED_REVIEW_PATHS = frozenset({str(AMENDMENT_RELATIVE_PATH), HANDOFF_RELATIVE_PATH})
 ALLOWED_HANDOFF_PATHS = frozenset({HANDOFF_RELATIVE_PATH})
 MAX_LINEAGE_COMMITS = 256
-GPU_COUNT = 2
-CPU_CORE_COUNT = 16
-THREADS_PER_RANK = CPU_CORE_COUNT // GPU_COUNT
+ALLOWED_GPU_COUNTS = (1, 2, 3, 4)
+CPU_CORE_COUNT = 24
+THREADS_PER_RANK = {count: CPU_CORE_COUNT // count for count in ALLOWED_GPU_COUNTS}
+BATCH_PARTITION_PROTOCOL = "allocation_neutral_exact_global_batch_v1"
 NODE_MEMORY_BYTES = 192 * 1024**3
 MINIMUM_HEADROOM_BYTES = max(32 * 1024**3, int(NODE_MEMORY_BYTES * 0.20))
 MAX_INPUT_BYTES = 64 * 1024 * 1024
@@ -76,19 +77,33 @@ SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 PROC_SELF_FD = re.compile(r"/proc/self/fd/(0|[1-9][0-9]*)\Z")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*\Z")
+
+
+def _preflight_completion_name(world_size: int) -> str:
+    return f"gpu_preflight_w{world_size}_completion_sha256"
+
+
+def _preflight_report_name(world_size: int) -> str:
+    return f"gpu_preflight_w{world_size}_report_sha256"
+
+
 EXPECTED_INPUT_NAMES = (
     "config_binding_sha256",
     "execution_config_sha256",
-    "gpu_preflight_completion_sha256",
-    "gpu_preflight_report_sha256",
+    *tuple(
+        name
+        for world_size in ALLOWED_GPU_COUNTS
+        for name in (
+            _preflight_completion_name(world_size),
+            _preflight_report_name(world_size),
+        )
+    ),
     "preregistration_sha256",
     "protocol_amendment_sha256",
     "resolved_config_sha256",
     "scientific_config_sha256",
 )
-YAML_INPUT_NAMES = frozenset(
-    {"preregistration_sha256", "protocol_amendment_sha256"}
-)
+YAML_INPUT_NAMES = frozenset({"preregistration_sha256", "protocol_amendment_sha256"})
 JSON_INPUT_NAMES = frozenset(EXPECTED_INPUT_NAMES) - YAML_INPUT_NAMES
 PREFLIGHT_COMPLETION_FIELDS = frozenset(
     {
@@ -193,6 +208,7 @@ class Invocation:
     job_id: str
     attempt: int
     execution_profile: str
+    gpu_count: int
     manifest_sha256: str
     allocation_sha256: str
     content_handles: tuple[ContentHandle, ...]
@@ -219,7 +235,12 @@ class BootstrapLineage:
     amendment_git_commit: str
     reviewed_implementation_commit: str
     request_git_commit: str
-    preflight_git_commit: str
+    preflight_git_commits: tuple[str, str, str, str]
+
+    def preflight_git_commit(self, world_size: int) -> str:
+        if world_size not in ALLOWED_GPU_COUNTS:
+            raise G0Error("preflight lineage world size is outside 1..4")
+        return self.preflight_git_commits[world_size - 1]
 
 
 @dataclass(frozen=True)
@@ -302,6 +323,7 @@ def _outer_parser() -> argparse.ArgumentParser:
         "job-id",
         "attempt",
         "execution-profile",
+        "gpu-count",
         "manifest-sha256",
         "allocation-sha256",
         "output-attempt-handle",
@@ -345,7 +367,13 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
     if args.attempt_completion_name != COMPLETION_NAME:
         raise G0Error("attempt completion name differs from the fixed ABI")
     if args.execution_profile != PROFILE:
-        raise G0Error("execution profile differs from the fixed G0 profile")
+        raise G0Error("execution profile differs from the reviewed G0 profile")
+    if (
+        not isinstance(args.gpu_count, str)
+        or POSITIVE_INTEGER.fullmatch(args.gpu_count) is None
+        or int(args.gpu_count) not in ALLOWED_GPU_COUNTS
+    ):
+        raise G0Error("adapter GPU count must be one of the reviewed values 1..4")
     if not isinstance(args.attempt, str) or POSITIVE_INTEGER.fullmatch(args.attempt) is None:
         raise G0Error("attempt must be a canonical positive integer")
     handles: list[ContentHandle] = []
@@ -376,6 +404,7 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
         job_id=_identifier(args.job_id, name="job_id"),
         attempt=int(args.attempt),
         execution_profile=PROFILE,
+        gpu_count=int(args.gpu_count),
         manifest_sha256=_sha256(args.manifest_sha256, name="manifest_sha256"),
         allocation_sha256=_sha256(args.allocation_sha256, name="allocation_sha256"),
         content_handles=tuple(handles),
@@ -469,10 +498,12 @@ def _read_inputs(
         if handle.name in JSON_INPUT_NAMES and raw != _canonical_json(payload).encode("utf-8"):
             # Config CAS uses canonical bytes without a trailing newline.  The
             # published preflight artifacts intentionally use durable newlines.
-            if handle.name not in {
-                "gpu_preflight_completion_sha256",
-                "gpu_preflight_report_sha256",
-            }:
+            if not (
+                handle.name.startswith("gpu_preflight_w")
+                and handle.name.endswith(
+                    ("_completion_sha256", "_report_sha256")
+                )
+            ):
                 raise G0Error(f"content {handle.name!r} is not canonical JSON bytes")
         payloads[handle.name] = payload
     if not prereg:
@@ -848,18 +879,26 @@ def _bootstrap_accepted_lineage(
         if not isinstance(scheduler, dict):
             raise G0Error("resolved config lacks scheduler G0 provenance")
         request_commit = scheduler.get("request_git_commit")
-        preflight_commit = scheduler.get("gpu_preflight_git_commit")
+        preflight_matrix = scheduler.get("gpu_preflight_matrix")
         if (
             not isinstance(request_commit, str)
             or GIT_COMMIT.fullmatch(request_commit) is None
-            or not isinstance(preflight_commit, str)
-            or GIT_COMMIT.fullmatch(preflight_commit) is None
+            or not isinstance(preflight_matrix, dict)
+            or set(preflight_matrix) != {str(value) for value in ALLOWED_GPU_COUNTS}
         ):
             raise G0Error("resolved config contains invalid request/preflight Git provenance")
-        for candidate, role in (
-            (request_commit, "G0 request commit"),
-            (preflight_commit, "GPU preflight commit"),
-        ):
+        preflight_commits: list[str] = []
+        candidates = [(request_commit, "G0 request commit")]
+        for world_size in ALLOWED_GPU_COUNTS:
+            row = preflight_matrix[str(world_size)]
+            if not isinstance(row, dict):
+                raise G0Error("resolved config preflight matrix row is invalid")
+            candidate = row.get("git_commit")
+            if not isinstance(candidate, str) or GIT_COMMIT.fullmatch(candidate) is None:
+                raise G0Error("resolved config contains invalid preflight Git provenance")
+            preflight_commits.append(candidate)
+            candidates.append((candidate, f"GPU preflight W={world_size} commit"))
+        for candidate, role in candidates:
             candidate_amendment_commit = _validate_accepted_commit_chain(
                 implementation=implementation,
                 endpoint=candidate,
@@ -899,18 +938,44 @@ def _bootstrap_accepted_lineage(
             amendment_git_commit=amendment_commit,
             reviewed_implementation_commit=implementation,
             request_git_commit=request_commit,
-            preflight_git_commit=preflight_commit,
+            preflight_git_commits=(
+                preflight_commits[0],
+                preflight_commits[1],
+                preflight_commits[2],
+                preflight_commits[3],
+            ),
         )
     finally:
         os.close(descriptor)
 
 
-def _validate_environment() -> tuple[str, ...]:
+def _validate_allocation_environment(
+    gpu_count: int,
+    environ: Mapping[str, str],
+) -> tuple[str, ...]:
+    if gpu_count not in ALLOWED_GPU_COUNTS:
+        raise G0Error("adapter GPU count is outside the reviewed 1..4 capability")
+    threads_per_rank = THREADS_PER_RANK[gpu_count]
+    if any(environ.get(key) != str(threads_per_rank) for key in THREAD_KEYS):
+        raise G0Error(
+            f"per-rank CPU thread environment must be exactly {threads_per_rank}"
+        )
+    visible = environ.get("CUDA_VISIBLE_DEVICES", "")
+    devices = tuple(visible.split(",")) if visible else ()
+    if len(devices) != gpu_count or len(set(devices)) != gpu_count or any(
+        not value or value.strip() != value for value in devices
+    ):
+        raise G0Error(
+            "scheduler-provided CUDA visibility differs from the adapter GPU count"
+        )
+    return devices
+
+
+def _validate_environment(gpu_count: int) -> tuple[str, ...]:
+    devices = _validate_allocation_environment(gpu_count, os.environ)
     for key, expected in FIXED_ENVIRONMENT.items():
         if os.environ.get(key) != expected:
             raise G0Error(f"fixed environment {key} differs from its deployment")
-    if any(os.environ.get(key) != str(THREADS_PER_RANK) for key in THREAD_KEYS):
-        raise G0Error(f"per-rank CPU thread environment must be exactly {THREADS_PER_RANK}")
     forbidden = sorted(
         key
         for key in os.environ
@@ -965,14 +1030,8 @@ def _validate_environment() -> tuple[str, ...]:
         raise G0Error("fixed G0 runtime package versions differ from the deployment")
     if not importlib.metadata.version("torch").startswith("2.8.0+cu128"):
         raise G0Error("fixed G0 runtime Torch package version differs")
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    devices = tuple(visible.split(",")) if visible else ()
-    if len(devices) != GPU_COUNT or len(set(devices)) != GPU_COUNT or any(
-        not value or value.strip() != value for value in devices
-    ):
-        raise G0Error(f"scheduler-provided CUDA visibility must contain {GPU_COUNT} devices")
     if _sha256_file(FSDP_CONFIG) != FSDP_CONFIG_SHA256:
-        raise G0Error("two-GPU FSDP configuration differs from its reviewed digest")
+        raise G0Error("FSDP base configuration differs from its reviewed digest")
     if not MIB_REPOSITORY.is_dir() or MIB_REPOSITORY.is_symlink():
         raise G0Error("fixed MIB checkout is absent or unsafe")
     try:
@@ -1013,7 +1072,7 @@ def _validate_config_and_preflight(
     *,
     code_commit: str,
     bootstrap_lineage: BootstrapLineage,
-) -> tuple[dict[str, Any], dict[str, Any], Any]:
+) -> tuple[dict[str, Any], dict[int, dict[str, Any]], Any]:
     from posttrain_circuits.artifacts.config_bindings import ConfigBinding, validate_config_binding
     from posttrain_circuits.artifacts.protocol_amendments import (
         AMENDMENT_ID,
@@ -1021,13 +1080,14 @@ def _validate_config_and_preflight(
         load_protocol_amendment_bytes,
         resolve_accepted_protocol_amendment,
         validate_accepted_lineage_commit,
-        validate_two_gpu_g0_config,
+        validate_elastic_g0_config,
     )
     from posttrain_circuits.core.config import compose_config
     from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
         GATE_NAMES as preflight_gates,
         PROFILE_NAME as preflight_profile,
         _validate_report as validate_preflight_report,
+        validate_preflight_workflow_id,
     )
 
     binding_payload = payloads["config_binding_sha256"]
@@ -1043,24 +1103,31 @@ def _validate_config_and_preflight(
         if binding_payload.get(name) != invocation.input_hashes[name]:
             raise G0Error(f"ConfigBinding {name} differs from its CAS input")
     expected_inputs = {
-        "gpu_preflight_completion": invocation.input_hashes["gpu_preflight_completion_sha256"],
-        "gpu_preflight_report": invocation.input_hashes["gpu_preflight_report_sha256"],
+        **{
+            f"gpu_preflight_w{world_size}_completion": invocation.input_hashes[
+                _preflight_completion_name(world_size)
+            ]
+            for world_size in ALLOWED_GPU_COUNTS
+        },
+        **{
+            f"gpu_preflight_w{world_size}_report": invocation.input_hashes[
+                _preflight_report_name(world_size)
+            ]
+            for world_size in ALLOWED_GPU_COUNTS
+        },
         "prereg_path": invocation.input_hashes["preregistration_sha256"],
-        "protocol_amendment_path": invocation.input_hashes[
-            "protocol_amendment_sha256"
-        ],
+        "protocol_amendment_path": invocation.input_hashes["protocol_amendment_sha256"],
     }
     if binding_payload.get("input_artifact_hashes") != expected_inputs:
         raise G0Error("ConfigBinding does not bind the exact G0 prerequisite bytes")
     expected_execution = {
-        "distributed_process_count": GPU_COUNT,
-        "execution_profile": PROFILE,
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "scheduler_protocol": 2,
     }
     if binding_payload.get("execution_context") != expected_execution:
-        raise G0Error("ConfigBinding execution context differs from the fixed topology")
+        raise G0Error("ConfigBinding execution context is not allocation-neutral")
     if execution.get("execution_context") != expected_execution:
-        raise G0Error("G0 execution projection differs from the fixed topology")
+        raise G0Error("G0 execution projection is not allocation-neutral")
     if (
         hashlib.sha256(prereg).hexdigest() != PREREGISTRATION_SHA256
         or invocation.input_hashes["preregistration_sha256"] != PREREGISTRATION_SHA256
@@ -1082,25 +1149,106 @@ def _validate_config_and_preflight(
         != bootstrap_lineage.reviewed_implementation_commit
         or amendment_payload["review"]["status"] != "accepted"
         or hashlib.sha256(amendment).hexdigest() != amendment_binding.sha256
-        or invocation.input_hashes["protocol_amendment_sha256"]
-        != amendment_binding.sha256
+        or invocation.input_hashes["protocol_amendment_sha256"] != amendment_binding.sha256
     ):
         raise G0Error("protocol amendment is not the accepted Git-reviewed content")
+
+    preflights: dict[int, dict[str, Any]] = {}
+    preflight_matrix: dict[str, dict[str, Any]] = {}
+    seen_allocations: set[str] = set()
+    seen_evidence: set[str] = set()
+    seen_workflows: set[str] = set()
+    for world_size in ALLOWED_GPU_COUNTS:
+        report_name = _preflight_report_name(world_size)
+        completion_name = _preflight_completion_name(world_size)
+        preflight = payloads[report_name]
+        completion = payloads[completion_name]
+        preflight_execution = completion.get("execution")
+        preflight_outputs = completion.get("output_files")
+        preflight_validation = completion.get("scientific_validation")
+        preflight_inputs = completion.get("input_hashes")
+        completion_digest = completion.get("sha256")
+        completion_unsigned = {
+            key: value for key, value in completion.items() if key != "sha256"
+        }
+        if not isinstance(preflight_execution, dict):
+            raise G0Error("GPU preflight completion execution is invalid")
+        validate_preflight_report(
+            preflight,
+            resolved_config_sha256=str(preflight.get("resolved_config_sha256")),
+            preregistration_sha256=PREREGISTRATION_SHA256,
+            completion_execution=preflight_execution,
+        )
+        report_digest = invocation.input_hashes[report_name]
+        completion_file_digest = invocation.input_hashes[completion_name]
+        preflight_commit = preflight.get("git_commit")
+        allocation_digest = preflight_execution.get("allocation_sha256")
+        preflight_workflow_id = validate_preflight_workflow_id(
+            completion.get("workflow_id")
+        )
+        if (
+            set(completion) != PREFLIGHT_COMPLETION_FIELDS
+            or completion_digest != _sha256_value(completion_unsigned)
+            or completion.get("schema_version") != 1
+            or completion.get("completion_kind") != "scientific"
+            or completion.get("project") != PROJECT
+            or preflight.get("world_size") != world_size
+            or preflight_commit != bootstrap_lineage.preflight_git_commit(world_size)
+            or completion.get("task") != "qwen3_v2_gpu_preflight"
+            or completion.get("workflow_id") != preflight_workflow_id
+            or completion.get("unit_id") != "gpu-preflight"
+            or preflight_execution.get("execution_profile") != preflight_profile
+            or not isinstance(allocation_digest, str)
+            or SHA256.fullmatch(allocation_digest) is None
+            or not isinstance(preflight_outputs, dict)
+            or len(preflight_outputs) != 1
+            or next(iter(preflight_outputs.values()), None)
+            != hashlib.sha256(raw_inputs[report_name]).hexdigest()
+            or not isinstance(preflight_validation, dict)
+            or tuple(sorted(preflight_validation)) != preflight_gates
+            or any(value is not True for value in preflight_validation.values())
+            or not isinstance(preflight_inputs, dict)
+            or preflight_inputs.get("resolved_config_sha256")
+            != preflight.get("resolved_config_sha256")
+            or preflight_inputs.get("preregistration_sha256") != PREREGISTRATION_SHA256
+            or completion.get("resolved_config_sha256")
+            != preflight.get("resolved_config_sha256")
+            or completion.get("execution_config_sha256")
+            != preflight_inputs.get("execution_config_sha256")
+            or completion.get("scientific_config_sha256")
+            != preflight_inputs.get("scientific_config_sha256")
+            or allocation_digest in seen_allocations
+            or preflight_workflow_id in seen_workflows
+            or report_digest in seen_evidence
+            or completion_file_digest in seen_evidence
+        ):
+            raise G0Error(
+                "G0 prerequisite matrix is not four distinct successful preflights"
+            )
+        seen_allocations.add(allocation_digest)
+        seen_workflows.add(preflight_workflow_id)
+        seen_evidence.update((report_digest, completion_file_digest))
+        preflights[world_size] = preflight
+        preflight_matrix[str(world_size)] = {
+            "allocation_sha256": allocation_digest,
+            "completion_sha256": completion_file_digest,
+            "git_commit": preflight_commit,
+            "report_sha256": report_digest,
+            "workflow_id": preflight_workflow_id,
+            "world_size": world_size,
+        }
 
     scheduler_config = resolved.get("scheduler_g0")
     if not isinstance(scheduler_config, dict):
         raise G0Error("resolved config lacks scheduler G0 provenance")
     request_git_commit = scheduler_config.get("request_git_commit")
-    preflight_git_commit = scheduler_config.get("gpu_preflight_git_commit")
     if (
         not isinstance(request_git_commit, str)
         or GIT_COMMIT.fullmatch(request_git_commit) is None
-        or not isinstance(preflight_git_commit, str)
-        or GIT_COMMIT.fullmatch(preflight_git_commit) is None
         or request_git_commit != bootstrap_lineage.request_git_commit
-        or preflight_git_commit != bootstrap_lineage.preflight_git_commit
+        or scheduler_config.get("gpu_preflight_matrix") != preflight_matrix
     ):
-        raise G0Error("resolved config contains invalid request/preflight Git provenance")
+        raise G0Error("resolved config contains invalid request/preflight provenance")
     try:
         validate_accepted_lineage_commit(
             code_root=SOURCE_ROOT,
@@ -1109,94 +1257,40 @@ def _validate_config_and_preflight(
             expected_head=code_commit,
             role="G0 request commit",
         )
-        validate_accepted_lineage_commit(
-            code_root=SOURCE_ROOT,
-            candidate_commit=preflight_git_commit,
-            current_binding=amendment_binding,
-            expected_head=code_commit,
-            role="GPU preflight commit",
-        )
+        for world_size, preflight in preflights.items():
+            validate_accepted_lineage_commit(
+                code_root=SOURCE_ROOT,
+                candidate_commit=str(preflight["git_commit"]),
+                current_binding=amendment_binding,
+                expected_head=code_commit,
+                role=f"GPU preflight W={world_size} commit",
+            )
     except ValueError as error:
         raise G0Error(f"G0 implementation lineage is invalid: {error}") from error
 
     expected = compose_config(list(BASE_CONFIG_OVERRIDES))
     expected["scheduler_g0"] = {
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "artifact_namespace": "qwen3-v2",
-        "execution_profile": PROFILE,
-        "gpu_preflight_git_commit": preflight_git_commit,
-        "gpu_preflight_completion_sha256": invocation.input_hashes[
-            "gpu_preflight_completion_sha256"
-        ],
-        "gpu_preflight_report_sha256": invocation.input_hashes["gpu_preflight_report_sha256"],
+        "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
+        "gpu_preflight_matrix": preflight_matrix,
         "model_revision": MODEL_REVISION,
-        "process_count": GPU_COUNT,
         "protocol_amendment_id": AMENDMENT_ID,
         "protocol_amendment_sha256": amendment_binding.sha256,
         "request_git_commit": request_git_commit,
-        "reviewed_implementation_commit": (
-            amendment_binding.reviewed_implementation_commit
-        ),
+        "reviewed_implementation_commit": amendment_binding.reviewed_implementation_commit,
         "task": TASK,
         "teacher_revision": TEACHER_REVISION,
         "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
     }
     if resolved != expected:
-        raise G0Error("resolved config differs from the fixed Qwen3-v2 G0 protocol")
-    validate_two_gpu_g0_config(resolved, amendment_payload)
+        raise G0Error("resolved config differs from the allocation-neutral G0 protocol")
+    validate_elastic_g0_config(resolved, amendment_payload)
     if _sha256_value(resolved) != invocation.input_hashes["resolved_config_sha256"]:
         raise G0Error("resolved G0 config hash is invalid")
     if scientific.get("input_artifact_hashes") != expected_inputs:
         raise G0Error("scientific config projection lost prerequisite identities")
-
-    preflight = payloads["gpu_preflight_report_sha256"]
-    completion = payloads["gpu_preflight_completion_sha256"]
-    validate_preflight_report(
-        preflight,
-        resolved_config_sha256=str(preflight.get("resolved_config_sha256")),
-        preregistration_sha256=PREREGISTRATION_SHA256,
-    )
-    preflight_execution = completion.get("execution")
-    preflight_outputs = completion.get("output_files")
-    preflight_validation = completion.get("scientific_validation")
-    preflight_inputs = completion.get("input_hashes")
-    completion_digest = completion.get("sha256")
-    completion_unsigned = {
-        key: value for key, value in completion.items() if key != "sha256"
-    }
-    if (
-        set(completion) != PREFLIGHT_COMPLETION_FIELDS
-        or completion_digest != _sha256_value(completion_unsigned)
-        or completion.get("schema_version") != 1
-        or completion.get("completion_kind") != "scientific"
-        or completion.get("project") != PROJECT
-        or preflight.get("git_commit") != preflight_git_commit
-        or completion.get("task") != "qwen3_v2_gpu_preflight"
-        or completion.get("workflow_id") != "qwen3-v2-gpu-preflight-v1"
-        or completion.get("unit_id") != "gpu-preflight"
-        or not isinstance(preflight_execution, dict)
-        or preflight_execution.get("execution_profile") != preflight_profile
-        or not isinstance(preflight_outputs, dict)
-        or len(preflight_outputs) != 1
-        or next(iter(preflight_outputs.values()), None)
-        != hashlib.sha256(raw_inputs["gpu_preflight_report_sha256"]).hexdigest()
-        or not isinstance(preflight_validation, dict)
-        or tuple(sorted(preflight_validation)) != preflight_gates
-        or any(value is not True for value in preflight_validation.values())
-        or not isinstance(preflight_inputs, dict)
-        or preflight_inputs.get("resolved_config_sha256")
-        != preflight.get("resolved_config_sha256")
-        or preflight_inputs.get("preregistration_sha256") != PREREGISTRATION_SHA256
-        or completion.get("resolved_config_sha256")
-        != preflight.get("resolved_config_sha256")
-        or completion.get("execution_config_sha256")
-        != preflight_inputs.get("execution_config_sha256")
-        or completion.get("scientific_config_sha256")
-        != preflight_inputs.get("scientific_config_sha256")
-    ):
-        raise G0Error(
-            "G0 prerequisite is not a successful accepted-lineage GPU preflight"
-        )
-    return resolved, preflight, amendment_binding
+    return resolved, preflights, amendment_binding
 
 
 def _common_overrides(root: Path, *, experiment: str = "canonical_sft") -> list[str]:
@@ -1220,7 +1314,14 @@ def _common_overrides(root: Path, *, experiment: str = "canonical_sft") -> list[
     ]
 
 
-def _stage_plan(root: Path, *, initial_checkpoint_sha256: str) -> tuple[Stage, ...]:
+def _stage_plan(
+    root: Path,
+    *,
+    initial_checkpoint_sha256: str,
+    gpu_count: int,
+) -> tuple[Stage, ...]:
+    if gpu_count not in ALLOWED_GPU_COUNTS:
+        raise G0Error("G0 stage plan GPU count is outside 1..4")
     common = _common_overrides(root)
     initial_binding = [
         *common,
@@ -1305,6 +1406,8 @@ def _stage_plan(root: Path, *, initial_checkpoint_sha256: str) -> tuple[Stage, .
                 str(calibration_checkpoint),
                 "--calibration-run-manifest",
                 str(calibration / "manifest.json"),
+                "--world-size",
+                str(gpu_count),
                 "--dataset-family",
                 str(dataset),
                 "--probe-limit-per-split",
@@ -1425,16 +1528,12 @@ def _stage_plan(root: Path, *, initial_checkpoint_sha256: str) -> tuple[Stage, .
                 "compare_distributed_resume",
                 (
                     *initial_binding,
-                    "--checkpoint-a",
-                    str(root / "resume-a" / "FINAL_CHECKPOINT"),
-                    "--checkpoint-b",
-                    str(root / "resume-b" / "FINAL_CHECKPOINT"),
-                    "--metrics-a",
-                    str(root / "resume-a" / "metrics.jsonl"),
-                    "--metrics-b",
-                    str(root / "resume-b" / "metrics.jsonl"),
+                    "--workspace",
+                    str(root),
+                    "--resume-source",
+                    str(resume_source),
                     "--world-size",
-                    str(GPU_COUNT),
+                    str(gpu_count),
                     "--output",
                     str(root / "distributed_resume.json"),
                 ),
@@ -1464,8 +1563,15 @@ def _stage_plan(root: Path, *, initial_checkpoint_sha256: str) -> tuple[Stage, .
                     str(circuits / "first_rule_selection" / "circuit.json"),
                     "--process-exact-patching",
                     str(circuits / "first_rule_selection" / "exact_patching.json"),
-                    "--compatibility",
+                    "--final-compatibility",
                     str(circuits / "final_answer" / "mib_raw" / "compatibility.json"),
+                    "--process-compatibility",
+                    str(
+                        circuits
+                        / "first_rule_selection"
+                        / "mib_raw"
+                        / "compatibility.json"
+                    ),
                     "--distributed-resume",
                     str(root / "distributed_resume.json"),
                     "--initial-checkpoint",
@@ -1501,7 +1607,11 @@ def _run_stage(
     job_id: str,
     bootstrap_lineage: BootstrapLineage,
     code_commit: str,
+    gpu_count: int,
+    allocation_sha256: str,
 ) -> None:
+    if gpu_count not in ALLOWED_GPU_COUNTS or SHA256.fullmatch(allocation_sha256) is None:
+        raise G0Error("stage launch allocation context is invalid")
     argv = tuple(job_id if value == "JOB_ID" else value for value in stage.argv)
     scientific_argv = (
         script_path,
@@ -1512,9 +1622,15 @@ def _run_stage(
         "--request-git-commit",
         bootstrap_lineage.request_git_commit,
         "--preflight-git-commit",
-        bootstrap_lineage.preflight_git_commit,
+        bootstrap_lineage.preflight_git_commit(gpu_count),
         "--amendment-sha256",
         bootstrap_lineage.amendment_sha256,
+        "--reviewed-implementation-commit",
+        bootstrap_lineage.reviewed_implementation_commit,
+        "--gpu-count",
+        str(gpu_count),
+        "--allocation-sha256",
+        allocation_sha256,
         "--",
         *argv,
     )
@@ -1526,6 +1642,8 @@ def _run_stage(
                 "accelerate.commands.launch",
                 "--config_file",
                 str(FSDP_CONFIG),
+                "--num_processes",
+                str(gpu_count),
                 *scientific_argv,
             )
         )
@@ -1543,31 +1661,39 @@ def _run_stage(
 
 def _resolve_final_checkpoint(run_root: Path) -> Path:
     manifest_path = run_root / "manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise G0Error(f"{run_root.name} run manifest is not a regular file")
     payload = _strict_json(manifest_path.read_bytes(), context=f"{run_root.name} run manifest")
+    if payload.get("sha256") != _sha256_value(
+        {key: value for key, value in payload.items() if key != "sha256"}
+    ):
+        raise G0Error(f"{run_root.name} run manifest SHA-256 is invalid")
     candidate = Path(str(payload.get("final_checkpoint_path", "")))
     expected = payload.get("final_checkpoint_sha256")
-    if not candidate.is_file() or not isinstance(expected, str) or _sha256_file(candidate) != expected:
+    checkpoint_root = (run_root / "checkpoints").resolve(strict=True)
+    if (
+        not candidate.is_absolute()
+        or ".." in candidate.parts
+        or candidate.is_symlink()
+        or candidate.resolve(strict=True) != candidate
+        or not candidate.is_file()
+        or not candidate.is_relative_to(checkpoint_root)
+        or not isinstance(expected, str)
+        or SHA256.fullmatch(expected) is None
+        or _sha256_file(candidate) != expected
+    ):
         raise G0Error(f"{run_root.name} final checkpoint binding is missing or invalid")
     return candidate
 
 
 def _replace_checkpoint_placeholders(stages: tuple[Stage, ...], root: Path) -> tuple[Stage, ...]:
-    calibration = str(_resolve_final_checkpoint(root / "calibration"))
-    resume_a = (
-        str(_resolve_final_checkpoint(root / "resume-a"))
-        if (root / "resume-a" / "manifest.json").is_file()
-        else ""
-    )
-    resume_b = (
-        str(_resolve_final_checkpoint(root / "resume-b"))
-        if (root / "resume-b" / "manifest.json").is_file()
-        else ""
-    )
-    replacements = {
-        str(root / "calibration" / "FINAL_CHECKPOINT"): calibration,
-        str(root / "resume-a" / "FINAL_CHECKPOINT"): resume_a,
-        str(root / "resume-b" / "FINAL_CHECKPOINT"): resume_b,
-    }
+    replacements: dict[str, str] = {}
+    for name in ("calibration", "resume-a", "resume-b"):
+        run_root = root / name
+        if (run_root / "manifest.json").is_file():
+            replacements[str(run_root / "FINAL_CHECKPOINT")] = str(
+                _resolve_final_checkpoint(run_root)
+            )
     return tuple(
         Stage(
             stage.name,
@@ -1737,13 +1863,16 @@ def _completion(invocation: Invocation, *, started_at: str, completed_at: str) -
 
 def _scientific_cli(argv: Sequence[str]) -> int:
     if (
-        len(argv) < 10
+        len(argv) < 16
         or argv[0] not in SCIENTIFIC_CLIS
         or argv[1] != "--code-commit"
         or argv[3] != "--request-git-commit"
         or argv[5] != "--preflight-git-commit"
         or argv[7] != "--amendment-sha256"
-        or argv[9] != "--"
+        or argv[9] != "--reviewed-implementation-commit"
+        or argv[11] != "--gpu-count"
+        or argv[13] != "--allocation-sha256"
+        or argv[15] != "--"
     ):
         raise G0Error("scientific child invocation differs from the fixed CLI ABI")
     _configure_bytecode_isolation()
@@ -1751,11 +1880,18 @@ def _scientific_cli(argv: Sequence[str]) -> int:
     request_commit = argv[4]
     preflight_commit = argv[6]
     amendment_sha256 = argv[8]
+    reviewed_implementation_commit = argv[10]
+    gpu_count_raw = argv[12]
+    allocation_sha256 = argv[14]
     if (
         GIT_COMMIT.fullmatch(code_commit) is None
         or GIT_COMMIT.fullmatch(request_commit) is None
         or GIT_COMMIT.fullmatch(preflight_commit) is None
         or SHA256.fullmatch(amendment_sha256) is None
+        or GIT_COMMIT.fullmatch(reviewed_implementation_commit) is None
+        or POSITIVE_INTEGER.fullmatch(gpu_count_raw) is None
+        or int(gpu_count_raw) not in ALLOWED_GPU_COUNTS
+        or SHA256.fullmatch(allocation_sha256) is None
         or _require_clean_git() != code_commit
     ):
         raise G0Error("scientific child lineage arguments are invalid")
@@ -1765,19 +1901,42 @@ def _scientific_cli(argv: Sequence[str]) -> int:
         resolved={
             "scheduler_g0": {
                 "request_git_commit": request_commit,
-                "gpu_preflight_git_commit": preflight_commit,
+                "gpu_preflight_matrix": {
+                    str(world_size): {"git_commit": preflight_commit}
+                    for world_size in ALLOWED_GPU_COUNTS
+                },
             }
         },
         amendment=amendment,
     )
-    if lineage.amendment_sha256 != amendment_sha256:
+    if (
+        lineage.amendment_sha256 != amendment_sha256
+        or lineage.reviewed_implementation_commit != reviewed_implementation_commit
+    ):
         raise G0Error("scientific child amendment identity differs from its supervisor")
     _install_source_path()
     module = importlib.import_module(SCIENTIFIC_CLIS[argv[0]])
     main_function = getattr(module, "main", None)
     if not callable(main_function):
         raise G0Error("reviewed scientific CLI has no callable main")
-    main_function(list(argv[10:]))
+    child_argv = list(argv[16:])
+    if argv[0] == "finalize_g0":
+        from posttrain_circuits.cli.finalize_g0 import ScientificInvocationContext
+
+        main_function(
+            child_argv,
+            scientific_context=ScientificInvocationContext(
+                allocation_sha256=allocation_sha256,
+                code_commit=code_commit,
+                gpu_preflight_git_commit=preflight_commit,
+                protocol_amendment_sha256=amendment_sha256,
+                request_git_commit=request_commit,
+                reviewed_implementation_commit=reviewed_implementation_commit,
+                world_size=int(gpu_count_raw),
+            ),
+        )
+    else:
+        main_function(child_argv)
     if _require_clean_git() != code_commit:
         raise G0Error("source checkout changed during scientific child execution")
     return 0
@@ -1787,7 +1946,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
     _configure_bytecode_isolation()
     invocation = _parse_outer(argv)
-    _validate_environment()
+    _validate_environment(invocation.gpu_count)
     code_commit = _require_clean_git()
     payloads, prereg, amendment, raw_inputs = _read_inputs(invocation)
     bootstrap_lineage = _bootstrap_accepted_lineage(
@@ -1796,7 +1955,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
         amendment=amendment,
     )
     _install_source_path()
-    resolved, preflight, amendment_binding = _validate_config_and_preflight(
+    resolved, preflights, amendment_binding = _validate_config_and_preflight(
         invocation,
         payloads,
         prereg,
@@ -1805,6 +1964,12 @@ def _supervise(argv: Sequence[str] | None) -> int:
         code_commit=code_commit,
         bootstrap_lineage=bootstrap_lineage,
     )
+    preflight = preflights[invocation.gpu_count]
+    from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
+        batch_token_contract,
+        execution_context,
+    )
+    from posttrain_circuits.cli.finalize_g0 import G0_CHECK_NAMES
     if os.listdir(invocation.output_descriptor):
         raise G0Error("output attempt is not empty")
     temp_root = Path(FIXED_ENVIRONMENT["TMPDIR"])
@@ -1814,7 +1979,8 @@ def _supervise(argv: Sequence[str] | None) -> int:
     workspace.mkdir(mode=0o750)
     bundle_temp = temporary / ".g0-artifacts.tar"
     try:
-        (workspace / "gpu_preflight.json").write_bytes(raw_inputs["gpu_preflight_report_sha256"])
+        selected_report_name = _preflight_report_name(invocation.gpu_count)
+        (workspace / "gpu_preflight.json").write_bytes(raw_inputs[selected_report_name])
         common = _common_overrides(workspace)
         for stage in (
             Stage(
@@ -1844,29 +2010,35 @@ def _supervise(argv: Sequence[str] | None) -> int:
                 job_id=invocation.job_id,
                 bootstrap_lineage=bootstrap_lineage,
                 code_commit=code_commit,
+                gpu_count=invocation.gpu_count,
+                allocation_sha256=invocation.allocation_sha256,
             )
         initial_hash = _sha256_file(workspace / "initial_checkpoint.pt")
-        stages = _stage_plan(workspace, initial_checkpoint_sha256=initial_hash)[2:]
+        stages = _stage_plan(
+            workspace,
+            initial_checkpoint_sha256=initial_hash,
+            gpu_count=invocation.gpu_count,
+        )[2:]
         script_path = _script_parent_path()
         for stage in stages:
             if stage.name == "score_probe_candidates":
                 stages = _replace_checkpoint_placeholders(stages, workspace)
                 stage = next(item for item in stages if item.name == "score_probe_candidates")
-            elif stage.name == "compare_distributed_resume":
-                stages = _replace_checkpoint_placeholders(stages, workspace)
-                stage = next(item for item in stages if item.name == "compare_distributed_resume")
             _run_stage(
                 stage,
                 script_path=script_path,
                 job_id=invocation.job_id,
                 bootstrap_lineage=bootstrap_lineage,
                 code_commit=code_commit,
+                gpu_count=invocation.gpu_count,
+                allocation_sha256=invocation.allocation_sha256,
             )
         inner = _strict_json((workspace / "g0.json").read_bytes(), context="inner G0 report")
         inner_digest = inner.get("sha256")
         if (
             inner.get("passed") is not True
             or not isinstance(inner.get("checks"), dict)
+            or tuple(sorted(inner["checks"])) != G0_CHECK_NAMES
             or any(value is not True for value in inner["checks"].values())
             or inner_digest != _sha256_value({key: value for key, value in inner.items() if key != "sha256"})
             or inner.get("protocol_amendment_id") != amendment_binding.amendment_id
@@ -1875,6 +2047,10 @@ def _supervise(argv: Sequence[str] | None) -> int:
             != amendment_binding.reviewed_implementation_commit
             or inner.get("request_git_commit")
             != resolved["scheduler_g0"]["request_git_commit"]
+            or inner.get("allocation_sha256") != invocation.allocation_sha256
+            or inner.get("world_size") != invocation.gpu_count
+            or inner.get("batch_token_contract")
+            != batch_token_contract(invocation.gpu_count)
         ):
             raise G0Error("inner G0 semantic decision did not pass")
         inventory = _artifact_inventory(workspace)
@@ -1885,41 +2061,22 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "artifact_bundle_sha256": bundle_digest,
             "artifact_inventory": inventory,
             "artifact_namespace": "qwen3-v2",
-            "batch_token_contract": {
-                "world_size": GPU_COUNT,
-                "per_device_batch_size": resolved["trainer"]["batch_size"],
-                "gradient_accumulation_steps": resolved["trainer"][
-                    "gradient_accumulation_steps"
-                ],
-                "effective_global_batch_size": (
-                    GPU_COUNT
-                    * resolved["trainer"]["batch_size"]
-                    * resolved["trainer"]["gradient_accumulation_steps"]
-                ),
-                "token_budget": resolved["trainer"]["token_budget"],
-                "token_budget_unit": resolved["trainer"]["token_budget_unit"],
-                "max_optimizer_steps": resolved["trainer"]["max_steps"],
-            },
+            "batch_token_contract": batch_token_contract(invocation.gpu_count),
             "chat_template_sha256": CHAT_TEMPLATE_SHA256,
             "code_commit": code_commit,
             "completed_at": completed_at,
             "cgroup_memory": _cgroup_memory(),
             "enable_thinking": False,
             "execution": invocation.execution,
-            "execution_context": {
-                "allocation_visibility": "preserved",
-                "distributed_launcher": "accelerate_fsdp_foreground",
-                "mode": "server_scheduler_foreground",
-                "nccl_p2p_policy": "disabled",
-                "visible_device_count": GPU_COUNT,
-            },
+            "execution_context": execution_context(invocation.gpu_count),
             "git_commit": code_commit,
             "gpu_preflight_completion_sha256": invocation.input_hashes[
-                "gpu_preflight_completion_sha256"
+                _preflight_completion_name(invocation.gpu_count)
             ],
             "gpu_preflight_git_commit": preflight["git_commit"],
+            "gpu_preflight_matrix": resolved["scheduler_g0"]["gpu_preflight_matrix"],
             "gpu_preflight_report_sha256": invocation.input_hashes[
-                "gpu_preflight_report_sha256"
+                selected_report_name
             ],
             "inner_g0_report_sha256": _sha256_file(workspace / "g0.json"),
             "model_revision": MODEL_REVISION,
@@ -1949,7 +2106,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "teacher_revision": TEACHER_REVISION,
             "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
             "tokenizer_revision": MODEL_REVISION,
-            "world_size": GPU_COUNT,
+            "world_size": invocation.gpu_count,
         }
         report["sha256"] = _sha256_value(report)
         if _require_clean_git() != code_commit:

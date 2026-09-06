@@ -386,7 +386,7 @@ def load_checkpoint_model_state(path: Path) -> dict[str, Any]:
 def checkpoint_runtime_state_hashes(payload: Mapping[str, Any]) -> dict[str, str]:
     """Bind each independently resumable Factorial checkpoint state class."""
 
-    fields = (
+    fields = [
         "model",
         "optimizer",
         "scheduler",
@@ -396,7 +396,24 @@ def checkpoint_runtime_state_hashes(payload: Mapping[str, Any]) -> dict[str, str
         "prompt_scheduler_by_rank",
         "state_source_by_rank",
         "manifest_hashes",
-    )
+    ]
+    # Allocation-neutral checkpoints carry rank-local scientific counters in
+    # addition to the historical rank-0 alias.  Keep legacy checkpoints
+    # readable, but bind the complete table whenever the producer emits it.
+    if "trainer_state_by_rank" in payload:
+        fields.append("trainer_state_by_rank")
+    if payload.get("format") == "accelerate_fsdp_full_export_v1":
+        # These are independently resumable state/identity classes for the
+        # production Accelerate checkpoint.  ``None`` is a meaningful scaler
+        # state under bf16, so presence rather than truthiness is required.
+        fields.extend(
+            (
+                "scaler",
+                "rank_shard_hashes",
+                "accelerate_state_files",
+                "accelerate_state_sha256",
+            )
+        )
     missing = [field for field in fields if field not in payload]
     if missing:
         raise ValueError(f"checkpoint runtime state is incomplete: {missing}")

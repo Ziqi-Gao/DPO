@@ -71,6 +71,8 @@ def test_state_source_factory_uses_resolved_group(
             temperature=0.0,
             top_p=1.0,
             candidates_per_prompt=1,
+            max_prompt_tokens=4096,
+            max_new_tokens=256,
         ),
     ).accepted_attempts
     config = compose_config([f"experiment={experiment}"], config_root=Path("configs"))

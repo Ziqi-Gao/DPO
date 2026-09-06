@@ -7,6 +7,7 @@ from typing import Any
 
 from posttrain_circuits.artifacts.compatibility import scientific_compatibility_fields
 from posttrain_circuits.artifacts.hashing import sha256_value
+from posttrain_circuits.artifacts.runs import PROTOCOL_AMENDMENT_BINDING_FIELDS
 from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.datasets.proofgraph.contracts import TaskExample
 
@@ -79,6 +80,8 @@ def evaluate_teacher_readiness(
             "prereg_version",
             "prereg_sha256",
         }
+    if any(key in bindings for key in PROTOCOL_AMENDMENT_BINDING_FIELDS):
+        required_bindings.update(PROTOCOL_AMENDMENT_BINDING_FIELDS)
     if set(bindings) < required_bindings or any(
         bindings[key] is None or bindings[key] == "" for key in required_bindings
     ):

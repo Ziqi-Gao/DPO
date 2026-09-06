@@ -1,7 +1,7 @@
 schema_version = 2
 name = "OPD"
 enabled = false
-integration_status = "protocol-v2-disabled-qwen3-v2-2gpu-preflight-proposal"
+integration_status = "protocol-v2-disabled-qwen3-v2-elastic-preflight-proposal"
 
 [paths]
 code_root = "/home/del6500/projects/OPD"
@@ -18,7 +18,7 @@ allow_project_file_mutation = false
 [integration]
 entrypoint = "/home/del6500/projects/OPD/scripts/server_scheduler/opd-entrypoint"
 allowed_tasks = ["repository_preflight", "qwen3_v2_gpu_preflight"]
-notes = "Disabled complete OPD proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. repository_preflight retains its measured CPU-only contract. qwen3_v2_gpu_preflight is explicitly fixed at two GPUs because OPD has not established equivalent 1/2/3/4-GPU scientific semantics; its code-owned handler fixes the Qwen3-v2 configs and offline environment under OPD-owned roots, preserves scheduler-provided CUDA visibility, and cannot accept commands, environment overrides, paths, or resources in job parameters. This two-GPU host profile fixes NCCL_P2P_DISABLE=1, NCCL diagnostics, a 120-second NCCL probe timeout, and a Gloo control plane after a reproduced first-all-reduce hang on the dual-NUMA RTX PRO 6000 Blackwell topology. The GPU profile is an intentionally conservative first-run reservation, not a measured utilization claim. No repository snapshot hash is part of either scientific unit."
+notes = "Disabled OPD proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. qwen3_v2_gpu_preflight exposes one scheduler-managed profile whose handler derives the concrete 1/2/3/4-GPU world size only from the running manifest and scheduler environment, preserves CUDA_VISIBLE_DEVICES, and uses logical devices 0..N-1. The handler rejects commands, environment overrides, paths, GPU counts, and resource selectors in request parameters. Static fixtures cover every centrally permitted count; real 1/2/3/4 pilots remain separate approval gates and are required before elastic G0 request generation and execution. The conservative one-GPU cold-start estimate is unmeasured and will be superseded by central per-count observations."
 
 [[tasks]]
 name = "repository_preflight"
@@ -46,19 +46,18 @@ name = "qwen3_v2_gpu_preflight"
 selection_policy = "earliest_finish"
 
 [[tasks.execution_profiles]]
-name = "qwen3-v2-gpu-preflight-2gpu"
+name = "qwen3-v2-gpu-preflight-elastic"
 kind = "gpu"
-gpu_count_policy = "fixed"
+gpu_count_policy = "scheduler"
 resource_mode = "fixed"
 scheduling_goal = "latency"
-cpu_cores_min = 16
-cpu_cores_preferred = 16
-cpu_cores_max = 16
+cpu_cores_min = 24
+cpu_cores_preferred = 24
+cpu_cores_max = 24
 memory_mib = 196608
-gpu_count = 2
 gpu_memory_mib = 81920
 gpu_utilization_pct = 95
 gpu_exclusivity = "required"
 gpu_models = ["NVIDIA RTX PRO 6000 Blackwell Server Edition"]
-estimated_runtime_seconds = 3600.0
+estimated_runtime_seconds = 7200.0
 cpu_scaling_efficiency = 0.0

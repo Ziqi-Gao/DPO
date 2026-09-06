@@ -9,278 +9,265 @@ must still be verified when mutable.
 
 ## Current repository state
 
-Committed HEAD is candidate D acceptance commit
-`30bafb42344edfe2a6ceff473efe41ac0ee79750` on `master`, 35 commits
-ahead of `origin/master`. Its single parent is reviewed implementation commit
-`a8855ecab55819bbcd1a7a479d933104bb27fb81`; the acceptance commit changes
-only the amendment review block and this handoff.
+Committed HEAD is
+`51783b7ab10476705916488a05477abf6cb511c1` on `master`, 36 commits ahead of
+`origin/master`. Its parent is historical Candidate D acceptance commit
+`30bafb42344edfe2a6ceff473efe41ac0ee79750`; Candidate D's reviewed
+implementation commit is
+`a8855ecab55819bbcd1a7a479d933104bb27fb81`.
 
-The committed amendment is accepted, binds `a8855ec...`, and has SHA-256
-`014b5dc78619870eee3a6f6175323b0418c5c597fa9625fd41c8e15ee353b6c2`.
-The actual accepted-lineage resolver and commit validator passed against
-`30bafb...` with a clean tracked checkout. The current working tree contains
-only this post-acceptance handoff update.
+Candidate E is a complete but **uncommitted** scheduler-managed 1/2/3/4-GPU
+implementation over that HEAD. The worktree has 73 modified tracked paths and
+seven new paths. The changes cover:
 
-Historical candidate status:
+- permanent protocol rules and operational documentation in `AGENTS.md` and
+  `docs/refactor/`;
+- the G0, teacher-demo, and FSDP configurations under `configs/`;
+- both Qwen3-v2 package manifests and disabled registration proposals under
+  `deployments/`;
+- both hash-bound GPU handlers under `scripts/server_scheduler/`;
+- checkpoint, amendment, run, circuit, dataset, model, training, CLI,
+  workflow, and scheduler-adapter implementation under
+  `src/posttrain_circuits/`;
+- integration and unit fixtures under `tests/`.
 
-- Candidate A `ab2f72f20036b6f488db5d5a335744a6a80b8b82` was rejected
-  because runtime verification wrote EAP bytecode into the immutable MIB tree.
-- Candidate B `e8138997ad9465e986e1e92ffcf7fd61e8c113e8` was independently
-  accepted by review-only commit
-  `71a86997cc3eadf55d18b9a5d0405eaaa9ada5ac`. That acceptance remains
-  historical evidence only and does not authorize later implementation changes.
-- Candidate C `b4c63a384fabce6ece950ea9988183da209e7652` was rejected because
-  both GPU handlers imported the mutable checkout's lineage validator before
-  authenticating that checkout, and `python -I` ignored its environment-only
-  bytecode prohibition.
+The seven new files are:
 
-Candidate D implementation commit changes these paths:
+- `configs/accelerate/fsdp_server_scheduler.yaml`;
+- `prereg/amendments/qwen3_v2_g0_elastic_v1.yaml`;
+- `src/posttrain_circuits/cli/factorial_run_validation.py`;
+- `src/posttrain_circuits/learning/training/fsdp_contract.py`;
+- `tests/unit/test_fsdp_contract.py`;
+- `tests/unit/test_g0_factorial_run_validation.py`;
+- `tests/unit/test_g0_stage_contracts.py`.
 
-- `deployments/qwen3_v2_g0/package-manifest.json`
-- `deployments/qwen3_v2_gpu_preflight/package-manifest.json`
-- `scripts/server_scheduler/opd-entrypoint`
-- `scripts/server_scheduler/qwen3-v2-g0-handler.py`
-- `scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py`
-- `src/posttrain_circuits/artifacts/git_provenance.py`
-- `src/posttrain_circuits/artifacts/protocol_amendments.py`
-- `src/posttrain_circuits/scheduler_adapter/g0_request.py`
-- `src/posttrain_circuits/scheduler_adapter/gpu_preflight_request.py`
-- `src/posttrain_circuits/scheduler_adapter/registry.py`
-- `tests/unit/test_g0_request.py`
-- `tests/unit/test_gpu_preflight_request.py`
-- `tests/unit/test_protocol_amendments.py`
-- `tests/unit/test_qwen3_v2_g0_handler.py`
-- `tests/unit/test_qwen3_v2_gpu_preflight_handler.py`
-- `tests/unit/test_scheduler_adapter.py`
-- this handoff.
+The Candidate E amendment is still `proposed`, has SHA-256
+`2d2444c9b2969b0b10a42d137184f8d11574d748ae488f6e40d5b5cc4fb6becc`,
+and has no `reviewed_implementation_commit`. It intentionally supersedes the
+accepted fixed-two-GPU amendment only after a new independent review and a
+separate acceptance commit. Candidate D remains a recoverable historical
+baseline, not acceptance evidence for Candidate E.
 
-## Candidate D trust and execution boundary
+Historical rejected candidates remain documented in Git: Candidate A
+`ab2f72f...` polluted the immutable MIB tree with bytecode, Candidate B
+`e8138997...` was superseded, and Candidate C `b4c63a3...` crossed the mutable
+source trust boundary before authentication. Candidate E retains Candidate D's
+hash-bound bootstrap and clean-lineage protections.
 
-The GPU-preflight handler now carries its complete acceptance-lineage bootstrap
-inside the hash-bound handler and imports no project source. The G0 supervisor
-and every scientific child independently run the same kind of hash-bound
-bootstrap before adding project `src` to `sys.path`. The shared validator then
-runs only as defense in depth.
-
-Lineage validation now:
-
-- fixes the proposed amendment bytes by SHA-256 and permits exactly one
-  proposed-to-accepted review transition;
-- enumerates every commit and separately reads its real parent identity, so
-  history simplification cannot hide a merge parent;
-- requires a single-parent chain, limits each range to 256 commits, rejects
-  empty commits, second amendment changes, source changes followed by reverts,
-  and any path other than the amendment/handoff at acceptance or handoff alone
-  after acceptance;
-- disables global/system Git configuration, replace objects, optional locks,
-  repository fsmonitor helpers, and external diffs; changed paths use NUL
-  delimiters and strict UTF-8;
-- requires a completely clean checkout including submodules and separately
-  enumerates untracked files without applying `.gitignore` or
-  `.git/info/exclude`; only the non-importable local `.codex/config.toml` and
-  isolated source-tree `__pycache__/*.pyc` files are allowed;
-- makes the absolute entrypoint perform both clean checks before adding project
-  `src` to `sys.path`, then rechecks HEAD/source identity in the hash-bound
-  handlers before import, after each G0 scientific child, and before publication;
-- opens the source amendment with `O_NOFOLLOW`, holds its descriptor through
-  validation, and rechecks inode, bytes, path identity, and the HEAD blob.
-
-`opd-entrypoint` and both GPU handlers establish `sys.dont_write_bytecode` and
-an atomically created private scratch `sys.pycache_prefix` before project-source
-imports. This prevents both reading stale source-tree bytecode and writing new
-bytecode even under isolated Python, where `PYTHONDONTWRITEBYTECODE` is ignored.
-The environment-only setting was removed from both deployment contracts.
+## Candidate E scheduler and scientific contract
 
 The only central entrypoint remains:
 
 `/home/del6500/projects/OPD/scripts/server_scheduler/opd-entrypoint`
 
-It validates the running manifest and concrete allocation, preserves
-`CUDA_VISIBLE_DEVICES`, consumes the scheduler CPU/GPU count contract, and
-dispatches only the code-owned handler registry. The project does not select
-physical GPUs, query `nvidia-smi`, maintain locks/leases/queues, fan out with
-Screen/tmux, detach workers, or run a local scheduler service.
+There are not four request-visible task variants. Each scientific task has one
+allocation-neutral request and one scheduler-managed profile; ServerScheduler
+chooses one concrete count at claim time:
 
-## Fixed two-GPU scientific scope
-
-Both GPU tasks are intentionally fixed, not scheduler-sized:
-
-| Task | Profile | Allocation | Deployment |
+| Task | Profile | Reviewed allocation | Conservative estimate |
 | --- | --- | --- | --- |
-| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-2gpu` | 16 CPU cores, 196608 MiB, two exclusive RTX PRO 6000 Blackwell GPUs | `qwen3-v2-gpu-preflight-2gpu-python312-cuda-v5` |
-| `qwen3_v2_g0` | `qwen3-v2-g0-2gpu` | 16 CPU cores, 196608 MiB, two exclusive RTX PRO 6000 Blackwell GPUs | `qwen3-v2-g0-2gpu-python312-cuda-v3` |
+| `qwen3_v2_gpu_preflight` | `qwen3-v2-gpu-preflight-elastic` | 24 CPU cores, 196608 MiB, scheduler-chosen 1/2/3/4 exclusive RTX PRO 6000 Blackwell GPUs | 7200 s |
+| `qwen3_v2_g0` | `qwen3-v2-g0-elastic` | 24 CPU cores, 196608 MiB, scheduler-chosen 1/2/3/4 exclusive RTX PRO 6000 Blackwell GPUs | 86400 s |
 
-Neither task may use `gpu_count_policy = "scheduler"`. OPD has not established
-equivalent 1/2/3/4-GPU scientific semantics, one-GPU memory safety, three-rank
-batch/RNG/thread equivalence, or cross-world-size checkpoint resharding. Both
-handlers reject every allocation other than exactly two GPUs and use only
-logical CUDA devices 0 and 1 inside the scheduler-provided visibility envelope.
+Both proposals use `kind = "gpu"` and
+`gpu_count_policy = "scheduler"` and completely omit `gpu_count`. The
+internal project profile uses the same zero sentinel as the central parser;
+that sentinel is never serialized into a request or proposal and is not a
+resource hint. At runtime the entrypoint cross-checks the running manifest and
+`SERVER_SCHEDULER_GPU_COUNT`, preserves `CUDA_VISIBLE_DEVICES` exactly, and
+launches only logical ranks/devices `0..N-1`. An attempt never resizes.
 
-The G0 amendment retains world size 2, per-device batch 4, gradient
-accumulation 8, and effective global batch `2 * 4 * 8 = 64`. Before every
-optimizer boundary it reserves the exact cross-rank sum of non-padding model
-input tokens and skips the update that would exceed 2,000,000 tokens. The 120
-optimizer-step limit is an independent ceiling. Checkpoints bind consumed
-tokens and world size; cross-world-size resume is rejected. The scientific
-claim is seed-42 full-pipeline feasibility only, not a confirmatory endpoint,
-three-seed factorial, or Gemma replication.
+Normal requests contain only `schema_version`, fresh count-neutral `job_id`,
+`project`, `task`, `priority`, and the scientific parameters `workflow_id`,
+`plan_sha256`, and `unit_id`. They omit `execution_profile` and `resources`.
+GPU count, device, memory, utilization, exclusivity, environment, command, and
+path selectors are rejected at both the request and handler boundaries.
+
+One optimizer window is always the same ordered 64-sample logical batch:
+
+| World size | Rank-local sample totals | Physical microbatches | CPU threads/rank |
+| --- | --- | --- | --- |
+| 1 | `64` | sixteen times `4` | 24 |
+| 2 | `32 / 32` | eight times `4` per rank | 12 |
+| 3 | `22 / 21 / 21` | `4,4,4,4,4,2` / `4,4,4,4,4,1` / `4,4,4,4,4,1` | 8 |
+| 4 | `16 / 16 / 16 / 16` | four times `4` per rank | 6 |
+
+Framework accumulation and rank averaging are scaled back to the same global
+sequence mean. The student remains full-parameter training. The prompt
+population is exactly 256 unique manifest-ordered IDs; the accepted
+teacher-demo view uses a deterministic per-prompt cursor and consumes no RNG.
+The measured maximum prompt is 1246 tokens, maximum generation is 256, and the
+derived 1502-token input fits the reviewed 1536-token limit. Any overlength
+sample is rejected without truncation before a training forward.
+
+Before any backward in a window, ranks sum exact non-padding model-input tokens
+and reserve that global total. A whole window that would exceed 2,000,000
+tokens is rejected and its cursor/counters are rolled back; the 120 optimizer
+step limit is independent. Checkpoints occur only at optimizer boundaries,
+store rank-local trainer state and one identical global token state, support
+deterministic same-world resume, and reject changed-world or partial-window
+resume before model, optimizer, scheduler, RNG, or source state is loaded.
+Scheduler retries always use isolated attempt workspaces and start from frozen
+scientific inputs.
+
+The requested FSDP strategy is `FULL_SHARD`. Its reviewed effective strategy is
+`NO_SHARD` at world size 1, as imposed by PyTorch 2.8, and `FULL_SHARD` at world
+sizes 2, 3, and 4. Validation requires one root FSDP wrapper plus every
+`Qwen3DecoderLayer` directly wrapped, no missing or extra wrappers, and
+`use_orig_params=false`. Single-rank full-state export uses
+`offload_to_cpu=false, rank0_only=false`; multi-rank export uses rank-zero CPU
+offload. Requested and effective strategies are recorded and validated.
+
+G0 finalization replays the artifact bundle into a fresh private scratch tree
+using no-follow, directory-descriptor, inventory, and content checks. Final and
+process circuit artifacts each bind their own compatibility document and
+semantic evidence. Cross-run validation compares scientific model, optimizer,
+scheduler, scaler, RNG, rank, token, and evidence state, but deliberately does
+not demand byte-identical framework serialization or hash absolute scratch
+paths. Hashing is limited to deployment/dependency identity, immutable
+scientific inputs, checkpoints, outputs, and completion evidence; there is no
+blanket repository snapshot hash.
+
+The scientific claim remains seed-42 pipeline feasibility only. Candidate E
+does not authorize a confirmatory endpoint, the three-seed factorial, or Gemma
+replication.
 
 ## Deployment and runtime identities
 
 GPU preflight:
 
-- handler SHA-256:
-  `3dd7f607cb760b0bf6dd12e2000c9f826b86a30e24327131d4966fd2f0656347`
-- dependency lock SHA-256:
-  `c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f`
-- package manifest SHA-256:
-  `ca3a8ca2db8d8618492c5b1004cfe2cbf9a5867d8469eee00ba21b066f4c2dac`
-- deployment identity:
-  `52357303f24328d3cd5ebe4b3174840d03fb4eacc657f87e2d6d863726594a82`
+- handler: `e62d370db975302e3f8321ea93d5e281894c3eb09ef814a2b615b7cf7605948c`;
+- dependency lock: `c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f`;
+- package manifest: `f17dc62af30eb7f96b94322b61b8ea7496a6fd0a1c3c31bb99e872dbd1466663`;
+- deployment identity: `f0850abcf441a4dfa3134b875d2c552020115b669c5b81a93f4c62122736e16d`.
 
 G0:
 
-- handler SHA-256:
-  `09b53ba8f5cbb2742d131f482d6046dbb2b09c1ae07417dc80c1740ddb7a3ac0`
-- dependency lock SHA-256:
-  `18d77da454cb86a097526fe561462f4818cb76c3ca9633481261f1e563f86d90`
-- package manifest SHA-256:
-  `7f3b74484d37bd4b4ee4fbc953b251b5c8ad04b177d5623ba3517d3f784dc2d7`
-- deployment identity:
-  `d33e4949dd91f2dbcf280097aca77a0939d6bb16cc898c42ad215282a9c65a6a`
+- handler: `a00cb4b0a59e2537bc6a6ce8daf07ed86f6dfe9d61c95f9e32223088cadb8ad4`;
+- dependency lock: `18d77da454cb86a097526fe561462f4818cb76c3ca9633481261f1e563f86d90`;
+- package manifest: `432107f92111b621474d7b1aa7179284a8a5d73c774ab80d003040e381f1ca73`;
+- deployment identity: `99b595c018104a1c3f176a98d4d3c6072cdda92ba1d8a4d78800e4b119de65c1`.
 
-Both deployment identity checks and all direct file hashes match. Both fixed
-runtimes pass `pip check`. No-GPU production-boundary calls to both handlers'
-`_validate_environment()` passed with two virtual CUDA UUIDs. The immutable G0
-runtime and MIB roots remain mode 550. MIB is pinned at
-`b759df34433c9e31043ba9e02908ce0bf20e894f`, EAP-IG at
-`7af394a5662de8b23ad6154716a0cd3993d447a3`, and the complete MIB tree
-currently contains zero `.pyc` files.
+The FSDP config SHA-256 is
+`7fe87d579ed92c4cca91ab719a7cf267e5491ba3b520b4a05f28c1e442ffb46a`.
+Both fixed runtimes pass `pip check`. The fixed interpreter digest is
+`848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801`.
+MIB is clean and pinned at
+`b759df34433c9e31043ba9e02908ce0bf20e894f`; EAP-IG is pinned at
+`7af394a5662de8b23ad6154716a0cd3993d447a3`; the tree contains zero `.pyc`
+files.
 
 ## Verification
 
-Candidate D static/runtime-boundary results:
+Candidate E final static and CPU-only boundary verification:
 
-- GPU-preflight handler suite: 21/21 passed, including real Git
-  source-change/revert and range-hidden merge-parent fixtures.
-- G0 handler suite: 19/19 passed, including supervisor and scientific-child
-  bootstrap order, amendment tampering, merge/revert, held-file, bytecode, and
-  historical accepted-lineage probes.
-- Shared amendment suite: 21/21 passed.
-- Request/amendment focused suite: 31/31 passed.
-- Scheduler adapter suite: 50/50 passed.
-- On committed implementation `a8855ec...`, the combined
-  handler/request/validator/adapter/proposal/workflow suite passed 148/148 in
-  7.564 seconds; the post-commit independent audit rerun passed 148/148 in
-  7.510 seconds.
-- Both runtime `pip check` commands passed; deployment hashes and identities,
-  in-memory compilation, and `git diff --check` passed.
-- The prepared acceptance bytes passed the actual review-transition validator;
-  the amendment differs from implementation commit `a8855ec...` only in its
-  review block, and the whole working tree differs only in the amendment and
-  this handoff.
-- Acceptance commit `30bafb...` was then verified as a single-parent,
-  metadata-only descendant; the actual accepted-lineage resolver returned the
-  expected amendment, acceptance, and implementation identities.
-- The current ServerScheduler proposal parser accepted both checked-in
-  proposals, reported `enabled = false`, and found exactly the declared tasks.
+- complete test suite: 546/546 passed in 25.91 seconds; the 19 warnings were
+  dependency deprecations, expected NVML-unavailable warnings in a no-GPU test
+  environment, and one optimizer-wrapper test warning;
+- affected scheduler/scientific suite: 290/290 passed;
+- deployment consistency suite: 26/26 passed;
+- both disabled proposals passed the actual ServerScheduler
+  `load_registration()` parser; their raw GPU profiles have policy `scheduler`
+  and no `gpu_count` field;
+- positive request fixtures contain only the allocation-neutral fields, while
+  top-level resource fields and all parameter-hidden resource hints fail;
+- all 68 changed or new Python files compiled in memory;
+- both runtime `pip check` commands, all direct necessary hashes and deployment
+  identities, the clean MIB/submodule check, forbidden-capability scan, and
+  `git diff --check` passed.
 
-An additional whole-unit `unittest discover` attempt ran 190 test cases but
-ended with 26 collection errors because those pytest-authored modules import
-`pytest`, which is intentionally absent from the immutable G0 runtime. A
-separate scratch-only installation of the project-pinned `pytest==8.4.1` was
-attempted both in and outside the sandbox; both failed because the host could
-not resolve PyPI. The scratch target was not created. This does not invalidate
-the 148-test affected-surface suite and did not modify either runtime.
+The complete-suite command was:
 
-No GPU computation, scheduler job, outbox write, central registration change,
-service operation, or process management occurred during candidate D work.
-The only outbound network action was the unsuccessful PyPI download attempt.
-Post-commit work made read-only central registration queries; a read-only user
-service-status query failed because no service bus was available. Neither query
-changed external state.
+```bash
+TMPDIR=/scr/del6500/OPD/tmp PYTHONDONTWRITEBYTECODE=1 \
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src \
+/scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin/python -c \
+"import sys; p='/opt/anaconda3/lib/python3.13/site-packages'; sys.path.append(p); import pytest; sys.path.remove(p); raise SystemExit(pytest.main(sys.argv[1:]))" \
+tests -q
+```
 
-## Proposal, requests, and central state
+The two runtime checks were:
 
-The project-owned proposals remain unchanged and disabled:
+```bash
+/scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin/python -m pip check
+/scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python -m pip check
+```
+
+The 1/2/3/4 evidence above is static fail-closed fixture evidence, not a claim
+that GPU execution occurred. No Candidate E GPU pilot has run. Real preflight
+evidence is still required separately for every world size before G0.
+
+During Candidate E construction no GPU was queried or used, no job was run or
+submitted, no outbox file was generated or changed, no network was accessed,
+and no central registration or service was modified. Read-only central config
+and runtime checks were performed.
+
+## Proposals, requests, and central state
+
+Candidate E project-owned proposals are disabled:
 
 - full G0 proposal:
   `/home/del6500/projects/OPD/deployments/qwen3_v2_g0/registration-proposal-v2.toml`,
   SHA-256
-  `4f5ad58d58c1c10e9e352d66f6cf8655977e6fdbe0913cac53fd53cb293cdae1`;
+  `957fef1c0569c1dc3c1c9644e9be58c7ba5b3c2177c4f91249e383e10157aab1`;
 - preflight-only proposal:
   `/home/del6500/projects/OPD/deployments/qwen3_v2_gpu_preflight/registration-proposal-v2.toml`,
   SHA-256
-  `275035b96e9927de7b7df601e675665789562af0e45fc44a7c8f682a8392217c`.
+  `bdf8a0101d8eae1e3ccfaebfc10f55ed82b35c193289a3469dbc3d634a6d0d5b`.
 
-They declare `enabled = false`. A read-only 2026-09-05 query of the current
-central repository parsed OPD as installed and disabled with the expected
-three tasks and fixed two-GPU shapes. Its current `opd.toml` SHA-256 is
-`61589533abc9d49b3bcb60e7898976eef9111199d79d21fe16e8fded45a66a74`;
-it differs from the full proposal only in older notes and omission of the two
-explicit `gpu_count_policy = "fixed"` declarations, which the parser currently
-defaults to fixed. A central operator must still review/install the exact
-current disabled proposal. Live service state was not verified because the
-project session could not connect to the user service bus; no central state was
-changed.
+A read-only check on 2026-09-05 shows that central
+`config/projects/opd.toml` is still the disabled Candidate D fixed-two-GPU
+registration at SHA-256
+`4f5ad58d58c1c10e9e352d66f6cf8655977e6fdbe0913cac53fd53cb293cdae1`.
+Candidate E has not been installed or enabled centrally.
 
-Normal generated requests contain only the project/task/priority/fresh job ID
-and scientific identities `workflow_id`, `plan_sha256`, and `unit_id`; they
-omit `execution_profile`, `resources`, GPU count, device, memory, utilization,
-and exclusivity fields.
-
-The old preflight outbox file still exists at
+The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
-with SHA-256
-`b4d3322ad96145a0de8e07eb686172373bbbf3d269a0c3bcb0fcfb061ae70536`.
-It was never submitted, is permanently stale because it predates candidates C
-and D, and must not be submitted, edited, or reused. No candidate D request or
-G0 request exists. File existence is not submission.
-
-The prior successful two-GPU preflight remains valid evidence for the older
-implementation substrate only. Its job was
-`opd-23f0d147b3eae04a4a6b402f54e18948`; report SHA-256 was
-`c0a8d1dcf66cb278eb522ccba21382728cbe72651496cc0bf2599a7bd386b3b3`
-and completion SHA-256 was
-`85951e88006a7a2881eb4c4fb0bdbf29a130014c4a22bf75a53303e3ab03bdc2`.
-Because candidate D changes handlers and lineage logic, a fresh accepted-lineage
-preflight must run and pass before a G0 request can be created.
+still must not be submitted, edited, or reused. No Candidate E preflight or G0
+request exists. The builders currently and correctly reject generation because
+the amendment is proposed and the checkout is dirty; file existence would not
+constitute submission in any event.
 
 ## Required next gates
 
-1. The user commits this allowed handoff-only post-acceptance state update so
-   request generation can start from a clean accepted lineage.
-2. A central operator reviews/installs the current proposal while keeping it
-   disabled.
-3. The user separately approves central registration enablement, and the
-   central operator enables/deploys it.
-4. From a clean accepted lineage, prepare exactly one fresh two-GPU preflight
-   request; report its absolute path, SHA-256, fresh job ID, project HEAD,
-   worktree state, and tests. A central operator validates and submits that
-   exact file.
-5. Follow the preflight to terminal state and accept it only through OPD's
-   semantic completion validator.
-6. From the same clean accepted lineage, prepare one fresh G0 request bound to
-   that accepted preflight. A central operator validates/submits it only after
-   separate G0 approval.
+1. The user creates one clean Candidate E implementation commit containing the
+   proposed amendment and this handoff.
+2. A separate independent scientific review accepts or rejects that exact
+   implementation. Acceptance changes only the amendment review block (and,
+   if necessary, this handoff), binds the new implementation commit, and is
+   committed separately.
+3. A central ServerScheduler operator reviews and installs the full Candidate E
+   proposal while keeping `enabled = false`.
+4. The user separately approves central enablement; the operator enables it.
+5. Central validation arranges distinct real preflight attempts covering world
+   sizes 1, 2, 3, and 4. Normal project requests remain count-neutral and may
+   not force those allocations. Every report and completion must pass the OPD
+   semantic validator and share the accepted implementation lineage.
+6. Only after that matrix is present may OPD generate one fresh G0 request. Its
+   absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
+   results must be reported; a central operator then validates and submits that
+   exact file under a separate G0 approval.
 
-Until gates 1-5 complete, no Qwen3-v2 G0 job may be submitted.
+Until gates 1-5 complete, no Candidate E G0 request can be generated or
+submitted. This is an approval and real-GPU-evidence boundary, not a remaining
+static implementation defect.
 
 ## Quarantined legacy scheduler surface
 
-The unsupported legacy inventory remains unchanged: 20 files under
-`scripts/slurm`, eight launch/supervision files under `scripts/production`, and
-three Python pilot/finalizer modules listed in
+The unsupported inventory remains: 20 files under `scripts/slurm`, eight
+launch/supervision files under `scripts/production`, and three Python
+pilot/finalizer modules listed in
 `docs/refactor/legacy_scheduler_inventory.md`. They are not reachable from the
 ServerScheduler handler registry and are not supported execution paths. No
-local service/timer/socket exists in the repository. Deletion remains a
-separate cleanup requiring caller cutover, work drain, rollback evidence,
-external operator inventory, and explicit user approval.
+local scheduler, queue, lock, lease, Screen/tmux fan-out, background daemon,
+service, timer, or socket was introduced. Deletion remains a separately
+approved cleanup after caller and external-operator inventory.
 
 ## Documentation map
 
 - Operating rules: `AGENTS.md`
-- G0 amendment: `prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`
-- G0 review notes: `docs/refactor/qwen3_v2_g0_2gpu_amendment_review.md`
+- Candidate E amendment: `prereg/amendments/qwen3_v2_g0_elastic_v1.yaml`
 - GPU pilot contract: `docs/refactor/qwen3_v2_gpu_preflight_pilot.md`
 - Legacy inventory: `docs/refactor/legacy_scheduler_inventory.md`
+- Historical Candidate D amendment:
+  `prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml`

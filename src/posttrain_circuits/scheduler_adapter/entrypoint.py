@@ -63,7 +63,7 @@ def main(
         ) as prepared:
             configure_thread_environment(
                 cpu_cores=manifest.allocation.cpu_cores,
-                process_count=prepared.profile.process_count,
+                process_count=prepared.profile.process_count_for(manifest),
                 environ=environment,
             )
 

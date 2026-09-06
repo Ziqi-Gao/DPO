@@ -72,7 +72,7 @@ def test_experiment_resolves_dependencies(experiment: str, state_source: str, su
 
 @pytest.mark.unit
 def test_conflicting_explicit_dependency_override_is_rejected() -> None:
-    with pytest.raises(ValueError, match="requires state_source=fixed_bank"):
+    with pytest.raises(ValueError, match="resolved method config differs from MethodSpec"):
         compose_config(
             ["experiment=offline_hard", "state_source=current_policy"],
             config_root=Path("configs"),

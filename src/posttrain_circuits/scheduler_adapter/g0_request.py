@@ -1,4 +1,4 @@
-"""Prepare a scientific-only fixed Qwen3-v2 two-GPU G0 request."""
+"""Prepare a scientific-only, allocation-neutral Qwen3-v2 G0 request."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
 from posttrain_circuits.artifacts.hashing import sha256_value
@@ -22,7 +22,7 @@ from posttrain_circuits.artifacts.protocol_amendments import (
     load_protocol_amendment_bytes,
     resolve_accepted_protocol_amendment,
     validate_accepted_lineage_commit,
-    validate_two_gpu_g0_config,
+    validate_elastic_g0_config,
 )
 from posttrain_circuits.scheduler_adapter.config_resolver import ConfigBindingResolver
 from posttrain_circuits.scheduler_adapter.content_store import ContentStore
@@ -31,25 +31,26 @@ from posttrain_circuits.scheduler_adapter.outbox import prepare_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.plan_store import publish_workflow_plan
 from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
+    ALLOWED_GPU_COUNTS,
     ARTIFACT_NAMESPACE,
-    GPU_COUNT,
-    GPU_PREFLIGHT_COMPLETION_CONTENT_NAME,
-    GPU_PREFLIGHT_REPORT_CONTENT_NAME,
+    BATCH_PARTITION_PROTOCOL,
     MODEL_REVISION,
     OUTPUT_NAMES,
     PREREG_CONTENT_NAME,
     PROTOCOL_AMENDMENT_CONTENT_NAME,
-    PROFILE_NAME,
     TASK_NAME,
     TEACHER_REVISION,
     TOKENIZER_FINGERPRINT,
     UNIT_ID,
     WORKFLOW_ID,
+    gpu_preflight_completion_content_name,
+    gpu_preflight_report_content_name,
 )
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
     GATE_NAMES as PREFLIGHT_GATES,
     PROFILE_NAME as PREFLIGHT_PROFILE,
     _validate_report as validate_gpu_preflight_report,
+    validate_preflight_workflow_id,
 )
 from posttrain_circuits.scheduler_adapter.secure_files import read_regular_file_nofollow
 from posttrain_circuits.workflows.contracts import ContentIdentity, WorkflowPlan, WorkflowUnit
@@ -89,6 +90,9 @@ PREFLIGHT_COMPLETION_FIELDS = frozenset(
 
 @dataclass(frozen=True)
 class GpuPreflightEvidence:
+    world_size: int
+    allocation_sha256: str
+    workflow_id: str
     report_raw: bytes
     report_file_sha256: str
     completion_raw: bytes
@@ -169,13 +173,17 @@ def _strict_json(raw: bytes, *, context: str) -> dict[str, Any]:
 
 def validate_gpu_preflight_evidence(
     *,
+    expected_world_size: int,
     report_path: Path,
     completion_path: Path,
     current_git_commit: str,
     code_root: Path,
     amendment: Any,
 ) -> GpuPreflightEvidence:
-    """Require one successful preflight from the accepted implementation lineage."""
+    """Require one count-specific preflight from the accepted implementation lineage."""
+
+    if expected_world_size not in ALLOWED_GPU_COUNTS:
+        raise AdapterValidationError("GPU preflight expected world size is outside 1..4")
 
     report_raw, report_file_sha256 = read_regular_file_nofollow(
         report_path,
@@ -193,11 +201,6 @@ def validate_gpu_preflight_evidence(
     preregistration_sha256 = report.get("prereg_sha256")
     if not isinstance(resolved_config_sha256, str) or not isinstance(preregistration_sha256, str):
         raise AdapterValidationError("GPU preflight report lacks config/preregistration bindings")
-    validate_gpu_preflight_report(
-        report,
-        resolved_config_sha256=resolved_config_sha256,
-        preregistration_sha256=preregistration_sha256,
-    )
     if set(completion) != PREFLIGHT_COMPLETION_FIELDS:
         raise AdapterValidationError(
             "GPU preflight completion fields differ from the published contract"
@@ -212,17 +215,25 @@ def validate_gpu_preflight_evidence(
     execution = completion.get("execution")
     output_files = completion.get("output_files")
     input_hashes = completion.get("input_hashes")
+    if not isinstance(execution, dict):
+        raise AdapterValidationError("GPU preflight completion execution is invalid")
+    validate_gpu_preflight_report(
+        report,
+        resolved_config_sha256=resolved_config_sha256,
+        preregistration_sha256=preregistration_sha256,
+        completion_execution=execution,
+    )
     if (
         completion.get("schema_version") != 1
         or completion.get("completion_kind") != "scientific"
         or completion.get("project") != "OPD"
         or completion.get("task") != "qwen3_v2_gpu_preflight"
-        or completion.get("workflow_id") != "qwen3-v2-gpu-preflight-v1"
+        or validate_preflight_workflow_id(completion.get("workflow_id"))
+        != completion.get("workflow_id")
         or completion.get("unit_id") != "gpu-preflight"
         or not isinstance(gates, dict)
         or tuple(sorted(gates)) != PREFLIGHT_GATES
         or any(value is not True for value in gates.values())
-        or not isinstance(execution, dict)
         or execution.get("execution_profile") != PREFLIGHT_PROFILE
         or not isinstance(output_files, dict)
         or len(output_files) != 1
@@ -252,7 +263,23 @@ def validate_gpu_preflight_evidence(
         raise AdapterValidationError(
             f"G0 GPU preflight implementation lineage is invalid: {error}"
         ) from error
+    world_size = report.get("world_size")
+    allocation_sha256 = execution.get("allocation_sha256")
+    if world_size != expected_world_size:
+        raise AdapterValidationError(
+            "GPU preflight report is filed under a different world size"
+        )
+    if (
+        not isinstance(allocation_sha256, str)
+        or len(allocation_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in allocation_sha256)
+    ):
+        raise AdapterValidationError("GPU preflight lacks an allocation identity")
+    workflow_id = validate_preflight_workflow_id(completion.get("workflow_id"))
     return GpuPreflightEvidence(
+        world_size=world_size,
+        allocation_sha256=allocation_sha256,
+        workflow_id=workflow_id,
         report_raw=report_raw,
         report_file_sha256=report_file_sha256,
         completion_raw=completion_raw,
@@ -264,13 +291,11 @@ def validate_gpu_preflight_evidence(
 def fixed_resolved_config(
     *,
     code_commit: str,
-    gpu_preflight_report_sha256: str,
-    gpu_preflight_completion_sha256: str,
-    gpu_preflight_git_commit: str,
+    gpu_preflight_evidence: Mapping[int, GpuPreflightEvidence],
     protocol_amendment_sha256: str,
     reviewed_implementation_commit: str,
 ) -> dict[str, Any]:
-    """Return the complete reviewed G0 configuration plus prerequisite identities."""
+    """Return reviewed scientific configuration without allocation steering."""
 
     if not GIT_COMMIT.fullmatch(code_commit):
         raise AdapterValidationError("G0 code_commit is not a Git identity")
@@ -281,22 +306,39 @@ def fixed_resolved_config(
         raise AdapterValidationError("G0 protocol amendment is not a SHA-256 identity")
     if not GIT_COMMIT.fullmatch(reviewed_implementation_commit):
         raise AdapterValidationError("G0 reviewed implementation is not a Git identity")
-    if not GIT_COMMIT.fullmatch(gpu_preflight_git_commit):
-        raise AdapterValidationError("G0 GPU preflight is not a Git identity")
-    if reviewed_implementation_commit in {code_commit, gpu_preflight_git_commit}:
+    if set(gpu_preflight_evidence) != set(ALLOWED_GPU_COUNTS):
+        raise AdapterValidationError("G0 requires one preflight for each world size 1..4")
+    if any(
+        evidence.world_size != world_size
+        or GIT_COMMIT.fullmatch(evidence.git_commit) is None
+        for world_size, evidence in gpu_preflight_evidence.items()
+    ):
+        raise AdapterValidationError("G0 GPU preflight matrix has invalid identities")
+    if reviewed_implementation_commit == code_commit or any(
+        reviewed_implementation_commit == evidence.git_commit
+        for evidence in gpu_preflight_evidence.values()
+    ):
         raise AdapterValidationError("G0 reviewed implementation binding is self-referential")
     from posttrain_circuits.core.config import compose_config
 
     config = compose_config(list(BASE_CONFIG_OVERRIDES))
     config["scheduler_g0"] = {
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "artifact_namespace": ARTIFACT_NAMESPACE,
+        "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
         "request_git_commit": code_commit,
-        "execution_profile": PROFILE_NAME,
-        "gpu_preflight_git_commit": gpu_preflight_git_commit,
-        "gpu_preflight_completion_sha256": gpu_preflight_completion_sha256,
-        "gpu_preflight_report_sha256": gpu_preflight_report_sha256,
+        "gpu_preflight_matrix": {
+            str(world_size): {
+                "allocation_sha256": evidence.allocation_sha256,
+                "completion_sha256": evidence.completion_file_sha256,
+                "git_commit": evidence.git_commit,
+                "report_sha256": evidence.report_file_sha256,
+                "workflow_id": evidence.workflow_id,
+                "world_size": world_size,
+            }
+            for world_size, evidence in sorted(gpu_preflight_evidence.items())
+        },
         "model_revision": MODEL_REVISION,
-        "process_count": GPU_COUNT,
         "protocol_amendment_id": AMENDMENT_ID,
         "protocol_amendment_sha256": protocol_amendment_sha256,
         "reviewed_implementation_commit": reviewed_implementation_commit,
@@ -370,10 +412,10 @@ def _projections(
 def build_qwen3_v2_g0_plan(
     *,
     layout: WorkflowLayout,
-    gpu_preflight_report: Path,
-    gpu_preflight_completion: Path,
+    gpu_preflight_reports: Mapping[int, Path],
+    gpu_preflight_completions: Mapping[int, Path],
 ) -> WorkflowPlan:
-    """Materialize one accepted-lineage preflight-bound G0 plan in OPD file CAS."""
+    """Materialize one accepted-lineage four-count preflight-bound G0 plan."""
 
     layout.validate()
     code_commit = _require_clean_checkout(layout.code_root)
@@ -382,13 +424,33 @@ def build_qwen3_v2_g0_plan(
         configured_path=str(AMENDMENT_RELATIVE_PATH),
         expected_head=code_commit,
     )
-    evidence = validate_gpu_preflight_evidence(
-        report_path=gpu_preflight_report,
-        completion_path=gpu_preflight_completion,
-        current_git_commit=code_commit,
-        code_root=layout.code_root,
-        amendment=amendment,
-    )
+    if (
+        set(gpu_preflight_reports) != set(ALLOWED_GPU_COUNTS)
+        or set(gpu_preflight_completions) != set(ALLOWED_GPU_COUNTS)
+    ):
+        raise AdapterValidationError(
+            "G0 request requires report/completion paths for world sizes 1..4"
+        )
+    evidence = {
+        world_size: validate_gpu_preflight_evidence(
+            expected_world_size=world_size,
+            report_path=gpu_preflight_reports[world_size],
+            completion_path=gpu_preflight_completions[world_size],
+            current_git_commit=code_commit,
+            code_root=layout.code_root,
+            amendment=amendment,
+        )
+        for world_size in ALLOWED_GPU_COUNTS
+    }
+    if (
+        len({item.report_file_sha256 for item in evidence.values()}) != 4
+        or len({item.completion_file_sha256 for item in evidence.values()}) != 4
+        or len({item.allocation_sha256 for item in evidence.values()}) != 4
+        or len({item.workflow_id for item in evidence.values()}) != 4
+    ):
+        raise AdapterValidationError(
+            "G0 preflight matrix must use distinct workflows, reports, completions, and allocations"
+        )
     prereg_path = layout.code_root / PREREG_RELATIVE_PATH
     prereg_raw, prereg_sha256 = read_regular_file_nofollow(
         prereg_path,
@@ -397,7 +459,7 @@ def build_qwen3_v2_g0_plan(
     )
     amendment_raw, amendment_sha256 = read_regular_file_nofollow(
         amendment.path,
-        context="accepted Qwen3-v2 two-GPU G0 amendment",
+        context="accepted Qwen3-v2 scheduler-managed G0 amendment",
         max_bytes=4 * 1024 * 1024,
     )
     if amendment_sha256 != amendment.sha256:
@@ -407,21 +469,24 @@ def build_qwen3_v2_g0_plan(
         raise AdapterValidationError("G0 protocol amendment remains unaccepted")
     config = fixed_resolved_config(
         code_commit=code_commit,
-        gpu_preflight_report_sha256=evidence.report_file_sha256,
-        gpu_preflight_completion_sha256=evidence.completion_file_sha256,
-        gpu_preflight_git_commit=evidence.git_commit,
+        gpu_preflight_evidence=evidence,
         protocol_amendment_sha256=amendment.sha256,
         reviewed_implementation_commit=amendment.reviewed_implementation_commit,
     )
-    validate_two_gpu_g0_config(config, amendment_payload)
+    validate_elastic_g0_config(config, amendment_payload)
     execution_context = {
-        "distributed_process_count": GPU_COUNT,
-        "execution_profile": PROFILE_NAME,
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "scheduler_protocol": 2,
     }
     input_artifact_hashes = {
-        "gpu_preflight_completion": evidence.completion_file_sha256,
-        "gpu_preflight_report": evidence.report_file_sha256,
+        **{
+            f"gpu_preflight_w{world_size}_completion": item.completion_file_sha256
+            for world_size, item in evidence.items()
+        },
+        **{
+            f"gpu_preflight_w{world_size}_report": item.report_file_sha256
+            for world_size, item in evidence.items()
+        },
         "prereg_path": prereg_sha256,
         "protocol_amendment_path": amendment.sha256,
     }
@@ -441,15 +506,21 @@ def build_qwen3_v2_g0_plan(
     file_inputs = (
         (PREREG_CONTENT_NAME, prereg_sha256, prereg_raw),
         (PROTOCOL_AMENDMENT_CONTENT_NAME, amendment.sha256, amendment_raw),
-        (
-            GPU_PREFLIGHT_REPORT_CONTENT_NAME,
-            evidence.report_file_sha256,
-            evidence.report_raw,
-        ),
-        (
-            GPU_PREFLIGHT_COMPLETION_CONTENT_NAME,
-            evidence.completion_file_sha256,
-            evidence.completion_raw,
+        *tuple(
+            row
+            for world_size, item in sorted(evidence.items())
+            for row in (
+                (
+                    gpu_preflight_completion_content_name(world_size),
+                    item.completion_file_sha256,
+                    item.completion_raw,
+                ),
+                (
+                    gpu_preflight_report_content_name(world_size),
+                    item.report_file_sha256,
+                    item.report_raw,
+                ),
+            )
         ),
     )
     identities = list(config_identities.as_tuple())
@@ -473,15 +544,15 @@ def build_qwen3_v2_g0_plan(
 def prepare_qwen3_v2_g0_request(
     *,
     layout: WorkflowLayout,
-    gpu_preflight_report: Path,
-    gpu_preflight_completion: Path,
+    gpu_preflight_reports: Mapping[int, Path],
+    gpu_preflight_completions: Mapping[int, Path],
 ) -> PreparedG0Request:
     """Publish one immutable plan and fresh outbox request; never submit or poll."""
 
     plan = build_qwen3_v2_g0_plan(
         layout=layout,
-        gpu_preflight_report=gpu_preflight_report,
-        gpu_preflight_completion=gpu_preflight_completion,
+        gpu_preflight_reports=gpu_preflight_reports,
+        gpu_preflight_completions=gpu_preflight_completions,
     )
     plan_path = publish_workflow_plan(plan, layout=layout)
     outbox_path = prepare_outbox_request(
@@ -500,13 +571,24 @@ def prepare_qwen3_v2_g0_request(
 
 def main() -> int:
     parser = argparse.ArgumentParser(allow_abbrev=False)
-    parser.add_argument("--gpu-preflight-report", type=Path, required=True)
-    parser.add_argument("--gpu-preflight-completion", type=Path, required=True)
+    for world_size in ALLOWED_GPU_COUNTS:
+        parser.add_argument(
+            f"--gpu-preflight-w{world_size}-report", type=Path, required=True
+        )
+        parser.add_argument(
+            f"--gpu-preflight-w{world_size}-completion", type=Path, required=True
+        )
     args = parser.parse_args()
     receipt = prepare_qwen3_v2_g0_request(
         layout=WorkflowLayout.production(),
-        gpu_preflight_report=args.gpu_preflight_report,
-        gpu_preflight_completion=args.gpu_preflight_completion,
+        gpu_preflight_reports={
+            world_size: getattr(args, f"gpu_preflight_w{world_size}_report")
+            for world_size in ALLOWED_GPU_COUNTS
+        },
+        gpu_preflight_completions={
+            world_size: getattr(args, f"gpu_preflight_w{world_size}_completion")
+            for world_size in ALLOWED_GPU_COUNTS
+        },
     )
     print(json.dumps(receipt.to_payload(), indent=2, sort_keys=True))
     return 0

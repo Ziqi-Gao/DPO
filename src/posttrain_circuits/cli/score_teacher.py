@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from posttrain_circuits.artifacts.compatibility import ROLLOUT_GENERATION_VERSION
+from posttrain_circuits.artifacts.runs import (
+    PROTOCOL_AMENDMENT_BINDING_FIELDS,
+    formal_artifact_binding,
+)
 from posttrain_circuits.cli._common import (
     dry_run_report,
     print_json,
@@ -25,6 +29,66 @@ from posttrain_circuits.utils.tiny_model import (
     build_tiny_qwen,
     build_tiny_tokenizer,
 )
+
+
+_FORMAL_SOURCE_BINDING_FIELDS = (
+    "protocol_track",
+    "artifact_namespace",
+    "model_revision",
+    "teacher_revision",
+    "tokenizer_revision",
+    "tokenizer_fingerprint",
+    "chat_template_sha256",
+    "prompt_protocol",
+    "enable_thinking",
+    "code_commit",
+    "prereg_path",
+    "prereg_version",
+    "prereg_commit",
+    "prereg_sha256",
+    *PROTOCOL_AMENDMENT_BINDING_FIELDS,
+)
+
+
+def _override_key(override: str) -> str:
+    return override.split("=", 1)[0]
+
+
+def _compose_score_teacher_config(overrides: list[str]) -> dict[str, Any]:
+    """Ignore the generation-only candidate count for a fixed rollout bank."""
+
+    candidate_key = "state_source.num_candidates"
+    filtered = [override for override in overrides if _override_key(override) != candidate_key]
+    if len(filtered) == len(overrides):
+        return compose_config(overrides)
+    candidate = compose_config(filtered)
+    if candidate.get("state_source", {}).get("name") == "fixed_bank":
+        return candidate
+    # Non-fixed sources own this field, so compose the original request and
+    # preserve normal unknown-key validation.
+    return compose_config(overrides)
+
+
+def _source_formal_metadata(
+    source_manifest: dict[str, Any],
+    *,
+    expected: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate and propagate the complete producer binding when applicable."""
+
+    if expected is not None:
+        mismatches = {
+            key: {"expected": value, "observed": source_manifest.get(key)}
+            for key, value in expected.items()
+            if source_manifest.get(key) != value
+        }
+        if mismatches:
+            raise ValueError(f"rollout-bank formal binding mismatch: {mismatches}")
+    return {
+        key: source_manifest[key]
+        for key in _FORMAL_SOURCE_BINDING_FIELDS
+        if key in source_manifest
+    }
 
 
 def _score(
@@ -58,7 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirm-production", action="store_true")
     args = parser.parse_args(argv)
-    config = compose_config(args.overrides)
+    config = _compose_score_teacher_config(args.overrides)
     production = is_production_scale(config)
     if args.dry_run:
         dry_run_report(config, args.output)
@@ -73,7 +137,9 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError("production teacher scoring requires --bank")
         source_store = TrajectoryStore(args.bank)
         source_manifest = source_store.check_integrity()
+        expected_formal = None
         if str(config.get("protocol_track", "")).startswith("qwen3_"):
+            expected_formal = formal_artifact_binding(config)
             expected_source = {
                 "protocol_track": config["protocol_track"],
                 "artifact_namespace": config["model"]["artifact_namespace"],
@@ -94,6 +160,10 @@ def main(argv: list[str] | None = None) -> None:
                 }
             if mismatches:
                 raise ValueError(f"Qwen3 refused stale/cross-model rollout bank: {mismatches}")
+        source_formal_metadata = _source_formal_metadata(
+            source_manifest,
+            expected=expected_formal,
+        )
         records = source_store.read()
         loaded = load_model_and_tokenizer(
             config["teacher"],
@@ -131,6 +201,7 @@ def main(argv: list[str] | None = None) -> None:
         teacher_revision = "local-random-v1"
         teacher_commit = teacher_revision
         tokenizer_hash = tokenizer_fingerprint(tokenizer)
+        source_formal_metadata = _source_formal_metadata(source_manifest)
 
     supervision = config["supervision"]
     top_k = min(
@@ -175,19 +246,7 @@ def main(argv: list[str] | None = None) -> None:
             "prompt_protocol": str(source_manifest["prompt_protocol"]),
             "enable_thinking": bool(source_manifest["enable_thinking"]),
             "chat_template_sha256": str(source_manifest["chat_template_sha256"]),
-            **{
-                key: source_manifest[key]
-                for key in (
-                    "prereg_path",
-                    "prereg_version",
-                    "prereg_commit",
-                    "prereg_sha256",
-                    "code_commit",
-                    "model_revision",
-                    "tokenizer_revision",
-                )
-                if key in source_manifest
-            },
+            **source_formal_metadata,
         },
     )
     print_json(

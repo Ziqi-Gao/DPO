@@ -10,7 +10,10 @@ import torch
 
 from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.artifacts.io import atomic_write_json
-from posttrain_circuits.artifacts.runs import git_output, resolve_preregistration
+from posttrain_circuits.artifacts.runs import (
+    PROTOCOL_AMENDMENT_BINDING_FIELDS,
+    formal_artifact_binding,
+)
 from posttrain_circuits.causal_circuits.metrics.probes import (
     CircuitProbeSpec,
     build_semantic_probe_specs,
@@ -187,7 +190,7 @@ def main(argv: list[str] | None = None) -> None:
     thresholds = TeacherReadinessThresholds(
         **{field: float(threshold_cfg[field]) for field in asdict(TeacherReadinessThresholds())}
     )
-    prereg = resolve_preregistration(config)
+    formal_binding = formal_artifact_binding(config)
     bindings = {
         "protocol_track": str(config["protocol_track"]),
         "artifact_namespace": str(config["model"]["artifact_namespace"]),
@@ -206,11 +209,16 @@ def main(argv: list[str] | None = None) -> None:
             family.boundary("validation")["examples_file_sha256"]
         ),
         "prefix_probe_hash": str(tokenized_manifest["sha256"]),
-        "code_commit": git_output(["rev-parse", "HEAD"]) or "unavailable",
-        "prereg_path": str(prereg.path),
-        "prereg_version": prereg.version,
-        "prereg_commit": prereg.git_commit,
-        "prereg_sha256": prereg.sha256,
+        "code_commit": formal_binding["code_commit"],
+        "prereg_path": formal_binding["prereg_path"],
+        "prereg_version": formal_binding["prereg_version"],
+        "prereg_commit": formal_binding["prereg_commit"],
+        "prereg_sha256": formal_binding["prereg_sha256"],
+        **{
+            key: formal_binding[key]
+            for key in PROTOCOL_AMENDMENT_BINDING_FIELDS
+            if key in formal_binding
+        },
     }
     artifact = evaluate_teacher_readiness(
         examples,

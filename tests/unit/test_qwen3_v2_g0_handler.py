@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -12,7 +14,11 @@ from posttrain_circuits.artifacts.protocol_amendments import (
     AMENDMENT_RELATIVE_PATH,
     load_protocol_amendment_bytes,
 )
-from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import GATE_NAMES, PROFILE_NAME
+from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
+    GATE_NAMES,
+    PROFILE_NAME,
+    WORKFLOW_ID,
+)
 from posttrain_circuits.scheduler_adapter.registry import require_handler
 
 
@@ -61,20 +67,151 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         self.assertIn(proposed_review, proposed)
         return proposed, proposed.replace(proposed_review, accepted_review)
 
-    def test_stage_plan_is_exactly_two_gpu_and_foreground(self) -> None:
+    def test_stage_plan_is_dynamic_and_foreground(self) -> None:
         root = Path("/scr/del6500/OPD/tmp/test-qwen3-v2-g0/qwen3-v2")
-        stages = self.module._stage_plan(root, initial_checkpoint_sha256="a" * 64)
-        self.assertEqual(len(stages), 19)
-        self.assertEqual(stages[0].name, "build_splits")
-        self.assertEqual(stages[-1].name, "finalize_g0")
-        self.assertEqual(
-            [stage.name for stage in stages if stage.distributed],
-            ["calibration_sft", "resume_a", "resume_b"],
-        )
-        compare = next(stage for stage in stages if stage.name == "compare_distributed_resume")
-        self.assertIn("2", compare.argv)
-        self.assertEqual(self.module.GPU_COUNT, 2)
-        self.assertEqual(self.module.THREADS_PER_RANK, 8)
+        for gpu_count, threads in ((1, 24), (2, 12), (3, 8), (4, 6)):
+            stages = self.module._stage_plan(
+                root,
+                initial_checkpoint_sha256="a" * 64,
+                gpu_count=gpu_count,
+            )
+            self.assertEqual(len(stages), 19)
+            self.assertEqual(stages[0].name, "build_splits")
+            self.assertEqual(stages[-1].name, "finalize_g0")
+            finalizer = stages[-1]
+            self.assertNotIn("--compatibility", finalizer.argv)
+            final_compatibility_index = finalizer.argv.index(
+                "--final-compatibility"
+            ) + 1
+            process_compatibility_index = finalizer.argv.index(
+                "--process-compatibility"
+            ) + 1
+            self.assertEqual(
+                finalizer.argv[final_compatibility_index],
+                str(
+                    root
+                    / "circuits"
+                    / "final_answer"
+                    / "mib_raw"
+                    / "compatibility.json"
+                ),
+            )
+            self.assertEqual(
+                finalizer.argv[process_compatibility_index],
+                str(
+                    root
+                    / "circuits"
+                    / "first_rule_selection"
+                    / "mib_raw"
+                    / "compatibility.json"
+                ),
+            )
+            self.assertEqual(
+                [stage.name for stage in stages if stage.distributed],
+                ["calibration_sft", "resume_a", "resume_b"],
+            )
+            compare = next(
+                stage for stage in stages if stage.name == "compare_distributed_resume"
+            )
+            world_size_index = compare.argv.index("--world-size") + 1
+            self.assertEqual(compare.argv[world_size_index], str(gpu_count))
+            score = next(
+                stage for stage in stages if stage.name == "score_probe_candidates"
+            )
+            score_world_size_index = score.argv.index("--world-size") + 1
+            self.assertEqual(score.argv[score_world_size_index], str(gpu_count))
+            self.assertEqual(self.module.THREADS_PER_RANK[gpu_count], threads)
+
+    def test_checkpoint_placeholders_are_not_erased_before_resume_runs_exist(self) -> None:
+        with tempfile.TemporaryDirectory(prefix=".g0-placeholders-", dir=PROJECT_ROOT) as raw:
+            root = Path(raw) / "qwen3-v2"
+            calibration = root / "calibration"
+            calibration.mkdir(parents=True)
+            (calibration / "manifest.json").write_text("{}", encoding="utf-8")
+            placeholders = tuple(
+                str(root / name / "FINAL_CHECKPOINT")
+                for name in ("calibration", "resume-a", "resume-b")
+            )
+            stages = (
+                self.module.Stage("probe", "probe", placeholders),
+            )
+
+            def resolved(run_root: Path) -> Path:
+                return run_root / "checkpoints" / "step-final.pt"
+
+            with mock.patch.object(
+                self.module,
+                "_resolve_final_checkpoint",
+                side_effect=resolved,
+            ):
+                after_calibration = self.module._replace_checkpoint_placeholders(
+                    stages,
+                    root,
+                )
+                self.assertEqual(
+                    after_calibration[0].argv,
+                    (
+                        str(resolved(calibration)),
+                        placeholders[1],
+                        placeholders[2],
+                    ),
+                )
+                for name in ("resume-a", "resume-b"):
+                    run_root = root / name
+                    run_root.mkdir()
+                    (run_root / "manifest.json").write_text("{}", encoding="utf-8")
+                after_resumes = self.module._replace_checkpoint_placeholders(
+                    after_calibration,
+                    root,
+                )
+            self.assertEqual(
+                after_resumes[0].argv,
+                tuple(
+                    str(resolved(root / name))
+                    for name in ("calibration", "resume-a", "resume-b")
+                ),
+            )
+
+    def test_final_checkpoint_resolver_rejects_manifest_and_path_tampering(self) -> None:
+        with tempfile.TemporaryDirectory(prefix=".g0-checkpoint-", dir=PROJECT_ROOT) as raw:
+            run_root = Path(raw) / "calibration"
+            checkpoints = run_root / "checkpoints"
+            checkpoints.mkdir(parents=True)
+            checkpoint = checkpoints / "step-00000020.pt"
+            checkpoint.write_bytes(b"checkpoint")
+
+            def write_manifest(path: Path, digest: str) -> None:
+                payload = {
+                    "final_checkpoint_path": str(path),
+                    "final_checkpoint_sha256": digest,
+                }
+                payload["sha256"] = self.module._sha256_value(payload)
+                (run_root / "manifest.json").write_text(
+                    json.dumps(payload),
+                    encoding="utf-8",
+                )
+
+            digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+            write_manifest(checkpoint, digest)
+            self.assertEqual(self.module._resolve_final_checkpoint(run_root), checkpoint)
+
+            payload = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+            payload["sha256"] = "0" * 64
+            (run_root / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(self.module.G0Error, "manifest SHA-256"):
+                self.module._resolve_final_checkpoint(run_root)
+
+            outside = Path(raw) / "outside.pt"
+            outside.write_bytes(b"checkpoint")
+            write_manifest(outside, digest)
+            with self.assertRaisesRegex(self.module.G0Error, "binding"):
+                self.module._resolve_final_checkpoint(run_root)
+
+            linked = checkpoints / "linked.pt"
+            linked.symlink_to(checkpoint.name)
+            write_manifest(linked, digest)
+            with self.assertRaisesRegex(self.module.G0Error, "binding"):
+                self.module._resolve_final_checkpoint(run_root)
 
     def test_handler_has_no_host_gpu_selection_or_scheduler_control(self) -> None:
         source = HANDLER.read_text(encoding="utf-8").lower()
@@ -95,10 +232,12 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
     def test_fixed_environment_preserves_scheduler_visibility(self) -> None:
         handler = require_handler("qwen3_v2_g0")
         profile = handler.profile(PROFILE_NAME)
-        self.assertEqual(profile.process_count, 2)
-        self.assertEqual(profile.cpu_cores_min, 16)
+        self.assertEqual(profile.process_count, 0)
+        self.assertEqual(profile.cpu_cores_min, 24)
         self.assertEqual(profile.memory_mib_min, 196608)
-        self.assertEqual(profile.gpu_count, 2)
+        self.assertEqual(profile.gpu_count, 0)
+        self.assertEqual(profile.gpu_count_policy, "scheduler")
+        self.assertEqual(profile.scheduler_gpu_counts, (1, 2, 3, 4))
         self.assertEqual(dict(handler.fixed_environment), self.module.FIXED_ENVIRONMENT)
         self.assertNotIn("CUDA_VISIBLE_DEVICES", self.module.FIXED_ENVIRONMENT)
         self.assertNotIn("PYTHONDONTWRITEBYTECODE", self.module.FIXED_ENVIRONMENT)
@@ -107,6 +246,30 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             self.module.FIXED_ENVIRONMENT["MIB_REPOSITORY"],
             "/scr/del6500/OPD/vendor/MIB-circuit-track-v1",
         )
+
+    def test_allocation_environment_cross_checks_all_world_sizes(self) -> None:
+        for gpu_count, threads in ((1, 24), (2, 12), (3, 8), (4, 6)):
+            visible = ",".join(f"GPU-{index}" for index in range(gpu_count))
+            environment = {
+                **{key: str(threads) for key in self.module.THREAD_KEYS},
+                "CUDA_VISIBLE_DEVICES": visible,
+            }
+            before = dict(environment)
+            self.assertEqual(
+                self.module._validate_allocation_environment(gpu_count, environment),
+                tuple(visible.split(",")),
+            )
+            self.assertEqual(environment, before)
+        invalid = {
+            **{key: "8" for key in self.module.THREAD_KEYS},
+            "CUDA_VISIBLE_DEVICES": "GPU-0,GPU-1",
+        }
+        with self.assertRaisesRegex(self.module.G0Error, "visibility"):
+            self.module._validate_allocation_environment(3, invalid)
+        invalid["CUDA_VISIBLE_DEVICES"] = "GPU-0,GPU-1,GPU-2"
+        invalid["OMP_NUM_THREADS"] = "7"
+        with self.assertRaisesRegex(self.module.G0Error, "thread"):
+            self.module._validate_allocation_environment(3, invalid)
 
     def test_bytecode_isolation_is_programmatic_pid_unique_and_private(self) -> None:
         old_dont_write = sys.dont_write_bytecode
@@ -144,7 +307,7 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             amendment_git_commit="2" * 40,
             reviewed_implementation_commit="3" * 40,
             request_git_commit="4" * 40,
-            preflight_git_commit="5" * 40,
+            preflight_git_commits=("5" * 40,) * 4,
         )
 
         def bootstrap(**_: object) -> object:
@@ -212,7 +375,7 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             amendment_git_commit="e" * 40,
             reviewed_implementation_commit="f" * 40,
             request_git_commit=request_commit,
-            preflight_git_commit=preflight_commit,
+            preflight_git_commits=(preflight_commit,) * 4,
         )
         imported = mock.Mock()
         imported.main = mock.Mock()
@@ -238,6 +401,12 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             preflight_commit,
             "--amendment-sha256",
             amendment_sha256,
+            "--reviewed-implementation-commit",
+            "f" * 40,
+            "--gpu-count",
+            "3",
+            "--allocation-sha256",
+            "1" * 64,
             "--",
             "scientific-argument",
         ]
@@ -263,6 +432,79 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             self.assertEqual(self.module._scientific_cli(argv), 0)
         self.assertEqual(events, ["bootstrap", "install-source", "project-import"])
         imported.main.assert_called_once_with(["scientific-argument"])
+
+    def test_finalizer_receives_handler_owned_allocation_context(self) -> None:
+        code_commit = "a" * 40
+        request_commit = "b" * 40
+        preflight_commit = "c" * 40
+        implementation_commit = "d" * 40
+        amendment_sha256 = "e" * 64
+        allocation_sha256 = "f" * 64
+        binding = self.module.BootstrapLineage(
+            amendment_sha256=amendment_sha256,
+            amendment_git_commit="1" * 40,
+            reviewed_implementation_commit=implementation_commit,
+            request_git_commit=request_commit,
+            preflight_git_commits=(preflight_commit,) * 4,
+        )
+        imported = mock.Mock()
+        imported.main = mock.Mock()
+        argv = [
+            "finalize_g0",
+            "--code-commit",
+            code_commit,
+            "--request-git-commit",
+            request_commit,
+            "--preflight-git-commit",
+            preflight_commit,
+            "--amendment-sha256",
+            amendment_sha256,
+            "--reviewed-implementation-commit",
+            implementation_commit,
+            "--gpu-count",
+            "3",
+            "--allocation-sha256",
+            allocation_sha256,
+            "--",
+            "scientific-argument",
+        ]
+        with (
+            mock.patch.object(self.module, "_configure_bytecode_isolation"),
+            mock.patch.object(self.module, "_require_clean_git", return_value=code_commit),
+            mock.patch.object(
+                self.module, "_bootstrap_accepted_lineage", return_value=binding
+            ),
+            mock.patch.object(self.module, "_install_source_path"),
+            mock.patch.object(self.module.importlib, "import_module", return_value=imported),
+        ):
+            self.assertEqual(self.module._scientific_cli(argv), 0)
+        call = imported.main.call_args
+        self.assertEqual(call.args, (["scientific-argument"],))
+        context = call.kwargs["scientific_context"]
+        self.assertEqual(context.world_size, 3)
+        self.assertEqual(context.allocation_sha256, allocation_sha256)
+        self.assertEqual(context.request_git_commit, request_commit)
+        self.assertEqual(context.gpu_preflight_git_commit, preflight_commit)
+
+    def test_finalizer_direct_or_tampered_context_fails_closed(self) -> None:
+        from posttrain_circuits.cli.finalize_g0 import (
+            ScientificInvocationContext,
+            main as finalize_g0,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "handler-owned"):
+            finalize_g0([])
+        tampered = ScientificInvocationContext(
+            allocation_sha256="f" * 64,
+            code_commit="a" * 40,
+            gpu_preflight_git_commit="b" * 40,
+            protocol_amendment_sha256="c" * 64,
+            request_git_commit="d" * 40,
+            reviewed_implementation_commit="e" * 40,
+            world_size=5,
+        )
+        with self.assertRaisesRegex(ValueError, "world_size"):
+            finalize_g0([], scientific_context=tampered)
 
     def test_bootstrap_rejects_source_change_even_when_later_reverted(self) -> None:
         implementation = "a" * 40
@@ -403,13 +645,14 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
 
     def test_completion_uses_exact_registered_semantic_gates(self) -> None:
         invocation = self.module.Invocation(
-            workflow_id="qwen3-v2-g0-v1",
+            workflow_id=WORKFLOW_ID,
             plan_sha256="1" * 64,
             unit_id="g0",
             run_id="2" * 64,
             job_id="opd-" + "3" * 32,
             attempt=1,
             execution_profile=PROFILE_NAME,
+            gpu_count=3,
             manifest_sha256="4" * 64,
             allocation_sha256="5" * 64,
             content_handles=tuple(
@@ -495,21 +738,67 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "EAP-IG submodule is unavailable"):
                 _eap_source_root(repository)
 
-    def test_two_gpu_accelerate_config_is_fixed(self) -> None:
-        path = PROJECT_ROOT / "configs" / "accelerate" / "fsdp_2gpu_server_scheduler.yaml"
+    def test_accelerate_config_requires_dynamic_process_count(self) -> None:
+        path = PROJECT_ROOT / "configs" / "accelerate" / "fsdp_server_scheduler.yaml"
         payload = path.read_text(encoding="utf-8")
-        self.assertIn("num_processes: 2", payload)
         self.assertIn("distributed_type: FSDP", payload)
-        self.assertNotIn("num_processes: 4", payload)
+        self.assertNotIn("num_processes:", payload)
+        self.assertIn(
+            "fsdp_transformer_layer_cls_to_wrap: Qwen3DecoderLayer",
+            payload,
+        )
+        self.assertIn("fsdp_use_orig_params: false", payload)
+        source = HANDLER.read_text(encoding="utf-8")
+        self.assertIn('"--num_processes",\n                str(gpu_count)', source)
 
-    def test_two_gpu_protocol_amendment_is_proposed_and_preserves_global_batch(self) -> None:
+    def test_distributed_launch_uses_actual_count_and_preserves_visibility(self) -> None:
+        lineage = self.module.BootstrapLineage(
+            amendment_sha256="1" * 64,
+            amendment_git_commit="2" * 40,
+            reviewed_implementation_commit="3" * 40,
+            request_git_commit="4" * 40,
+            preflight_git_commits=("5" * 40,) * 4,
+        )
+        stage = self.module.Stage(
+            name="train",
+            cli="train",
+            argv=("scientific-argument",),
+            distributed=True,
+        )
+        child_environment = {"CUDA_VISIBLE_DEVICES": "uuid-a,uuid-b,uuid-c"}
+        with (
+            mock.patch.object(
+                self.module, "_child_environment", return_value=child_environment
+            ),
+            mock.patch.object(self.module.subprocess, "run") as run,
+            mock.patch.object(self.module, "_log_phase"),
+        ):
+            self.module._run_stage(
+                stage,
+                script_path="/proc/123/fd/9",
+                job_id="opd-test",
+                bootstrap_lineage=lineage,
+                code_commit="6" * 40,
+                gpu_count=3,
+                allocation_sha256="7" * 64,
+            )
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--num_processes") + 1], "3")
+        self.assertLess(command.index("--num_processes"), command.index("/proc/123/fd/9"))
+        self.assertIs(run.call_args.kwargs["env"], child_environment)
+        self.assertEqual(
+            run.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"],
+            "uuid-a,uuid-b,uuid-c",
+        )
+
+    def test_elastic_protocol_amendment_is_proposed_and_preserves_global_batch(self) -> None:
         amendment = load_protocol_amendment_bytes(
             (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
         )
         self.assertEqual(amendment["review"]["status"], "proposed")
         batch = amendment["batch_token_invariants"]
-        self.assertEqual(batch["amended_gradient_accumulation_steps"], 8)
-        self.assertEqual(batch["effective_global_batch_size"], 64)
+        self.assertEqual(batch["global_logical_batch_size"], 64)
+        self.assertEqual(batch["per_rank_samples_by_world_size"]["3"], [22, 21, 21])
 
     def test_registration_proposal_is_disabled_and_exact(self) -> None:
         path = (
@@ -527,10 +816,10 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         g0 = next(task for task in proposal["tasks"] if task["name"] == "qwen3_v2_g0")
         profile = g0["execution_profiles"][0]
         self.assertEqual(profile["name"], PROFILE_NAME)
-        self.assertEqual(profile["gpu_count_policy"], "fixed")
-        self.assertEqual(profile["gpu_count"], 2)
+        self.assertEqual(profile["gpu_count_policy"], "scheduler")
+        self.assertNotIn("gpu_count", profile)
         self.assertEqual(profile["memory_mib"], 196608)
-        self.assertEqual(profile["estimated_runtime_seconds"], 43200.0)
+        self.assertEqual(profile["estimated_runtime_seconds"], 86400.0)
 
 
 if __name__ == "__main__":

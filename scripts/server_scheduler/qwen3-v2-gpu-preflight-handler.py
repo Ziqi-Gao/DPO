@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Fixed two-rank Qwen3-v2 GPU preflight for ServerScheduler protocol v2.
+"""Allocation-neutral Qwen3-v2 GPU preflight for ServerScheduler protocol v2.
 
 The file is both the foreground supervisor and the torchrun worker.  Its
 hash-bound implementation validates the accepted OPD lineage before trusting
@@ -41,6 +41,7 @@ import argparse
 import copy
 import ctypes
 import fcntl
+import functools
 import hashlib
 import importlib.metadata
 import json
@@ -51,6 +52,7 @@ import shutil
 import stat
 import subprocess
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -60,7 +62,8 @@ import yaml
 
 
 TASK = "qwen3_v2_gpu_preflight"
-PROFILE = "qwen3-v2-gpu-preflight-2gpu"
+PROFILE = "qwen3-v2-gpu-preflight-elastic"
+WORKFLOW_ID_PREFIX = "qwen3-v2-gpu-preflight-elastic-"
 PROJECT = "OPD"
 REPORT_NAME = "gpu_preflight.json"
 COMPLETION_NAME = ".opd-scientific-completion.json"
@@ -71,10 +74,30 @@ TOKENIZER_FINGERPRINT = "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf561
 CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
 PREREGISTRATION_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
 GPU_MODEL = "NVIDIA RTX PRO 6000 Blackwell Server Edition"
-GPU_COUNT = 2
-CPU_CORE_COUNT = 16
-THREADS_PER_RANK = CPU_CORE_COUNT // GPU_COUNT
-NCCL_EXPECTED_SUM = float(GPU_COUNT * (GPU_COUNT + 1) // 2)
+SUPPORTED_GPU_COUNTS = (1, 2, 3, 4)
+CPU_CORE_COUNT = 24
+GLOBAL_LOGICAL_BATCH_SIZE = 64
+MAX_PER_RANK_MICROBATCH_SIZE = 4
+MAX_MODEL_INPUT_LENGTH = 1536
+GPU_MEMORY_BUDGET_MIB = 81920
+FROZEN_PROMPT_POPULATION_MAX_TOKENS = 1246
+TEACHER_DEMO_MAX_NEW_TOKENS = 256
+CANONICAL_SFT_OBJECTIVE = "response_mask_sequence_mean_cross_entropy_v1"
+BATCH_PARTITION_PROTOCOL = "allocation_neutral_exact_global_batch_v1"
+LOSS_SCALING_PROTOCOL = "exact_global_sequence_mean_after_fsdp_rank_averaging_v1"
+FSDP_REQUESTED_SHARDING_STRATEGY = "FULL_SHARD"
+FSDP_EFFECTIVE_SHARDING_STRATEGY_BY_WORLD_SIZE = {
+    1: "NO_SHARD",
+    2: "FULL_SHARD",
+    3: "FULL_SHARD",
+    4: "FULL_SHARD",
+}
+FSDP_STATE_DICT_TYPE = "FULL_STATE_DICT"
+FSDP_AUTO_WRAP_POLICY = "TRANSFORMER_BASED_WRAP"
+FSDP_TRANSFORMER_LAYER = "Qwen3DecoderLayer"
+OPTIMIZER_CLASS = "torch.optim.AdamW"
+LEARNING_RATE = 5e-4
+WEIGHT_DECAY = 0.0
 NCCL_VERSION = "2.27.3"
 NCCL_PROBE_TIMEOUT_SECONDS = 120
 CONTROL_GROUP_TIMEOUT_SECONDS = 900
@@ -87,6 +110,9 @@ SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 PROC_SELF_FD = re.compile(r"/proc/self/fd/(0|[1-9][0-9]*)\Z")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*\Z")
+WORKFLOW_ID_PATTERN = re.compile(
+    rf"{re.escape(WORKFLOW_ID_PREFIX)}[0-9a-f]{{32}}\Z"
+)
 EXPECTED_INPUT_NAMES = (
     "config_binding_sha256",
     "execution_config_sha256",
@@ -127,10 +153,10 @@ FIXED_ENVIRONMENT = {
     "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
 }
 SOURCE_ROOT = Path("/home/del6500/projects/OPD")
-AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_2gpu_v1.yaml")
+AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_elastic_v1.yaml")
 HANDOFF_RELATIVE_PATH = Path("docs/refactor/current_handoff.md")
 PROPOSED_AMENDMENT_SHA256 = (
-    "2129555c7ee71e68bedd87aafd34879f32c624e21bc7e143850c5fa1d30d6686"
+    "2d2444c9b2969b0b10a42d137184f8d11574d748ae488f6e40d5b5cc4fb6becc"
 )
 PROPOSED_REVIEW = {
     "status": "proposed",
@@ -180,6 +206,7 @@ class Invocation:
     job_id: str
     attempt: int
     execution_profile: str
+    gpu_count: int
     manifest_sha256: str
     allocation_sha256: str
     content_handles: tuple[ContentHandle, ...]
@@ -198,6 +225,187 @@ class Invocation:
             "job_id": self.job_id,
             "manifest_sha256": self.manifest_sha256,
         }
+
+
+def _gpu_count(value: object, *, name: str = "gpu_count") -> int:
+    if isinstance(value, bool):
+        raise PreflightError(f"{name} must be one of 1, 2, 3, or 4")
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str) and POSITIVE_INTEGER.fullmatch(value):
+        parsed = int(value)
+    else:
+        raise PreflightError(f"{name} must be one of 1, 2, 3, or 4")
+    if parsed not in SUPPORTED_GPU_COUNTS:
+        raise PreflightError(f"{name} must be one of 1, 2, 3, or 4")
+    return parsed
+
+
+def _preflight_workflow_id(value: object) -> str:
+    if not isinstance(value, str) or WORKFLOW_ID_PATTERN.fullmatch(value) is None:
+        raise PreflightError(
+            "workflow_id must be one opaque allocation-neutral preflight instance"
+        )
+    return value
+
+
+def _threads_per_rank(gpu_count: int) -> int:
+    if gpu_count not in SUPPORTED_GPU_COUNTS or CPU_CORE_COUNT % gpu_count != 0:
+        raise PreflightError("GPU count does not divide the fixed CPU allocation")
+    return CPU_CORE_COUNT // gpu_count
+
+
+def _microbatch_sizes(gpu_count: int, rank: int) -> tuple[int, ...]:
+    """Return one rank's exact 64-sequence optimizer-window schedule."""
+
+    if gpu_count not in SUPPORTED_GPU_COUNTS or not 0 <= rank < gpu_count:
+        raise PreflightError("rank is outside the reviewed elastic topology")
+    local_sequence_count = len(range(rank, GLOBAL_LOGICAL_BATCH_SIZE, gpu_count))
+    microsteps = math.ceil(
+        GLOBAL_LOGICAL_BATCH_SIZE
+        / (gpu_count * MAX_PER_RANK_MICROBATCH_SIZE)
+    )
+    sizes: list[int] = []
+    remaining = local_sequence_count
+    for _ in range(microsteps):
+        size = min(MAX_PER_RANK_MICROBATCH_SIZE, remaining)
+        if size < 1:
+            raise PreflightError("exact optimizer window would issue an empty microbatch")
+        sizes.append(size)
+        remaining -= size
+    if remaining != 0:
+        raise PreflightError("exact optimizer window did not consume its local sequences")
+    return tuple(sizes)
+
+
+def _global_slots_for_microbatch(
+    gpu_count: int,
+    rank: int,
+    microbatch_index: int,
+) -> tuple[int, ...]:
+    sizes = _microbatch_sizes(gpu_count, rank)
+    if not 0 <= microbatch_index < len(sizes):
+        raise PreflightError("microbatch index is outside the exact optimizer window")
+    local_offset = sum(sizes[:microbatch_index])
+    return tuple(
+        rank + (local_offset + offset) * gpu_count
+        for offset in range(sizes[microbatch_index])
+    )
+
+
+def _effective_fsdp_sharding_strategy(gpu_count: int) -> str:
+    if type(gpu_count) is not int or gpu_count not in SUPPORTED_GPU_COUNTS:
+        raise PreflightError("FSDP world size must be one of 1, 2, 3, or 4")
+    return FSDP_EFFECTIVE_SHARDING_STRATEGY_BY_WORLD_SIZE[gpu_count]
+
+
+def _fsdp_strategy_name(value: object) -> str:
+    name = getattr(value, "name", None)
+    if not isinstance(name, str) or not name:
+        raise PreflightError("FSDP wrapper exposes no canonical sharding strategy")
+    return name
+
+
+def _validate_effective_fsdp_strategy(
+    model: Any,
+    *,
+    fsdp_type: type[Any],
+    world_size: int,
+) -> dict[str, Any]:
+    modules = getattr(model, "modules", None)
+    if not callable(modules):
+        raise PreflightError("FSDP model exposes no module tree")
+    module_tree = list(modules())
+    wrappers = [module for module in module_tree if isinstance(module, fsdp_type)]
+    if not wrappers:
+        raise PreflightError("training model contains no actual FSDP wrappers")
+    if not isinstance(model, fsdp_type):
+        raise PreflightError("training model root is not an actual FSDP wrapper")
+    transformer_blocks = [
+        module
+        for module in module_tree
+        if type(module).__name__ == FSDP_TRANSFORMER_LAYER
+    ]
+    if not transformer_blocks:
+        raise PreflightError(
+            f"student model exposes no reviewed {FSDP_TRANSFORMER_LAYER} blocks"
+        )
+    directly_wrapped_blocks = [
+        wrapped
+        for wrapper in wrappers
+        if type(wrapped := getattr(wrapper, "module", None)).__name__
+        == FSDP_TRANSFORMER_LAYER
+    ]
+    if (
+        len(directly_wrapped_blocks) != len(transformer_blocks)
+        or {id(module) for module in directly_wrapped_blocks}
+        != {id(module) for module in transformer_blocks}
+    ):
+        raise PreflightError(
+            "FSDP auto-wrap did not directly wrap every reviewed decoder block"
+        )
+    expected_wrapper_count = len(transformer_blocks) + 1
+    if len(wrappers) != expected_wrapper_count:
+        raise PreflightError(
+            "FSDP wrapper count differs from the reviewed auto-wrap tree: "
+            f"expected={expected_wrapper_count}, observed={len(wrappers)}"
+        )
+    expected = _effective_fsdp_sharding_strategy(world_size)
+    observed = [_fsdp_strategy_name(wrapper.sharding_strategy) for wrapper in wrappers]
+    if any(strategy != expected for strategy in observed):
+        raise PreflightError(
+            "effective FSDP strategies differ from the reviewed allocation: "
+            f"expected={expected}, observed={observed}"
+        )
+    return {
+        "requested_fsdp_sharding_strategy": FSDP_REQUESTED_SHARDING_STRATEGY,
+        "effective_fsdp_sharding_strategy": expected,
+        "fsdp_wrapper_count": len(wrappers),
+    }
+
+
+def _full_state_dict_options(world_size: int, *, loading: bool = False) -> dict[str, bool]:
+    _effective_fsdp_sharding_strategy(world_size)
+    return {
+        "offload_to_cpu": world_size > 1,
+        "rank0_only": False if loading else world_size > 1,
+    }
+
+
+def _training_contract() -> dict[str, Any]:
+    return {
+        "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
+        "canonical_sft_objective": CANONICAL_SFT_OBJECTIVE,
+        "fsdp_auto_wrap_policy": FSDP_AUTO_WRAP_POLICY,
+        "fsdp_requested_sharding_strategy": FSDP_REQUESTED_SHARDING_STRATEGY,
+        "fsdp_effective_sharding_strategy_by_world_size": {
+            str(world_size): strategy
+            for world_size, strategy in FSDP_EFFECTIVE_SHARDING_STRATEGY_BY_WORLD_SIZE.items()
+        },
+        "fsdp_state_dict_type": FSDP_STATE_DICT_TYPE,
+        "fsdp_transformer_layer": FSDP_TRANSFORMER_LAYER,
+        "frozen_prompt_population_max_tokens": FROZEN_PROMPT_POPULATION_MAX_TOKENS,
+        "gpu_memory_budget_mib": GPU_MEMORY_BUDGET_MIB,
+        "global_logical_batch_size": GLOBAL_LOGICAL_BATCH_SIZE,
+        "learning_rate": LEARNING_RATE,
+        "loss_scaling_protocol": LOSS_SCALING_PROTOCOL,
+        "max_model_input_length": MAX_MODEL_INPUT_LENGTH,
+        "max_per_rank_microbatch_size": MAX_PER_RANK_MICROBATCH_SIZE,
+        "optimizer_class": OPTIMIZER_CLASS,
+        "overlength_policy": "reject_without_truncation_before_any_training_forward",
+        "sequence_normalization": True,
+        "teacher_demo_max_new_tokens": TEACHER_DEMO_MAX_NEW_TOKENS,
+        "derived_max_model_input_tokens": (
+            FROZEN_PROMPT_POPULATION_MAX_TOKENS + TEACHER_DEMO_MAX_NEW_TOKENS
+        ),
+        "weight_decay": WEIGHT_DECAY,
+    }
+
+
+def _nccl_expected_sum(gpu_count: int) -> float:
+    if gpu_count not in SUPPORTED_GPU_COUNTS:
+        raise PreflightError("GPU count is outside the reviewed elastic topology")
+    return float(gpu_count * (gpu_count + 1) // 2)
 
 
 @dataclass(frozen=True)
@@ -318,6 +526,7 @@ def _outer_parser() -> argparse.ArgumentParser:
         "job-id",
         "attempt",
         "execution-profile",
+        "gpu-count",
         "manifest-sha256",
         "allocation-sha256",
         "output-attempt-handle",
@@ -361,7 +570,9 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
     if args.attempt_completion_name != COMPLETION_NAME:
         raise PreflightError("attempt completion name differs from the fixed ABI")
     if args.execution_profile != PROFILE:
-        raise PreflightError("execution profile differs from the fixed GPU profile")
+        raise PreflightError(
+            "execution profile differs from the reviewed scheduler-managed profile"
+        )
     if not isinstance(args.attempt, str) or not POSITIVE_INTEGER.fullmatch(args.attempt):
         raise PreflightError("attempt must be a canonical positive integer")
     handles: list[ContentHandle] = []
@@ -390,13 +601,14 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
     if not stat.S_ISDIR(output_stat.st_mode):
         raise PreflightError("output attempt handle is not a directory")
     return Invocation(
-        workflow_id=_identifier(args.workflow_id, name="workflow_id"),
+        workflow_id=_preflight_workflow_id(args.workflow_id),
         plan_sha256=_sha256(args.plan_sha256, name="plan_sha256"),
         unit_id=_identifier(args.unit_id, name="unit_id"),
         run_id=_sha256(args.run_id, name="run_id"),
         job_id=_identifier(args.job_id, name="job_id"),
         attempt=int(args.attempt),
         execution_profile=PROFILE,
+        gpu_count=_gpu_count(args.gpu_count),
         manifest_sha256=_sha256(args.manifest_sha256, name="manifest_sha256"),
         allocation_sha256=_sha256(args.allocation_sha256, name="allocation_sha256"),
         content_handles=tuple(handles),
@@ -517,12 +729,13 @@ def _validate_config(
     if binding.get("storage_locators") != {"prereg_path": "prereg/qwen3_v2.yaml"}:
         raise PreflightError("ConfigBinding preregistration locator is not fixed")
     expected_execution = {
-        "distributed_process_count": GPU_COUNT,
-        "execution_profile": PROFILE,
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "scheduler_protocol": 2,
     }
     if binding.get("execution_context") != expected_execution:
-        raise PreflightError("ConfigBinding execution context differs from the fixed topology")
+        raise PreflightError(
+            "ConfigBinding execution context is not allocation neutral"
+        )
     if execution != {
         "execution_context": expected_execution,
         "schema_version": 3,
@@ -538,8 +751,7 @@ def _validate_config(
         raise PreflightError("preregistration content identity changed")
     model = resolved.get("model")
     teacher = resolved.get("teacher")
-    budget = resolved.get("resource_budget")
-    if not all(isinstance(value, dict) for value in (model, teacher, budget)):
+    if not all(isinstance(value, dict) for value in (model, teacher)):
         raise PreflightError("resolved GPU-preflight config is incomplete")
     if (
         resolved.get("config_kind") != TASK
@@ -563,13 +775,6 @@ def _validate_config(
         or teacher.get("local_files_only") is not True
         or teacher.get("trust_remote_code") is not False
         or teacher.get("rank_zero_only_training_load") is not True
-        or budget
-        != {
-            "loading_strategy": "low_cpu_mem_student_rank_zero_teacher",
-            "minimum_headroom_fraction": 0.2,
-            "minimum_headroom_gib": 32,
-            "node_memory_gib": 192,
-        }
     ):
         raise PreflightError("resolved config differs from the fixed Qwen3-v2 protocol")
     scientific_copy = copy.deepcopy(resolved)
@@ -633,12 +838,6 @@ def _fixed_config(*, code_commit: str) -> dict[str, Any]:
         "prereg_path": "prereg/qwen3_v2.yaml",
         "prereg_version": "qwen3_v2",
         "protocol_track": "qwen3_v2",
-        "resource_budget": {
-            "loading_strategy": "low_cpu_mem_student_rank_zero_teacher",
-            "minimum_headroom_fraction": 0.2,
-            "minimum_headroom_gib": 32,
-            "node_memory_gib": 192,
-        },
         "teacher": {
             **copy.deepcopy(common),
             "gradient_checkpointing": False,
@@ -649,10 +848,11 @@ def _fixed_config(*, code_commit: str) -> dict[str, Any]:
             "tokenizer_revision": TEACHER_REVISION,
             "use_cache": True,
         },
+        "training_probe": _training_contract(),
     }
 
 
-def _validate_environment() -> tuple[str, ...]:
+def _validate_environment(gpu_count: int) -> tuple[str, ...]:
     if (
         sys.dont_write_bytecode is not True
         or sys.pycache_prefix != BYTECODE_CACHE_PREFIX
@@ -661,9 +861,10 @@ def _validate_environment() -> tuple[str, ...]:
     for key, expected in FIXED_ENVIRONMENT.items():
         if os.environ.get(key) != expected:
             raise PreflightError(f"fixed environment {key} differs from its deployment")
-    if any(os.environ.get(key) != str(THREADS_PER_RANK) for key in THREAD_KEYS):
+    threads_per_rank = _threads_per_rank(gpu_count)
+    if any(os.environ.get(key) != str(threads_per_rank) for key in THREAD_KEYS):
         raise PreflightError(
-            f"per-rank CPU thread environment must be exactly {THREADS_PER_RANK}"
+            f"per-rank CPU thread environment must be exactly {threads_per_rank}"
         )
     forbidden = sorted(
         key
@@ -696,11 +897,11 @@ def _validate_environment() -> tuple[str, ...]:
         raise PreflightError("fixed GPU runtime Torch package version differs")
     visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
     devices = tuple(visible.split(",")) if visible else ()
-    if len(devices) != GPU_COUNT or len(set(devices)) != GPU_COUNT or any(
+    if len(devices) != gpu_count or len(set(devices)) != gpu_count or any(
         not item or item.strip() != item for item in devices
     ):
         raise PreflightError(
-            f"scheduler-provided CUDA visibility must contain {GPU_COUNT} devices"
+            f"scheduler-provided CUDA visibility must contain {gpu_count} devices"
         )
     return devices
 
@@ -806,18 +1007,139 @@ def _parameter_checksum(model: Any, device: Any) -> Any:
     return value
 
 
-def _flat_optimizer_parameters(model: Any) -> tuple[Any, ...]:
-    parameters = tuple(model.parameters())
-    if len(parameters) != 1:
-        raise PreflightError("root FSDP unit did not expose one flat parameter")
-    parameter = parameters[0]
+def _canonical_sft_canary_batch(
+    tokenizer: Any,
+    global_slots: tuple[int, ...],
+) -> dict[str, Any]:
+    """Build a full-width, untruncated response-masked SFT microbatch."""
+
+    import torch
+
+    if not global_slots or len(global_slots) > MAX_PER_RANK_MICROBATCH_SIZE:
+        raise PreflightError("canonical-SFT canary has an invalid local batch size")
+    response_text = (
+        "<proof>\nS01: R01(F01) -> TRUE SYM_001\n</proof>\n<answer>1</answer>"
+    )
+    base_response_ids = list(
+        tokenizer.encode(response_text, add_special_tokens=False)
+    )
+    newline_ids = list(tokenizer.encode("\n", add_special_tokens=False))
     if (
-        not bool(getattr(parameter, "_is_flat_param", False))
-        or parameter.ndim != 1
-        or parameter.numel() <= 0
+        not base_response_ids
+        or len(base_response_ids) > TEACHER_DEMO_MAX_NEW_TOKENS
+        or not newline_ids
     ):
-        raise PreflightError("root FSDP unit exposed an invalid flat parameter shard")
-    return parameters
+        raise PreflightError("canonical-SFT response cannot realize its fixed token bound")
+    response_ids = list(base_response_ids)
+    while len(response_ids) < TEACHER_DEMO_MAX_NEW_TOKENS:
+        response_ids.extend(newline_ids)
+    response_ids = response_ids[:TEACHER_DEMO_MAX_NEW_TOKENS]
+    if len(response_ids) != TEACHER_DEMO_MAX_NEW_TOKENS:
+        raise PreflightError("canonical-SFT response length differs from its fixed bound")
+
+    context_target = MAX_MODEL_INPUT_LENGTH - TEACHER_DEMO_MAX_NEW_TOKENS
+    filler_ids = list(
+        tokenizer.encode("\nDISTRACTOR: SYM_999", add_special_tokens=False)
+    )
+    if not filler_ids:
+        raise PreflightError("canonical-SFT context filler tokenization is empty")
+    input_rows: list[list[int]] = []
+    response_rows: list[list[bool]] = []
+    raw_prompts: list[str] = []
+    model_prompts: list[str] = []
+    for global_slot in global_slots:
+        if not 0 <= global_slot < GLOBAL_LOGICAL_BATCH_SIZE:
+            raise PreflightError("canonical-SFT global slot is outside its optimizer window")
+        raw_prompt = (
+            f"SLOT-CANARY-{global_slot:02d}\nFACTS F01: SYM_000\n"
+            "RULES R01: SYM_000 -> SYM_001\nQUERY: SYM_001\n"
+            "OUTPUT FORMAT: <proof> ... </proof> <answer>0|1</answer>"
+        )
+        model_prompt, _raw_hash, _prompt_hash = _format_prompt(raw_prompt, tokenizer)
+        prompt_ids = list(tokenizer.encode(model_prompt, add_special_tokens=False))
+        if len(prompt_ids) > FROZEN_PROMPT_POPULATION_MAX_TOKENS:
+            raise PreflightError("canonical-SFT base canary exceeds the frozen prompt bound")
+        masked_context = list(prompt_ids)
+        while len(masked_context) < context_target:
+            masked_context.extend(filler_ids)
+        masked_context = masked_context[:context_target]
+        sequence = masked_context + response_ids
+        if len(sequence) != MAX_MODEL_INPUT_LENGTH:
+            raise PreflightError("canonical-SFT canary did not reach the exact model-input bound")
+        input_rows.append(sequence)
+        response_rows.append(
+            [False] * len(masked_context) + [True] * len(response_ids)
+        )
+        raw_prompts.append(raw_prompt)
+        model_prompts.append(model_prompt)
+    input_ids = torch.tensor(input_rows, dtype=torch.long)
+    attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
+    response_mask = torch.tensor(response_rows, dtype=torch.bool)
+    if (
+        tuple(input_ids.shape)
+        != (len(global_slots), MAX_MODEL_INPUT_LENGTH)
+        or attention_mask.shape != input_ids.shape
+        or response_mask.shape != input_ids.shape
+        or not bool(response_mask[:, 1:].any(dim=1).all())
+    ):
+        raise PreflightError("canonical-SFT canary tensors violate the fixed shape contract")
+    return {
+        "attention_mask": attention_mask,
+        "input_ids": input_ids,
+        "model_prompts": model_prompts,
+        "raw_prompts": raw_prompts,
+        "response_mask": response_mask,
+    }
+
+
+def _canonical_sft_sequence_mean_loss(
+    logits: Any,
+    input_ids: Any,
+    response_mask: Any,
+) -> Any:
+    import torch.nn.functional as functional
+
+    if logits.shape[:2] != input_ids.shape or input_ids.shape != response_mask.shape:
+        raise PreflightError("canonical-SFT logits and masks are not aligned")
+    shifted_logits = logits[:, :-1]
+    shifted_targets = input_ids[:, 1:]
+    shifted_mask = response_mask[:, 1:]
+    counts = shifted_mask.sum(dim=1)
+    if not bool((counts > 0).all()):
+        raise PreflightError("canonical-SFT canary has no response tokens")
+    token_losses = functional.cross_entropy(
+        shifted_logits.reshape(-1, shifted_logits.shape[-1]),
+        shifted_targets.reshape(-1),
+        reduction="none",
+    ).reshape_as(shifted_targets)
+    sequence_losses = (token_losses * shifted_mask).sum(dim=1) / counts
+    return sequence_losses.mean()
+
+
+def _optimizer_checksum(optimizer: Any) -> float:
+    import torch
+
+    result = 0.0
+    for state in optimizer.state.values():
+        for value in state.values():
+            if isinstance(value, torch.Tensor):
+                result += float(value.detach().double().sum().cpu())
+    return result
+
+
+def _validate_gpu_memory_peaks(allocated: int, reserved: int) -> None:
+    budget_bytes = GPU_MEMORY_BUDGET_MIB * 1024**2
+    if (
+        type(allocated) is not int
+        or type(reserved) is not int
+        or allocated < 1
+        or reserved < allocated
+        or allocated > budget_bytes
+        or reserved > budget_bytes
+    ):
+        raise PreflightError(
+            "production-shaped training is outside the registered per-GPU memory envelope"
+        )
 
 
 def _nccl_runtime_version(torch: Any) -> str:
@@ -829,7 +1151,7 @@ def _nccl_runtime_version(torch: Any) -> str:
     raise PreflightError("PyTorch did not expose a canonical NCCL runtime version")
 
 
-def _initialize_distributed() -> DistributedRuntime:
+def _initialize_distributed(expected_gpu_count: int) -> DistributedRuntime:
     import torch
     import torch.distributed as dist
 
@@ -837,19 +1159,19 @@ def _initialize_distributed() -> DistributedRuntime:
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
     if (
-        world_size != GPU_COUNT
+        world_size != expected_gpu_count
         or rank != local_rank
-        or not 0 <= local_rank < GPU_COUNT
+        or not 0 <= local_rank < expected_gpu_count
     ):
         raise PreflightError(
-            f"torchrun topology differs from the fixed {GPU_COUNT}-rank contract"
+            "torchrun topology differs from the scheduler-assigned GPU count"
         )
     if (
         torch.version.cuda != "12.8"
         or not str(torch.__version__).startswith("2.8.0+cu128")
     ):
         raise PreflightError("fixed runtime is not CUDA-enabled PyTorch 2.8.0")
-    if torch.cuda.device_count() != GPU_COUNT:
+    if torch.cuda.device_count() != expected_gpu_count:
         raise PreflightError("visible CUDA device count differs from the allocation")
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
@@ -881,7 +1203,7 @@ def _initialize_distributed() -> DistributedRuntime:
     control_group = dist.group.WORLD
     _log_phase(rank, "control_group_ready", backend="gloo")
     data_group = dist.new_group(
-        ranks=list(range(GPU_COUNT)),
+        ranks=list(range(expected_gpu_count)),
         backend="nccl",
         timeout=timedelta(seconds=NCCL_PROBE_TIMEOUT_SECONDS),
     )
@@ -898,7 +1220,8 @@ def _initialize_distributed() -> DistributedRuntime:
     elapsed = time.monotonic() - started
     if completed is False:
         raise PreflightError("NCCL all-reduce did not complete before its fixed timeout")
-    if float(reduced.item()) != NCCL_EXPECTED_SUM:
+    expected_sum = _nccl_expected_sum(expected_gpu_count)
+    if float(reduced.item()) != expected_sum:
         raise PreflightError("NCCL all-reduce returned an unexpected result")
     nccl_version = _nccl_runtime_version(torch)
     if nccl_version != NCCL_VERSION:
@@ -932,13 +1255,15 @@ def _rank_training(
 ) -> dict[str, Any]:
     import torch
     import torch.distributed as dist
-    import torch.nn.functional as functional
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
     from torch.distributed.fsdp import (
-        ShardedOptimStateDictConfig,
-        ShardedStateDictConfig,
+        FullOptimStateDictConfig,
+        FullStateDictConfig,
+        MixedPrecision,
+        ShardingStrategy,
         StateDictType,
     )
+    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
     rank = runtime.rank
     world_size = runtime.world_size
@@ -974,22 +1299,79 @@ def _rank_training(
         if student_error is not None:
             raise student_error
         raise PreflightError(f"student load failed on rank {failed_students[0]['rank']}")
-    vocab_size = int(student_model.config.vocab_size)
+
+    transformer_layer_types = {
+        type(module)
+        for module in student_model.modules()
+        if type(module).__name__ == FSDP_TRANSFORMER_LAYER
+    }
+    if len(transformer_layer_types) != 1:
+        raise PreflightError(
+            "student model does not expose the reviewed transformer auto-wrap layer"
+        )
+    transformer_block_count = sum(
+        type(module).__name__ == FSDP_TRANSFORMER_LAYER
+        for module in student_model.modules()
+    )
+    auto_wrap_policy = functools.partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls=transformer_layer_types,
+    )
     student = FSDP(
         student_model,
         device_id=device,
         process_group=runtime.data_group,
-        # Qwen3 ties embedding and output weights. Original-parameter mode may
-        # expose an empty or 1-D local shard where its forward expects 2-D.
+        auto_wrap_policy=auto_wrap_policy,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        mixed_precision=MixedPrecision(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.bfloat16,
+            buffer_dtype=torch.bfloat16,
+        ),
+        sync_module_states=True,
         use_orig_params=False,
     )
-    optimizer_parameters = _flat_optimizer_parameters(student)
+    wrapped_transformer_blocks = max(
+        0,
+        sum(isinstance(module, FSDP) for module in student.modules()) - 1,
+    )
+    if wrapped_transformer_blocks != transformer_block_count:
+        raise PreflightError(
+            "FSDP transformer auto-wrap did not wrap every reviewed decoder block"
+        )
+    fsdp_sharding_contract = _validate_effective_fsdp_strategy(
+        student,
+        fsdp_type=FSDP,
+        world_size=world_size,
+    )
+    if fsdp_sharding_contract["fsdp_wrapper_count"] != transformer_block_count + 1:
+        raise PreflightError("FSDP wrapper count differs from the reviewed auto-wrap tree")
+    optimizer_parameters = tuple(
+        parameter for parameter in student.parameters() if parameter.requires_grad
+    )
+    if not optimizer_parameters:
+        raise PreflightError("FSDP student exposes no trainable parameters")
     _log_phase(
         rank,
         "student_fsdp_ready",
-        parameter_mode="flat",
-        local_parameter_elements=int(optimizer_parameters[0].numel()),
+        auto_wrap_policy=FSDP_AUTO_WRAP_POLICY,
+        requested_sharding_strategy=fsdp_sharding_contract[
+            "requested_fsdp_sharding_strategy"
+        ],
+        effective_sharding_strategy=fsdp_sharding_contract[
+            "effective_fsdp_sharding_strategy"
+        ],
+        fsdp_wrapper_count=fsdp_sharding_contract["fsdp_wrapper_count"],
+        state_dict_type=FSDP_STATE_DICT_TYPE,
+        wrapped_transformer_blocks=wrapped_transformer_blocks,
     )
+    optimizer = torch.optim.AdamW(
+        optimizer_parameters,
+        lr=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
+    )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _step: 1.0)
+
     teacher = None
     teacher_status: list[Any] = [None]
     teacher_error: Exception | None = None
@@ -1010,16 +1392,33 @@ def _rank_training(
             ):
                 raise PreflightError("student and teacher tokenizers are not compatible")
             teacher = teacher.to(device)
+            teacher_prompt, _raw_hash, _model_hash = _format_prompt(
+                "FACTS F01: A\nRULES R01: A -> B\nQUERY: B",
+                teacher_tokenizer,
+            )
+            teacher_inputs = teacher_tokenizer(
+                teacher_prompt,
+                add_special_tokens=False,
+                return_tensors="pt",
+            ).to(device)
+            _log_phase(rank, "teacher_forward_started")
+            with torch.no_grad():
+                teacher_logits = teacher(**teacher_inputs).logits
+            teacher_forward_finite = bool(torch.isfinite(teacher_logits).all())
+            if not teacher_forward_finite:
+                raise PreflightError("rank-zero teacher forward is not finite")
+            del teacher_logits, teacher_inputs
             teacher_status[0] = {
                 "metadata": {
                     "resolved_teacher_commit": _resolved_commit(
                         teacher, TEACHER_REVISION
                     ),
+                    "teacher_forward_finite": teacher_forward_finite,
                     "tokenizer_fingerprint": tokenizer_hash,
                 },
                 "ok": True,
             }
-            _log_phase(rank, "teacher_load_completed")
+            _log_phase(rank, "teacher_load_completed", forward_finite=True)
         except Exception as error:
             teacher_error = error
             teacher_status[0] = {
@@ -1036,153 +1435,352 @@ def _rank_training(
     if not isinstance(teacher_metadata, dict):
         raise PreflightError("rank-zero teacher metadata broadcast failed")
 
-    raw_prompt = (
-        f"RANK-CANARY-{rank}\nFACTS F01: A\nRULES R01: A -> B\n"
-        "QUERY: B\nOUTPUT FORMAT: <proof> ... </proof> <answer>0|1</answer>"
-    )
-    model_prompt, raw_hash, prompt_hash = _format_prompt(raw_prompt, student_tokenizer)
-    encoded = student_tokenizer(
-        model_prompt, add_special_tokens=False, return_tensors="pt"
-    )
-    input_ids = encoded.input_ids.to(device)
-    attention_mask = encoded.attention_mask.to(device)
+    microbatch_sizes = _microbatch_sizes(world_size, rank)
+    prepared_batches: list[dict[str, Any]] = []
+    all_global_slots: list[int] = []
+    all_raw_prompts: list[str] = []
+    all_model_prompts: list[str] = []
+    for microbatch_index, expected_size in enumerate(microbatch_sizes):
+        global_slots = _global_slots_for_microbatch(
+            world_size,
+            rank,
+            microbatch_index,
+        )
+        if len(global_slots) != expected_size:
+            raise PreflightError("exact optimizer-window schedule changed")
+        batch = _canonical_sft_canary_batch(student_tokenizer, global_slots)
+        prepared_batches.append(batch)
+        all_global_slots.extend(global_slots)
+        all_raw_prompts.extend(batch["raw_prompts"])
+        all_model_prompts.extend(batch["model_prompts"])
+    expected_global_slots = list(range(rank, GLOBAL_LOGICAL_BATCH_SIZE, world_size))
+    if all_global_slots != expected_global_slots:
+        raise PreflightError("rank canary slots differ from the exact global assignment")
+    raw_hash = _sha256_value(all_raw_prompts)
+    prompt_hash = _sha256_value(all_model_prompts)
     prompt_hashes: list[Any] = [None] * world_size
     dist.all_gather_object(prompt_hashes, prompt_hash, group=runtime.control_group)
     unique_prompts = len(set(str(value) for value in prompt_hashes)) == world_size
 
-    gathered_ids = [torch.empty_like(input_ids) for _ in range(world_size)]
-    gathered_masks = [torch.empty_like(attention_mask) for _ in range(world_size)]
-    dist.all_gather(gathered_ids, input_ids, group=runtime.data_group)
-    dist.all_gather(gathered_masks, attention_mask, group=runtime.data_group)
-    teacher_logits = torch.empty(
-        (*input_ids.shape, vocab_size), dtype=torch.bfloat16, device=device
+    local_input_tokens = sum(
+        int(batch["attention_mask"].sum()) for batch in prepared_batches
     )
-    teacher_forward_status: list[Any] = [None]
-    teacher_forward_error: Exception | None = None
-    scatter_rows = None
-    if rank == 0:
-        try:
-            if teacher is None:
-                raise PreflightError("rank zero did not load the teacher")
-            _log_phase(rank, "teacher_forward_started")
-            with torch.no_grad():
-                batched = teacher(
-                    input_ids=torch.cat(gathered_ids, dim=0),
-                    attention_mask=torch.cat(gathered_masks, dim=0),
-                ).logits
-            scatter_rows = list(batched.split(input_ids.shape[0], dim=0))
-            teacher_forward_status[0] = {"ok": True}
-            _log_phase(rank, "teacher_forward_completed")
-        except Exception as error:
-            teacher_forward_error = error
-            teacher_forward_status[0] = {
-                "error": str(error),
-                "error_type": type(error).__name__,
-                "ok": False,
-            }
-    dist.broadcast_object_list(
-        teacher_forward_status, src=0, group=runtime.control_group
-    )
-    if (
-        not isinstance(teacher_forward_status[0], dict)
-        or teacher_forward_status[0].get("ok") is not True
-    ):
-        if teacher_forward_error is not None:
-            raise teacher_forward_error
-        raise PreflightError("rank-zero teacher forward failed")
-    dist.scatter(
-        teacher_logits,
-        scatter_list=scatter_rows,
-        src=0,
-        group=runtime.data_group,
-    )
+    global_input_tokens = torch.tensor(local_input_tokens, dtype=torch.int64)
+    dist.all_reduce(global_input_tokens, group=runtime.control_group)
+    expected_global_input_tokens = GLOBAL_LOGICAL_BATCH_SIZE * MAX_MODEL_INPUT_LENGTH
+    if int(global_input_tokens.item()) != expected_global_input_tokens:
+        raise PreflightError("preflight token accounting differs from the exact global window")
 
-    optimizer = torch.optim.AdamW(optimizer_parameters, lr=1e-3)
     optimizer.zero_grad(set_to_none=True)
-    _log_phase(rank, "student_forward_started")
-    student_logits = student(input_ids=input_ids, attention_mask=attention_mask).logits
-    _log_phase(rank, "student_forward_completed")
-    loss = functional.kl_div(
-        student_logits.float().log_softmax(dim=-1),
-        teacher_logits.float().softmax(dim=-1),
-        reduction="batchmean",
+    before = _parameter_checksum(student, device)
+    local_loss_numerator = 0.0
+    student_forward_finite = True
+    _log_phase(
+        rank,
+        "canonical_sft_optimizer_window_started",
+        microbatch_sizes=list(microbatch_sizes),
+        model_input_tokens=MAX_MODEL_INPUT_LENGTH,
     )
-    _log_phase(rank, "student_backward_started")
-    loss.backward()
+    for microbatch_index, batch in enumerate(prepared_batches):
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        response_mask = batch["response_mask"].to(device)
+        local_batch_size = int(input_ids.shape[0])
+        sync_context = (
+            nullcontext()
+            if microbatch_index == len(prepared_batches) - 1
+            else student.no_sync()
+        )
+        with sync_context:
+            _log_phase(
+                rank,
+                "student_forward_started",
+                local_batch_size=local_batch_size,
+                microbatch_index=microbatch_index,
+            )
+            student_logits = student(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            ).logits
+            finite = bool(torch.isfinite(student_logits).all())
+            student_forward_finite = student_forward_finite and finite
+            if not finite:
+                raise PreflightError("canonical-SFT student forward is not finite")
+            _log_phase(
+                rank,
+                "student_forward_completed",
+                local_batch_size=local_batch_size,
+                microbatch_index=microbatch_index,
+            )
+            loss = _canonical_sft_sequence_mean_loss(
+                student_logits.float(),
+                input_ids,
+                response_mask,
+            )
+            if not bool(torch.isfinite(loss)):
+                raise PreflightError("canonical-SFT response-masked loss is not finite")
+            local_loss_numerator += float(loss.detach()) * local_batch_size
+            scaled_loss = loss * (
+                world_size * local_batch_size / GLOBAL_LOGICAL_BATCH_SIZE
+            )
+            _log_phase(
+                rank,
+                "student_backward_started",
+                microbatch_index=microbatch_index,
+            )
+            scaled_loss.backward()
+        del input_ids, attention_mask, response_mask, student_logits, loss, scaled_loss
     _log_phase(rank, "student_backward_completed")
     gradients = [item.grad for item in optimizer_parameters if item.grad is not None]
     gradients_finite = bool(gradients) and all(
         bool(torch.isfinite(item).all()) for item in gradients
     )
-    before = _parameter_checksum(student, device)
+    if not gradients_finite:
+        raise PreflightError("canonical-SFT gradients are absent or non-finite")
+    global_loss_numerator = torch.tensor(local_loss_numerator, dtype=torch.float64)
+    dist.all_reduce(global_loss_numerator, group=runtime.control_group)
+    canonical_sft_loss = float(global_loss_numerator.item() / GLOBAL_LOGICAL_BATCH_SIZE)
+    if not math.isfinite(canonical_sft_loss):
+        raise PreflightError("canonical-SFT global sequence mean is not finite")
     _log_phase(rank, "optimizer_step_started")
     optimizer.step()
+    scheduler.step()
     _log_phase(rank, "optimizer_step_completed")
     after = _parameter_checksum(student, device)
     update_nonzero = bool((after - before).abs().item() > 0.0)
+    if not update_nonzero:
+        raise PreflightError("canonical-SFT AdamW update was zero")
 
-    rank_path = checkpoint_root / f"rank-{rank:02d}.pt"
+    torch.cuda.synchronize(device)
+    saved_model_checksum = _parameter_checksum(student, device)
+    saved_optimizer_checksum = _optimizer_checksum(optimizer)
+    saved_scheduler_state = copy.deepcopy(scheduler.state_dict())
+    saved_cpu_rng = torch.get_rng_state().clone()
+    saved_cuda_rng = torch.cuda.get_rng_state(device).clone()
+    runtime_path = checkpoint_root / f"rank-{rank:02d}-runtime.pt"
+    torch.save(
+        {
+            "cpu_rng_state": saved_cpu_rng,
+            "cuda_rng_state": saved_cuda_rng,
+            "scheduler": saved_scheduler_state,
+        },
+        runtime_path,
+    )
+
+    model_path = checkpoint_root / "model-full.pt"
+    optimizer_path = checkpoint_root / "optimizer-full.pt"
+    manifest_path = checkpoint_root / "checkpoint-manifest.json"
     _log_phase(rank, "fsdp_resume_started")
-    model_state_config = ShardedStateDictConfig(offload_to_cpu=True)
-    optim_state_config = ShardedOptimStateDictConfig(offload_to_cpu=True)
+    full_state_options = _full_state_dict_options(world_size)
+    model_state_config = FullStateDictConfig(**full_state_options)
+    optim_state_config = FullOptimStateDictConfig(**full_state_options)
     with FSDP.state_dict_type(
         student,
-        StateDictType.SHARDED_STATE_DICT,
+        StateDictType.FULL_STATE_DICT,
         model_state_config,
         optim_state_config,
     ):
         model_state = student.state_dict()
         optimizer_state = FSDP.optim_state_dict(student, optimizer)
-    torch.save({"model": model_state, "optimizer": optimizer_state}, rank_path)
-    checkpoint_hash = _sha256_file(rank_path)
-    saved = _parameter_checksum(student, device)
+    if rank == 0:
+        if not model_state or not optimizer_state:
+            raise PreflightError("rank-zero full FSDP checkpoint state is empty")
+        torch.save(model_state, model_path)
+        torch.save(optimizer_state, optimizer_path)
+    elif model_state or optimizer_state:
+        raise PreflightError("nonzero rank unexpectedly materialized full FSDP state")
+    del model_state, optimizer_state
+    dist.monitored_barrier(
+        group=runtime.control_group,
+        timeout=timedelta(seconds=CONTROL_GROUP_TIMEOUT_SECONDS),
+        wait_all_ranks=True,
+    )
+    checkpoint_metadata: list[Any] = [None]
+    if rank == 0:
+        file_hashes = {
+            "model-full.pt": _sha256_file(model_path),
+            "optimizer-full.pt": _sha256_file(optimizer_path),
+            **{
+                f"rank-{member_rank:02d}-runtime.pt": _sha256_file(
+                    checkpoint_root / f"rank-{member_rank:02d}-runtime.pt"
+                )
+                for member_rank in range(world_size)
+            },
+        }
+        manifest = {
+            "auto_wrap_policy": FSDP_AUTO_WRAP_POLICY,
+            "files": file_hashes,
+            "state_dict_type": FSDP_STATE_DICT_TYPE,
+            "world_size": world_size,
+            **fsdp_sharding_contract,
+        }
+        manifest_path.write_text(_canonical_json(manifest), encoding="utf-8")
+        checkpoint_metadata[0] = {
+            "checkpoint_sha256": _sha256_value(manifest),
+            "fsdp_sharding_contract": fsdp_sharding_contract,
+            "manifest_sha256": _sha256_file(manifest_path),
+            "runtime_sha256_by_rank": [
+                file_hashes[f"rank-{member_rank:02d}-runtime.pt"]
+                for member_rank in range(world_size)
+            ],
+        }
+    dist.broadcast_object_list(
+        checkpoint_metadata,
+        src=0,
+        group=runtime.control_group,
+    )
+    if not isinstance(checkpoint_metadata[0], dict):
+        raise PreflightError("full FSDP checkpoint metadata broadcast failed")
+    if checkpoint_metadata[0].get("fsdp_sharding_contract") != fsdp_sharding_contract:
+        raise PreflightError("full FSDP checkpoint strategy contract is inconsistent")
+
     with torch.no_grad():
         next(item for item in student.parameters() if item.numel()).add_(1.0)
-    checkpoint = torch.load(rank_path, map_location="cpu", weights_only=False)
+        mutated_optimizer = False
+        for state in optimizer.state.values():
+            for value in state.values():
+                if isinstance(value, torch.Tensor) and value.numel():
+                    value.add_(1.0)
+                    mutated_optimizer = True
+                    break
+            if mutated_optimizer:
+                break
+    if not mutated_optimizer:
+        raise PreflightError("AdamW checkpoint probe found no mutable optimizer state")
+    scheduler.step()
+    torch.rand(1)
+    torch.rand(1, device=device)
+
+    loaded_model_state = torch.load(
+        model_path,
+        map_location="cpu",
+        weights_only=False,
+    )
+    load_state_options = _full_state_dict_options(world_size, loading=True)
     with FSDP.state_dict_type(
         student,
-        StateDictType.SHARDED_STATE_DICT,
-        model_state_config,
-        optim_state_config,
+        StateDictType.FULL_STATE_DICT,
+        FullStateDictConfig(**load_state_options),
+        FullOptimStateDictConfig(**load_state_options),
     ):
-        load_result = student.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(
-            FSDP.optim_state_dict_to_load(student, optimizer, checkpoint["optimizer"])
-        )
-    restored = _parameter_checksum(student, device)
+        load_result = student.load_state_dict(loaded_model_state)
+    del loaded_model_state
+    full_optimizer_state = (
+        torch.load(optimizer_path, map_location="cpu", weights_only=False)
+        if rank == 0
+        else None
+    )
+    sharded_optimizer_state = FSDP.scatter_full_optim_state_dict(
+        full_optimizer_state,
+        student,
+        optim=optimizer,
+        group=runtime.data_group,
+    )
+    optimizer.load_state_dict(sharded_optimizer_state)
+    del full_optimizer_state, sharded_optimizer_state
+    runtime_state = torch.load(runtime_path, map_location="cpu", weights_only=False)
+    scheduler.load_state_dict(runtime_state["scheduler"])
+    torch.set_rng_state(runtime_state["cpu_rng_state"])
+    torch.cuda.set_rng_state(runtime_state["cuda_rng_state"], device)
+    torch.cuda.synchronize(device)
+    restored_model_checksum = _parameter_checksum(student, device)
+    restored_optimizer_checksum = _optimizer_checksum(optimizer)
+    optimizer_state_restored = math.isclose(
+        saved_optimizer_checksum,
+        restored_optimizer_checksum,
+        rel_tol=0.0,
+        abs_tol=1e-6,
+    )
+    scheduler_state_restored = scheduler.state_dict() == saved_scheduler_state
+    rng_state_restored = bool(
+        torch.equal(torch.get_rng_state(), saved_cpu_rng)
+        and torch.equal(torch.cuda.get_rng_state(device), saved_cuda_rng)
+    )
     resume_passed = (
         not load_result.missing_keys
         and not load_result.unexpected_keys
-        and bool(torch.allclose(saved, restored, rtol=0.0, atol=1e-6))
+        and bool(
+            torch.allclose(
+                saved_model_checksum,
+                restored_model_checksum,
+                rtol=0.0,
+                atol=1e-6,
+            )
+        )
+        and optimizer_state_restored
+        and scheduler_state_restored
+        and rng_state_restored
     )
+    max_memory_allocated = int(torch.cuda.max_memory_allocated(device))
+    max_memory_reserved = int(torch.cuda.max_memory_reserved(device))
+    _validate_gpu_memory_peaks(max_memory_allocated, max_memory_reserved)
     _log_phase(rank, "fsdp_resume_completed", passed=resume_passed)
     row = {
+        "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
+        "canonical_sft_loss": canonical_sft_loss,
+        "canonical_sft_loss_finite": math.isfinite(canonical_sft_loss),
+        "canonical_sft_objective": CANONICAL_SFT_OBJECTIVE,
         "chat_template_sha256": CHAT_TEMPLATE_SHA256,
-        "checkpoint_sha256": checkpoint_hash,
+        "checkpoint_manifest_sha256": checkpoint_metadata[0]["manifest_sha256"],
+        "checkpoint_runtime_sha256": checkpoint_metadata[0][
+            "runtime_sha256_by_rank"
+        ][rank],
+        "checkpoint_sha256": checkpoint_metadata[0]["checkpoint_sha256"],
         "enable_thinking": False,
+        "fsdp_auto_wrap_policy": FSDP_AUTO_WRAP_POLICY,
+        "fsdp_wrapper_count": fsdp_sharding_contract["fsdp_wrapper_count"],
         "fsdp_save_resume": resume_passed,
+        "requested_fsdp_sharding_strategy": fsdp_sharding_contract[
+            "requested_fsdp_sharding_strategy"
+        ],
+        "effective_fsdp_sharding_strategy": fsdp_sharding_contract[
+            "effective_fsdp_sharding_strategy"
+        ],
+        "fsdp_state_dict_type": FSDP_STATE_DICT_TYPE,
+        "fsdp_transformer_layer": FSDP_TRANSFORMER_LAYER,
         "gradients_finite": gradients_finite,
+        "global_logical_batch_size": GLOBAL_LOGICAL_BATCH_SIZE,
+        "global_model_input_tokens": int(global_input_tokens.item()),
+        "global_slots": all_global_slots,
         "loading_strategy": "low_cpu_mem_student_rank_zero_teacher",
-        "max_memory_allocated": int(torch.cuda.max_memory_allocated(device)),
-        "max_memory_reserved": int(torch.cuda.max_memory_reserved(device)),
+        "local_sequence_count": len(all_global_slots),
+        "loss_scaling_protocol": LOSS_SCALING_PROTOCOL,
+        "max_memory_allocated": max_memory_allocated,
+        "max_memory_reserved": max_memory_reserved,
+        "max_model_input_length": MAX_MODEL_INPUT_LENGTH,
+        "max_per_rank_microbatch_size": MAX_PER_RANK_MICROBATCH_SIZE,
+        "microbatch_sizes": list(microbatch_sizes),
+        "microsteps_per_optimizer_update": len(microbatch_sizes),
         "model_facing_prompt_sha256": prompt_hash,
+        "observed_max_model_input_length": max(
+            int(batch["input_ids"].shape[1]) for batch in prepared_batches
+        ),
+        "optimizer_class": OPTIMIZER_CLASS,
+        "optimizer_state_restored": optimizer_state_restored,
+        "optimizer_updates": 1,
         "parameter_update_nonzero": update_nonzero,
         "process_max_rss_bytes": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024),
         "prompt_protocol": "qwen3_non_thinking_v1",
         "rank": rank,
         "raw_prompt_sha256": raw_hash,
-        "soft_teacher_loss": float(loss.detach()),
-        "soft_teacher_loss_finite": bool(torch.isfinite(loss)),
-        "student_forward_finite": bool(torch.isfinite(student_logits).all()),
+        "response_mask_tokens": len(all_global_slots) * TEACHER_DEMO_MAX_NEW_TOKENS,
+        "response_tokens_per_sequence": TEACHER_DEMO_MAX_NEW_TOKENS,
+        "rng_state_restored": rng_state_restored,
+        "scheduler_state_restored": scheduler_state_restored,
+        "sequence_normalization": True,
+        "student_forward_finite": student_forward_finite,
         "student_revision": _resolved_commit(student_model, MODEL_REVISION),
-        "teacher_forward_finite": bool(torch.isfinite(teacher_logits).all()),
+        "teacher_forward_finite": bool(
+            teacher_metadata["teacher_forward_finite"]
+        ),
         "teacher_loaded_on_this_rank": rank == 0,
         "teacher_revision": str(teacher_metadata["resolved_teacher_commit"]),
         "tokenizer_fingerprint": str(teacher_metadata["tokenizer_fingerprint"]),
         "tokenizer_revision": MODEL_REVISION,
         "unique_rank_prompt_shard": unique_prompts,
+        "wrapped_transformer_blocks": wrapped_transformer_blocks,
     }
-    del checkpoint, teacher_logits, student_logits, teacher, student, optimizer
+    del runtime_state, teacher, student, optimizer, scheduler, prepared_batches
     torch.cuda.empty_cache()
     _log_phase(rank, "rank_training_completed")
     return {
@@ -1661,9 +2259,35 @@ def _completion(
 
 
 def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) -> None:
+    gpu_count = context.get("gpu_count")
+    if (
+        isinstance(gpu_count, bool)
+        or not isinstance(gpu_count, int)
+        or gpu_count not in SUPPORTED_GPU_COUNTS
+        or len(gathered) != gpu_count
+    ):
+        raise PreflightError("publication context has an invalid GPU count")
     rank_rows = [item["rank"] for item in gathered]
     device_rows = [item["device"] for item in gathered]
     nccl_rows = [item["nccl_diagnostic"] for item in gathered]
+    expected_sum = _nccl_expected_sum(gpu_count)
+    if sorted(
+        slot for item in rank_rows for slot in item.get("global_slots", [])
+    ) != list(range(GLOBAL_LOGICAL_BATCH_SIZE)):
+        raise PreflightError(
+            "rank training rows do not cover the exact global optimizer window"
+        )
+    for expected_rank, item in enumerate(rank_rows):
+        if (
+            item.get("rank") != expected_rank
+            or item.get("microbatch_sizes")
+            != list(_microbatch_sizes(gpu_count, expected_rank))
+            or item.get("global_slots")
+            != list(range(expected_rank, GLOBAL_LOGICAL_BATCH_SIZE, gpu_count))
+        ):
+            raise PreflightError(
+                "rank training row differs from its allocation-neutral schedule"
+            )
     cgroup = _cgroup_memory()
     process_peak = sum(int(item["process_max_rss_bytes"]) for item in rank_rows)
     cgroup["observed_peak_bytes"] = max(int(cgroup["peak_bytes"]), process_peak)
@@ -1685,17 +2309,28 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
         "created_at": _utc_now(),
         "devices": device_rows,
         "enable_thinking": False,
+        "execution": {
+            "allocation_sha256": context["allocation_sha256"],
+            "attempt": context["attempt"],
+            "execution_profile": PROFILE,
+            "job_id": context["job_id"],
+            "manifest_sha256": context["manifest_sha256"],
+        },
         "execution_context": {
+            "allocation_contract": "manifest_driven_scheduler_gpu_v1",
             "allocation_visibility": "preserved",
+            "cpu_core_count": CPU_CORE_COUNT,
             "distributed_launcher": "environment_rank_passthrough",
+            "gpu_count_policy": "scheduler",
             "mode": "server_scheduler_foreground",
             "nccl_p2p_policy": "disabled",
-            "visible_device_count": GPU_COUNT,
+            "threads_per_rank": _threads_per_rank(gpu_count),
+            "visible_device_count": gpu_count,
         },
         "git_commit": git_commit,
         "model_revision": MODEL_REVISION,
         "nccl_all_reduce": all(
-            item["observed_sum"] == NCCL_EXPECTED_SUM for item in nccl_rows
+            item["observed_sum"] == expected_sum for item in nccl_rows
         ),
         "nccl_diagnostics": nccl_rows,
         "nccl_runtime_version": _nccl_runtime_version(torch),
@@ -1710,17 +2345,20 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
         "qwen_forward_finite": all(
             item["student_forward_finite"]
             and item["teacher_forward_finite"]
-            and item["soft_teacher_loss_finite"]
+            and item["canonical_sft_loss_finite"]
             and item["gradients_finite"]
             and item["parameter_update_nonzero"]
             and item["unique_rank_prompt_shard"]
             and item["fsdp_save_resume"]
+            and item["optimizer_state_restored"]
+            and item["scheduler_state_restored"]
+            and item["rng_state_restored"]
             for item in rank_rows
         ),
         "rank_prompt_hashes_unique": len(
             {item["model_facing_prompt_sha256"] for item in rank_rows}
         )
-        == GPU_COUNT,
+        == gpu_count,
         "rank_training_checks": rank_rows,
         "rank_zero_teacher_load_count": sum(
             int(item["teacher_loaded_on_this_rank"]) for item in rank_rows
@@ -1729,13 +2367,14 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
         "resolved_model_commit": MODEL_REVISION,
         "resolved_teacher_commit": TEACHER_REVISION,
         "teacher_revision": TEACHER_REVISION,
+        "training_contract": _training_contract(),
         "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
         "tokenizer_hash": TOKENIZER_FINGERPRINT,
         "tokenizer_revision": MODEL_REVISION,
         "torch_cuda_version": str(torch.version.cuda),
         "torch_version": str(torch.__version__),
         "visible_cuda_devices": torch.cuda.device_count(),
-        "world_size": GPU_COUNT,
+        "world_size": gpu_count,
     }
     if not report["nccl_all_reduce"]:
         raise PreflightError("NCCL diagnostic rows are inconsistent")
@@ -1761,6 +2400,7 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
                     job_id=context["job_id"],
                     attempt=context["attempt"],
                     execution_profile=PROFILE,
+                    gpu_count=gpu_count,
                     manifest_sha256=context["manifest_sha256"],
                     allocation_sha256=context["allocation_sha256"],
                     content_handles=tuple(
@@ -1784,12 +2424,13 @@ def _worker_main(argv: Sequence[str]) -> int:
     args = parser.parse_args(argv)
     if args.local_rank is not None and args.local_rank != int(os.environ["LOCAL_RANK"]):
         raise PreflightError("torchrun local-rank argument differs from its environment")
-    _validate_environment()
     context = _strict_json(
         bytes.fromhex(args.worker_context), context="internal worker context"
     )
     if not isinstance(context, dict):
         raise PreflightError("internal worker context is invalid")
+    gpu_count = _gpu_count(context.get("gpu_count"), name="worker gpu_count")
+    _validate_environment(gpu_count)
     config_path = Path(context["resolved_config_path"])
     checkpoint_root = Path(context["checkpoint_root"])
     config = _strict_json(config_path.read_bytes(), context="worker resolved config")
@@ -1801,9 +2442,9 @@ def _worker_main(argv: Sequence[str]) -> int:
     runtime: DistributedRuntime | None = None
     completed = False
     try:
-        runtime = _initialize_distributed()
+        runtime = _initialize_distributed(gpu_count)
         row = _rank_training(config, checkpoint_root, runtime)
-        gathered: list[Any] = [None] * GPU_COUNT
+        gathered: list[Any] = [None] * gpu_count
         dist.all_gather_object(gathered, row, group=runtime.control_group)
         final_status: list[Any] = [None]
         publication_error: Exception | None = None
@@ -1872,7 +2513,7 @@ def _spawn_safe_script_path() -> str:
 def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
     invocation = _parse_outer(argv)
-    _validate_environment()
+    _validate_environment(invocation.gpu_count)
     execution_commit = _require_clean_git()
     payloads, prereg = _read_inputs(invocation)
     resolved_payload = payloads.get("resolved_config_sha256")
@@ -1906,6 +2547,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "attempt": invocation.attempt,
             "checkpoint_root": str(checkpoint_root),
             "code_commit": execution_commit,
+            "gpu_count": invocation.gpu_count,
             "input_hashes": invocation.input_hashes,
             "job_id": invocation.job_id,
             "manifest_sha256": invocation.manifest_sha256,
@@ -1926,7 +2568,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             [
                 "--standalone",
                 "--nnodes=1",
-                f"--nproc-per-node={GPU_COUNT}",
+                f"--nproc-per-node={invocation.gpu_count}",
                 "--max-restarts=0",
                 "--monitor-interval=1",
                 "--run-path",

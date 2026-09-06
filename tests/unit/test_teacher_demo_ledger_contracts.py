@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
+from posttrain_circuits.cli.train import _require_qwen3_store_binding
 from posttrain_circuits.datasets.teacher_demos.contracts import (
     LOGPROB_AVAILABLE,
     LOGPROB_FIXTURE_UNAVAILABLE,
@@ -28,6 +30,8 @@ GENERATION = {
     "top_k": 0,
     "min_p": 0.0,
     "candidates_per_prompt": 2,
+    "max_prompt_tokens": 1246,
+    "max_new_tokens": 256,
     "verifier_version": "proofgraph-exact-v1",
 }
 
@@ -76,6 +80,74 @@ def _attempt(
 
 
 class TeacherDemoLedgerContractTests(unittest.TestCase):
+    def test_amendment_binding_survives_store_and_consumer_rejects_tampering(self) -> None:
+        amendment = {
+            "protocol_amendment_id": "qwen3-v2-g0-elastic-v1",
+            "protocol_amendment_path": "prereg/amendments/qwen3_v2_g0_elastic_v1.yaml",
+            "protocol_amendment_git_commit": "1" * 40,
+            "protocol_amendment_sha256": "2" * 64,
+            "reviewed_implementation_commit": "3" * 40,
+        }
+        formal = {
+            "prereg_path": "prereg/qwen3_v2.yaml",
+            "prereg_version": "qwen3_v2",
+            "prereg_commit": "4" * 40,
+            "prereg_sha256": "5" * 64,
+            "code_commit": "6" * 40,
+            **amendment,
+        }
+        protocol_bindings = {
+            "protocol_track": "qwen3_v2",
+            "artifact_namespace": "qwen3-v2",
+            "prompt_protocol": "qwen3_non_thinking_v1",
+            "enable_thinking": False,
+            "chat_template_sha256": SHA_A,
+            "tokenizer_fingerprint": SHA_B,
+            **formal,
+        }
+        config = {
+            "protocol_track": "qwen3_v2",
+            "model": {
+                "artifact_namespace": "qwen3-v2",
+                "prompt_protocol": {"chat_template_sha256": SHA_A},
+                "tokenizer_fingerprint": SHA_B,
+            },
+        }
+        attempts = [
+            _attempt("p0", 0, accepted=True),
+            _attempt("p0", 1, accepted=False),
+            _attempt("p1", 0, accepted=False),
+            _attempt("p1", 1, accepted=True),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "store"
+            write_teacher_demo_store(
+                root,
+                attempts,
+                ordered_prompt_ids=["p0", "p1"],
+                prompt_manifest_hash=SHA_A,
+                tokenizer_hash=SHA_B,
+                generation=GENERATION,
+                protocol_bindings=protocol_bindings,
+            )
+            _, manifest = read_teacher_demo_store(root, require_formal=True)
+        with mock.patch(
+            "posttrain_circuits.cli.train.formal_artifact_binding",
+            return_value={**protocol_bindings, **formal},
+        ):
+            _require_qwen3_store_binding(
+                manifest,
+                config=config,
+                expected_behavior_policy="teacher/id",
+            )
+            manifest["protocol_bindings"]["reviewed_implementation_commit"] = "7" * 40
+            with self.assertRaisesRegex(ValueError, "reviewed_implementation_commit"):
+                _require_qwen3_store_binding(
+                    manifest,
+                    config=config,
+                    expected_behavior_policy="teacher/id",
+                )
+
     def test_complete_ledger_and_accepted_reference_view_have_only_file_hashes(self) -> None:
         attempts = [
             _attempt("p0", 0, accepted=True),

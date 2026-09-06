@@ -212,6 +212,7 @@ def main(argv: list[str] | None = None) -> None:
         output=output,
     ):
         return
+    formal_binding = formal_artifact_binding(config)
 
     task = ProofGraphTask()
     seed = int(config["seed"])
@@ -252,12 +253,14 @@ def main(argv: list[str] | None = None) -> None:
             cohort=args.cohort,
             subset="discovery",
             expected_initial_checkpoint_hash=sha256_file(args.initial_checkpoint),
+            expected_protocol_bindings=formal_binding,
         )
         validation_rows, validation_manifest = load_probe_examples(
             args.probe_cohort_manifest,
             cohort=args.cohort,
             subset="validation",
             expected_initial_checkpoint_hash=sha256_file(args.initial_checkpoint),
+            expected_protocol_bindings=formal_binding,
         )
         if validation_manifest["sha256"] != probe_manifest["sha256"]:
             raise ValueError("discovery and validation probes do not share one frozen cohort manifest")
@@ -369,7 +372,7 @@ def main(argv: list[str] | None = None) -> None:
         "probe_cohort_manifest": probe_manifest or {"kind": "deterministic_tiny_cohort"},
         "semantic_pair_hashes": [probe.semantic_pair_hash for probe in selected],
         "tokenized_pair_hashes": [probe.tokenized_pair_hash for probe in selected],
-        **formal_artifact_binding(config),
+        **formal_binding,
     }
     if not local_model:
         assert args.checkpoint is not None and probe_manifest is not None and args.cohort is not None
@@ -390,7 +393,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         compatibility_path = output.parent / "mib_raw" / "compatibility.json"
         compatibility_payload = json.loads(compatibility_path.read_text(encoding="utf-8"))
-        compatibility_payload.update(formal_artifact_binding(config))
+        compatibility_payload.update(formal_binding)
         compatibility_payload["sha256"] = sha256_value(
             {
                 key: value
