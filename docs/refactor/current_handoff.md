@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-09-05.
+Last updated: 2026-09-06.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. `AGENTS.md` is authoritative for operating and
@@ -9,19 +9,21 @@ must still be verified when mutable.
 
 ## Current repository state
 
-Committed HEAD is Candidate E implementation commit
-`58df5d22f7c09ac69b807eff5294296f6927bd1c` on `master`, 37 commits ahead of
-`origin/master`. It is a single-parent commit whose parent is
-`51783b7ab10476705916488a05477abf6cb511c1`; that parent descends from
-historical Candidate D acceptance commit
-`30bafb42344edfe2a6ceff473efe41ac0ee79750` and reviewed Candidate D
-implementation commit `a8855ecab55819bbcd1a7a479d933104bb27fb81`.
+Committed HEAD is Candidate E acceptance commit
+`5c0bb34cce288aef8908e498a6f5d3259b998f5b` on `master`. It is a
+single-parent commit whose parent is reviewed Candidate E implementation
+commit `58df5d22f7c09ac69b807eff5294296f6927bd1c`; that implementation descends
+from historical Candidate D acceptance commit
+`30bafb42344edfe2a6ceff473efe41ac0ee79750`.
 
 Candidate E is a complete, committed scheduler-managed 1/2/3/4-GPU
 implementation. Commit `58df5d2...` changes exactly 80 paths: 73 previously
-tracked paths and seven new paths. The current worktree contains exactly the
-two allowed uncommitted acceptance changes: the Candidate E amendment review
-block and this handoff. The implementation changes cover:
+tracked paths and seven new paths. Acceptance commit `5c0bb34...` changes only
+the amendment review block and this handoff. Before this handoff synchronization
+the tracked worktree and index were clean. The ignored `.pytest_cache/` created
+by the 2026-09-06 status audit is not permitted by the strict request-lineage
+gate and must be removed before further request preparation. The implementation
+changes cover:
 
 - permanent protocol rules and operational documentation in `AGENTS.md` and
   `docs/refactor/`;
@@ -47,8 +49,9 @@ The seven new files are:
 The Candidate E amendment is now `accepted`, has SHA-256
 `ff34cc53a85abe409f65ebe1ad3ca4d46b08a0ecd2117b76a27e22eea633a725`,
 and binds `reviewed_implementation_commit` exactly to
-`58df5d22f7c09ac69b807eff5294296f6927bd1c`. This review transition and the
-handoff still require their separate metadata-only acceptance commit.
+`58df5d22f7c09ac69b807eff5294296f6927bd1c`. The separate metadata-only
+acceptance commit is `5c0bb34cce288aef8908e498a6f5d3259b998f5b`; the actual
+accepted-lineage resolver and both hash-bound handlers accept it.
 Candidate D remains a recoverable historical baseline, not acceptance evidence
 for Candidate E.
 
@@ -149,6 +152,11 @@ neutral requests; the W=3 `22/21/21` path; one-GPU sequence and memory gates;
 no-clobber output publication, marker-last completion, archive inventory, and
 semantic replay; and both hash-bound deployment identities.
 
+The accepted transition was committed as
+`5c0bb34cce288aef8908e498a6f5d3259b998f5b`. It changes only the amendment
+review block and this handoff, and has implementation commit `58df5d2...` as
+its sole parent.
+
 This acceptance is static evidence, not real-GPU evidence. In particular, the
 one-GPU path fails closed at the 81920 MiB per-device reservation, verifies the
 actual peak before preflight success, and retains the 196608 MiB cgroup plus
@@ -190,9 +198,16 @@ Candidate E final static and CPU-only boundary verification:
   `58df5d2...`: 546/546 passed in 25.74 seconds; the 19 warnings were dependency
   deprecations, expected NVML-unavailable warnings in a no-GPU test
   environment, and one optimizer-wrapper test warning;
-- independent-review complete-suite rerun with CUDA and NVIDIA visibility
-  disabled: 546/546 passed in 25.82 seconds; its 15 warnings were dependency
-  deprecations and the expected optimizer-wrapper test warning;
+- the recorded independent-review 546/546 result was obtained during the
+  proposed-to-accepted review transition, but is not reproducible from the
+  committed accepted checkout;
+- a 2026-09-06 rerun from accepted HEAD `5c0bb34...` produced 530 passed and
+  16 failed in 25.05 seconds. All failures are acceptance-state fixture defects
+  in `test_protocol_amendments.py`, `test_qwen3_v2_gpu_preflight_handler.py`,
+  and `test_qwen3_v2_g0_handler.py`: they read the checked-in accepted amendment
+  as though it were still the proposed template. Production lineage,
+  deployment, and handler checks still pass, but the repository is not
+  full-suite green in its accepted state;
 - affected scheduler/scientific suite: 290/290 passed;
 - deployment consistency suite: 26/26 passed;
 - both disabled proposals passed the actual ServerScheduler
@@ -205,7 +220,7 @@ Candidate E final static and CPU-only boundary verification:
   identities, the clean MIB/submodule check, forbidden-capability scan, and
   `git diff --check` passed.
 
-The independent-review complete-suite command was:
+The accepted-checkout complete-suite command was:
 
 ```bash
 TMPDIR=/scr/del6500/OPD/tmp PYTHONDONTWRITEBYTECODE=1 \
@@ -213,7 +228,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src CUDA_VISIBLE_DEVICES= \
 NVIDIA_VISIBLE_DEVICES=void \
 /scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin/python -c \
 "import sys; p='/opt/anaconda3/lib/python3.13/site-packages'; sys.path.append(p); import pytest; sys.path.remove(p); raise SystemExit(pytest.main(sys.argv[1:]))" \
-tests -q
+tests -q --tb=no
 ```
 
 The two runtime checks were:
@@ -223,9 +238,9 @@ The two runtime checks were:
 /scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python -m pip check
 ```
 
-The 1/2/3/4 evidence above is static fail-closed fixture evidence, not a claim
-that GPU execution occurred. No Candidate E GPU pilot has run. Real preflight
-evidence is still required separately for every world size before G0.
+The 1/2/3/4 fixtures remain static fail-closed evidence. Candidate E now also
+has one real, semantically accepted W=2 GPU preflight; W=1, W=3, and W=4 have
+not run successfully under Candidate E and remain required before G0.
 
 During Candidate E construction no GPU was queried or used, no job was run or
 submitted, no outbox file was generated or changed, no network was accessed,
@@ -233,6 +248,12 @@ and no central registration or service was modified. Read-only central config
 and runtime checks were performed. The independent acceptance review likewise
 did not query or use a GPU, submit a job, write an outbox file, modify central
 configuration, or operate a service.
+
+During the 2026-09-06 status audit no job, central state, or service was
+changed. One read-only `doctor` attempt indirectly invoked `nvidia-smi`; the
+sandboxed probe exited 9 and observed no GPUs, so it is not evidence of a host
+fault. The accepted-checkout pytest audit wrote the ignored `.pytest_cache/`
+noted above.
 
 ## Proposals, requests, and central state
 
@@ -247,41 +268,75 @@ Candidate E project-owned proposals are disabled:
   SHA-256
   `bdf8a0101d8eae1e3ccfaebfc10f55ed82b35c193289a3469dbc3d634a6d0d5b`.
 
-A read-only check on 2026-09-05 shows that central
-`config/projects/opd.toml` is still the disabled Candidate D fixed-two-GPU
-registration at SHA-256
-`4f5ad58d58c1c10e9e352d66f6cf8655977e6fdbe0913cac53fd53cb293cdae1`.
-Candidate E has not been installed or enabled centrally.
+A read-only check on 2026-09-06 shows that central
+`config/projects/opd.toml` is Candidate E at SHA-256
+`f43c0133e37b6eef394f70c18c9d7f30ce0080fa39482c3c456d37b439a7e8a0`,
+with `enabled = true` and integration status
+`protocol-v2-enabled-qwen3-v2-elastic-validation`. Relative to the disabled
+project proposal, only enablement/status/notes differ. The central parser
+reports both GPU profiles as scheduler-managed. Current live service PID could
+not be queried because the user service bus was unavailable, but the completed
+elastic job below proves Candidate E was used for that attempt.
+
+Candidate E real preflight coverage is currently:
+
+| World size | Status |
+| --- | --- |
+| 1 | missing |
+| 2 | passed and semantically validated |
+| 3 | missing |
+| 4 | missing |
+
+The W=2 job is `opd-1f442a3c5c916a557a613b50f1459349`, attempt 1. It was
+submitted at `2026-09-06T02:58:18Z`, claimed with 24 CPU cores, 196608 MiB and
+two GPUs, and completed with exit code 0 at `2026-09-06T18:31:37Z`; scheduler
+runtime was 42.5215 seconds. Its count-neutral request is
+`/scr/del6500/OPD/scheduler/outbox/opd-1f442a3c5c916a557a613b50f1459349.json`
+at SHA-256
+`2cc8e4256d018ac19008a1b94733d69ebb3fecdf9955071f0d06d9af7177386b`.
+The report is under workflow
+`qwen3-v2-gpu-preflight-elastic-700b6054e4dcfff45a56841d6a90dbce`, has raw
+SHA-256 `ca1edc3fd3053fc673e2d2093bd6dd61fe84f876d685e188dac47012205879f1`,
+reports `passed = true`, `world_size = 2`, global batch 64, and binds accepted
+HEAD `5c0bb34...`. Its completion SHA-256 is
+`3760400728a55184dbd18a7b2e250ed919c76546d35fa8458b9f365a4d11671b`;
+the current semantic validator accepts the report/completion pair.
+
+Central durable state contains no pending or running OPD job and no OPD lease.
+It contains three completed and seven failed OPD jobs; all seven failures
+predate Candidate E. No `qwen3_v2_g0` job exists.
 
 The stale historical preflight outbox file
 `/scr/del6500/OPD/scheduler/outbox/opd-0399c0625f43425dd03cfcc638d234f1.json`
 still must not be submitted, edited, or reused. No Candidate E preflight or G0
-request exists. The builders currently and correctly reject generation while
-this acceptance transition is uncommitted; subsequent gates also require the
-accepted clean lineage, installed and separately enabled central registration,
-and the full real W=1/2/3/4 preflight matrix. File existence would not
-constitute submission in any event.
+request from that historical workflow may be reused. No Candidate E G0 request
+or G0 output exists. The completed W=2 request must not be resubmitted. G0
+request generation still requires the full distinct accepted-lineage
+W=1/2/3/4 matrix; the ignored `.pytest_cache/` is an additional current
+checkout blocker. File existence would not constitute submission in any event.
 
 ## Required next gates
 
-1. The user creates the separate Candidate E acceptance commit containing only
-   the amendment review-block transition and this handoff.
-2. A central ServerScheduler operator reviews and installs the full Candidate E
-   proposal while keeping `enabled = false`.
-3. The user separately approves central enablement; the operator enables it.
-4. Central validation arranges distinct real preflight attempts covering world
-   sizes 1, 2, 3, and 4. Normal project requests remain count-neutral and may
-   not force those allocations. Every report and completion must pass the OPD
-   semantic validator and share the accepted implementation lineage.
-5. Only after that matrix is present may OPD generate one fresh G0 request. Its
+1. Resolve the accepted-checkout 16-test regression before further pilots. A
+   direct test-file patch would violate the current post-acceptance lineage
+   allowlist, so it requires an explicitly designed and independently reviewed
+   successor implementation/acceptance chain or a formally reviewed
+   alternative; do not silently patch the accepted lineage.
+2. Remove the generated ignored `.pytest_cache/` before any request preparation
+   and rerun the strict accepted-lineage check.
+3. Central validation arranges distinct real preflight attempts for the missing
+   world sizes 1, 3, and 4. Normal project requests remain count-neutral and
+   may not force those allocations. Every report and completion must pass the
+   OPD semantic validator and share the applicable accepted implementation
+   lineage.
+4. Only after the complete matrix is present may OPD generate one fresh G0 request. Its
    absolute path, SHA-256, job ID, project HEAD, clean worktree state, and test
    results must be reported; a central operator then validates and submits that
    exact file under a separate G0 approval.
 
-The independent reviewer must not bind acceptance to Candidate D or any
-earlier implementation. Until gates 1-4 complete, no Candidate E G0 request can
-be generated or submitted. This is an approval and real-GPU-evidence boundary,
-not a remaining static implementation defect.
+Until gates 1-3 complete, no G0 request can be generated or submitted. The
+missing W=1/3/4 pilots and accepted-checkout test regression are active
+blockers; W=2 alone is insufficient.
 
 ## Quarantined legacy scheduler surface
 
