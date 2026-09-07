@@ -4,8 +4,8 @@ certification_id: qwen3-v2-elastic-training-v1-initial-certification
 execution_class:
   execution_class_id: qwen3-v2-elastic-training-v1
   descriptor_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json
-  descriptor_sha256: 6585c7ce6989b5a14bf1150acfa94ef2bbda9997b42c3a0d333f2e2ece788dca
-  fingerprint_sha256: 656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4
+  descriptor_sha256: d57c6620d090da503d5dbc5d1415a6690b7eb0110ad7cdaaf4ac1e42e6e0a739
+  fingerprint_sha256: ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108
   supported_world_sizes:
   - 1
   - 2
@@ -49,7 +49,7 @@ legacy_evidence_condensation:
   bridge_authority: certification_review_block
   bridge_kind: recorded_legacy_evidence_condensation_requires_independent_certification_review
   source_reports_embed_execution_fingerprint: false
-  attested_execution_fingerprint_sha256: 656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4
+  attested_execution_fingerprint_sha256: ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108
   statement: The W1/W2 reports predate this fingerprint and do not directly attest
     it; acceptance of this certificate independently reviews the recorded report semantics,
     their Git-recorded historical handler/runtime/training-contract surface, and the

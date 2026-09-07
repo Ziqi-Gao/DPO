@@ -35,10 +35,10 @@ execution_safety_certification:
   execution_class_id: qwen3-v2-elastic-training-v1
   certification_id: qwen3-v2-elastic-training-v1-initial-certification
   descriptor_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json
-  descriptor_sha256: 6585c7ce6989b5a14bf1150acfa94ef2bbda9997b42c3a0d333f2e2ece788dca
+  descriptor_sha256: d57c6620d090da503d5dbc5d1415a6690b7eb0110ad7cdaaf4ac1e42e6e0a739
   certification_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml
-  certification_core_sha256: b1f5df8f7339a52636c0f2e744d8c8358838cd879af0d9abe8b99d3e1fa9826b
-  fingerprint_sha256: 656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4
+  certification_core_sha256: 2d6a9cc556b085e191ad0b0818f1dde9e6e6e52c8ff6367e8ce16935cf884d44
+  fingerprint_sha256: ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108
   supported_world_sizes: [1, 2, 3, 4]
 
 candidate_e_scientific_protocol:

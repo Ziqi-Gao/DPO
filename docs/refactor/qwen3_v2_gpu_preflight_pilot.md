@@ -96,7 +96,7 @@ training-path check without retaining that stale-view failure mode.
 
 No repository snapshot digest is an input. The execution-class descriptor
 binds the fixed runtime, its dependency locks, the explicit safety subject,
-and only the 24-file execution kernel listed in
+and only the 52-file execution kernel listed in
 `docs/refactor/qwen3_v2_execution_class_certification.md`. Each experiment's
 science protocol separately binds the scientific configuration it needs.
 

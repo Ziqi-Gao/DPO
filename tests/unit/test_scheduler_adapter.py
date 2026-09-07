@@ -2224,6 +2224,94 @@ class SchedulerAdapterTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout.strip()), [2, False])
         self.assertIn("dirty or unverifiable checkout", result.stderr)
 
+    def test_entrypoint_rejects_top_level_src_shadow_before_import(self):
+        source = (
+            PROJECT_ROOT / "scripts" / "server_scheduler" / "opd-entrypoint"
+        ).read_text(encoding="utf-8")
+        scratch_root = Path("/scr/del6500/OPD/tmp")
+        for exclusion in ("none", "gitignore", "info-exclude"):
+            with self.subTest(exclusion=exclusion), tempfile.TemporaryDirectory(
+                prefix=".entrypoint-shadow-", dir=scratch_root
+            ) as raw_repository:
+                repository = Path(raw_repository)
+                subprocess.run(
+                    ("/usr/bin/git", "-C", str(repository), "init", "-q"),
+                    check=True,
+                    capture_output=True,
+                )
+                package = repository / "src" / "posttrain_circuits"
+                adapter = package / "scheduler_adapter"
+                adapter.mkdir(parents=True)
+                (package / "__init__.py").write_text("", encoding="utf-8")
+                (adapter / "__init__.py").write_text("", encoding="utf-8")
+                (adapter / "entrypoint.py").write_text(
+                    "import json\n\ndef main():\n    return 0\n", encoding="utf-8"
+                )
+                script = repository / "scripts" / "server_scheduler" / "opd-entrypoint"
+                script.parent.mkdir(parents=True)
+                script.write_text(
+                    source.replace(
+                        f'SOURCE_ROOT = "{PROJECT_ROOT}"',
+                        f'SOURCE_ROOT = "{repository}"',
+                        1,
+                    ),
+                    encoding="utf-8",
+                )
+                script.chmod(0o750)
+                gitignore = repository / ".gitignore"
+                if exclusion == "gitignore":
+                    gitignore.write_text("/src/json.py\n", encoding="utf-8")
+                subprocess.run(
+                    ("/usr/bin/git", "-C", str(repository), "add", "--", "."),
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    (
+                        "/usr/bin/git",
+                        "-c",
+                        "user.name=OPD fixture",
+                        "-c",
+                        "user.email=opd-fixture@example.invalid",
+                        "-C",
+                        str(repository),
+                        "commit",
+                        "-qm",
+                        "fixture",
+                    ),
+                    check=True,
+                    capture_output=True,
+                )
+                if exclusion == "info-exclude":
+                    (repository / ".git" / "info" / "exclude").write_text(
+                        "/src/json.py\n", encoding="utf-8"
+                    )
+                sentinel = repository / "shadow-imported"
+                (repository / "src" / "json.py").write_text(
+                    "from pathlib import Path\n"
+                    f"Path({str(sentinel)!r}).write_text('executed', encoding='utf-8')\n",
+                    encoding="utf-8",
+                )
+                environment = os.environ.copy()
+                for key in (
+                    "LD_AUDIT",
+                    "LD_LIBRARY_PATH",
+                    "LD_PRELOAD",
+                    "PYTHONHOME",
+                    "PYTHONPATH",
+                ):
+                    environment.pop(key, None)
+                result = subprocess.run(
+                    (str(script), "--invalid"),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("dirty or unverifiable checkout", result.stderr)
+                self.assertFalse(sentinel.exists())
+
     def test_production_outbox_path_is_fixed_and_not_request_selectable(self):
         self.assertEqual(
             WorkflowLayout.production().outbox_directory(),

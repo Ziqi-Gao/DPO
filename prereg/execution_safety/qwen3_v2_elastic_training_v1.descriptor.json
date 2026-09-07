@@ -1,7 +1,7 @@
 {
   "execution_class_id": "qwen3-v2-elastic-training-v1",
   "fingerprint_schema": "opd-execution-safety-fingerprint-v1",
-  "fingerprint_sha256": "656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4",
+  "fingerprint_sha256": "ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108",
   "kind": "qwen3_v2_execution_safety_descriptor",
   "schema_version": 1,
   "subject": {
@@ -216,7 +216,7 @@
       "deployments/qwen3_v2_g0/package-manifest.json": "fb2be67fe2f03d6beb1c6f91f2500e1cdf97853704c8e1f27740bad1757a3057",
       "deployments/qwen3_v2_gpu_preflight/dependency-lock.json": "c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f",
       "deployments/qwen3_v2_gpu_preflight/package-manifest.json": "e2284b7c20636f3c85f719cdc0179a0ae5973fdf7cb502d247110db0e5cc037c",
-      "scripts/server_scheduler/opd-entrypoint": "48e45a611c49ab7ce66f52d3bebffb4654f03a58b1327e5294e91e1f9f3b1418",
+      "scripts/server_scheduler/opd-entrypoint": "d870aeb9a6501246e74c322d997eca260781da1613d27509eb5deb9a7af1b315",
       "scripts/server_scheduler/qwen3-v2-g0-handler.py": "049b4b35a3feba8898f74246d7f223e571b7df43060151c210efa5bc2510f8da",
       "scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py": "7e908dbbe0aef562b2358242336569db53e8daa14104ce873997b7e7b68692b5",
       "src/posttrain_circuits/artifacts/checkpoints.py": "c2cd803d6a3bef5b305f6eaa8f2d6cfe650417d1f6f7cc12075d298456a83c40",

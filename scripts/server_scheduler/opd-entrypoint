@@ -82,9 +82,7 @@ def _unsafe_untracked_paths() -> tuple[str, ...]:
             raise ValueError("Git returned a non-canonical untracked path")
         if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
             continue
-        if path == "src/posttrain_circuits.py" or path.startswith(
-            ("src/posttrain_circuits/", "scripts/server_scheduler/")
-        ):
+        if path.startswith(("src/", "scripts/server_scheduler/")):
             unsafe.append(path)
     return tuple(unsafe)
 

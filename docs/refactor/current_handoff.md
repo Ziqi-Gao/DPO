@@ -9,17 +9,21 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The committed checkout is master at
-1c04321106e0cad6914427ba2775c8ddcf3cd1c4. That commit changes only this
-handoff relative to 23dd9b4e775e68783281f2ce0a4adc9a2605c6f7 and descends
-from Candidate E acceptance commit
-5c0bb34cce288aef8908e498a6f5d3259b998f5b, whose reviewed implementation
-commit is 58df5d22f7c09ac69b807eff5294296f6927bd1c.
+The committed checkout is master at rejected successor implementation commit
+e94363527fff315e16b7ce99d7dfe3d7b7ee5063. It descends from Candidate E
+acceptance commit 5c0bb34cce288aef8908e498a6f5d3259b998f5b, whose reviewed
+implementation commit is 58df5d22f7c09ac69b807eff5294296f6927bd1c.
 
-The worktree now contains an uncommitted successor implementation for reusable
-execution-class certification. It is based on 1c043211... and must not be
-described as committed or operational until the user creates an implementation
-commit and an independent reviewer performs the separate acceptance transition.
+An independent acceptance review rejected e943635... because the outer
+entrypoint rejected untracked files only below src/posttrain_circuits rather
+than its entire subsequently importable src path. An untracked or ignored
+src/json.py could therefore shadow the standard library before fingerprint
+validation. The worktree contains the narrow uncommitted repair: reject every
+untracked src file before adding src to sys.path, except isolated
+__pycache__/*.pyc files that the earlier pycache-prefix boundary cannot import.
+It also contains a real subprocess regression test for ordinary, .gitignore,
+and .git/info/exclude shadow files. A new implementation commit and fresh
+independent acceptance review are required.
 
 Candidate E amendment
 prereg/amendments/qwen3_v2_g0_elastic_v1.yaml is unchanged, remains accepted,
@@ -88,17 +92,17 @@ The fingerprint covers at least:
 Current identities are:
 
 - execution descriptor SHA-256:
-  6585c7ce6989b5a14bf1150acfa94ef2bbda9997b42c3a0d333f2e2ece788dca;
+  d57c6620d090da503d5dbc5d1415a6690b7eb0110ad7cdaaf4ac1e42e6e0a739;
 - execution fingerprint:
-  656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4;
+  ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108;
 - certification SHA-256:
-  e5f338fd578c2f4506b8b695b6f2365843f619f86d4b4b36f0fa0b2b00c115aa;
+  f87ef137046832f8d0f8c507466982fde19b2c6f343e693eb60763d30bc4545c;
 - certification core SHA-256:
-  b1f5df8f7339a52636c0f2e744d8c8358838cd879af0d9abe8b99d3e1fa9826b;
+  2d6a9cc556b085e191ad0b0818f1dde9e6e52c8ff6367e8ce16935cf884d44;
 - proposed v2 amendment SHA-256:
-  a1e5b7379b2bfbb570e69a161a51f05d880a42427edd6514890773b704506df3;
+  b541d5e43cd01604a0061214a652c7a96204afaa45763b40e2138b1ee962560a;
 - Candidate E science protocol SHA-256:
-  6880a81293d8e45995c96641ff47c3870c3d9a551f120265d551b058e88d32b2.
+  81669aaf5c4dba84f0aa36b369a10b827d587be57cb305220a85ca5c94629600.
 
 The G0 plan no longer embeds eight W=1/2/3/4 report/completion artifacts.
 Under the proposed successor it binds the exact descriptor, reusable
@@ -234,6 +238,11 @@ Static and CPU/no-GPU verification completed on 2026-09-07:
   top-level PyYAML import regression;
 - after the minimal repair, that exact test passed 1/1 and its affected
   certification/adapter suite passed 67/67;
+- the subsequent independent acceptance review reused those results and ran no
+  suite; it rejected e943635... solely for the top-level src shadow gap;
+- the narrow repair's real entrypoint shadow test and existing bytecode
+  isolation test pass 2/2, including ordinary, .gitignore, and
+  .git/info/exclude cases;
 - both fixed runtimes pass pip check;
 - descriptor recomputation, fingerprint/CAS binding, certificate validation,
   handler/package/deployment hashes, compilation, and git diff --check pass;
@@ -253,9 +262,10 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-1. The user reviews and creates one implementation commit containing all
-   current source, tests, disabled proposals, proposed review documents, and
-   this handoff.
+1. The user reviews and creates a new implementation commit containing the
+   seven-file shadow-boundary repair, regenerated proposed artifacts, and this
+   handoff. The rejected e943635... commit must not be used as the reviewed
+   implementation identity.
 2. A separate independent review binds that exact implementation commit and
    changes only the review blocks of the v2 amendment, execution certificate,
    Candidate E science protocol, and this handoff in one acceptance commit.
