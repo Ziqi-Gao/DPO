@@ -9,11 +9,13 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The committed checkout is master at joint successor acceptance commit
-46352c4b88013761cd43a83282fd3c6251bf2d9e. That commit changes only the three
-review-bearing successor artifacts and this handoff, and binds reviewed
-implementation commit 811fd772711d1792d59a2159174886f68721c0c4. The
-implementation commit's direct parent is the rejected candidate
+The committed checkout is master at handoff synchronization commit
+bca406da3496a9b842535228eb43f832ea8779dc. Its parent is joint successor
+acceptance commit 46352c4b88013761cd43a83282fd3c6251bf2d9e, which changes
+only the three review-bearing successor artifacts and the handoff and binds
+reviewed implementation commit
+811fd772711d1792d59a2159174886f68721c0c4. The implementation commit's direct
+parent is the rejected candidate
 e94363527fff315e16b7ce99d7dfe3d7b7ee5063. This lineage descends from
 Candidate E v1 acceptance commit 5c0bb34cce288aef8908e498a6f5d3259b998f5b,
 whose reviewed implementation commit is
@@ -27,10 +29,10 @@ private pycache-prefix boundary cannot import. Its real Git subprocess test
 covers ordinary, .gitignore, and .git/info/exclude src/json.py shadows.
 
 The acceptance commit was verified from a clean worktree. The successor is now
-accepted at the OPD Git/lineage layer. This handoff-only state synchronization
-is the sole subsequent worktree change; it is non-safety-critical and does not
-invalidate the accepted execution fingerprint. Central proposal installation,
-project enablement, request generation, and submission remain separate gates.
+accepted at the OPD Git/lineage layer. The later handoff-only commit is
+non-safety-critical and does not invalidate the accepted execution fingerprint.
+The exact disabled central proposal is now installed. Project enablement,
+request generation, and submission remain separate gates.
 
 Candidate E amendment
 prereg/amendments/qwen3_v2_g0_elastic_v1.yaml is unchanged, remains accepted,
@@ -232,9 +234,13 @@ G0:
 - disabled proposal SHA-256:
   82f609530c0931ce7cb1f230ee4cbf6601cc3fa1613a89be53f31a7dce4961c8.
 
-The actual ServerScheduler parser accepted the CPU profile and both proposed
-scheduler-managed GPU profiles in the candidate review. No central
-registration was changed during this migration.
+The actual ServerScheduler parser accepted the CPU profile and both
+scheduler-managed GPU profiles in the candidate review. Read-only verification
+after the central review found
+/home/del6500/projects/ServerScheduler/config/projects/opd.toml byte-identical
+to the G0 proposal above, with the same SHA-256 and enabled = false. The
+central registration is therefore installed but remains disabled. No service
+or task action was performed by this OPD session.
 
 ## Verification
 
@@ -279,15 +285,11 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-1. The user commits this handoff-only state synchronization. It does not change
-   the accepted execution class or scientific protocol.
-2. A central operator separately reviews and installs the exact disabled G0
-   proposal at deployments/qwen3_v2_g0/registration-proposal-v2.toml (SHA-256
-   82f609530c0931ce7cb1f230ee4cbf6601cc3fa1613a89be53f31a7dce4961c8).
-   Project enablement and any service action remain separate approvals.
-3. After separate user approval, the central operator enables the reviewed
+1. The user commits this handoff-only record of the completed central install.
+   It does not change the accepted execution class or scientific protocol.
+2. After separate user approval, the central operator enables the reviewed
    registration without changing its scheduler-managed GPU policy.
-4. Only after central deployment and enablement may OPD generate one fresh,
+3. Only after central enablement is confirmed may OPD generate one fresh,
    allocation-neutral G0 request. The project must report its absolute path,
    SHA-256, job_id, project HEAD, worktree state, and validation result. A
    central operator validates and submits that exact path separately.
