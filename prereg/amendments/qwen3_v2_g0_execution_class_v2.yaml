@@ -104,8 +104,8 @@ implementation_acceptance:
   required_real_gpu_pilots_for_initial_certification: [1, 2]
 
 review:
-  status: proposed
-  reviewed_implementation_commit: null
-  reviewer: null
-  reviewed_at_utc: null
-  rationale: null
+  status: accepted
+  reviewed_implementation_commit: 811fd772711d1792d59a2159174886f68721c0c4
+  reviewer: Codex independent acceptance reviewer independent_acceptance_811
+  reviewed_at_utc: '2026-09-07T21:40:15Z'
+  rationale: Accepted the exact implementation after verifying fail-closed source-shadow rejection and consistent execution-class bindings.

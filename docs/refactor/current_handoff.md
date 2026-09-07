@@ -9,21 +9,24 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The committed checkout is master at rejected successor implementation commit
-e94363527fff315e16b7ce99d7dfe3d7b7ee5063. It descends from Candidate E
-acceptance commit 5c0bb34cce288aef8908e498a6f5d3259b998f5b, whose reviewed
+The committed checkout is master at successor implementation commit
+811fd772711d1792d59a2159174886f68721c0c4, whose direct parent is the rejected
+candidate e94363527fff315e16b7ce99d7dfe3d7b7ee5063. It descends from Candidate
+E acceptance commit 5c0bb34cce288aef8908e498a6f5d3259b998f5b, whose reviewed
 implementation commit is 58df5d22f7c09ac69b807eff5294296f6927bd1c.
 
-An independent acceptance review rejected e943635... because the outer
-entrypoint rejected untracked files only below src/posttrain_circuits rather
-than its entire subsequently importable src path. An untracked or ignored
-src/json.py could therefore shadow the standard library before fingerprint
-validation. The worktree contains the narrow uncommitted repair: reject every
-untracked src file before adding src to sys.path, except isolated
-__pycache__/*.pyc files that the earlier pycache-prefix boundary cannot import.
-It also contains a real subprocess regression test for ordinary, .gitignore,
-and .git/info/exclude shadow files. A new implementation commit and fresh
-independent acceptance review are required.
+The independent acceptance review of 811fd772... found no blocking findings
+and accepts that exact implementation. The narrow repair rejects every
+untracked or ignored file below src and scripts/server_scheduler before src is
+made importable, except isolated __pycache__/*.pyc files that the earlier
+private pycache-prefix boundary cannot import. Its real Git subprocess test
+covers ordinary, .gitignore, and .git/info/exclude src/json.py shadows.
+
+The worktree now contains only the pending four-file joint acceptance
+transition: identical accepted review blocks in the successor amendment,
+execution certificate, and Candidate E science protocol, plus this handoff.
+Those bytes are not yet committed, so the successor remains non-operational
+until the user creates the separate acceptance commit.
 
 Candidate E amendment
 prereg/amendments/qwen3_v2_g0_elastic_v1.yaml is unchanged, remains accepted,
@@ -32,16 +35,17 @@ ff34cc53a85abe409f65ebe1ad3ca4d46b08a0ecd2117b76a27e22eea633a725.
 Its per-G0 four-real-pilot gate remains the currently accepted Candidate E
 authority. This migration does not silently rewrite it.
 
-The proposed successor artifacts are:
+The successor artifacts are:
 
 - prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml;
 - prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json;
 - prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml;
 - prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_v1.yaml.
 
-All three review-bearing successor documents remain proposed with null review
-identity. The successor is therefore non-operational: it cannot yet authorize
-G0 request generation, central deployment, enablement, or submission.
+All three review-bearing successor documents now have identical accepted
+working-tree metadata bound to implementation commit 811fd772.... Their joint
+acceptance remains pending the user-created acceptance commit and does not yet
+authorize G0 request generation, central deployment, enablement, or submission.
 
 ## Correct scheduler-managed GPU model
 
@@ -89,23 +93,23 @@ The fingerprint covers at least:
   attempt isolation;
 - cgroup/per-device memory envelope and supported world sizes.
 
-Current identities are:
+Pending acceptance-transition working-tree identities are:
 
 - execution descriptor SHA-256:
   d57c6620d090da503d5dbc5d1415a6690b7eb0110ad7cdaaf4ac1e42e6e0a739;
 - execution fingerprint:
   ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108;
 - certification SHA-256:
-  f87ef137046832f8d0f8c507466982fde19b2c6f343e693eb60763d30bc4545c;
+  7af2ad0f643860d7a9632fb643efc17166e1d868ca8643a72255cb591e9413f2;
 - certification core SHA-256:
-  2d6a9cc556b085e191ad0b0818f1dde9e6e52c8ff6367e8ce16935cf884d44;
-- proposed v2 amendment SHA-256:
-  b541d5e43cd01604a0061214a652c7a96204afaa45763b40e2138b1ee962560a;
+  2d6a9cc556b085e191ad0b0818f1dde9e6e6e52c8ff6367e8ce16935cf884d44;
+- accepted-transition v2 amendment SHA-256:
+  9971f63015435dbe595183e5376cb5acb8e62c8c40a62854ccbbac60b2fc307d;
 - Candidate E science protocol SHA-256:
-  81669aaf5c4dba84f0aa36b369a10b827d587be57cb305220a85ca5c94629600.
+  1f408237c9e6099356b3602fdb6fe20f7e8d150312d052f81c9e3875a44aa4ba.
 
 The G0 plan no longer embeds eight W=1/2/3/4 report/completion artifacts.
-Under the proposed successor it binds the exact descriptor, reusable
+Under the successor design it binds the exact descriptor, reusable
 certification, accepted execution-class amendment, and a separate
 per-experiment science protocol through immutable content identities. Handler,
 finalizer, report, bundle, completion marker, and semantic validator carry and
@@ -191,8 +195,8 @@ Previously recorded central W=3/W=4 preflight request or queue state was not
 queried in this migration and is not asserted current here. No existing job was
 cancelled or changed. Those pilots may remain useful operational evidence, but
 they are no longer a generic prerequisite for every future experiment. Until
-the proposed successor is independently accepted, Candidate E v1 still
-requires its original full four-pilot matrix for its own G0 request.
+the joint acceptance transition is committed, Candidate E v1 still requires
+its original full four-pilot matrix for its own G0 request.
 
 ## Deployment proposals and hashes
 
@@ -243,11 +247,14 @@ Static and CPU/no-GPU verification completed on 2026-09-07:
 - the narrow repair's real entrypoint shadow test and existing bytecode
   isolation test pass 2/2, including ordinary, .gitignore, and
   .git/info/exclude cases;
+- this independent review found no blocker in implementation commit
+  811fd772...; the exact review-only transition validator passed and
+  test_real_git_joint_acceptance_resolves passed 1/1;
 - both fixed runtimes pass pip check;
 - descriptor recomputation, fingerprint/CAS binding, certificate validation,
   handler/package/deployment hashes, compilation, and git diff --check pass;
-- the Candidate E v1 amendment is byte-for-byte unchanged and proposed
-  successor review states remain proposed.
+- the Candidate E v1 amendment is byte-for-byte unchanged; all three successor
+  review blocks are identical, accepted, and bind 811fd772... in the worktree.
 
 CUDA/NCCL lines emitted by unit fixtures are mocks. Tests explicitly hid CUDA.
 No GPU was queried or used.
@@ -262,22 +269,18 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-1. The user reviews and creates a new implementation commit containing the
-   seven-file shadow-boundary repair, regenerated proposed artifacts, and this
-   handoff. The rejected e943635... commit must not be used as the reviewed
-   implementation identity.
-2. A separate independent review binds that exact implementation commit and
-   changes only the review blocks of the v2 amendment, execution certificate,
-   Candidate E science protocol, and this handoff in one acceptance commit.
-3. A central operator separately reviews and installs the disabled proposal.
+1. The user reviews and creates one joint acceptance commit containing exactly
+   the three accepted review-bearing artifacts and this handoff. Its review
+   identity remains the already committed implementation 811fd772....
+2. A central operator separately reviews and installs the disabled proposal.
    Project enablement and any service action remain separate approvals.
-4. Only after acceptance and central deployment may OPD generate one fresh,
+3. Only after the acceptance commit and central deployment may OPD generate one fresh,
    allocation-neutral G0 request. The project must report its absolute path,
    SHA-256, job_id, project HEAD, worktree state, and validation result. A
    central operator validates and submits that exact path separately.
 
-No formal G0 request is ready under the unaccepted successor. Do not use a
-fixed GPU count or an exact-job preflight constraint for G0.
+No formal G0 request is ready while the acceptance transition is uncommitted.
+Do not use a fixed GPU count or an exact-job preflight constraint for G0.
 
 ## Quarantined legacy scheduler surface
 
@@ -297,7 +300,7 @@ introduced.
   docs/refactor/qwen3_v2_execution_class_certification.md
 - Accepted Candidate E v1 amendment:
   prereg/amendments/qwen3_v2_g0_elastic_v1.yaml
-- Proposed execution-class successor:
+- Pending-acceptance execution-class successor:
   prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml
 - GPU pilot contract: docs/refactor/qwen3_v2_gpu_preflight_pilot.md
 - Legacy inventory: docs/refactor/legacy_scheduler_inventory.md
