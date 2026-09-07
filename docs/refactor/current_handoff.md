@@ -9,11 +9,13 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The committed checkout is master at handoff synchronization commit
-bca406da3496a9b842535228eb43f832ea8779dc. Its parent is joint successor
-acceptance commit 46352c4b88013761cd43a83282fd3c6251bf2d9e, which changes
-only the three review-bearing successor artifacts and the handoff and binds
-reviewed implementation commit
+The committed checkout is master at central-install handoff commit
+ed1beab1ca1013b4e12cdd3def3dff6a51a3b953. Its parent is the earlier
+handoff synchronization commit bca406da3496a9b842535228eb43f832ea8779dc,
+which descends directly from joint successor acceptance commit
+46352c4b88013761cd43a83282fd3c6251bf2d9e. The acceptance commit changes only
+the three review-bearing successor artifacts and the handoff and binds reviewed
+implementation commit
 811fd772711d1792d59a2159174886f68721c0c4. The implementation commit's direct
 parent is the rejected candidate
 e94363527fff315e16b7ce99d7dfe3d7b7ee5063. This lineage descends from
@@ -31,8 +33,9 @@ covers ordinary, .gitignore, and .git/info/exclude src/json.py shadows.
 The acceptance commit was verified from a clean worktree. The successor is now
 accepted at the OPD Git/lineage layer. The later handoff-only commit is
 non-safety-critical and does not invalidate the accepted execution fingerprint.
-The exact disabled central proposal is now installed. Project enablement,
-request generation, and submission remain separate gates.
+The exact central proposal was installed and subsequently enabled under
+separate approval. Request generation is complete; central validation and
+submission remain separate gates.
 
 Candidate E amendment
 prereg/amendments/qwen3_v2_g0_elastic_v1.yaml is unchanged, remains accepted,
@@ -236,11 +239,35 @@ G0:
 
 The actual ServerScheduler parser accepted the CPU profile and both
 scheduler-managed GPU profiles in the candidate review. Read-only verification
-after the central review found
-/home/del6500/projects/ServerScheduler/config/projects/opd.toml byte-identical
-to the G0 proposal above, with the same SHA-256 and enabled = false. The
-central registration is therefore installed but remains disabled. No service
-or task action was performed by this OPD session.
+after the separately approved enablement found
+/home/del6500/projects/ServerScheduler/config/projects/opd.toml differs from the
+G0 proposal above only by enabled = true. Its enabled central SHA-256 is
+084661f557594126285efe56cdbebd20cc240e631f97618f45a34c9ba8ca1c39.
+No service or task action was performed by this OPD session.
+
+## Current formal G0 request
+
+The accepted Candidate E builder generated exactly one fresh resource-neutral
+request from clean project HEAD
+ed1beab1ca1013b4e12cdd3def3dff6a51a3b953:
+
+- outbox path:
+  /scr/del6500/OPD/scheduler/outbox/opd-2947686c51c3e93ad1b18e5a3b7d6b22.json;
+- outbox SHA-256:
+  b34953ad8af479dd29d8f1bb90af18f65fa3b45f9e355bb265f0c7bb303e0443;
+- job_id: opd-2947686c51c3e93ad1b18e5a3b7d6b22;
+- workflow_id: qwen3-v2-g0-elastic-079b8a7cbc197974d8c7c7e163fb5d53;
+- canonical plan SHA-256:
+  035605ae98e188242b95debe33096ab7f361fd55dbccd8b76bbabe044cb36626;
+- plan path:
+  /data/del6500/OPD/workflows/plans/qwen3-v2-g0-elastic-079b8a7cbc197974d8c7c7e163fb5d53/035605ae98e188242b95debe33096ab7f361fd55dbccd8b76bbabe044cb36626.json.
+
+The builder and a direct strict-shape check accepted the request. It contains
+only schema_version, job_id, project, task, priority, and the three parameters
+workflow_id, plan_sha256, and unit_id. It omits execution_profile, resources,
+GPU count, and GPU identity. The canonical WorkflowPlan loader recomputed the
+same plan SHA-256. The outbox exists locally but has not been submitted or
+consumed.
 
 ## Verification
 
@@ -275,27 +302,29 @@ Static and CPU/no-GPU verification completed on 2026-09-07:
 CUDA/NCCL lines emitted by unit fixtures are mocks. Tests explicitly hid CUDA.
 No GPU was queried or used.
 
-This migration did not call central submit or dispatch, did not create or edit
-an outbox request, did not query or alter a job, queue, lease, allocation, or
-constraint, did not modify central ServerScheduler, did not enable a project,
-and did not restart or signal a service. It performed no external action.
+This migration did not call central submit or dispatch, did not query or alter
+a job, queue, lease, allocation, or constraint, did not modify central
+ServerScheduler, and did not restart or signal a service. It created the
+project-owned immutable plan/CAS inputs and the single outbox request recorded
+above; those local files are not evidence of submission. It performed no
+external action.
 A generated pytest cache was moved recoverably to
 /scr/del6500/OPD/tmp/pytest-cache-execution-class-20260907; seven generated
 Python bytecode files were removed.
 
 ## Required next gates
 
-1. The user commits this handoff-only record of the completed central install.
-   It does not change the accepted execution class or scientific protocol.
-2. After separate user approval, the central operator enables the reviewed
-   registration without changing its scheduler-managed GPU policy.
-3. Only after central enablement is confirmed may OPD generate one fresh,
-   allocation-neutral G0 request. The project must report its absolute path,
-   SHA-256, job_id, project HEAD, worktree state, and validation result. A
-   central operator validates and submits that exact path separately.
+1. The user commits this handoff-only record. It does not change the accepted
+   execution class, scientific protocol, plan, or request.
+2. A central operator validates the exact outbox path and SHA-256 above, then
+   submits that file without adding an execution profile, resources, or GPU
+   hints.
+3. Query central status and logs through terminal state. Accept scientific
+   success only after OPD validates g0.json, g0_artifacts.tar, and the semantic
+   completion marker.
 
-No formal G0 request has been generated. Do not use a fixed GPU count or an
-exact-job preflight constraint for G0.
+Do not create a duplicate request or use a fixed GPU count or exact-job
+preflight constraint for G0.
 
 ## Quarantined legacy scheduler surface
 
