@@ -18,12 +18,15 @@ def build_proofgraph_evaluator(
     tokenizer: PreTrainedTokenizerBase,
     *,
     max_completion_length: int,
+    max_model_input_length: int | None = None,
     model_config: dict[str, object] | None = None,
 ) -> Callable[[torch.nn.Module], dict[str, float]]:
     if not examples:
         raise ValueError("evaluation requires at least one ProofGraph example")
     if max_completion_length < 1:
         raise ValueError("max_completion_length must be positive")
+    if max_model_input_length is not None and max_model_input_length < 1:
+        raise ValueError("max_model_input_length must be positive when provided")
     task = ProofGraphTask()
 
     @torch.no_grad()
@@ -43,10 +46,19 @@ def build_proofgraph_evaluator(
                     return_tensors="pt",
                 ).input_ids.to(device)
                 maximum_positions = int(getattr(getattr(model, "config", None), "max_position_embeddings", 0))
-                available = (
-                    maximum_positions - encoded.shape[1] if maximum_positions else max_completion_length
-                )
-                new_tokens = max(1, min(max_completion_length, available))
+                available_limits = [max_completion_length]
+                if maximum_positions:
+                    available_limits.append(maximum_positions - encoded.shape[1])
+                if max_model_input_length is not None:
+                    available_limits.append(
+                        max_model_input_length - encoded.shape[1]
+                    )
+                new_tokens = min(available_limits)
+                if new_tokens < 1:
+                    raise ValueError(
+                        "evaluation prompt leaves no token inside the reviewed "
+                        "model-input envelope"
+                    )
                 generate = getattr(model, "generate", None)
                 if not callable(generate):
                     raise TypeError("evaluation model must provide Hugging Face generate()")

@@ -7,17 +7,21 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 from posttrain_circuits.artifacts.protocol_amendments import (
-    AMENDMENT_RELATIVE_PATH,
-    load_protocol_amendment_bytes,
+    load_execution_class_amendment_bytes,
+)
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
 )
 from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
+    EXPECTED_INPUT_NAMES as ADAPTER_EXPECTED_INPUT_NAMES,
     GATE_NAMES,
     PROFILE_NAME,
-    WORKFLOW_ID,
+    WORKFLOW_ID_PREFIX,
 )
 from posttrain_circuits.scheduler_adapter.registry import require_handler
 
@@ -42,43 +46,120 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         cls.prepare_module = importlib.util.module_from_spec(prepare_spec)
         prepare_spec.loader.exec_module(cls.prepare_module)
 
-    def _accepted_amendment(self, implementation_commit: str) -> tuple[bytes, bytes]:
-        proposed = (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
-        self.assertEqual(
-            hashlib.sha256(proposed).hexdigest(),
-            self.module.PROPOSED_AMENDMENT_SHA256,
-        )
-        proposed_review = (
-            b"review:\n"
-            b"  status: proposed\n"
-            b"  reviewed_implementation_commit: null\n"
-            b"  reviewer: null\n"
-            b"  reviewed_at_utc: null\n"
-            b"  rationale: null\n"
-        )
-        accepted_review = (
-            b"review:\n"
-            b"  status: accepted\n"
-            + f"  reviewed_implementation_commit: {implementation_commit}\n".encode()
-            + b"  reviewer: independent-reviewer\n"
-            + b"  reviewed_at_utc: '2026-09-05T12:00:00Z'\n"
-            + b"  rationale: Reviewed implementation accepted.\n"
-        )
-        self.assertIn(proposed_review, proposed)
-        return proposed, proposed.replace(proposed_review, accepted_review)
+    def _running_manifest_fixture(
+        self,
+        *,
+        gpu_count: int = 3,
+    ) -> tuple[bytes, str, tuple[str, ...]]:
+        gpu_uuids = tuple(f"GPU-held-{index}" for index in range(gpu_count))
+        allocation = {
+            "cpu_cores": self.module.CPU_CORE_COUNT,
+            "exclusive_gpu": True,
+            "gpu_count": gpu_count,
+            "gpu_memory_mib": 81920,
+            "gpu_utilization_pct": 95,
+            "memory_mib": 196608,
+        }
+        concrete_allocation = {
+            "allocation": allocation,
+            "cpu_ids": list(range(self.module.CPU_CORE_COUNT)),
+            "gpu_indices": list(range(gpu_count)),
+            "gpu_pci_bus_ids": [
+                f"0000:{0x40 + index:02x}:00.0" for index in range(gpu_count)
+            ],
+            "gpu_uuids": list(gpu_uuids),
+            "numa_node": 0,
+        }
+        payload = {
+            **concrete_allocation,
+            "estimated_runtime_seconds": 60,
+            "execution_profile": self.module.PROFILE,
+            "exit_code": None,
+            "failure_reason": None,
+            "job_id": "opd-held-g0",
+            "parameters": {
+                "plan_sha256": "1" * 64,
+                "unit_id": "g0",
+                "workflow_id": f"{WORKFLOW_ID_PREFIX}{'a' * 32}",
+            },
+            "priority": 0,
+            "project": "OPD",
+            "requested_profile": None,
+            "resources": None,
+            "schema_version": 2,
+            "state": "running",
+            "stderr_log": "/scheduler/stderr.log",
+            "stdout_log": "/scheduler/stdout.log",
+            "submitted_at": "2026-09-07T00:00:00Z",
+            "task": self.module.TASK,
+            "updated_at": "2026-09-07T00:00:01Z",
+        }
+        raw = (self.module._canonical_json(payload) + "\n").encode("utf-8")
+        return raw, self.module._sha256_value(concrete_allocation), gpu_uuids
+
+    def test_held_running_manifest_binds_hash_allocation_and_uuid_order(self) -> None:
+        raw, allocation_sha256, gpu_uuids = self._running_manifest_fixture()
+        with tempfile.TemporaryDirectory(prefix=".g0-manifest-", dir=PROJECT_ROOT) as raw_dir:
+            path = Path(raw_dir) / "running.json"
+            path.write_bytes(raw)
+            with path.open("rb") as stream:
+                invocation = self.module.Invocation(
+                    workflow_id=f"{WORKFLOW_ID_PREFIX}{'a' * 32}",
+                    plan_sha256="1" * 64,
+                    unit_id="g0",
+                    run_id="2" * 64,
+                    job_id="opd-held-g0",
+                    attempt=1,
+                    execution_profile=self.module.PROFILE,
+                    gpu_count=3,
+                    manifest_sha256=hashlib.sha256(raw).hexdigest(),
+                    allocation_sha256=allocation_sha256,
+                    running_manifest_descriptor=stream.fileno(),
+                    content_handles=(),
+                    output_descriptor=-1,
+                )
+                with mock.patch.dict(
+                    self.module.os.environ,
+                    {"CUDA_VISIBLE_DEVICES": ",".join(gpu_uuids)},
+                ):
+                    self.module._validate_held_running_manifest(invocation)
+                    with self.assertRaisesRegex(self.module.G0Error, "manifest bytes"):
+                        self.module._validate_held_running_manifest(
+                            replace(invocation, manifest_sha256="0" * 64)
+                        )
+                    with self.assertRaisesRegex(self.module.G0Error, "allocation digest"):
+                        self.module._validate_held_running_manifest(
+                            replace(invocation, allocation_sha256="0" * 64)
+                        )
+                with mock.patch.dict(
+                    self.module.os.environ,
+                    {"CUDA_VISIBLE_DEVICES": ",".join(reversed(gpu_uuids))},
+                ), self.assertRaisesRegex(self.module.G0Error, "ordered running-manifest"):
+                    self.module._validate_held_running_manifest(invocation)
 
     def test_stage_plan_is_dynamic_and_foreground(self) -> None:
         root = Path("/scr/del6500/OPD/tmp/test-qwen3-v2-g0/qwen3-v2")
+        science_overrides = (
+            "g0=qwen3_v2_eap_separation",
+            "experiment=canonical_sft",
+            "task.num_examples=256",
+            "state_source.num_candidates=8",
+            "seed=43",
+        )
         for gpu_count, threads in ((1, 24), (2, 12), (3, 8), (4, 6)):
             stages = self.module._stage_plan(
                 root,
                 initial_checkpoint_sha256="a" * 64,
                 gpu_count=gpu_count,
+                science_overrides=science_overrides,
             )
             self.assertEqual(len(stages), 19)
             self.assertEqual(stages[0].name, "build_splits")
             self.assertEqual(stages[-1].name, "finalize_g0")
             finalizer = stages[-1]
+            self.assertNotIn("--gpu-preflight", finalizer.argv)
+            self.assertIn("--execution-safety-descriptor", finalizer.argv)
+            self.assertIn("--execution-safety-certification", finalizer.argv)
             self.assertNotIn("--compatibility", finalizer.argv)
             final_compatibility_index = finalizer.argv.index(
                 "--final-compatibility"
@@ -121,6 +202,58 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             score_world_size_index = score.argv.index("--world-size") + 1
             self.assertEqual(score.argv[score_world_size_index], str(gpu_count))
             self.assertEqual(self.module.THREADS_PER_RANK[gpu_count], threads)
+            for stage in stages:
+                if stage.name != "build_probe_cohorts":
+                    self.assertIn("seed=43", stage.argv, stage.name)
+            teacher = next(stage for stage in stages if stage.name == "score_teacher")
+            self.assertIn("experiment=offline_soft", teacher.argv)
+            self.assertNotIn("experiment=canonical_sft", teacher.argv)
+
+    def test_science_protocol_cas_is_part_of_the_exact_handler_abi(self) -> None:
+        self.assertEqual(
+            self.module.EXPECTED_INPUT_NAMES,
+            ADAPTER_EXPECTED_INPUT_NAMES,
+        )
+        self.assertIn(
+            "execution_science_protocol_sha256",
+            self.module.EXPECTED_INPUT_NAMES,
+        )
+
+    def test_seed_reuses_safety_projection_but_shape_and_resources_fail_closed(self) -> None:
+        from posttrain_circuits.artifacts.execution_safety_certification import (
+            execution_safety_config_projection,
+        )
+        from posttrain_circuits.core.config import compose_config
+
+        common = [
+            "g0=qwen3_v2_eap_separation",
+            "experiment=canonical_sft",
+            "task.num_examples=256",
+            "state_source.num_candidates=8",
+        ]
+        seed_42 = compose_config([*common, "seed=42"])
+        seed_43 = compose_config([*common, "seed=43"])
+        self.assertEqual(
+            execution_safety_config_projection(seed_42),
+            execution_safety_config_projection(seed_43),
+        )
+        changed_shape = compose_config(
+            [*common, "seed=43", "trainer.max_model_input_length=2048"]
+        )
+        self.assertNotEqual(
+            execution_safety_config_projection(seed_42),
+            execution_safety_config_projection(changed_shape),
+        )
+        with self.assertRaisesRegex(self.module.G0Error, "resource-steering"):
+            self.module._common_overrides(
+                Path("/scr/del6500/OPD/tmp/test-qwen3-v2-g0/qwen3-v2"),
+                [*common, "seed=43", "gpu_count=2"],
+            )
+        with self.assertRaisesRegex(self.module.G0Error, "handler-owned"):
+            self.module._common_overrides(
+                Path("/scr/del6500/OPD/tmp/test-qwen3-v2-g0/qwen3-v2"),
+                [*common, "seed=43", "output_root=/escape"],
+            )
 
     def test_checkpoint_placeholders_are_not_erased_before_resume_runs_exist(self) -> None:
         with tempfile.TemporaryDirectory(prefix=".g0-placeholders-", dir=PROJECT_ROOT) as raw:
@@ -307,7 +440,17 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             amendment_git_commit="2" * 40,
             reviewed_implementation_commit="3" * 40,
             request_git_commit="4" * 40,
-            preflight_git_commits=("5" * 40,) * 4,
+        )
+        science = self.module.BootstrapScienceProtocol(
+            science_protocol_path=(
+                "prereg/execution_science/qwen3_v2_g0_seed42_v1.yaml"
+            ),
+            science_protocol_sha256="5" * 64,
+            science_protocol_id="qwen3-v2-g0-seed42-v1",
+            science_protocol_git_commit="6" * 40,
+            science_protocol_reviewed_implementation_commit="7" * 40,
+            unit_id="g0",
+            hydra_override_vector=("seed=42",),
         )
 
         def bootstrap(**_: object) -> object:
@@ -317,13 +460,19 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         def install() -> None:
             events.append("install-source")
 
+        def bootstrap_science(**_: object) -> object:
+            events.append("bootstrap-science")
+            return science
+
         def shared(*_: object, **__: object) -> object:
             events.append("shared-validator")
             raise self.module.G0Error("stop after ordering probe")
 
         with (
+            mock.patch.object(self.module, "SOURCE_ROOT", PROJECT_ROOT),
             mock.patch.object(self.module, "_configure_bytecode_isolation"),
             mock.patch.object(self.module, "_parse_outer", return_value=invocation),
+            mock.patch.object(self.module, "_validate_held_running_manifest"),
             mock.patch.object(self.module, "_validate_environment"),
             mock.patch.object(self.module, "_require_clean_git", return_value="6" * 40),
             mock.patch.object(
@@ -333,7 +482,11 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
                     {"resolved_config_sha256": {}},
                     b"prereg",
                     b"amendment",
-                    {},
+                    {
+                        "execution_safety_descriptor_sha256": b"descriptor",
+                        "execution_safety_certification_sha256": b"certification",
+                        "execution_science_protocol_sha256": b"science",
+                    },
                 ),
             ),
             mock.patch.object(
@@ -341,41 +494,104 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
                 "_bootstrap_accepted_lineage",
                 side_effect=bootstrap,
             ),
+            mock.patch.object(
+                self.module,
+                "_bootstrap_science_protocol_lineage",
+                side_effect=bootstrap_science,
+            ),
             mock.patch.object(self.module, "_install_source_path", side_effect=install),
             mock.patch.object(
                 self.module,
-                "_validate_config_and_preflight",
+                "_validate_config_and_certification",
                 side_effect=shared,
             ),
         ):
             with self.assertRaisesRegex(self.module.G0Error, "ordering probe"):
                 self.module._supervise([])
-        self.assertEqual(events, ["bootstrap", "install-source", "shared-validator"])
-
-    def test_handler_rejects_untracked_files_hidden_by_ignore_rules(self) -> None:
-        raw = (
-            b".codex/config.toml\0"
-            b"src/pkg/__pycache__/safe.cpython-312.pyc\0"
-            b"src/pkg/ignored.py\0"
+        self.assertEqual(
+            events,
+            [
+                "bootstrap",
+                "bootstrap-science",
+                "install-source",
+                "shared-validator",
+            ],
         )
-        with mock.patch.object(self.module, "_git_bytes", return_value=raw):
-            self.assertEqual(
-                self.module._unsafe_untracked_paths(),
-                ("src/pkg/ignored.py",),
-            )
+
+    def test_proposed_successor_amendment_fails_before_gpu_runtime_validation(self) -> None:
+        invocation = mock.Mock()
+        with (
+            mock.patch.object(self.module, "SOURCE_ROOT", PROJECT_ROOT),
+            mock.patch.object(self.module, "_configure_bytecode_isolation"),
+            mock.patch.object(self.module, "_parse_outer", return_value=invocation),
+            mock.patch.object(self.module, "_validate_held_running_manifest"),
+            mock.patch.object(self.module, "_require_clean_git", return_value="6" * 40),
+            mock.patch.object(
+                self.module,
+                "_read_inputs",
+                return_value=(
+                    {"resolved_config_sha256": {}},
+                    b"prereg",
+                    b"proposed-amendment",
+                    {
+                        "execution_safety_descriptor_sha256": b"descriptor",
+                        "execution_safety_certification_sha256": b"certification",
+                    },
+                ),
+            ),
+            mock.patch.object(
+                self.module,
+                "_bootstrap_accepted_lineage",
+                side_effect=self.module.G0Error("protocol amendment is not accepted"),
+            ),
+            mock.patch.object(self.module, "_validate_environment") as validate_runtime,
+        ):
+            with self.assertRaisesRegex(self.module.G0Error, "not accepted"):
+                self.module._supervise([])
+        validate_runtime.assert_not_called()
+
+    def test_handler_requires_only_a_clean_tracked_checkout(self) -> None:
+        with mock.patch.object(
+            self.module,
+            "_git_bytes",
+            side_effect=(b"", ("6" * 40 + "\n").encode()),
+        ) as git_bytes:
+            self.assertEqual(self.module._require_clean_git(), "6" * 40)
+        self.assertEqual(
+            git_bytes.call_args_list,
+            [
+                mock.call(
+                    "status",
+                    "--porcelain=v1",
+                    "--untracked-files=no",
+                    "--ignore-submodules=none",
+                ),
+                mock.call("rev-parse", "HEAD"),
+            ],
+        )
 
     def test_scientific_child_bootstraps_before_installing_source(self) -> None:
         code_commit = "a" * 40
         request_commit = "b" * 40
-        preflight_commit = "c" * 40
         amendment_sha256 = "d" * 64
+        fingerprint = "c" * 64
         events: list[str] = []
         binding = self.module.BootstrapLineage(
             amendment_sha256=amendment_sha256,
             amendment_git_commit="e" * 40,
             reviewed_implementation_commit="f" * 40,
             request_git_commit=request_commit,
-            preflight_git_commits=(preflight_commit,) * 4,
+        )
+        science = self.module.BootstrapScienceProtocol(
+            science_protocol_path=(
+                "prereg/execution_science/qwen3_v2_g0_seed42_v1.yaml"
+            ),
+            science_protocol_sha256="1" * 64,
+            science_protocol_id="qwen3-v2-g0-seed42-v1",
+            science_protocol_git_commit="2" * 40,
+            science_protocol_reviewed_implementation_commit="3" * 40,
+            unit_id="g0",
+            hydra_override_vector=("seed=42",),
         )
         imported = mock.Mock()
         imported.main = mock.Mock()
@@ -397,8 +613,22 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             code_commit,
             "--request-git-commit",
             request_commit,
-            "--preflight-git-commit",
-            preflight_commit,
+            "--execution-safety-class-id",
+            "qwen3-v2-elastic-training-v1",
+            "--execution-safety-fingerprint-sha256",
+            fingerprint,
+            "--execution-safety-descriptor-sha256",
+            "1" * 64,
+            "--execution-safety-certification-sha256",
+            "2" * 64,
+            "--execution-science-protocol-id",
+            science.science_protocol_id,
+            "--execution-science-protocol-sha256",
+            science.science_protocol_sha256,
+            "--execution-science-protocol-git-commit",
+            science.science_protocol_git_commit,
+            "--execution-science-protocol-reviewed-implementation-commit",
+            science.science_protocol_reviewed_implementation_commit,
             "--amendment-sha256",
             amendment_sha256,
             "--reviewed-implementation-commit",
@@ -411,6 +641,7 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             "scientific-argument",
         ]
         with (
+            mock.patch.object(self.module, "SOURCE_ROOT", PROJECT_ROOT),
             mock.patch.object(self.module, "_configure_bytecode_isolation"),
             mock.patch.object(
                 self.module,
@@ -436,16 +667,26 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
     def test_finalizer_receives_handler_owned_allocation_context(self) -> None:
         code_commit = "a" * 40
         request_commit = "b" * 40
-        preflight_commit = "c" * 40
         implementation_commit = "d" * 40
         amendment_sha256 = "e" * 64
         allocation_sha256 = "f" * 64
+        fingerprint = "c" * 64
         binding = self.module.BootstrapLineage(
             amendment_sha256=amendment_sha256,
             amendment_git_commit="1" * 40,
             reviewed_implementation_commit=implementation_commit,
             request_git_commit=request_commit,
-            preflight_git_commits=(preflight_commit,) * 4,
+        )
+        science = self.module.BootstrapScienceProtocol(
+            science_protocol_path=(
+                "prereg/execution_science/qwen3_v2_g0_seed42_v1.yaml"
+            ),
+            science_protocol_sha256="1" * 64,
+            science_protocol_id="qwen3-v2-g0-seed42-v1",
+            science_protocol_git_commit="2" * 40,
+            science_protocol_reviewed_implementation_commit="3" * 40,
+            unit_id="g0",
+            hydra_override_vector=("seed=42",),
         )
         imported = mock.Mock()
         imported.main = mock.Mock()
@@ -455,8 +696,22 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             code_commit,
             "--request-git-commit",
             request_commit,
-            "--preflight-git-commit",
-            preflight_commit,
+            "--execution-safety-class-id",
+            "qwen3-v2-elastic-training-v1",
+            "--execution-safety-fingerprint-sha256",
+            fingerprint,
+            "--execution-safety-descriptor-sha256",
+            "1" * 64,
+            "--execution-safety-certification-sha256",
+            "2" * 64,
+            "--execution-science-protocol-id",
+            science.science_protocol_id,
+            "--execution-science-protocol-sha256",
+            science.science_protocol_sha256,
+            "--execution-science-protocol-git-commit",
+            science.science_protocol_git_commit,
+            "--execution-science-protocol-reviewed-implementation-commit",
+            science.science_protocol_reviewed_implementation_commit,
             "--amendment-sha256",
             amendment_sha256,
             "--reviewed-implementation-commit",
@@ -469,6 +724,7 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             "scientific-argument",
         ]
         with (
+            mock.patch.object(self.module, "SOURCE_ROOT", PROJECT_ROOT),
             mock.patch.object(self.module, "_configure_bytecode_isolation"),
             mock.patch.object(self.module, "_require_clean_git", return_value=code_commit),
             mock.patch.object(
@@ -484,7 +740,23 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         self.assertEqual(context.world_size, 3)
         self.assertEqual(context.allocation_sha256, allocation_sha256)
         self.assertEqual(context.request_git_commit, request_commit)
-        self.assertEqual(context.gpu_preflight_git_commit, preflight_commit)
+        self.assertEqual(context.execution_safety_fingerprint_sha256, fingerprint)
+        self.assertEqual(
+            context.execution_science_protocol_id,
+            science.science_protocol_id,
+        )
+        self.assertEqual(
+            context.execution_science_protocol_sha256,
+            science.science_protocol_sha256,
+        )
+        self.assertEqual(
+            context.execution_science_protocol_git_commit,
+            science.science_protocol_git_commit,
+        )
+        self.assertEqual(
+            context.execution_science_protocol_reviewed_implementation_commit,
+            science.science_protocol_reviewed_implementation_commit,
+        )
 
     def test_finalizer_direct_or_tampered_context_fails_closed(self) -> None:
         from posttrain_circuits.cli.finalize_g0 import (
@@ -497,7 +769,14 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         tampered = ScientificInvocationContext(
             allocation_sha256="f" * 64,
             code_commit="a" * 40,
-            gpu_preflight_git_commit="b" * 40,
+            execution_safety_class_id="qwen3-v2-elastic-training-v1",
+            execution_safety_fingerprint_sha256="b" * 64,
+            execution_safety_descriptor_sha256="1" * 64,
+            execution_safety_certification_sha256="2" * 64,
+            execution_science_protocol_id="qwen3-v2-g0-seed42-v1",
+            execution_science_protocol_sha256="3" * 64,
+            execution_science_protocol_git_commit="4" * 40,
+            execution_science_protocol_reviewed_implementation_commit="5" * 40,
             protocol_amendment_sha256="c" * 64,
             request_git_commit="d" * 40,
             reviewed_implementation_commit="e" * 40,
@@ -506,146 +785,52 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "world_size"):
             finalize_g0([], scientific_context=tampered)
 
-    def test_bootstrap_rejects_source_change_even_when_later_reverted(self) -> None:
-        implementation = "a" * 40
-        acceptance = "b" * 40
-        tamper = "c" * 40
-        reverted = "d" * 40
-        proposed, accepted = self._accepted_amendment(implementation)
-        amendment_by_commit = {
-            implementation: proposed,
-            acceptance: accepted,
-            tamper: accepted,
-            reverted: accepted,
-        }
-        changed_by_edge = {
-            (implementation, acceptance): frozenset(
-                {str(self.module.AMENDMENT_RELATIVE_PATH)}
-            ),
-            (acceptance, tamper): frozenset(
-                {"src/posttrain_circuits/artifacts/protocol_amendments.py"}
-            ),
-            (tamper, reverted): frozenset(
-                {"src/posttrain_circuits/artifacts/protocol_amendments.py"}
-            ),
-        }
-        with (
-            mock.patch.object(
-                self.module,
-                "_git_amendment_bytes",
-                side_effect=lambda commit: amendment_by_commit[commit],
-            ),
-            mock.patch.object(
-                self.module,
-                "_linear_commit_path",
-                return_value=(acceptance, tamper, reverted),
-            ),
-            mock.patch.object(
-                self.module,
-                "_changed_paths",
-                side_effect=lambda parent, commit: changed_by_edge[(parent, commit)],
-            ),
-        ):
-            with self.assertRaisesRegex(
-                self.module.G0Error,
-                "non-handoff implementation change",
-            ):
-                self.module._validate_accepted_commit_chain(
-                    implementation=implementation,
-                    endpoint=reverted,
-                    accepted_raw=accepted,
-                    role="test lineage",
-                )
+    def test_preimport_critical_path_copy_matches_certification_module(self) -> None:
+        from posttrain_circuits.artifacts.execution_safety_certification import (
+            IMPLEMENTATION_FILE_PATHS,
+        )
 
-    def test_bootstrap_accepts_one_review_transition_then_handoff(self) -> None:
-        implementation = "a" * 40
-        acceptance = "b" * 40
-        handoff = "c" * 40
-        proposed, accepted = self._accepted_amendment(implementation)
-        with (
-            mock.patch.object(
-                self.module,
-                "_git_amendment_bytes",
-                side_effect=lambda commit: (
-                    proposed if commit == implementation else accepted
-                ),
-            ),
-            mock.patch.object(
-                self.module,
-                "_linear_commit_path",
-                return_value=(acceptance, handoff),
-            ),
-            mock.patch.object(
-                self.module,
-                "_changed_paths",
-                side_effect=(
-                    frozenset({str(self.module.AMENDMENT_RELATIVE_PATH)}),
-                    frozenset({self.module.HANDOFF_RELATIVE_PATH}),
-                ),
-            ),
-        ):
-            self.assertEqual(
-                self.module._validate_accepted_commit_chain(
-                    implementation=implementation,
-                    endpoint=handoff,
-                    accepted_raw=accepted,
-                    role="test lineage",
-                ),
-                acceptance,
-            )
+        self.assertEqual(
+            self.module.EXECUTION_SAFETY_IMPLEMENTATION_PATHS,
+            IMPLEMENTATION_FILE_PATHS,
+        )
+        from posttrain_circuits.artifacts.execution_science_protocol import (
+            APPROVED_STORAGE_LOCATOR_PATHS,
+            SCHEDULER_PROVENANCE_PATHS,
+        )
 
-    def test_bootstrap_rejects_accepted_scientific_term_tampering(self) -> None:
-        implementation = "a" * 40
-        proposed, accepted = self._accepted_amendment(implementation)
-        tampered = accepted.replace(b"  token_budget: 2000000\n", b"  token_budget: 2000001\n")
-        self.assertNotEqual(tampered, accepted)
-        with mock.patch.object(
-            self.module,
-            "_git_amendment_bytes",
-            return_value=proposed,
-        ):
-            with self.assertRaisesRegex(
-                self.module.G0Error,
-                "changed reviewed scientific terms",
-            ):
-                self.module._validate_accepted_commit_chain(
-                    implementation=implementation,
-                    endpoint="b" * 40,
-                    accepted_raw=tampered,
-                    role="test lineage",
-                )
+        self.assertEqual(
+            self.module.SCIENCE_STORAGE_LOCATOR_PATHS,
+            APPROVED_STORAGE_LOCATOR_PATHS,
+        )
+        self.assertEqual(
+            self.module.SCIENCE_SCHEDULER_PROVENANCE_PATHS,
+            SCHEDULER_PROVENANCE_PATHS,
+        )
 
-    def test_bootstrap_rejects_merge_lineage(self) -> None:
-        implementation = "a" * 40
-        merge = "b" * 40
-        with (
-            mock.patch.object(self.module, "_is_ancestor", return_value=True),
-            mock.patch.object(
-                self.module,
-                "_commit_parents",
-                return_value=(implementation, "c" * 40),
-            ),
-        ):
-            with self.assertRaisesRegex(self.module.G0Error, "single-parent chain"):
-                self.module._linear_commit_path(
-                    implementation,
-                    merge,
-                    role="test lineage",
-                )
+    def test_preimport_descriptor_parser_rejects_duplicate_keys(self) -> None:
+        with self.assertRaisesRegex(self.module.G0Error, "duplicate key"):
+            self.module._bootstrap_json(b'{"subject":{},"subject":{}}', context="test")
 
     def test_deployment_hashes_bind_handler_lock_and_manifest(self) -> None:
         deployment = require_handler("qwen3_v2_g0").deployment
         for path, expected in (
-            (deployment.implementation, deployment.implementation_sha256),
-            (deployment.dependency_lock, deployment.dependency_lock_sha256),
-            (deployment.package_manifest, deployment.package_manifest_sha256),
+            (HANDLER, deployment.implementation_sha256),
+            (
+                PROJECT_ROOT / "deployments/qwen3_v2_g0/dependency-lock.json",
+                deployment.dependency_lock_sha256,
+            ),
+            (
+                PROJECT_ROOT / "deployments/qwen3_v2_g0/package-manifest.json",
+                deployment.package_manifest_sha256,
+            ),
         ):
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
         deployment.validate_identity()
 
     def test_completion_uses_exact_registered_semantic_gates(self) -> None:
         invocation = self.module.Invocation(
-            workflow_id=WORKFLOW_ID,
+            workflow_id=f"{WORKFLOW_ID_PREFIX}{'a' * 32}",
             plan_sha256="1" * 64,
             unit_id="g0",
             run_id="2" * 64,
@@ -655,6 +840,7 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             gpu_count=3,
             manifest_sha256="4" * 64,
             allocation_sha256="5" * 64,
+            running_manifest_descriptor=9,
             content_handles=tuple(
                 self.module.ContentHandle(name, str(index) * 64, index + 10)
                 for index, name in enumerate(self.module.EXPECTED_INPUT_NAMES, start=1)
@@ -757,12 +943,22 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             amendment_git_commit="2" * 40,
             reviewed_implementation_commit="3" * 40,
             request_git_commit="4" * 40,
-            preflight_git_commits=("5" * 40,) * 4,
+        )
+        science = self.module.BootstrapScienceProtocol(
+            science_protocol_path=(
+                "prereg/execution_science/qwen3_v2_g0_seed42_v1.yaml"
+            ),
+            science_protocol_sha256="b" * 64,
+            science_protocol_id="qwen3-v2-g0-seed42-v1",
+            science_protocol_git_commit="c" * 40,
+            science_protocol_reviewed_implementation_commit="d" * 40,
+            unit_id="g0",
+            hydra_override_vector=("seed=43",),
         )
         stage = self.module.Stage(
             name="train",
             cli="train",
-            argv=("scientific-argument",),
+            argv=("seed=43", "scientific-argument"),
             distributed=True,
         )
         child_environment = {"CUDA_VISIBLE_DEVICES": "uuid-a,uuid-b,uuid-c"}
@@ -778,13 +974,27 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
                 script_path="/proc/123/fd/9",
                 job_id="opd-test",
                 bootstrap_lineage=lineage,
+                bootstrap_science=science,
                 code_commit="6" * 40,
                 gpu_count=3,
                 allocation_sha256="7" * 64,
+                execution_safety_class_id="qwen3-v2-elastic-training-v1",
+                execution_safety_fingerprint_sha256="8" * 64,
+                execution_safety_descriptor_sha256="9" * 64,
+                execution_safety_certification_sha256="a" * 64,
             )
         command = run.call_args.args[0]
         self.assertEqual(command[command.index("--num_processes") + 1], "3")
         self.assertLess(command.index("--num_processes"), command.index("/proc/123/fd/9"))
+        self.assertEqual(
+            command[command.index("--execution-safety-fingerprint-sha256") + 1],
+            "8" * 64,
+        )
+        self.assertEqual(
+            command[command.index("--execution-science-protocol-id") + 1],
+            science.science_protocol_id,
+        )
+        self.assertIn("seed=43", command)
         self.assertIs(run.call_args.kwargs["env"], child_environment)
         self.assertEqual(
             run.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"],
@@ -792,13 +1002,17 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
         )
 
     def test_elastic_protocol_amendment_is_proposed_and_preserves_global_batch(self) -> None:
-        amendment = load_protocol_amendment_bytes(
-            (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
+        amendment = load_execution_class_amendment_bytes(
+            (PROJECT_ROOT / SUCCESSOR_AMENDMENT_RELATIVE_PATH).read_bytes()
         )
         self.assertEqual(amendment["review"]["status"], "proposed")
-        batch = amendment["batch_token_invariants"]
-        self.assertEqual(batch["global_logical_batch_size"], 64)
-        self.assertEqual(batch["per_rank_samples_by_world_size"]["3"], [22, 21, 21])
+        allocation = amendment["scheduler_managed_allocation"]
+        self.assertEqual(allocation["gpu_count_policy"], "scheduler")
+        self.assertEqual(allocation["allocation_candidates"], [1, 2, 3, 4])
+        self.assertEqual(
+            amendment["execution_safety_certification"]["supported_world_sizes"],
+            [1, 2, 3, 4],
+        )
 
     def test_registration_proposal_is_disabled_and_exact(self) -> None:
         path = (
@@ -814,6 +1028,13 @@ class Qwen3V2G0HandlerTests(unittest.TestCase):
             ["repository_preflight", "qwen3_v2_g0", "qwen3_v2_gpu_preflight"],
         )
         g0 = next(task for task in proposal["tasks"] if task["name"] == "qwen3_v2_g0")
+        preflight = next(
+            task
+            for task in proposal["tasks"]
+            if task["name"] == "qwen3_v2_gpu_preflight"
+        )
+        self.assertNotIn("preflight_gpu_count_constraint", g0)
+        self.assertIs(preflight["preflight_gpu_count_constraint"], True)
         profile = g0["execution_profiles"][0]
         self.assertEqual(profile["name"], PROFILE_NAME)
         self.assertEqual(profile["gpu_count_policy"], "scheduler")

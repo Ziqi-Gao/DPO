@@ -6,27 +6,43 @@ import argparse
 import copy
 import json
 import re
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
-from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.artifacts.git_provenance import (
     require_git_output,
-    unsafe_untracked_paths,
+)
+from posttrain_circuits.artifacts.execution_science_protocol import (
+    ResolvedExecutionScienceProtocol,
+    canonical_science_config_sha256,
+    resolve_accepted_execution_science_protocol,
+    validate_count_neutral_identity,
 )
 from posttrain_circuits.artifacts.protocol_amendments import (
-    AMENDMENT_ID,
-    AMENDMENT_RELATIVE_PATH,
-    load_protocol_amendment_bytes,
-    resolve_accepted_protocol_amendment,
-    validate_accepted_lineage_commit,
+    load_execution_class_amendment_bytes,
+    resolve_accepted_execution_class_amendment,
     validate_elastic_g0_config,
 )
 from posttrain_circuits.scheduler_adapter.config_resolver import ConfigBindingResolver
 from posttrain_circuits.scheduler_adapter.content_store import ContentStore
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    CERTIFICATION_CONTENT_NAME,
+    CERTIFICATION_ID,
+    CERTIFICATION_RELATIVE_PATH,
+    DESCRIPTOR_CONTENT_NAME,
+    DESCRIPTOR_RELATIVE_PATH,
+    EXECUTION_CLASS_ID,
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+    ExecutionSafetyCertificationBinding,
+    current_execution_safety_fingerprint,
+    execution_safety_config_projection,
+    load_execution_safety_certification_bytes,
+    load_execution_safety_descriptor_bytes,
+)
 from posttrain_circuits.scheduler_adapter.outbox import prepare_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.plan_store import publish_workflow_plan
@@ -37,20 +53,12 @@ from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
     MODEL_REVISION,
     OUTPUT_NAMES,
     PREREG_CONTENT_NAME,
+    PROTOCOL_AMENDMENT_ID,
     PROTOCOL_AMENDMENT_CONTENT_NAME,
     TASK_NAME,
     TEACHER_REVISION,
     TOKENIZER_FINGERPRINT,
     UNIT_ID,
-    WORKFLOW_ID,
-    gpu_preflight_completion_content_name,
-    gpu_preflight_report_content_name,
-)
-from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
-    GATE_NAMES as PREFLIGHT_GATES,
-    PROFILE_NAME as PREFLIGHT_PROFILE,
-    _validate_report as validate_gpu_preflight_report,
-    validate_preflight_workflow_id,
 )
 from posttrain_circuits.scheduler_adapter.secure_files import read_regular_file_nofollow
 from posttrain_circuits.workflows.contracts import ContentIdentity, WorkflowPlan, WorkflowUnit
@@ -64,40 +72,11 @@ BASE_CONFIG_OVERRIDES = (
     "task.num_examples=256",
     "state_source.num_candidates=8",
 )
-PREFLIGHT_COMPLETION_FIELDS = frozenset(
-    {
-        "completed_at",
-        "completion_kind",
-        "execution",
-        "execution_config_sha256",
-        "input_hashes",
-        "output_files",
-        "plan_sha256",
-        "project",
-        "resolved_config_sha256",
-        "run_id",
-        "schema_version",
-        "scientific_config_sha256",
-        "scientific_validation",
-        "sha256",
-        "started_at",
-        "task",
-        "unit_id",
-        "workflow_id",
-    }
+CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH = (
+    "prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_v1.yaml"
 )
-
-
-@dataclass(frozen=True)
-class GpuPreflightEvidence:
-    world_size: int
-    allocation_sha256: str
-    workflow_id: str
-    report_raw: bytes
-    report_file_sha256: str
-    completion_raw: bytes
-    completion_file_sha256: str
-    git_commit: str
+WORKFLOW_ID_PREFIX = "qwen3-v2-g0-elastic-"
+WORKFLOW_ID = re.compile(r"qwen3-v2-g0-elastic-[0-9a-f]{32}\Z")
 
 
 @dataclass(frozen=True)
@@ -124,178 +103,41 @@ def _require_clean_checkout(code_root: Path) -> str:
         (
             "status",
             "--porcelain=v1",
-            "--untracked-files=all",
+            "--untracked-files=no",
             "--ignore-submodules=none",
         ),
     )
     if status:
         raise AdapterValidationError("G0 request preparation requires a clean checkout")
-    try:
-        unsafe = unsafe_untracked_paths(code_root)
-    except (OSError, UnicodeError, ValueError) as error:
-        raise AdapterValidationError(
-            "G0 request preparation could not enumerate untracked files"
-        ) from error
-    if unsafe:
-        raise AdapterValidationError(
-            "G0 request preparation rejects ignored untracked files"
-        )
     value = require_git_output(code_root, ("rev-parse", "HEAD"))
     if GIT_COMMIT.fullmatch(value) is None:
         raise AdapterValidationError("Git did not return one immutable commit identity")
     return value
 
 
-def _strict_json(raw: bytes, *, context: str) -> dict[str, Any]:
-    def reject(value: str) -> None:
-        raise AdapterValidationError(f"{context} contains non-finite number {value}")
+def new_qwen3_v2_g0_workflow_id() -> str:
+    """Return one fresh, opaque and allocation-neutral workflow identity."""
 
-    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in payload:
-                raise AdapterValidationError(f"{context} contains duplicate key {key!r}")
-            payload[key] = value
-        return payload
-
+    value = f"{WORKFLOW_ID_PREFIX}{secrets.token_hex(16)}"
+    if WORKFLOW_ID.fullmatch(value) is None:
+        raise AdapterValidationError("generated G0 workflow identity is invalid")
     try:
-        payload = json.loads(
-            raw.decode("utf-8", errors="strict"),
-            object_pairs_hook=unique,
-            parse_constant=reject,
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise AdapterValidationError(f"{context} is not strict UTF-8 JSON") from error
-    if not isinstance(payload, dict):
-        raise AdapterValidationError(f"{context} must be a JSON object")
-    return payload
-
-
-def validate_gpu_preflight_evidence(
-    *,
-    expected_world_size: int,
-    report_path: Path,
-    completion_path: Path,
-    current_git_commit: str,
-    code_root: Path,
-    amendment: Any,
-) -> GpuPreflightEvidence:
-    """Require one count-specific preflight from the accepted implementation lineage."""
-
-    if expected_world_size not in ALLOWED_GPU_COUNTS:
-        raise AdapterValidationError("GPU preflight expected world size is outside 1..4")
-
-    report_raw, report_file_sha256 = read_regular_file_nofollow(
-        report_path,
-        context="published Qwen3-v2 GPU preflight report",
-        max_bytes=32 * 1024 * 1024,
-    )
-    completion_raw, completion_file_sha256 = read_regular_file_nofollow(
-        completion_path,
-        context="published Qwen3-v2 GPU preflight completion",
-        max_bytes=4 * 1024 * 1024,
-    )
-    report = _strict_json(report_raw, context="GPU preflight report")
-    completion = _strict_json(completion_raw, context="GPU preflight completion")
-    resolved_config_sha256 = report.get("resolved_config_sha256")
-    preregistration_sha256 = report.get("prereg_sha256")
-    if not isinstance(resolved_config_sha256, str) or not isinstance(preregistration_sha256, str):
-        raise AdapterValidationError("GPU preflight report lacks config/preregistration bindings")
-    if set(completion) != PREFLIGHT_COMPLETION_FIELDS:
-        raise AdapterValidationError(
-            "GPU preflight completion fields differ from the published contract"
-        )
-    completion_digest = completion.get("sha256")
-    unsigned_completion = {
-        key: value for key, value in completion.items() if key != "sha256"
-    }
-    if completion_digest != sha256_value(unsigned_completion):
-        raise AdapterValidationError("GPU preflight completion self-summary is invalid")
-    gates = completion.get("scientific_validation")
-    execution = completion.get("execution")
-    output_files = completion.get("output_files")
-    input_hashes = completion.get("input_hashes")
-    if not isinstance(execution, dict):
-        raise AdapterValidationError("GPU preflight completion execution is invalid")
-    validate_gpu_preflight_report(
-        report,
-        resolved_config_sha256=resolved_config_sha256,
-        preregistration_sha256=preregistration_sha256,
-        completion_execution=execution,
-    )
-    if (
-        completion.get("schema_version") != 1
-        or completion.get("completion_kind") != "scientific"
-        or completion.get("project") != "OPD"
-        or completion.get("task") != "qwen3_v2_gpu_preflight"
-        or validate_preflight_workflow_id(completion.get("workflow_id"))
-        != completion.get("workflow_id")
-        or completion.get("unit_id") != "gpu-preflight"
-        or not isinstance(gates, dict)
-        or tuple(sorted(gates)) != PREFLIGHT_GATES
-        or any(value is not True for value in gates.values())
-        or execution.get("execution_profile") != PREFLIGHT_PROFILE
-        or not isinstance(output_files, dict)
-        or len(output_files) != 1
-        or next(iter(output_files.values()), None) != report_file_sha256
-        or not isinstance(input_hashes, dict)
-        or input_hashes.get("resolved_config_sha256") != resolved_config_sha256
-        or input_hashes.get("preregistration_sha256") != preregistration_sha256
-        or completion.get("resolved_config_sha256") != resolved_config_sha256
-        or completion.get("execution_config_sha256")
-        != input_hashes.get("execution_config_sha256")
-        or completion.get("scientific_config_sha256")
-        != input_hashes.get("scientific_config_sha256")
-    ):
-        raise AdapterValidationError("GPU preflight completion is not a successful published result")
-    preflight_commit = report.get("git_commit")
-    if not isinstance(preflight_commit, str):
-        raise AdapterValidationError("GPU preflight lacks a Git commit")
-    try:
-        validate_accepted_lineage_commit(
-            code_root=code_root,
-            candidate_commit=preflight_commit,
-            current_binding=amendment,
-            expected_head=current_git_commit,
-            role="GPU preflight commit",
-        )
+        validate_count_neutral_identity(value, name="workflow_id")
     except ValueError as error:
-        raise AdapterValidationError(
-            f"G0 GPU preflight implementation lineage is invalid: {error}"
-        ) from error
-    world_size = report.get("world_size")
-    allocation_sha256 = execution.get("allocation_sha256")
-    if world_size != expected_world_size:
-        raise AdapterValidationError(
-            "GPU preflight report is filed under a different world size"
-        )
-    if (
-        not isinstance(allocation_sha256, str)
-        or len(allocation_sha256) != 64
-        or any(character not in "0123456789abcdef" for character in allocation_sha256)
-    ):
-        raise AdapterValidationError("GPU preflight lacks an allocation identity")
-    workflow_id = validate_preflight_workflow_id(completion.get("workflow_id"))
-    return GpuPreflightEvidence(
-        world_size=world_size,
-        allocation_sha256=allocation_sha256,
-        workflow_id=workflow_id,
-        report_raw=report_raw,
-        report_file_sha256=report_file_sha256,
-        completion_raw=completion_raw,
-        completion_file_sha256=completion_file_sha256,
-        git_commit=preflight_commit,
-    )
+        raise AdapterValidationError(str(error)) from error
+    return value
 
 
-def fixed_resolved_config(
+def resolved_config_for_execution_science(
     *,
+    code_root: Path,
     code_commit: str,
-    gpu_preflight_evidence: Mapping[int, GpuPreflightEvidence],
+    execution_science: ResolvedExecutionScienceProtocol,
+    execution_safety: ExecutionSafetyCertificationBinding,
     protocol_amendment_sha256: str,
     reviewed_implementation_commit: str,
 ) -> dict[str, Any]:
-    """Return reviewed scientific configuration without allocation steering."""
+    """Compose reviewed experiment science under one reusable execution class."""
 
     if not GIT_COMMIT.fullmatch(code_commit):
         raise AdapterValidationError("G0 code_commit is not a Git identity")
@@ -306,47 +148,98 @@ def fixed_resolved_config(
         raise AdapterValidationError("G0 protocol amendment is not a SHA-256 identity")
     if not GIT_COMMIT.fullmatch(reviewed_implementation_commit):
         raise AdapterValidationError("G0 reviewed implementation is not a Git identity")
-    if set(gpu_preflight_evidence) != set(ALLOWED_GPU_COUNTS):
-        raise AdapterValidationError("G0 requires one preflight for each world size 1..4")
-    if any(
-        evidence.world_size != world_size
-        or GIT_COMMIT.fullmatch(evidence.git_commit) is None
-        for world_size, evidence in gpu_preflight_evidence.items()
+    if (
+        execution_safety.execution_class_id != EXECUTION_CLASS_ID
+        or tuple(execution_safety.supported_world_sizes) != ALLOWED_GPU_COUNTS
+        or execution_safety.review_status != "accepted"
+        or execution_safety.reviewed_implementation_commit
+        != reviewed_implementation_commit
     ):
-        raise AdapterValidationError("G0 GPU preflight matrix has invalid identities")
-    if reviewed_implementation_commit == code_commit or any(
-        reviewed_implementation_commit == evidence.git_commit
-        for evidence in gpu_preflight_evidence.values()
-    ):
+        raise AdapterValidationError(
+            "G0 execution-safety certification is not the reviewed 1..4 class"
+        )
+    if reviewed_implementation_commit == code_commit:
         raise AdapterValidationError("G0 reviewed implementation binding is self-referential")
     from posttrain_circuits.core.config import compose_config
 
-    config = compose_config(list(BASE_CONFIG_OVERRIDES))
+    if execution_science.binding.review_status != "accepted":
+        raise AdapterValidationError("G0 execution science protocol is not accepted")
+    try:
+        config = compose_config(
+            list(execution_science.binding.hydra_override_vector),
+            config_root=code_root / "configs",
+        )
+    except (FileNotFoundError, TypeError, ValueError) as error:
+        raise AdapterValidationError(
+            f"G0 execution science configuration cannot be composed: {error}"
+        ) from error
+    if config.get("seed") != execution_science.binding.seed:
+        raise AdapterValidationError(
+            "G0 composed seed differs from the accepted science protocol"
+        )
+    config["protocol_amendment_path"] = str(SUCCESSOR_AMENDMENT_RELATIVE_PATH)
     config["scheduler_g0"] = {
         "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "artifact_namespace": ARTIFACT_NAMESPACE,
         "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
-        "request_git_commit": code_commit,
-        "gpu_preflight_matrix": {
-            str(world_size): {
-                "allocation_sha256": evidence.allocation_sha256,
-                "completion_sha256": evidence.completion_file_sha256,
-                "git_commit": evidence.git_commit,
-                "report_sha256": evidence.report_file_sha256,
-                "workflow_id": evidence.workflow_id,
-                "world_size": world_size,
-            }
-            for world_size, evidence in sorted(gpu_preflight_evidence.items())
-        },
+        "execution_safety_certification_sha256": execution_safety.certification_sha256,
+        "execution_safety_class_id": execution_safety.execution_class_id,
+        "execution_safety_descriptor_sha256": execution_safety.descriptor_sha256,
+        "execution_safety_fingerprint_sha256": execution_safety.fingerprint_sha256,
+        "execution_safety_supported_world_sizes": list(
+            execution_safety.supported_world_sizes
+        ),
+        "execution_science_protocol_git_commit": (
+            execution_science.acceptance_commit
+        ),
+        "execution_science_protocol_id": execution_science.binding.protocol_id,
+        "execution_science_protocol_path": execution_science.relative_path,
+        "execution_science_protocol_reviewed_implementation_commit": (
+            execution_science.reviewed_implementation_commit
+        ),
+        "execution_science_protocol_sha256": execution_science.sha256,
         "model_revision": MODEL_REVISION,
-        "protocol_amendment_id": AMENDMENT_ID,
+        "protocol_amendment_id": PROTOCOL_AMENDMENT_ID,
         "protocol_amendment_sha256": protocol_amendment_sha256,
+        "request_git_commit": code_commit,
         "reviewed_implementation_commit": reviewed_implementation_commit,
         "task": TASK_NAME,
         "teacher_revision": TEACHER_REVISION,
         "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
     }
+    if (
+        canonical_science_config_sha256(config)
+        != execution_science.binding.storage_neutral_resolved_config_sha256
+    ):
+        raise AdapterValidationError(
+            "G0 composed config differs from the accepted science protocol"
+        )
     return config
+
+
+def fixed_resolved_config(
+    *,
+    code_root: Path,
+    code_commit: str,
+    execution_science: ResolvedExecutionScienceProtocol,
+    execution_safety: ExecutionSafetyCertificationBinding,
+    protocol_amendment_sha256: str,
+    reviewed_implementation_commit: str,
+) -> dict[str, Any]:
+    """Compatibility alias for the reviewed Candidate E configuration path."""
+
+    if execution_science.relative_path != CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH:
+        raise AdapterValidationError(
+            "Candidate E convenience builder requires its exact science protocol"
+        )
+    return resolved_config_for_execution_science(
+        code_root=code_root,
+        code_commit=code_commit,
+        execution_science=execution_science,
+        execution_safety=execution_safety,
+        protocol_amendment_sha256=protocol_amendment_sha256,
+        reviewed_implementation_commit=reviewed_implementation_commit,
+    )
 
 
 def _get_path(payload: dict[str, Any], dotted: str) -> object:
@@ -409,47 +302,93 @@ def _projections(
     return scientific_projection, execution_projection
 
 
-def build_qwen3_v2_g0_plan(
+def build_execution_science_g0_plan(
     *,
     layout: WorkflowLayout,
-    gpu_preflight_reports: Mapping[int, Path],
-    gpu_preflight_completions: Mapping[int, Path],
+    execution_science_protocol_path: str,
+    require_candidate_e_science: bool = False,
 ) -> WorkflowPlan:
-    """Materialize one accepted-lineage four-count preflight-bound G0 plan."""
+    """Materialize accepted experiment science under the certified GPU class."""
 
     layout.validate()
     code_commit = _require_clean_checkout(layout.code_root)
-    amendment = resolve_accepted_protocol_amendment(
-        code_root=layout.code_root,
-        configured_path=str(AMENDMENT_RELATIVE_PATH),
-        expected_head=code_commit,
-    )
-    if (
-        set(gpu_preflight_reports) != set(ALLOWED_GPU_COUNTS)
-        or set(gpu_preflight_completions) != set(ALLOWED_GPU_COUNTS)
-    ):
-        raise AdapterValidationError(
-            "G0 request requires report/completion paths for world sizes 1..4"
-        )
-    evidence = {
-        world_size: validate_gpu_preflight_evidence(
-            expected_world_size=world_size,
-            report_path=gpu_preflight_reports[world_size],
-            completion_path=gpu_preflight_completions[world_size],
-            current_git_commit=code_commit,
+    try:
+        execution_science = resolve_accepted_execution_science_protocol(
             code_root=layout.code_root,
-            amendment=amendment,
+            configured_path=execution_science_protocol_path,
+            expected_head=code_commit,
         )
-        for world_size in ALLOWED_GPU_COUNTS
-    }
-    if (
-        len({item.report_file_sha256 for item in evidence.values()}) != 4
-        or len({item.completion_file_sha256 for item in evidence.values()}) != 4
-        or len({item.allocation_sha256 for item in evidence.values()}) != 4
-        or len({item.workflow_id for item in evidence.values()}) != 4
+        amendment = resolve_accepted_execution_class_amendment(
+            code_root=layout.code_root,
+            configured_path=str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+            expected_head=code_commit,
+        )
+    except ValueError as error:
+        raise AdapterValidationError(
+            f"G0 execution-class or scientific lineage is invalid: {error}"
+        ) from error
+    if execution_science.binding.unit_id != UNIT_ID:
+        raise AdapterValidationError(
+            "G0 science protocol names a different workflow unit"
+        )
+    if require_candidate_e_science and (
+        execution_science.acceptance_commit != amendment.git_commit
+        or execution_science.reviewed_implementation_commit
+        != amendment.reviewed_implementation_commit
     ):
         raise AdapterValidationError(
-            "G0 preflight matrix must use distinct workflows, reports, completions, and allocations"
+            "Candidate E science and execution class lack one joint acceptance"
+        )
+    science_execution_class = execution_science.binding.payload["execution_class"]
+    descriptor_path = layout.code_root / science_execution_class["descriptor_path"]
+    certification_path = layout.code_root / science_execution_class["certification_path"]
+    descriptor_raw, descriptor_sha256 = read_regular_file_nofollow(
+        descriptor_path,
+        context="Qwen3-v2 elastic execution-safety descriptor",
+        max_bytes=4 * 1024 * 1024,
+    )
+    certification_raw, certification_sha256 = read_regular_file_nofollow(
+        certification_path,
+        context="Qwen3-v2 elastic execution-safety certification",
+        max_bytes=4 * 1024 * 1024,
+    )
+    try:
+        descriptor_payload = load_execution_safety_descriptor_bytes(
+            descriptor_raw,
+            code_root=layout.code_root,
+        )
+        execution_safety = load_execution_safety_certification_bytes(
+            certification_raw,
+            descriptor_raw,
+            require_accepted=True,
+            code_root=layout.code_root,
+        )
+    except ValueError as error:
+        raise AdapterValidationError(
+            f"G0 execution-safety certification is invalid: {error}"
+        ) from error
+    if (
+        execution_safety.descriptor_sha256 != descriptor_sha256
+        or execution_safety.certification_sha256 != certification_sha256
+        or execution_safety.fingerprint_sha256
+        != current_execution_safety_fingerprint(layout.code_root)
+    ):
+        raise AdapterValidationError(
+            "G0 execution-safety artifact bytes differ from their certification"
+        )
+    expected_science_execution_class = {
+        "execution_class_id": execution_safety.execution_class_id,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": execution_safety.descriptor_sha256,
+        "fingerprint_sha256": execution_safety.fingerprint_sha256,
+        "certification_id": execution_safety.certification_id,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": execution_safety.certification_core_sha256,
+        "supported_world_sizes": list(execution_safety.supported_world_sizes),
+    }
+    if science_execution_class != expected_science_execution_class:
+        raise AdapterValidationError(
+            "G0 science protocol references a different execution-safety class"
         )
     prereg_path = layout.code_root / PREREG_RELATIVE_PATH
     prereg_raw, prereg_sha256 = read_regular_file_nofollow(
@@ -464,29 +403,57 @@ def build_qwen3_v2_g0_plan(
     )
     if amendment_sha256 != amendment.sha256:
         raise AdapterValidationError("accepted protocol amendment changed after Git review")
-    amendment_payload = load_protocol_amendment_bytes(amendment_raw)
-    if amendment_payload["review"]["status"] != "accepted":
-        raise AdapterValidationError("G0 protocol amendment remains unaccepted")
-    config = fixed_resolved_config(
+    amendment_payload = load_execution_class_amendment_bytes(amendment_raw)
+    expected_certification_terms = {
+        "execution_class_id": execution_safety.execution_class_id,
+        "certification_id": CERTIFICATION_ID,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": execution_safety.descriptor_sha256,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": execution_safety.certification_core_sha256,
+        "fingerprint_sha256": execution_safety.fingerprint_sha256,
+        "supported_world_sizes": list(execution_safety.supported_world_sizes),
+    }
+    if (
+        amendment_payload["review"]["status"] != "accepted"
+        or amendment_payload.get("execution_safety_certification")
+        != expected_certification_terms
+        or amendment.certification_binding != execution_safety
+        or execution_safety.reviewed_implementation_commit
+        != amendment.reviewed_implementation_commit
+    ):
+        raise AdapterValidationError(
+            "G0 protocol amendment does not accept the exact execution certification"
+        )
+    config_builder = (
+        fixed_resolved_config
+        if require_candidate_e_science
+        else resolved_config_for_execution_science
+    )
+    config = config_builder(
+        code_root=layout.code_root,
         code_commit=code_commit,
-        gpu_preflight_evidence=evidence,
+        execution_science=execution_science,
+        execution_safety=execution_safety,
         protocol_amendment_sha256=amendment.sha256,
         reviewed_implementation_commit=amendment.reviewed_implementation_commit,
     )
-    validate_elastic_g0_config(config, amendment_payload)
+    if execution_safety_config_projection(config) != descriptor_payload["subject"][
+        "resolved_config_safety_projection"
+    ]:
+        raise AdapterValidationError(
+            "G0 config differs from the certified execution-safety projection"
+        )
+    if require_candidate_e_science:
+        validate_elastic_g0_config(config, amendment_payload)
     execution_context = {
         "allocation_contract": "manifest_driven_scheduler_gpu_v1",
         "scheduler_protocol": 2,
     }
     input_artifact_hashes = {
-        **{
-            f"gpu_preflight_w{world_size}_completion": item.completion_file_sha256
-            for world_size, item in evidence.items()
-        },
-        **{
-            f"gpu_preflight_w{world_size}_report": item.report_file_sha256
-            for world_size, item in evidence.items()
-        },
+        "execution_safety_certification": certification_sha256,
+        "execution_safety_descriptor": descriptor_sha256,
+        "execution_science_protocol_path": execution_science.sha256,
         "prereg_path": prereg_sha256,
         "protocol_amendment_path": amendment.sha256,
     }
@@ -504,34 +471,25 @@ def build_qwen3_v2_g0_plan(
         execution_config=execution_config,
     )
     file_inputs = (
+        (CERTIFICATION_CONTENT_NAME, certification_sha256, certification_raw),
+        (DESCRIPTOR_CONTENT_NAME, descriptor_sha256, descriptor_raw),
+        (
+            "execution_science_protocol_sha256",
+            execution_science.sha256,
+            execution_science.raw,
+        ),
         (PREREG_CONTENT_NAME, prereg_sha256, prereg_raw),
         (PROTOCOL_AMENDMENT_CONTENT_NAME, amendment.sha256, amendment_raw),
-        *tuple(
-            row
-            for world_size, item in sorted(evidence.items())
-            for row in (
-                (
-                    gpu_preflight_completion_content_name(world_size),
-                    item.completion_file_sha256,
-                    item.completion_raw,
-                ),
-                (
-                    gpu_preflight_report_content_name(world_size),
-                    item.report_file_sha256,
-                    item.report_raw,
-                ),
-            )
-        ),
     )
     identities = list(config_identities.as_tuple())
     for name, digest, raw in file_inputs:
         store.publish_file(sha256=digest, raw=raw)
         identities.append(ContentIdentity(name=name, sha256=digest, kind="file"))
     return WorkflowPlan(
-        workflow_id=WORKFLOW_ID,
+        workflow_id=new_qwen3_v2_g0_workflow_id(),
         units=(
             WorkflowUnit(
-                unit_id=UNIT_ID,
+                unit_id=execution_science.binding.unit_id,
                 task=TASK_NAME,
                 content_inputs=tuple(sorted(identities)),
                 dependencies=(),
@@ -541,54 +499,69 @@ def build_qwen3_v2_g0_plan(
     )
 
 
-def prepare_qwen3_v2_g0_request(
+def build_qwen3_v2_g0_plan(*, layout: WorkflowLayout) -> WorkflowPlan:
+    """Candidate E seed-42 convenience wrapper around the generic class plan."""
+
+    return build_execution_science_g0_plan(
+        layout=layout,
+        execution_science_protocol_path=CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH,
+        require_candidate_e_science=True,
+    )
+
+
+def prepare_execution_science_g0_request(
     *,
     layout: WorkflowLayout,
-    gpu_preflight_reports: Mapping[int, Path],
-    gpu_preflight_completions: Mapping[int, Path],
+    execution_science_protocol_path: str,
+    require_candidate_e_science: bool = False,
 ) -> PreparedG0Request:
     """Publish one immutable plan and fresh outbox request; never submit or poll."""
 
-    plan = build_qwen3_v2_g0_plan(
+    plan = build_execution_science_g0_plan(
         layout=layout,
-        gpu_preflight_reports=gpu_preflight_reports,
-        gpu_preflight_completions=gpu_preflight_completions,
+        execution_science_protocol_path=execution_science_protocol_path,
+        require_candidate_e_science=require_candidate_e_science,
     )
     plan_path = publish_workflow_plan(plan, layout=layout)
     outbox_path = prepare_outbox_request(
         plan,
-        unit_id=UNIT_ID,
+        unit_id=plan.units[0].unit_id,
         layout=layout,
     )
     return PreparedG0Request(
         workflow_id=plan.workflow_id,
         plan_sha256=plan.sha256(),
-        unit_id=UNIT_ID,
+        unit_id=plan.units[0].unit_id,
         plan_path=plan_path,
         outbox_path=outbox_path,
     )
 
 
+def prepare_qwen3_v2_g0_request(*, layout: WorkflowLayout) -> PreparedG0Request:
+    """Prepare Candidate E seed-42 through its accepted science protocol."""
+
+    return prepare_execution_science_g0_request(
+        layout=layout,
+        execution_science_protocol_path=CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH,
+        require_candidate_e_science=True,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(allow_abbrev=False)
-    for world_size in ALLOWED_GPU_COUNTS:
-        parser.add_argument(
-            f"--gpu-preflight-w{world_size}-report", type=Path, required=True
-        )
-        parser.add_argument(
-            f"--gpu-preflight-w{world_size}-completion", type=Path, required=True
-        )
+    parser.add_argument(
+        "--execution-science-protocol",
+        default=CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH,
+    )
     args = parser.parse_args()
-    receipt = prepare_qwen3_v2_g0_request(
+    is_candidate_e = (
+        args.execution_science_protocol
+        == CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH
+    )
+    receipt = prepare_execution_science_g0_request(
         layout=WorkflowLayout.production(),
-        gpu_preflight_reports={
-            world_size: getattr(args, f"gpu_preflight_w{world_size}_report")
-            for world_size in ALLOWED_GPU_COUNTS
-        },
-        gpu_preflight_completions={
-            world_size: getattr(args, f"gpu_preflight_w{world_size}_completion")
-            for world_size in ALLOWED_GPU_COUNTS
-        },
+        execution_science_protocol_path=args.execution_science_protocol,
+        require_candidate_e_science=is_candidate_e,
     )
     print(json.dumps(receipt.to_payload(), indent=2, sort_keys=True))
     return 0
@@ -600,10 +573,13 @@ if __name__ == "__main__":
 
 __all__ = [
     "BASE_CONFIG_OVERRIDES",
-    "GpuPreflightEvidence",
+    "CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH",
     "PreparedG0Request",
+    "build_execution_science_g0_plan",
     "build_qwen3_v2_g0_plan",
     "fixed_resolved_config",
+    "new_qwen3_v2_g0_workflow_id",
+    "prepare_execution_science_g0_request",
     "prepare_qwen3_v2_g0_request",
-    "validate_gpu_preflight_evidence",
+    "resolved_config_for_execution_science",
 ]

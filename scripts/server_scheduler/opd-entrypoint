@@ -80,11 +80,12 @@ def _unsafe_untracked_paths() -> tuple[str, ...]:
         parsed = Path(path)
         if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
             raise ValueError("Git returned a non-canonical untracked path")
-        if path == ".codex/config.toml":
-            continue
         if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
             continue
-        unsafe.append(path)
+        if path == "src/posttrain_circuits.py" or path.startswith(
+            ("src/posttrain_circuits/", "scripts/server_scheduler/")
+        ):
+            unsafe.append(path)
     return tuple(unsafe)
 
 
@@ -92,13 +93,13 @@ def _require_clean_checkout_before_import() -> None:
     status = _git_bytes(
         "status",
         "--porcelain=v1",
-        "--untracked-files=all",
+        "--untracked-files=no",
         "--ignore-submodules=none",
     )
     if status:
         raise ValueError("tracked checkout or submodule is dirty")
     if _unsafe_untracked_paths():
-        raise ValueError("ignored untracked files are present")
+        raise ValueError("untracked import or entrypoint shadowing files are present")
 
 
 def _main() -> int:

@@ -1,19 +1,36 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest import mock
 
+import yaml
+
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    CERTIFICATION_RELATIVE_PATH,
+    DESCRIPTOR_RELATIVE_PATH,
+    EXECUTION_CLASS_ID,
+    IMPLEMENTATION_FILE_PATHS,
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+    build_execution_safety_descriptor,
+    certification_core_sha256,
+)
 from posttrain_circuits.scheduler_adapter.completion import AttemptCompletionDraft
-from posttrain_circuits.scheduler_adapter.gpu_preflight_request import fixed_resolved_config
+from posttrain_circuits.scheduler_adapter.gpu_preflight_request import (
+    fixed_resolved_config,
+)
 from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import training_contract
 from posttrain_circuits.scheduler_adapter.registry import require_handler
 
@@ -32,6 +49,24 @@ PLAN_COMMIT = "b" * 40
 EXECUTION_COMMIT = "c" * 40
 
 
+def _proposed_elastic_amendment_bytes() -> bytes:
+    """Return a stable proposed fixture even after the checked-in v1 was accepted."""
+
+    raw = (
+        ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
+    ).read_bytes()
+    prefix, marker, _review = raw.rpartition(b"\nreview:\n")
+    if not marker:
+        raise AssertionError("elastic-v1 amendment lacks a review block")
+    return prefix + marker + (
+        b"  status: proposed\n"
+        b"  reviewed_implementation_commit: null\n"
+        b"  reviewer: null\n"
+        b"  reviewed_at_utc: null\n"
+        b"  rationale: null\n"
+    )
+
+
 def _load_handler():  # type: ignore[no-untyped-def]
     spec = importlib.util.spec_from_file_location("opd_gpu_preflight_handler", HANDLER)
     if spec is None or spec.loader is None:
@@ -46,6 +81,103 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.module = _load_handler()
+
+    def _running_manifest_fixture(
+        self,
+        *,
+        gpu_count: int = 3,
+    ) -> tuple[bytes, str, tuple[str, ...]]:
+        gpu_uuids = tuple(f"GPU-held-{index}" for index in range(gpu_count))
+        allocation = {
+            "cpu_cores": self.module.CPU_CORE_COUNT,
+            "exclusive_gpu": True,
+            "gpu_count": gpu_count,
+            "gpu_memory_mib": self.module.GPU_MEMORY_BUDGET_MIB,
+            "gpu_utilization_pct": 95,
+            "memory_mib": 196608,
+        }
+        concrete_allocation = {
+            "allocation": allocation,
+            "cpu_ids": list(range(self.module.CPU_CORE_COUNT)),
+            "gpu_indices": list(range(gpu_count)),
+            "gpu_pci_bus_ids": [
+                f"0000:{0x40 + index:02x}:00.0" for index in range(gpu_count)
+            ],
+            "gpu_uuids": list(gpu_uuids),
+            "numa_node": 0,
+        }
+        payload = {
+            **concrete_allocation,
+            "estimated_runtime_seconds": 60,
+            "execution_profile": self.module.PROFILE,
+            "exit_code": None,
+            "failure_reason": None,
+            "job_id": "opd-held-preflight",
+            "parameters": {
+                "plan_sha256": "1" * 64,
+                "unit_id": "gpu-preflight",
+                "workflow_id": f"{self.module.WORKFLOW_ID_PREFIX}{'a' * 32}",
+            },
+            "priority": 0,
+            "project": self.module.PROJECT,
+            "requested_profile": None,
+            "resources": None,
+            "schema_version": 2,
+            "state": "running",
+            "stderr_log": "/scheduler/stderr.log",
+            "stdout_log": "/scheduler/stdout.log",
+            "submitted_at": "2026-09-07T00:00:00Z",
+            "task": self.module.TASK,
+            "updated_at": "2026-09-07T00:00:01Z",
+        }
+        raw = (self.module._canonical_json(payload) + "\n").encode("utf-8")
+        return raw, self.module._sha256_value(concrete_allocation), gpu_uuids
+
+    def test_held_running_manifest_binds_hash_allocation_and_uuid_order(self) -> None:
+        raw, allocation_sha256, gpu_uuids = self._running_manifest_fixture()
+        with tempfile.TemporaryDirectory(prefix=".preflight-manifest-", dir=ROOT) as raw_dir:
+            path = Path(raw_dir) / "running.json"
+            path.write_bytes(raw)
+            with path.open("rb") as stream:
+                invocation = self.module.Invocation(
+                    workflow_id=f"{self.module.WORKFLOW_ID_PREFIX}{'a' * 32}",
+                    plan_sha256="1" * 64,
+                    unit_id="gpu-preflight",
+                    run_id="2" * 64,
+                    job_id="opd-held-preflight",
+                    attempt=1,
+                    execution_profile=self.module.PROFILE,
+                    gpu_count=3,
+                    manifest_sha256=hashlib.sha256(raw).hexdigest(),
+                    allocation_sha256=allocation_sha256,
+                    running_manifest_descriptor=stream.fileno(),
+                    content_handles=(),
+                    output_descriptor=-1,
+                )
+                with mock.patch.dict(
+                    os.environ,
+                    {"CUDA_VISIBLE_DEVICES": ",".join(gpu_uuids)},
+                ):
+                    self.module._validate_held_running_manifest(invocation)
+                    with self.assertRaisesRegex(
+                        self.module.PreflightError, "manifest bytes"
+                    ):
+                        self.module._validate_held_running_manifest(
+                            replace(invocation, manifest_sha256="0" * 64)
+                        )
+                    with self.assertRaisesRegex(
+                        self.module.PreflightError, "allocation digest"
+                    ):
+                        self.module._validate_held_running_manifest(
+                            replace(invocation, allocation_sha256="0" * 64)
+                        )
+                with mock.patch.dict(
+                    os.environ,
+                    {"CUDA_VISIBLE_DEVICES": ",".join(reversed(gpu_uuids))},
+                ), self.assertRaisesRegex(
+                    self.module.PreflightError, "ordered running-manifest"
+                ):
+                    self.module._validate_held_running_manifest(invocation)
 
     def test_handler_and_request_use_the_same_exact_scientific_config(self) -> None:
         self.assertEqual(
@@ -111,7 +243,13 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
                 "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
             },
         )
-        self.assertEqual(handler.deployment.implementation, HANDLER)
+        self.assertEqual(
+            handler.deployment.implementation,
+            self.module.SOURCE_ROOT
+            / "scripts"
+            / "server_scheduler"
+            / "qwen3-v2-gpu-preflight-handler.py",
+        )
         self.assertEqual(handler.deployment.runtime_flags, ("-I",))
         self.assertEqual(handler.output_names, ("gpu_preflight.json",))
 
@@ -124,6 +262,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             for item in proposal["tasks"]
             if item["name"] == "qwen3_v2_gpu_preflight"
         )
+        self.assertIs(task["preflight_gpu_count_constraint"], True)
         self.assertEqual(len(task["execution_profiles"]), 1)
         profile = task["execution_profiles"][0]
         self.assertEqual(profile["name"], self.module.PROFILE)
@@ -151,6 +290,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             gpu_count=3,
             manifest_sha256="c" * 64,
             allocation_sha256="d" * 64,
+            running_manifest_descriptor=-2,
             content_handles=tuple(
                 self.module.ContentHandle(name, value, -1)
                 for name, value in inputs.items()
@@ -209,6 +349,11 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         with (
             mock.patch.object(
                 self.module,
+                "_execution_class_successor_present",
+                return_value=False,
+            ),
+            mock.patch.object(
+                self.module,
                 "_accepted_amendment",
                 return_value=(accepted_raw, CODE_COMMIT),
             ),
@@ -236,23 +381,25 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
         )
         source = HANDLER.read_text(encoding="utf-8")
         self.assertNotIn("from posttrain_circuits.artifacts.protocol_amendments import", source)
-
-    def test_handler_rejects_untracked_files_hidden_by_ignore_rules(self) -> None:
-        raw = (
-            b".codex/config.toml\0"
-            b"src/pkg/__pycache__/safe.cpython-312.pyc\0"
-            b"src/pkg/ignored.py\0"
+        self.assertEqual(
+            set(self.module.EXECUTION_SAFETY_IMPLEMENTATION_PATHS),
+            set(IMPLEMENTATION_FILE_PATHS),
         )
-        with mock.patch.object(self.module, "_git_bytes", return_value=raw):
-            self.assertEqual(
-                self.module._unsafe_untracked_paths(),
-                ("src/pkg/ignored.py",),
-            )
+
+    def test_handler_cleanliness_is_tracked_only(self) -> None:
+        status = SimpleNamespace(stdout="")
+        with (
+            mock.patch.object(self.module.subprocess, "run", return_value=status) as run,
+            mock.patch.object(self.module, "_git", return_value=EXECUTION_COMMIT),
+        ):
+            self.assertEqual(self.module._require_clean_git(), EXECUTION_COMMIT)
+        command = run.call_args.args[0]
+        self.assertIn("--untracked-files=no", command)
+        self.assertNotIn("--untracked-files=all", command)
+        self.assertNotIn("_unsafe_untracked_paths", HANDLER.read_text(encoding="utf-8"))
 
     def test_hash_bound_bootstrap_rejects_source_change_even_if_reverted(self) -> None:
-        proposed_raw = (
-            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
-        ).read_bytes()
+        proposed_raw = _proposed_elastic_amendment_bytes()
         proposed_review = (
             b"review:\n"
             b"  status: proposed\n"
@@ -355,9 +502,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
             self.module._linear_commit_steps(CODE_COMMIT, merge_commit)
 
     def test_real_git_lineage_accepts_handoff_and_rejects_source_revert(self) -> None:
-        proposed_raw = (
-            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
-        ).read_bytes()
+        proposed_raw = _proposed_elastic_amendment_bytes()
         proposed_review = (
             b"review:\n"
             b"  status: proposed\n"
@@ -446,9 +591,7 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
                 )
 
     def test_real_git_lineage_rejects_merge_with_range_hidden_parent(self) -> None:
-        proposed_raw = (
-            ROOT / "prereg" / "amendments" / "qwen3_v2_g0_elastic_v1.yaml"
-        ).read_bytes()
+        proposed_raw = _proposed_elastic_amendment_bytes()
         proposed_review = (
             b"review:\n"
             b"  status: proposed\n"
@@ -535,6 +678,192 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
                     execution_commit=merge_commit,
                 )
 
+    def test_real_git_successor_interoperates_and_rejects_critical_mutation(
+        self,
+    ) -> None:
+        git_environment = {
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "HOME": "/nonexistent",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+        }
+
+        with tempfile.TemporaryDirectory(dir="/scr/del6500/OPD/tmp") as directory:
+            root = Path(directory) / "repository"
+
+            def git(*arguments: str, cwd: Path | None = None) -> str:
+                result = subprocess.run(
+                    ("/usr/bin/git", *arguments),
+                    cwd=cwd or root,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env=git_environment,
+                )
+                return result.stdout.strip()
+
+            def copy_current(relative: str | Path) -> None:
+                source = ROOT / relative
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+
+            def write_yaml(relative: Path, payload: object) -> bytes:
+                raw = yaml.safe_dump(payload, sort_keys=False).encode("utf-8")
+                (root / relative).write_bytes(raw)
+                return raw
+
+            def commit(message: str) -> str:
+                git("add", "--all")
+                git(
+                    "-c",
+                    "user.name=Execution Class Fixture",
+                    "-c",
+                    "user.email=execution-class-fixture@invalid.example",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    message,
+                )
+                return git("rev-parse", "HEAD")
+
+            git(
+                "clone",
+                "--quiet",
+                "--no-hardlinks",
+                str(ROOT),
+                str(root),
+                cwd=Path(directory),
+            )
+            for relative in IMPLEMENTATION_FILE_PATHS:
+                copy_current(relative)
+            copy_current(SUCCESSOR_AMENDMENT_RELATIVE_PATH)
+            copy_current(CERTIFICATION_RELATIVE_PATH)
+
+            descriptor = build_execution_safety_descriptor(root)
+            descriptor_raw = (
+                json.dumps(descriptor, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8")
+            descriptor_path = root / DESCRIPTOR_RELATIVE_PATH
+            descriptor_path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor_path.write_bytes(descriptor_raw)
+            descriptor_sha256 = hashlib.sha256(descriptor_raw).hexdigest()
+            fingerprint = descriptor["fingerprint_sha256"]
+
+            certification = yaml.safe_load(
+                (ROOT / CERTIFICATION_RELATIVE_PATH).read_text(encoding="utf-8")
+            )
+            certification["execution_class"].update(
+                {
+                    "descriptor_sha256": descriptor_sha256,
+                    "fingerprint_sha256": fingerprint,
+                }
+            )
+            condensation = certification["legacy_evidence_condensation"]
+            condensation["attested_execution_fingerprint_sha256"] = fingerprint
+            certification["review"] = copy.deepcopy(self.module.PROPOSED_REVIEW)
+            write_yaml(CERTIFICATION_RELATIVE_PATH, certification)
+
+            amendment = yaml.safe_load(
+                (ROOT / SUCCESSOR_AMENDMENT_RELATIVE_PATH).read_text(encoding="utf-8")
+            )
+            amendment["execution_safety_certification"].update(
+                {
+                    "descriptor_sha256": descriptor_sha256,
+                    "certification_core_sha256": certification_core_sha256(
+                        certification
+                    ),
+                    "fingerprint_sha256": fingerprint,
+                }
+            )
+            amendment["review"] = copy.deepcopy(self.module.PROPOSED_REVIEW)
+            write_yaml(SUCCESSOR_AMENDMENT_RELATIVE_PATH, amendment)
+            implementation_commit = commit("execution-class implementation")
+
+            with (
+                mock.patch.object(self.module, "SOURCE_ROOT", root),
+                self.assertRaisesRegex(
+                    self.module.PreflightError, "remains proposed or unaccepted"
+                ),
+            ):
+                self.module._validate_plan_execution_lineage(
+                    plan_commit=implementation_commit,
+                    execution_commit=implementation_commit,
+                )
+
+            review = {
+                "status": "accepted",
+                "reviewed_implementation_commit": implementation_commit,
+                "reviewer": "independent-execution-class-reviewer",
+                "reviewed_at_utc": "2026-09-06T23:30:00Z",
+                "rationale": "Accepted the exact reusable execution class.",
+            }
+            handoff = root / self.module.HANDOFF_RELATIVE_PATH
+            handoff.write_text(
+                handoff.read_text(encoding="utf-8") + "\nnon-safety note\n",
+                encoding="utf-8",
+            )
+            intermediate_commit = commit("intervening non-safety documentation")
+            self.assertNotEqual(intermediate_commit, implementation_commit)
+            amendment["review"] = copy.deepcopy(review)
+            certification["review"] = copy.deepcopy(review)
+            write_yaml(SUCCESSOR_AMENDMENT_RELATIVE_PATH, amendment)
+            write_yaml(CERTIFICATION_RELATIVE_PATH, certification)
+            acceptance_commit = commit("accept execution-class certification")
+
+            with mock.patch.object(self.module, "SOURCE_ROOT", root):
+                attestation = self.module._validate_plan_execution_lineage(
+                    plan_commit=acceptance_commit,
+                    execution_commit=acceptance_commit,
+                )
+            self.assertEqual(
+                attestation,
+                {
+                    "acceptance_commit": acceptance_commit,
+                    "certification_sha256": hashlib.sha256(
+                        (root / CERTIFICATION_RELATIVE_PATH).read_bytes()
+                    ).hexdigest(),
+                    "descriptor_sha256": descriptor_sha256,
+                    "execution_class_id": EXECUTION_CLASS_ID,
+                    "fingerprint_sha256": fingerprint,
+                    "reviewed_implementation_commit": implementation_commit,
+                },
+            )
+
+            critical = root / "configs" / "accelerate" / "fsdp_server_scheduler.yaml"
+            critical.write_text(
+                critical.read_text(encoding="utf-8") + "\n# unsafe mutation\n",
+                encoding="utf-8",
+            )
+            mutated_commit = commit("mutate execution-critical FSDP config")
+            with (
+                mock.patch.object(self.module, "SOURCE_ROOT", root),
+                self.assertRaisesRegex(
+                    self.module.PreflightError, "safety-critical blob differs"
+                ),
+            ):
+                self.module._validate_plan_execution_lineage(
+                    plan_commit=acceptance_commit,
+                    execution_commit=mutated_commit,
+                )
+
+            (root / SUCCESSOR_AMENDMENT_RELATIVE_PATH).unlink()
+            deleted_commit = commit("delete execution-class successor")
+            with (
+                mock.patch.object(self.module, "SOURCE_ROOT", root),
+                self.assertRaisesRegex(
+                    self.module.PreflightError, "disappeared after its introduction"
+                ),
+            ):
+                self.module._validate_plan_execution_lineage(
+                    plan_commit=acceptance_commit,
+                    execution_commit=deleted_commit,
+                )
+
     def test_handler_rejects_invalid_or_unreviewed_plan_lineage(self) -> None:
         with self.assertRaisesRegex(self.module.PreflightError, "not a Git identity"):
             self.module._validate_plan_execution_lineage(
@@ -542,6 +871,11 @@ class Qwen3V2GpuPreflightHandlerTests(unittest.TestCase):
                 execution_commit=EXECUTION_COMMIT,
             )
         with (
+            mock.patch.object(
+                self.module,
+                "_execution_class_successor_present",
+                return_value=False,
+            ),
             mock.patch.object(
                 self.module,
                 "_accepted_amendment",

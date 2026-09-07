@@ -94,16 +94,20 @@ parameter views whose full flat-parameter storage had already been released
 after forward. The non-reentrant implementation preserves the checkpointed
 training-path check without retaining that stale-view failure mode.
 
-No repository snapshot digest is an input. The deployment contract binds the
-fixed runtime and implementation bundle, while the workflow binds the exact
-scientific configuration and preregistration content needed by this task.
+No repository snapshot digest is an input. The execution-class descriptor
+binds the fixed runtime, its dependency locks, the explicit safety subject,
+and only the 24-file execution kernel listed in
+`docs/refactor/qwen3_v2_execution_class_certification.md`. Each experiment's
+science protocol separately binds the scientific configuration it needs.
 
 The training probe follows the same allocation-neutral batch planner used by
 G0. It reserves the exact cross-rank non-padding input-token count before any
 backward, applies the same compensation for framework accumulation and rank
 averaging, and checks a full-state model/optimizer save and restore. This is a
-bounded one-update safety probe, not a claim that static fixtures or one world
-size prove all four shapes.
+bounded one-update safety probe. Its evidence qualifies one fingerprinted
+elastic execution class; it is not a separate task variant and it is not an
+experiment-specific artifact that must be regenerated for every new seed or
+job.
 
 ## Proposed resource envelope
 
@@ -121,17 +125,19 @@ size prove all four shapes.
 | CPU scaling efficiency | 0.0 |
 
 These are conservative admission values, not measured workload consumption.
-The successful pilot for each world size must report peak GPU allocation and
+Every real pilot used as class evidence must report peak GPU allocation and
 reservation, process MaxRSS, cgroup peak, runtime, rank thread counts, and
 device identities. Every rank's measured allocated and reserved CUDA peak must
 remain at or below 81,920 MiB. Central per-count observations, rather than a
 request-side hint, provide the timing evidence used for later scheduling
 decisions.
 
-## External readiness gates
+## Readiness and evidence boundaries
 
-The proposal must remain disabled until all four external conditions are
-verified outside a charged GPU allocation:
+This checked-in proposal stays disabled. A central operator reviewing whether
+to install or enable it must first verify conditions 1-3 outside a charged GPU
+allocation. Condition 4 is a later G0 evidence decision, not a preflight
+enablement prerequisite:
 
 1. **Fixed CUDA environment.** A non-editable project runtime exists at the
    reviewed path, its Python executable is a regular non-symlink inode, the
@@ -151,10 +157,17 @@ verified outside a charged GPU allocation:
    allocation-specific cgroup with a finite 196,608-MiB memory limit and expose
    readable current/peak counters. Admission bookkeeping alone does not satisfy
    the preregistered finite-limit and headroom gate.
-4. **Four-count validation plan.** A central operator must arrange distinct
-   real pilots whose accepted reports cover world sizes 1, 2, 3, and 4. The
-   normal project request cannot select a count, and OPD must not encode one in
-   a parameter, job ID, filename, or configuration.
+4. **G0 evidence policy.** Candidate E v1's already accepted
+   amendment requires distinct real pilots covering world sizes 1, 2, 3, and
+   4 before its first G0 request. That is an OPD-specific gate, not a generic
+   ServerScheduler rule. The normal request cannot select a count, and OPD
+   must not encode one in a parameter, job ID, filename, or configuration.
+   The proposed successor instead records the existing accepted W=1/W=2 real
+   evidence plus fail-closed W=1/2/3/4 static evidence against one exact
+   execution-safety fingerprint. It explicitly retains the unobserved W=3
+   uneven-tail and W=4 topology risks and cannot operate until independently
+   accepted. Once accepted, later experiments with the identical fingerprint
+   reuse that certificate rather than repeating pilots per experiment.
 
 ## Independent approval sequence
 
@@ -170,12 +183,14 @@ The following remain separate decisions; none authorizes the next:
    GPU preflight request.
 6. Validate the terminal `ScientificCompletion` and measured resource evidence
    for the world size actually assigned.
-7. Repeat the separately controlled pilot gate until distinct accepted-lineage
-   evidence covers 1, 2, 3, and 4 GPUs; do not submit duplicate availability
-   probes.
-8. Only after the complete matrix passes, separately review and authorize the
-   G0 workflow. G0 success is itself required before any larger seed-42
-   experiment request.
+7. Under the accepted Candidate E v1 amendment, complete its distinct W=1/2/3/4
+   real-pilot gate. Alternatively, independently review and jointly accept a
+   new successor amendment and certificate that explicitly justifies a
+   different initial evidence threshold; never reinterpret v1 in place.
+8. Treat an accepted execution-class certificate as reusable topology evidence
+   only. Separately review and authorize each G0 or later scientific workflow,
+   including its config, artifacts, and completion criteria. G0 success remains
+   required before any larger seed-42 experiment request.
 
 Installation is not enabling, enabling is not submission, and successful GPU
 preflight completion is not permission to run G0 or a formal experiment.

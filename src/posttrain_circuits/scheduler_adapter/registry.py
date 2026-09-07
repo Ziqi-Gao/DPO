@@ -99,6 +99,7 @@ ADAPTER_OWNED_OPTIONS = frozenset(
         "--manifest-sha256",
         "--output-attempt-handle",
         "--plan-sha256",
+        "--running-manifest-handle",
         "--run-id",
         "--unit-id",
         "--workflow-id",
@@ -527,6 +528,7 @@ class PreparedHandler:
         manifest: RunningManifest,
         envelope: Any,
         *,
+        running_manifest: HeldRegularFile,
         content_handles: tuple["ReadOnlyContentHandle", ...],
         output_attempt: "OutputAttempt",
     ) -> tuple[str, ...]:
@@ -552,6 +554,14 @@ class PreparedHandler:
         ):
             raise AdapterValidationError(
                 "output attempt context differs from validated scheduler identities"
+            )
+        if (
+            running_manifest.path != envelope.manifest_path
+            or running_manifest.sha256 != envelope.manifest_sha256
+            or running_manifest.descriptor < 0
+        ):
+            raise AdapterValidationError(
+                "held running manifest differs from the validated scheduler envelope"
             )
         from posttrain_circuits.workflows.contracts import unit_identity_sha256
 
@@ -584,7 +594,14 @@ class PreparedHandler:
             envelope.allocation_sha256,
         ]
         if self.profile.kind == "gpu":
-            argv.extend(("--gpu-count", str(manifest.allocation.gpu_count)))
+            argv.extend(
+                (
+                    "--running-manifest-handle",
+                    running_manifest.proc_path,
+                    "--gpu-count",
+                    str(manifest.allocation.gpu_count),
+                )
+            )
         for handle in content_handles:
             argv.extend(
                 (
@@ -953,7 +970,7 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-gpu-preflight-handler.py"
     ),
-    implementation_sha256="e62d370db975302e3f8321ea93d5e281894c3eb09ef814a2b615b7cf7605948c",
+    implementation_sha256="7e908dbbe0aef562b2358242336569db53e8daa14104ce873997b7e7b68692b5",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -967,8 +984,8 @@ _QWEN3_V2_GPU_PREFLIGHT_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_gpu_preflight"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="f17dc62af30eb7f96b94322b61b8ea7496a6fd0a1c3c31bb99e872dbd1466663",
-    deployment_identity_sha256="f0850abcf441a4dfa3134b875d2c552020115b669c5b81a93f4c62122736e16d",
+    package_manifest_sha256="e2284b7c20636f3c85f719cdc0179a0ae5973fdf7cb502d247110db0e5cc037c",
+    deployment_identity_sha256="2b58f3da9fc4fe116cf4be5b326082dc0ed3da65d38bc1b082aae9d8716fd155",
 )
 _QWEN3_V2_GPU_PREFLIGHT_HANDLER = HandlerSpec(
     task=QWEN3_V2_GPU_PREFLIGHT_TASK,
@@ -1034,7 +1051,7 @@ _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
         / "server_scheduler"
         / "qwen3-v2-g0-handler.py"
     ),
-    implementation_sha256="a00cb4b0a59e2537bc6a6ce8daf07ed86f6dfe9d61c95f9e32223088cadb8ad4",
+    implementation_sha256="049b4b35a3feba8898f74246d7f223e571b7df43060151c210efa5bc2510f8da",
     dependency_lock=(
         PRODUCTION_CODE_ROOT
         / "deployments"
@@ -1048,8 +1065,8 @@ _QWEN3_V2_G0_DEPLOYMENT = DeploymentContract(
         / "qwen3_v2_g0"
         / "package-manifest.json"
     ),
-    package_manifest_sha256="432107f92111b621474d7b1aa7179284a8a5d73c774ab80d003040e381f1ca73",
-    deployment_identity_sha256="99b595c018104a1c3f176a98d4d3c6072cdda92ba1d8a4d78800e4b119de65c1",
+    package_manifest_sha256="fb2be67fe2f03d6beb1c6f91f2500e1cdf97853704c8e1f27740bad1757a3057",
+    deployment_identity_sha256="3ea87466891f18b18896bda78a0bcafe17da053ef440fd0005cf4fb8aa970a91",
 )
 _QWEN3_V2_G0_HANDLER = HandlerSpec(
     task=QWEN3_V2_G0_TASK,

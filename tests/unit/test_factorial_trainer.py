@@ -1239,7 +1239,9 @@ def test_allocation_neutral_supervision_tensors_fail_closed_before_forward(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("defect", [None, "prompt", "response", "manifest"])
+@pytest.mark.parametrize(
+    "defect", [None, "prompt", "response", "manifest", "memory"]
+)
 def test_teacher_demo_store_model_input_envelope_is_checked_in_full(
     tokenizer,
     defect: str | None,
@@ -1258,7 +1260,10 @@ def test_teacher_demo_store_model_input_envelope_is_checked_in_full(
     max_new_tokens = len(attempt.response_ids) + 1
     max_model_input_length = max_prompt_tokens + max_new_tokens
     manifest = {
+        "attempt_count": 1,
+        "accepted_count": 1,
         "teacher_demo_generation": {
+            "candidates_per_prompt": 1,
             "max_prompt_tokens": max_prompt_tokens,
             "max_new_tokens": max_new_tokens,
         }
@@ -1271,11 +1276,16 @@ def test_teacher_demo_store_model_input_envelope_is_checked_in_full(
         match = "response exceeds max_new_tokens"
     elif defect == "manifest":
         manifest["teacher_demo_generation"]["max_new_tokens"] += 1
-        match = "generation length contract differs"
+        match = "generation envelope differs"
+    elif defect == "memory":
+        manifest["attempt_count"] = 2
+        match = "memory envelope"
     else:
         evidence = _validate_teacher_demo_model_input_lengths(
             [attempt],
             manifest,
+            expected_prompt_count=1,
+            candidates_per_prompt=1,
             max_prompt_tokens=max_prompt_tokens,
             max_new_tokens=max_new_tokens,
             max_model_input_length=max_model_input_length,
@@ -1290,6 +1300,8 @@ def test_teacher_demo_store_model_input_envelope_is_checked_in_full(
         _validate_teacher_demo_model_input_lengths(
             [attempt],
             manifest,
+            expected_prompt_count=1,
+            candidates_per_prompt=1,
             max_prompt_tokens=max_prompt_tokens,
             max_new_tokens=max_new_tokens,
             max_model_input_length=max_model_input_length,

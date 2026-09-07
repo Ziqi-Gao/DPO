@@ -265,6 +265,36 @@ class Qwen3V2GpuPreflightValidatorTests(unittest.TestCase):
                 validate_qwen3_v2_gpu_preflight_completion(completion, context)
                 context.expected_output_paths[OUTPUT_NAME].unlink()
 
+    def test_accepts_and_authenticates_successor_execution_class_attestation(self) -> None:
+        inputs = _inputs()
+        report = _report(inputs)
+        report["execution_safety"] = {
+            "acceptance_commit": "c" * 40,
+            "certification_sha256": "d" * 64,
+            "descriptor_sha256": "e" * 64,
+            "execution_class_id": "qwen3-v2-elastic-training-v1",
+            "fingerprint_sha256": "f" * 64,
+            "reviewed_implementation_commit": "b" * 40,
+        }
+        report["sha256"] = sha256_value(
+            {key: value for key, value in report.items() if key != "sha256"}
+        )
+        path = self.root / OUTPUT_NAME
+        path.write_bytes(published_json_bytes(report))
+        validate_qwen3_v2_gpu_preflight_completion(
+            _completion(inputs), _context(self.root, inputs)
+        )
+        report["execution_safety"]["fingerprint_sha256"] = "not-a-digest"
+        report["sha256"] = sha256_value(
+            {key: value for key, value in report.items() if key != "sha256"}
+        )
+        path.unlink()
+        path.write_bytes(published_json_bytes(report))
+        with self.assertRaisesRegex(AdapterValidationError, "fingerprint_sha256"):
+            validate_qwen3_v2_gpu_preflight_completion(
+                _completion(inputs), _context(self.root, inputs)
+            )
+
     def test_rejects_wrong_effective_fsdp_strategy_for_every_count(self) -> None:
         for gpu_count in SUPPORTED_GPU_COUNTS:
             with self.subTest(gpu_count=gpu_count):

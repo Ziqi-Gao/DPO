@@ -1,0 +1,455 @@
+{
+  "execution_class_id": "qwen3-v2-elastic-training-v1",
+  "fingerprint_schema": "opd-execution-safety-fingerprint-v1",
+  "fingerprint_sha256": "656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4",
+  "kind": "qwen3_v2_execution_safety_descriptor",
+  "schema_version": 1,
+  "subject": {
+    "batch_partition": {
+      "global_logical_batch_size": 64,
+      "max_per_rank_microbatch_size": 4,
+      "microbatch_sizes_by_rank_by_world_size": {
+        "1": [
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        ],
+        "2": [
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        ],
+        "3": [
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            2
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            1
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            1
+          ]
+        ],
+        "4": [
+          [
+            4,
+            4,
+            4,
+            4
+          ],
+          [
+            4,
+            4,
+            4,
+            4
+          ],
+          [
+            4,
+            4,
+            4,
+            4
+          ],
+          [
+            4,
+            4,
+            4,
+            4
+          ]
+        ]
+      },
+      "optimizer_microsteps_by_world_size": {
+        "1": 16,
+        "2": 8,
+        "3": 6,
+        "4": 4
+      },
+      "per_rank_samples_by_world_size": {
+        "1": [
+          64
+        ],
+        "2": [
+          32,
+          32
+        ],
+        "3": [
+          22,
+          21,
+          21
+        ],
+        "4": [
+          16,
+          16,
+          16,
+          16
+        ]
+      },
+      "protocol": "allocation_neutral_exact_global_batch_v1",
+      "sample_order": "one_global_64_slot_window_independent_of_world_size"
+    },
+    "checkpoint_resume": {
+      "changed_world_resume": "rejected_before_state_load",
+      "checkpoint_boundary": "completed_optimizer_updates_only",
+      "full_state_export_by_world_size": {
+        "1": {
+          "offload_to_cpu": false,
+          "rank0_only": false
+        },
+        "2": {
+          "offload_to_cpu": true,
+          "rank0_only": true
+        },
+        "3": {
+          "offload_to_cpu": true,
+          "rank0_only": true
+        },
+        "4": {
+          "offload_to_cpu": true,
+          "rank0_only": true
+        }
+      },
+      "global_token_budget_state": "identical_across_all_ranks",
+      "rank_local_trainer_state": "checkpointed_and_restored_per_rank",
+      "retry_policy": "isolated_attempt_workspace_restart_from_frozen_inputs",
+      "same_world_resume": "required_and_deterministically_compared_twice",
+      "state_source_cursor_protocol": "teacher-demo-round-robin-v2-accepted-view",
+      "state_source_rng": "none"
+    },
+    "cpu_threading": {
+      "allocated_cpu_cores": 24,
+      "partition": "allocated_cpu_cores_divided_equally_by_actual_world_size",
+      "threads_per_rank_by_world_size": {
+        "1": 24,
+        "2": 12,
+        "3": 8,
+        "4": 6
+      }
+    },
+    "distributed_runtime": {
+      "control_plane_backend": "gloo",
+      "cuda_tensor_backend": "nccl_explicit_process_group",
+      "first_collective": "scalar_all_reduce",
+      "first_collective_timeout_seconds": 120,
+      "nccl_p2p_disable": "1",
+      "nccl_version": "2.27.3",
+      "scheduler_uuid_order": "preserved"
+    },
+    "fixed_runtime": {
+      "g0": {
+        "dependency_lock_path": "deployments/qwen3_v2_g0/dependency-lock.json",
+        "runtime_executable": "/scr/del6500/OPD/envs/qwen3-v2-g0-v1/bin/python",
+        "runtime_executable_sha256": "848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801"
+      },
+      "gpu_preflight": {
+        "dependency_lock_path": "deployments/qwen3_v2_gpu_preflight/dependency-lock.json",
+        "runtime_executable": "/scr/del6500/OPD/envs/qwen3-v2-gpu-preflight-v1/bin/python",
+        "runtime_executable_sha256": "848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
+        "training_contract_sha256": "6ae06f330aa99ca1aad75151c2f95a9d639b8644a68a402cce76117b78793e86"
+      }
+    },
+    "fsdp": {
+      "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+      "effective_sharding_strategy_by_world_size": {
+        "1": "NO_SHARD",
+        "2": "FULL_SHARD",
+        "3": "FULL_SHARD",
+        "4": "FULL_SHARD"
+      },
+      "expected_transformer_block_count": 28,
+      "expected_wrapper_count": 29,
+      "requested_sharding_strategy": "FULL_SHARD",
+      "root_wrapper_count": 1,
+      "state_dict_type": "FULL_STATE_DICT",
+      "transformer_layer": "Qwen3DecoderLayer",
+      "use_orig_params": false,
+      "wrapper_tree": "one_root_plus_every_transformer_block_directly_wrapped"
+    },
+    "implementation_files": {
+      "configs/accelerate/fsdp_server_scheduler.yaml": "7fe87d579ed92c4cca91ab719a7cf267e5491ba3b520b4a05f28c1e442ffb46a",
+      "deployments/qwen3_v2_g0/dependency-lock.json": "18d77da454cb86a097526fe561462f4818cb76c3ca9633481261f1e563f86d90",
+      "deployments/qwen3_v2_g0/package-manifest.json": "fb2be67fe2f03d6beb1c6f91f2500e1cdf97853704c8e1f27740bad1757a3057",
+      "deployments/qwen3_v2_gpu_preflight/dependency-lock.json": "c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f",
+      "deployments/qwen3_v2_gpu_preflight/package-manifest.json": "e2284b7c20636f3c85f719cdc0179a0ae5973fdf7cb502d247110db0e5cc037c",
+      "scripts/server_scheduler/opd-entrypoint": "48e45a611c49ab7ce66f52d3bebffb4654f03a58b1327e5294e91e1f9f3b1418",
+      "scripts/server_scheduler/qwen3-v2-g0-handler.py": "049b4b35a3feba8898f74246d7f223e571b7df43060151c210efa5bc2510f8da",
+      "scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py": "7e908dbbe0aef562b2358242336569db53e8daa14104ce873997b7e7b68692b5",
+      "src/posttrain_circuits/artifacts/checkpoints.py": "c2cd803d6a3bef5b305f6eaa8f2d6cfe650417d1f6f7cc12075d298456a83c40",
+      "src/posttrain_circuits/artifacts/execution_safe_io.py": "1e3bb60a4a09f9fc7e30a19331a0e94322cad396646e72a91946fe3d4c5b3723",
+      "src/posttrain_circuits/artifacts/execution_safety_certification.py": "050662395cde3c27ce86f78003200d527b9da2717f9cf45aeae7ad40c127ce0d",
+      "src/posttrain_circuits/artifacts/execution_science_protocol.py": "664815071110ebe45efff3de51608cf1282312a6b6e1b35ed931e190f82b26c2",
+      "src/posttrain_circuits/artifacts/hashing.py": "46ca72ac5acc35fa9131f4244114f9fd88a2085e10f1051ed694cdde79b7db68",
+      "src/posttrain_circuits/artifacts/protocol_amendments.py": "6cc5edc917537c44c4a1c2db20c8fd32414ca8ff13a4c2b7eac4602844cab66d",
+      "src/posttrain_circuits/cli/compare_distributed_resume.py": "5604e005d32ca7caa041c225eb294263718014eee7c1adaae6ef95509db58a14",
+      "src/posttrain_circuits/cli/factorial_run_validation.py": "96c59bbf78912b7b48957de56f6b05b06ec08e81ca840ed6f92af6a9529da099",
+      "src/posttrain_circuits/cli/finalize_g0.py": "e3c947d3c05547cb71578cdc53d1866dfb5682d9f9f6e6bed6f5a8c2abeb1546",
+      "src/posttrain_circuits/cli/finalize_pilot_training.py": "c57fcc0cee8874fa0ff4dc0be834243068d826ec08f02b694ece72de0508944a",
+      "src/posttrain_circuits/cli/train.py": "6a4b1193fd1ba63a80c597b864a94f93cb79d02eb7eaea0548ee2c026a5f5efd",
+      "src/posttrain_circuits/core/config.py": "6d62d1af4e6187e0cb0fbeff8a6cf8c3fb731d80567170f785e7781bd685bc78",
+      "src/posttrain_circuits/core/seeding.py": "123c0f3ac1cc8267efda36ef3857393d8be568a2f90754a4b513f4fdd0d063c7",
+      "src/posttrain_circuits/datasets/teacher_demos/contracts.py": "22d0de6ca3baff2bc90935f44ac5992e8267e051b0dec61bf14cc799f5520a41",
+      "src/posttrain_circuits/datasets/teacher_demos/ledger.py": "a9d1506eac63b95371c2736fabce8c01884eb2b9ad2e30f872a56fec774a5dfb",
+      "src/posttrain_circuits/datasets/teacher_demos/store.py": "200862bd255bf9115ab563aa4b149f88811ac33752805fd79abc573686b0d804",
+      "src/posttrain_circuits/datasets/teacher_demos/views.py": "6e7fe38eb51b7ce8b5e52a5b8af136d182d31d5d45410252101d0c23c37bcd1d",
+      "src/posttrain_circuits/datasets/trajectories/contracts.py": "ebdac9837d1f48d9f90b153779476f95d70b75ba01a4445ada49efe4b8ddebeb",
+      "src/posttrain_circuits/learning/collation.py": "db6dd81103bb00e7e78076ffa5e1b1ce975332078c850cdb1085af4ee41b317c",
+      "src/posttrain_circuits/learning/contracts.py": "fc14be3b8a1f2b70be3a8489c24e28d327a88f3f885af59e6c049f35fe693c8a",
+      "src/posttrain_circuits/learning/primitives.py": "99ca6a1d1ed5475810c5f149912ad0e9758ca86e1cdeb2023f354e7a78945f18",
+      "src/posttrain_circuits/learning/supervision/losses.py": "bbbe73f71129dc73dc9cb3aa8b48e4e4be97720d3b3b6dff9af91ebfc915b6a5",
+      "src/posttrain_circuits/learning/supervision/verified_replay.py": "15a5dd5a9ab936ae9849e48dba18c5821fe476a81ccb504ff89423e73db9bb75",
+      "src/posttrain_circuits/learning/teacher/demo_source.py": "8c9e916258d2e874bf07a004bc432f8bcd75f0da58e19cc127534cec0a6d51b2",
+      "src/posttrain_circuits/learning/training/canonical_sft.py": "5c2cd0ef8608738b5f67cd8af0979b598eb811876a8f0e532bd12d33410ee460",
+      "src/posttrain_circuits/learning/training/evaluation.py": "fe418bf33e7f5cbfb8a2bcb1bbb75ff9cf4cfb7934bd9ff764503cfa49e6d52c",
+      "src/posttrain_circuits/learning/training/execution_safety_kernel.py": "e5aefa6c9b170d329117222847ddd8d666a5248676c6fdf27b15a35b16490d0d",
+      "src/posttrain_circuits/learning/training/factorial_trainer.py": "958f601d64b3a3b5b8d9b8a7b33dfa2b61e854fb439e5e823744cb4542dd4fb1",
+      "src/posttrain_circuits/learning/training/factories.py": "840ab5037b1511f773e900d0590e5e38e6b4fe0d1603b4741f9e8d48651c747b",
+      "src/posttrain_circuits/learning/training/fsdp_contract.py": "5376a14d8e67863f91592b64c46c571f2c99eca17e289ef8e44a7b4f23e1dc56",
+      "src/posttrain_circuits/learning/training/optimizer.py": "f82cd1dccb63686df132e1df1e3c0ef3e95835a19e94858a4b31aebe5e9a069a",
+      "src/posttrain_circuits/learning/training/schedules.py": "347e34bb6b9ac3112a613785e489cf9ad7b3ec85746c3f91d87b7988258946c0",
+      "src/posttrain_circuits/learning/training/token_budget.py": "9d4dcb1adba9370a9f26cfb2e675f0b961004d38b1786c45ae4f8a2750684ed2",
+      "src/posttrain_circuits/models/loading.py": "441573c2db622e0e70e055f7aea788da72334b77070de878b261ed1f7f7e0c31",
+      "src/posttrain_circuits/models/prompt_protocol.py": "82291fa5a78a8e2e76ae8ad948eceb06e4ee2e4f8115f19697541db5d686037a",
+      "src/posttrain_circuits/scheduler_adapter/dispatch.py": "d49643f71ccdebf7573e6ff41a0059499b5e99478d7896ca1b2305a940256c29",
+      "src/posttrain_circuits/scheduler_adapter/entrypoint.py": "a225558a93121d61431cdc65164af3cebc68ca1608f01c7f7abae74e22e9c064",
+      "src/posttrain_circuits/scheduler_adapter/environment.py": "8497b2c9d752352a9f58f0ee7f1e39a4c5e2e2928ae1ab669341b11be663fb03",
+      "src/posttrain_circuits/scheduler_adapter/manifest.py": "46c11e3547fe29ddae8ccadde951859d992885112dc3e9bfd692d9e4a0f0f703",
+      "src/posttrain_circuits/scheduler_adapter/qwen3_v2_g0.py": "8cd35c8d264fd4d36d1934e63fe9b152a93903225aa8159dfdb60eb6abc6a492",
+      "src/posttrain_circuits/scheduler_adapter/registry.py": "3272ddd2090f119ea8c0ab99b93c8f59ad674b15e720e816aa35c3d7cabde611",
+      "src/posttrain_circuits/scheduler_adapter/runtime.py": "bedba59a1424b4b21c170a13f8d94cd7f071669d40d2e639671f66a8ebac1ecc",
+      "src/posttrain_circuits/scheduler_adapter/secure_files.py": "069f7ff34c63bf82092d7da2359cb66a72481d9a3e258445bf1c369d22ab4752",
+      "src/posttrain_circuits/scheduler_adapter/strict_json.py": "dd92bf6e74e15888c68ee7c2aadc98888dd54b4965a4223217ad967e14b772d0"
+    },
+    "loss_scaling": {
+      "objective": "response_mask_sequence_mean_cross_entropy_v1",
+      "protocol": "exact_global_sequence_mean_after_fsdp_rank_averaging_v1",
+      "sequence_normalization": true
+    },
+    "memory_envelope": {
+      "dataset_family_loaded_rows": 144000,
+      "dataset_family_split_rows": {
+        "circuit_discovery": 2000,
+        "circuit_validation": 2000,
+        "iid_test": 10000,
+        "ood_depth_test": 10000,
+        "ood_structure_test": 10000,
+        "train": 100000,
+        "validation": 10000
+      },
+      "gpu_compute_capability": [
+        12,
+        0
+      ],
+      "gpu_memory_budget_mib_per_device": 81920,
+      "gpu_minimum_total_memory_mib": 97000,
+      "gpu_model": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "host_memory_mib": 196608,
+      "minimum_host_headroom_fraction": 0.2,
+      "minimum_host_headroom_gib": 32,
+      "teacher_demo_max_accepted_records": 2048,
+      "teacher_demo_max_candidate_records": 2048,
+      "teacher_demo_max_candidates_per_prompt": 8,
+      "teacher_demo_max_prompt_count": 256
+    },
+    "model_and_sequence_shape": {
+      "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+      "derived_max_model_input_tokens": 1502,
+      "evaluation_all_ranks": true,
+      "evaluation_max_completion_tokens": 128,
+      "evaluation_max_total_tokens": 1536,
+      "max_model_input_length": 1536,
+      "model_id": "Qwen/Qwen3-1.7B",
+      "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "student_attention_implementation": "sdpa",
+      "student_gradient_checkpointing": true,
+      "student_torch_dtype": "bfloat16",
+      "teacher_attention_implementation": "sdpa",
+      "teacher_gradient_checkpointing": false,
+      "teacher_id": "Qwen/Qwen3-8B",
+      "teacher_max_new_tokens": 256,
+      "teacher_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "teacher_torch_dtype": "bfloat16",
+      "tokenizer_fingerprint": "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d",
+      "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+    },
+    "optimizer_and_precision": {
+      "full_parameter_training": true,
+      "gradient_accumulation_precision": "framework_managed",
+      "learning_rate_is_scientific_not_topology_identity": true,
+      "optimizer_class": "torch.optim.AdamW",
+      "optimizer_state_shape": "two_moment_tensors_per_trainable_parameter",
+      "student_parameter_dtype": "bfloat16"
+    },
+    "parameter_partition": {
+      "invalidating_dimensions": [
+        "handler_or_execution_implementation",
+        "fixed_runtime_or_dependency_lock",
+        "model_or_tensor_shape",
+        "maximum_sequence_length",
+        "batch_partition_or_loss_scaling",
+        "token_accounting",
+        "fsdp_or_checkpoint_resume",
+        "memory_envelope",
+        "supported_world_sizes"
+      ],
+      "non_invalidating_dimensions": [
+        "job_id",
+        "workflow_id",
+        "plan_sha256",
+        "seed",
+        "replication_id",
+        "output_directory",
+        "scientific_parameters_not_affecting_distributed_execution"
+      ]
+    },
+    "resolved_config_safety_projection": {
+      "experiment": {
+        "state_source": "teacher_demo",
+        "supervision": "canonical_sft",
+        "use_verifier_reward": false
+      },
+      "full_parameter_training": true,
+      "model": {
+        "allow_unpinned_revision": false,
+        "attn_implementation": "sdpa",
+        "gradient_checkpointing": true,
+        "low_cpu_mem_usage": true,
+        "model_name_or_path": "Qwen/Qwen3-1.7B",
+        "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "prompt_protocol": {
+          "add_generation_prompt": true,
+          "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+          "enable_thinking": false,
+          "messages": "single_user",
+          "name": "qwen3_non_thinking_v1"
+        },
+        "tokenizer_fingerprint": "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d",
+        "tokenizer_name_or_path": "Qwen/Qwen3-1.7B",
+        "tokenizer_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "torch_dtype": "bfloat16",
+        "trust_remote_code": false,
+        "use_cache": false
+      },
+      "state_source": {
+        "max_new_tokens": 256,
+        "max_prompt_tokens": 1246,
+        "name": "teacher_demo",
+        "num_candidates_within_memory_envelope": true,
+        "require_behavior_logprobs_for_formal_sft": true,
+        "require_complete_prompt_coverage": true,
+        "require_exact_verifier_success": true,
+        "zero_success_policy": "fail_closed"
+      },
+      "supervision": {
+        "mask_prompt_tokens": true,
+        "name": "canonical_sft",
+        "normalization": "sequence",
+        "training_backend": "factorial_trainer",
+        "training_backend_version": "in-repository-v1",
+        "training_batch_contract": "optimizer-boundary-gradient-accumulation-v1"
+      },
+      "task": {
+        "dataset_family_within_memory_envelope": true,
+        "prompt_population_within_memory_envelope": true
+      },
+      "teacher": {
+        "allow_unpinned_revision": false,
+        "attn_implementation": "sdpa",
+        "gradient_checkpointing": false,
+        "low_cpu_mem_usage": true,
+        "model_name_or_path": "Qwen/Qwen3-8B",
+        "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "rank_zero_only_training_load": true,
+        "tokenizer_fingerprint": "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d",
+        "tokenizer_name_or_path": "Qwen/Qwen3-8B",
+        "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "torch_dtype": "bfloat16",
+        "trust_remote_code": false,
+        "use_cache": true
+      },
+      "trainer": {
+        "backend": "accelerate",
+        "batch_partition_protocol": "allocation_neutral_exact_global_batch_v1",
+        "checkpoint_every": 20,
+        "evaluation_every": 20,
+        "global_batch_size": 64,
+        "max_completion_length": 128,
+        "max_microbatch_size": 4,
+        "max_model_input_length": 1536,
+        "max_steps": 120,
+        "steps_per_round": 1,
+        "token_budget": 2000000,
+        "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
+        "validation_examples": 128
+      }
+    },
+    "scheduler_boundary": {
+      "actual_allocation_source": "running_manifest_and_SERVER_SCHEDULER_GPU_COUNT",
+      "cuda_visible_devices": "preserve_exactly",
+      "gpu_count_policy": "scheduler",
+      "logical_device_ordinals": "0..N-1",
+      "physical_gpu_selection": "server_scheduler_only",
+      "request_execution_profile": "omitted",
+      "request_gpu_count_and_identity": "omitted",
+      "request_resources": "omitted",
+      "running_attempt_resize": "forbidden"
+    },
+    "supported_world_sizes": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "token_accounting": {
+      "budget": 2000000,
+      "budget_unit": "global_nonpadding_model_input_tokens_processed",
+      "max_optimizer_steps": 120,
+      "reservation": "exact_cross_rank_sum_before_any_backward_in_optimizer_window",
+      "stop_boundary": "before_optimizer_update_that_would_exceed_budget"
+    }
+  }
+}

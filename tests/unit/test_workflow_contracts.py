@@ -89,6 +89,32 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual((handler["REPORT_NAME"],), template.output_names)
         self.assertEqual(handler["GATE_NAMES"], template.gate_names)
 
+    def test_qwen3_v2_g0_binds_one_reusable_execution_certification(self):
+        self.assertEqual(
+            WORKFLOW_TASK_REGISTRY["qwen3_v2_g0"],
+            (
+                "config_binding_sha256",
+                "execution_config_sha256",
+                "execution_safety_certification_sha256",
+                "execution_safety_descriptor_sha256",
+                "execution_science_protocol_sha256",
+                "preregistration_sha256",
+                "protocol_amendment_sha256",
+                "resolved_config_sha256",
+                "scientific_config_sha256",
+            ),
+        )
+        self.assertFalse(
+            any(
+                name.startswith("gpu_preflight_w")
+                for name in WORKFLOW_TASK_REGISTRY["qwen3_v2_g0"]
+            )
+        )
+        self.assertIn(
+            "execution_science_protocol",
+            candidate_entrypoint("qwen3_v2_g0").gate_names,
+        )
+
     def test_candidate_entrypoint_catalog_exactly_covers_scientific_tasks(self):
         self.assertIsInstance(CANDIDATE_ENTRYPOINT_CATALOG, MappingProxyType)
         self.assertEqual(

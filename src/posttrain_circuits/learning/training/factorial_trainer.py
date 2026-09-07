@@ -26,7 +26,10 @@ from posttrain_circuits.artifacts.checkpoints import (
     validate_accelerator_state_directory,
 )
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
-from posttrain_circuits.artifacts.io import publish_path_no_clobber, publish_torch_once
+from posttrain_circuits.artifacts.execution_safe_io import (
+    publish_path_no_clobber,
+    publish_torch_once,
+)
 from posttrain_circuits.artifacts.runs import append_metric
 from posttrain_circuits.core.seeding import RNGState
 from posttrain_circuits.datasets.trajectories.contracts import TrajectoryRecord
@@ -39,6 +42,9 @@ from posttrain_circuits.learning.supervision.verified_replay import (
 )
 from posttrain_circuits.learning.teacher.demo_source import TeacherDemoStateSource
 from posttrain_circuits.learning.training.canonical_sft import CanonicalSFTSupervisor
+from posttrain_circuits.learning.training.execution_safety_kernel import (
+    batch_token_contract as execution_class_batch_token_contract,
+)
 from posttrain_circuits.learning.training.fsdp_contract import (
     full_state_dict_options,
     validate_model_fsdp_sharding,
@@ -713,6 +719,29 @@ class FactorialTrainer:
                     raise ValueError(
                         "prompt scheduler differs from the scheduler-owned launcher allocation"
                     )
+                if (
+                    isinstance(resolved_config, Mapping)
+                    and resolved_config.get("protocol_amendment_path")
+                    == "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
+                ):
+                    task = resolved_config.get("task")
+                    if not isinstance(task, Mapping):
+                        raise ValueError(
+                            "execution-class trainer lacks its task configuration"
+                        )
+                    contract = execution_class_batch_token_contract(
+                        launch_world_size,
+                        task.get("num_examples"),
+                    )
+                    if (
+                        launch_plan.local_sequence_count
+                        != contract["samples_by_rank"][launch_rank]
+                        or list(launch_plan.microbatch_sizes)
+                        != contract["microbatch_schedule_by_rank"][launch_rank]
+                    ):
+                        raise ValueError(
+                            "trainer batch plan differs from the certified execution kernel"
+                        )
                 self._gradient_accumulation_steps = (
                     launch_plan.microsteps_per_optimizer_update
                 )

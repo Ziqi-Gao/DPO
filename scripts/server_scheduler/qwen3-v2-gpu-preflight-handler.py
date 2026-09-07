@@ -154,6 +154,23 @@ FIXED_ENVIRONMENT = {
 }
 SOURCE_ROOT = Path("/home/del6500/projects/OPD")
 AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_elastic_v1.yaml")
+SUCCESSOR_AMENDMENT_RELATIVE_PATH = Path(
+    "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
+)
+EXECUTION_SAFETY_DESCRIPTOR_RELATIVE_PATH = Path(
+    "prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json"
+)
+EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH = Path(
+    "prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml"
+)
+EXECUTION_CLASS_ID = "qwen3-v2-elastic-training-v1"
+EXECUTION_CLASS_AMENDMENT_ID = "qwen3_v2_g0_execution_class_v2"
+EXECUTION_SAFETY_CERTIFICATION_ID = (
+    "qwen3-v2-elastic-training-v1-initial-certification"
+)
+EXECUTION_SAFETY_DESCRIPTOR_KIND = "qwen3_v2_execution_safety_descriptor"
+EXECUTION_SAFETY_CERTIFICATION_KIND = "qwen3_v2_execution_safety_certification"
+EXECUTION_SAFETY_FINGERPRINT_SCHEMA = "opd-execution-safety-fingerprint-v1"
 HANDOFF_RELATIVE_PATH = Path("docs/refactor/current_handoff.md")
 PROPOSED_AMENDMENT_SHA256 = (
     "2d2444c9b2969b0b10a42d137184f8d11574d748ae488f6e40d5b5cc4fb6becc"
@@ -166,6 +183,66 @@ PROPOSED_REVIEW = {
     "rationale": None,
 }
 MAX_LINEAGE_COMMITS = 256
+MAX_EXECUTION_CLASS_ARTIFACT_BYTES = 4 * 1024 * 1024
+
+# This pre-import copy must remain identical to the descriptor builder's list.
+# It lets the fixed handler authenticate project source before trusting any of
+# that source.  Request/finalization and experiment-only files intentionally do
+# not belong to the reusable distributed-execution fingerprint.
+EXECUTION_SAFETY_IMPLEMENTATION_PATHS = (
+    "configs/accelerate/fsdp_server_scheduler.yaml",
+    "deployments/qwen3_v2_g0/dependency-lock.json",
+    "deployments/qwen3_v2_g0/package-manifest.json",
+    "deployments/qwen3_v2_gpu_preflight/dependency-lock.json",
+    "deployments/qwen3_v2_gpu_preflight/package-manifest.json",
+    "scripts/server_scheduler/opd-entrypoint",
+    "scripts/server_scheduler/qwen3-v2-g0-handler.py",
+    "scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py",
+    "src/posttrain_circuits/artifacts/checkpoints.py",
+    "src/posttrain_circuits/artifacts/execution_safety_certification.py",
+    "src/posttrain_circuits/artifacts/execution_safe_io.py",
+    "src/posttrain_circuits/artifacts/execution_science_protocol.py",
+    "src/posttrain_circuits/artifacts/hashing.py",
+    "src/posttrain_circuits/artifacts/protocol_amendments.py",
+    "src/posttrain_circuits/cli/compare_distributed_resume.py",
+    "src/posttrain_circuits/cli/factorial_run_validation.py",
+    "src/posttrain_circuits/cli/finalize_g0.py",
+    "src/posttrain_circuits/cli/finalize_pilot_training.py",
+    "src/posttrain_circuits/cli/train.py",
+    "src/posttrain_circuits/core/config.py",
+    "src/posttrain_circuits/core/seeding.py",
+    "src/posttrain_circuits/datasets/teacher_demos/contracts.py",
+    "src/posttrain_circuits/datasets/teacher_demos/ledger.py",
+    "src/posttrain_circuits/datasets/teacher_demos/store.py",
+    "src/posttrain_circuits/datasets/teacher_demos/views.py",
+    "src/posttrain_circuits/datasets/trajectories/contracts.py",
+    "src/posttrain_circuits/learning/collation.py",
+    "src/posttrain_circuits/learning/contracts.py",
+    "src/posttrain_circuits/learning/primitives.py",
+    "src/posttrain_circuits/learning/supervision/losses.py",
+    "src/posttrain_circuits/learning/supervision/verified_replay.py",
+    "src/posttrain_circuits/learning/teacher/demo_source.py",
+    "src/posttrain_circuits/learning/training/canonical_sft.py",
+    "src/posttrain_circuits/learning/training/evaluation.py",
+    "src/posttrain_circuits/learning/training/execution_safety_kernel.py",
+    "src/posttrain_circuits/learning/training/factorial_trainer.py",
+    "src/posttrain_circuits/learning/training/factories.py",
+    "src/posttrain_circuits/learning/training/fsdp_contract.py",
+    "src/posttrain_circuits/learning/training/optimizer.py",
+    "src/posttrain_circuits/learning/training/schedules.py",
+    "src/posttrain_circuits/learning/training/token_budget.py",
+    "src/posttrain_circuits/models/loading.py",
+    "src/posttrain_circuits/models/prompt_protocol.py",
+    "src/posttrain_circuits/scheduler_adapter/dispatch.py",
+    "src/posttrain_circuits/scheduler_adapter/entrypoint.py",
+    "src/posttrain_circuits/scheduler_adapter/environment.py",
+    "src/posttrain_circuits/scheduler_adapter/manifest.py",
+    "src/posttrain_circuits/scheduler_adapter/qwen3_v2_g0.py",
+    "src/posttrain_circuits/scheduler_adapter/registry.py",
+    "src/posttrain_circuits/scheduler_adapter/runtime.py",
+    "src/posttrain_circuits/scheduler_adapter/secure_files.py",
+    "src/posttrain_circuits/scheduler_adapter/strict_json.py",
+)
 
 
 class PreflightError(RuntimeError):
@@ -209,6 +286,7 @@ class Invocation:
     gpu_count: int
     manifest_sha256: str
     allocation_sha256: str
+    running_manifest_descriptor: int
     content_handles: tuple[ContentHandle, ...]
     output_descriptor: int
 
@@ -529,6 +607,7 @@ def _outer_parser() -> argparse.ArgumentParser:
         "gpu-count",
         "manifest-sha256",
         "allocation-sha256",
+        "running-manifest-handle",
         "output-attempt-handle",
         "attempt-completion-name",
     ):
@@ -592,10 +671,16 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
     descriptors = tuple(item.descriptor for item in handles)
     if len(set(descriptors)) != len(descriptors):
         raise PreflightError("content handles alias the same descriptor")
+    running_manifest_descriptor = _held_descriptor(
+        args.running_manifest_handle, name="running manifest handle"
+    )
     output_descriptor = _held_descriptor(
         args.output_attempt_handle, name="output attempt handle"
     )
-    if output_descriptor in descriptors:
+    if running_manifest_descriptor in descriptors or output_descriptor in (
+        *descriptors,
+        running_manifest_descriptor,
+    ):
         raise PreflightError("output attempt aliases a content descriptor")
     output_stat = os.fstat(output_descriptor)
     if not stat.S_ISDIR(output_stat.st_mode):
@@ -611,6 +696,7 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
         gpu_count=_gpu_count(args.gpu_count),
         manifest_sha256=_sha256(args.manifest_sha256, name="manifest_sha256"),
         allocation_sha256=_sha256(args.allocation_sha256, name="allocation_sha256"),
+        running_manifest_descriptor=running_manifest_descriptor,
         content_handles=tuple(handles),
         output_descriptor=output_descriptor,
     )
@@ -637,6 +723,93 @@ def _read_held_file(descriptor: int, *, context: str, max_bytes: int) -> bytes:
     if len(raw) != before.st_size or identity(before) != identity(after):
         raise PreflightError(f"{context} changed while being read")
     return raw
+
+
+def _validate_held_running_manifest(invocation: Invocation) -> None:
+    """Independently bind the child to the exact ordered scheduler allocation."""
+
+    raw = _read_held_file(
+        invocation.running_manifest_descriptor,
+        context="running manifest",
+        max_bytes=2 * 1024 * 1024,
+    )
+    if hashlib.sha256(raw).hexdigest() != invocation.manifest_sha256:
+        raise PreflightError("running manifest bytes differ from manifest_sha256")
+    payload = _strict_json(raw, context="running manifest")
+    required = {
+        "allocation", "cpu_ids", "estimated_runtime_seconds", "execution_profile",
+        "exit_code", "failure_reason", "gpu_indices", "gpu_pci_bus_ids",
+        "gpu_uuids", "job_id", "numa_node", "parameters", "priority",
+        "project", "requested_profile", "resources", "schema_version", "state",
+        "stderr_log", "stdout_log", "submitted_at", "task", "updated_at",
+    }
+    if not isinstance(payload, dict) or set(payload) != required:
+        raise PreflightError("running manifest fields differ from protocol-v2")
+    parameters = payload.get("parameters")
+    allocation = payload.get("allocation")
+    if (
+        payload.get("schema_version") != 2
+        or payload.get("project") != PROJECT
+        or payload.get("state") != "running"
+        or payload.get("task") != TASK
+        or payload.get("job_id") != invocation.job_id
+        or payload.get("execution_profile") != invocation.execution_profile
+        or payload.get("requested_profile") is not None
+        or payload.get("resources") is not None
+        or payload.get("exit_code") is not None
+        or payload.get("failure_reason") is not None
+        or parameters
+        != {
+            "workflow_id": invocation.workflow_id,
+            "plan_sha256": invocation.plan_sha256,
+            "unit_id": invocation.unit_id,
+        }
+        or not isinstance(allocation, dict)
+        or allocation
+        != {
+            "cpu_cores": CPU_CORE_COUNT,
+            "exclusive_gpu": True,
+            "gpu_count": invocation.gpu_count,
+            "gpu_memory_mib": GPU_MEMORY_BUDGET_MIB,
+            "gpu_utilization_pct": 95,
+            "memory_mib": 196608,
+        }
+    ):
+        raise PreflightError(
+            "running manifest identity or allocation differs from invocation"
+        )
+    gpu_uuids = payload.get("gpu_uuids")
+    gpu_indices = payload.get("gpu_indices")
+    gpu_pci_bus_ids = payload.get("gpu_pci_bus_ids")
+    cpu_ids = payload.get("cpu_ids")
+    if (
+        not isinstance(gpu_uuids, list)
+        or len(gpu_uuids) != invocation.gpu_count
+        or len(set(gpu_uuids)) != len(gpu_uuids)
+        or any(not isinstance(value, str) or not value or "," in value for value in gpu_uuids)
+        or not isinstance(gpu_indices, list)
+        or len(gpu_indices) != invocation.gpu_count
+        or not isinstance(gpu_pci_bus_ids, list)
+        or len(gpu_pci_bus_ids) != invocation.gpu_count
+        or not isinstance(cpu_ids, list)
+        or len(cpu_ids) != allocation.get("cpu_cores")
+    ):
+        raise PreflightError("running manifest concrete allocation is incomplete")
+    allocation_payload = {
+        "allocation": allocation,
+        "cpu_ids": cpu_ids,
+        "gpu_indices": gpu_indices,
+        "gpu_pci_bus_ids": gpu_pci_bus_ids,
+        "gpu_uuids": gpu_uuids,
+        "numa_node": payload.get("numa_node"),
+    }
+    if _sha256_value(allocation_payload) != invocation.allocation_sha256:
+        raise PreflightError("running manifest allocation digest differs from invocation")
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if visible.split(",") != gpu_uuids:
+        raise PreflightError(
+            "CUDA_VISIBLE_DEVICES differs from ordered running-manifest GPU UUIDs"
+        )
 
 
 def _strict_json(raw: bytes, *, context: str) -> Any:
@@ -1868,7 +2041,7 @@ def _require_clean_git() -> str:
         _git_command(
             "status",
             "--porcelain=v1",
-            "--untracked-files=all",
+            "--untracked-files=no",
             "--ignore-submodules=none",
         ),
         cwd=SOURCE_ROOT,
@@ -1879,11 +2052,6 @@ def _require_clean_git() -> str:
     )
     if result.stdout:
         raise PreflightError("GPU preflight requires a clean source checkout")
-    unsafe = _unsafe_untracked_paths()
-    if unsafe:
-        raise PreflightError(
-            f"GPU preflight checkout contains unsafe ignored files: {unsafe!r}"
-        )
     return _git("rev-parse", "HEAD")
 
 
@@ -1940,35 +2108,6 @@ def _git_bytes(*arguments: str) -> bytes:
         raise PreflightError(
             f"GPU preflight Git validation failed: git {' '.join(arguments)}"
         ) from error
-
-
-def _unsafe_untracked_paths() -> tuple[str, ...]:
-    """Find untracked paths without honoring any ignore or exclude source."""
-
-    raw = _git_bytes("ls-files", "--others", "-z", "--")
-    if not raw:
-        return ()
-    if not raw.endswith(b"\0"):
-        raise PreflightError("GPU preflight untracked-path output is malformed")
-    try:
-        paths = tuple(
-            item.decode("utf-8", errors="strict") for item in raw[:-1].split(b"\0")
-        )
-    except UnicodeDecodeError as error:
-        raise PreflightError("GPU preflight untracked path is not strict UTF-8") from error
-    if any(not path for path in paths):
-        raise PreflightError("GPU preflight untracked-path output contains an empty path")
-    unsafe: list[str] = []
-    for path in paths:
-        parsed = Path(path)
-        if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
-            raise PreflightError("GPU preflight untracked path is not canonical")
-        if path == ".codex/config.toml":
-            continue
-        if parsed.suffix == ".pyc" and "__pycache__" in parsed.parts:
-            continue
-        unsafe.append(path)
-    return tuple(unsafe)
 
 
 def _git_blob(commit: str, path: Path) -> bytes:
@@ -2066,6 +2205,424 @@ def _linear_commit_steps(
     if previous != newer:
         raise PreflightError("GPU preflight lineage does not terminate at the expected commit")
     return tuple(steps)
+
+
+def _source_regular_bytes(
+    path: Path,
+    *,
+    context: str,
+    max_bytes: int = MAX_EXECUTION_CLASS_ARTIFACT_BYTES,
+) -> bytes:
+    """Read one source artifact without following a pathname substitution."""
+
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise PreflightError(f"{context} is unavailable") from error
+    identity = lambda row: (  # noqa: E731 - immutable inode comparison
+        row.st_dev,
+        row.st_ino,
+        row.st_mode,
+        row.st_nlink,
+        row.st_size,
+        row.st_mtime_ns,
+        row.st_ctime_ns,
+    )
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size < 1
+            or before.st_size > max_bytes
+        ):
+            raise PreflightError(
+                f"{context} must be one bounded non-linked regular file"
+            )
+        raw = os.pread(descriptor, before.st_size, 0)
+        after = os.fstat(descriptor)
+        pathname = path.lstat()
+        if (
+            len(raw) != before.st_size
+            or identity(after) != identity(before)
+            or identity(pathname) != identity(before)
+            or os.pread(descriptor, after.st_size, 0) != raw
+        ):
+            raise PreflightError(f"{context} changed while being read")
+        return raw
+    finally:
+        os.close(descriptor)
+
+
+def _execution_class_successor_present(*, execution_commit: str) -> bool:
+    """Select v1 only for a commit predating introduction of the successor.
+
+    Once the successor path has appeared in history, deleting or hiding it may
+    not reactivate the less expressive predecessor acceptance path.
+    """
+
+    path = SOURCE_ROOT / SUCCESSOR_AMENDMENT_RELATIVE_PATH
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        history = _git_bytes(
+            "log",
+            "-n1",
+            "--format=%H",
+            execution_commit,
+            "--",
+            str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+        ).strip()
+        if history:
+            raise PreflightError(
+                "execution-class successor disappeared after its introduction"
+            )
+        return False
+    except OSError as error:
+        raise PreflightError(
+            "execution-class successor amendment cannot be inspected"
+        ) from error
+    return True
+
+
+def _accepted_execution_class_review(
+    payload: dict[str, Any], *, context: str
+) -> tuple[dict[str, Any], str]:
+    review = payload.get("review")
+    if not isinstance(review, dict) or set(review) != set(PROPOSED_REVIEW):
+        raise PreflightError(f"{context} review fields differ from the fixed schema")
+    implementation = review.get("reviewed_implementation_commit")
+    if review.get("status") != "accepted":
+        raise PreflightError(f"{context} remains proposed or unaccepted")
+    if (
+        not isinstance(implementation, str)
+        or GIT_COMMIT.fullmatch(implementation) is None
+    ):
+        raise PreflightError(f"{context} lacks a reviewed implementation commit")
+    for field in ("reviewer", "rationale"):
+        value = review.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise PreflightError(f"{context} lacks {field}")
+    timestamp = review.get("reviewed_at_utc")
+    if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+        raise PreflightError(f"{context} review time is not explicit UTC")
+    try:
+        parsed = datetime.fromisoformat(timestamp[:-1] + "+00:00")
+    except ValueError as error:
+        raise PreflightError(f"{context} review time is invalid") from error
+    if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise PreflightError(f"{context} review time is not UTC")
+    return review, implementation
+
+
+def _validate_execution_class_plan_lineage(
+    *,
+    plan_commit: str,
+    execution_commit: str,
+) -> dict[str, str]:
+    """Authenticate the reusable execution class without importing project code."""
+
+    if _git("rev-parse", "HEAD") != execution_commit:
+        raise PreflightError("GPU preflight execution HEAD changed during validation")
+    artifacts = {
+        SUCCESSOR_AMENDMENT_RELATIVE_PATH: _source_regular_bytes(
+            SOURCE_ROOT / SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+            context="execution-class successor amendment",
+        ),
+        EXECUTION_SAFETY_DESCRIPTOR_RELATIVE_PATH: _source_regular_bytes(
+            SOURCE_ROOT / EXECUTION_SAFETY_DESCRIPTOR_RELATIVE_PATH,
+            context="execution-safety descriptor",
+        ),
+        EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH: _source_regular_bytes(
+            SOURCE_ROOT / EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH,
+            context="execution-safety certification",
+        ),
+    }
+    for path, raw in artifacts.items():
+        if _git_blob(execution_commit, path) != raw:
+            raise PreflightError(
+                f"execution-class artifact differs from execution HEAD: {path}"
+            )
+
+    amendment = _load_amendment(
+        artifacts[SUCCESSOR_AMENDMENT_RELATIVE_PATH],
+        context="accepted execution-class successor amendment",
+    )
+    certification = _load_amendment(
+        artifacts[EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH],
+        context="accepted execution-safety certification",
+    )
+    amendment_review, implementation_commit = _accepted_execution_class_review(
+        amendment,
+        context="execution-class successor amendment",
+    )
+    certification_review, certification_implementation = (
+        _accepted_execution_class_review(
+            certification,
+            context="execution-safety certification",
+        )
+    )
+    if (
+        certification_review != amendment_review
+        or certification_implementation != implementation_commit
+    ):
+        raise PreflightError(
+            "successor amendment and certification review identities differ"
+        )
+
+    expected_amendment_fields = {
+        "schema_version",
+        "amendment_id",
+        "base_preregistration",
+        "superseded_execution_amendment",
+        "scope",
+        "scheduler_managed_allocation",
+        "execution_safety_certification",
+        "candidate_e_scientific_protocol",
+        "evidence_and_reuse",
+        "candidate_e_migration",
+        "implementation_acceptance",
+        "review",
+    }
+    expected_certification_fields = {
+        "schema_version",
+        "kind",
+        "certification_id",
+        "execution_class",
+        "evidence_basis",
+        "legacy_evidence_condensation",
+        "reuse_policy",
+        "residual_risk",
+        "review",
+    }
+    if (
+        set(amendment) != expected_amendment_fields
+        or amendment.get("schema_version") != 2
+        or amendment.get("amendment_id") != EXECUTION_CLASS_AMENDMENT_ID
+        or set(certification) != expected_certification_fields
+        or certification.get("schema_version") != 1
+        or certification.get("kind") != EXECUTION_SAFETY_CERTIFICATION_KIND
+        or certification.get("certification_id")
+        != EXECUTION_SAFETY_CERTIFICATION_ID
+    ):
+        raise PreflightError("execution-class document identity or fields differ")
+    expected_allocation = {
+        "profile_cardinality": "one_elastic_profile_for_one_scientific_task",
+        "gpu_count_policy": "scheduler",
+        "allocation_candidates": [1, 2, 3, 4],
+        "request_execution_profile": "omitted",
+        "request_resources": "omitted",
+        "request_gpu_count_and_identity": "omitted",
+        "count_and_uuid_selection": "server_scheduler_claim_time_only",
+        "running_attempt_resize": "forbidden",
+    }
+    if amendment.get("scheduler_managed_allocation") != expected_allocation:
+        raise PreflightError("successor scheduler-managed allocation terms differ")
+
+    proposed_amendment = _load_amendment(
+        _git_blob(implementation_commit, SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+        context="reviewed proposed execution-class amendment",
+    )
+    proposed_certification = _load_amendment(
+        _git_blob(
+            implementation_commit,
+            EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH,
+        ),
+        context="reviewed proposed execution-safety certification",
+    )
+    if (
+        proposed_amendment.get("review") != PROPOSED_REVIEW
+        or proposed_certification.get("review") != PROPOSED_REVIEW
+    ):
+        raise PreflightError(
+            "reviewed implementation did not contain both proposed documents"
+        )
+    normalized_amendment = copy.deepcopy(amendment)
+    normalized_amendment["review"] = copy.deepcopy(PROPOSED_REVIEW)
+    normalized_certification = copy.deepcopy(certification)
+    normalized_certification["review"] = copy.deepcopy(PROPOSED_REVIEW)
+    if (
+        normalized_amendment != proposed_amendment
+        or normalized_certification != proposed_certification
+    ):
+        raise PreflightError(
+            "joint acceptance changed non-review execution-class content"
+        )
+
+    amendment_commit = _git(
+        "log",
+        "-n1",
+        "--format=%H",
+        execution_commit,
+        "--",
+        str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+    )
+    certification_commit = _git(
+        "log",
+        "-n1",
+        "--format=%H",
+        execution_commit,
+        "--",
+        str(EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH),
+    )
+    acceptance_parents = _commit_parents(amendment_commit)
+    acceptance_parent = acceptance_parents[0] if len(acceptance_parents) == 1 else None
+    changed_at_acceptance = (
+        _changed_paths(acceptance_parent, amendment_commit)
+        if acceptance_parent is not None
+        else set()
+    )
+    required_review_paths = {
+        str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+        str(EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH),
+    }
+    allowed_review_paths = required_review_paths | {
+        "prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_v1.yaml",
+        str(HANDOFF_RELATIVE_PATH),
+    }
+    if (
+        amendment_commit != certification_commit
+        or acceptance_parent is None
+        or not _is_ancestor(implementation_commit, acceptance_parent)
+        or not required_review_paths <= changed_at_acceptance
+        or not changed_at_acceptance <= allowed_review_paths
+        or _git_blob(amendment_commit, SUCCESSOR_AMENDMENT_RELATIVE_PATH)
+        != artifacts[SUCCESSOR_AMENDMENT_RELATIVE_PATH]
+        or _git_blob(
+            amendment_commit,
+            EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH,
+        )
+        != artifacts[EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH]
+    ):
+        raise PreflightError(
+            "execution-class lineage lacks one stable review-only joint acceptance"
+        )
+    if not _is_ancestor(amendment_commit, plan_commit):
+        raise PreflightError(
+            "GPU preflight plan predates or is disconnected from execution-class acceptance"
+        )
+    if not _is_ancestor(plan_commit, execution_commit):
+        raise PreflightError(
+            "GPU preflight plan is not an ancestor of the executing checkout"
+        )
+
+    descriptor_raw = artifacts[EXECUTION_SAFETY_DESCRIPTOR_RELATIVE_PATH]
+    descriptor = _strict_json(
+        descriptor_raw,
+        context="execution-safety descriptor",
+    )
+    if not isinstance(descriptor, dict) or set(descriptor) != {
+        "execution_class_id",
+        "fingerprint_schema",
+        "fingerprint_sha256",
+        "kind",
+        "schema_version",
+        "subject",
+    }:
+        raise PreflightError("execution-safety descriptor fields differ")
+    subject = descriptor.get("subject")
+    if (
+        descriptor.get("schema_version") != 1
+        or descriptor.get("kind") != EXECUTION_SAFETY_DESCRIPTOR_KIND
+        or descriptor.get("execution_class_id") != EXECUTION_CLASS_ID
+        or descriptor.get("fingerprint_schema")
+        != EXECUTION_SAFETY_FINGERPRINT_SCHEMA
+        or not isinstance(subject, dict)
+        or descriptor.get("fingerprint_sha256") != _sha256_value(subject)
+        or subject.get("supported_world_sizes") != [1, 2, 3, 4]
+    ):
+        raise PreflightError("execution-safety descriptor identity is invalid")
+    scheduler_boundary = subject.get("scheduler_boundary")
+    if not isinstance(scheduler_boundary, dict) or any(
+        scheduler_boundary.get(name) != expected
+        for name, expected in {
+            "gpu_count_policy": "scheduler",
+            "request_execution_profile": "omitted",
+            "request_gpu_count_and_identity": "omitted",
+            "request_resources": "omitted",
+            "physical_gpu_selection": "server_scheduler_only",
+        }.items()
+    ):
+        raise PreflightError("execution-safety scheduler boundary differs")
+    implementation_files = subject.get("implementation_files")
+    if (
+        not isinstance(implementation_files, dict)
+        or set(implementation_files) != set(EXECUTION_SAFETY_IMPLEMENTATION_PATHS)
+    ):
+        raise PreflightError("execution-safety critical file set differs")
+
+    descriptor_sha256 = hashlib.sha256(descriptor_raw).hexdigest()
+    certification_core = copy.deepcopy(certification)
+    certification_core.pop("review", None)
+    certification_core_sha256 = _sha256_value(certification_core)
+    expected_class = {
+        "execution_class_id": EXECUTION_CLASS_ID,
+        "descriptor_path": str(EXECUTION_SAFETY_DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": descriptor_sha256,
+        "fingerprint_sha256": descriptor["fingerprint_sha256"],
+        "supported_world_sizes": [1, 2, 3, 4],
+    }
+    expected_amendment_binding = {
+        "execution_class_id": EXECUTION_CLASS_ID,
+        "certification_id": EXECUTION_SAFETY_CERTIFICATION_ID,
+        "descriptor_path": str(EXECUTION_SAFETY_DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": descriptor_sha256,
+        "certification_path": str(EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": certification_core_sha256,
+        "fingerprint_sha256": descriptor["fingerprint_sha256"],
+        "supported_world_sizes": [1, 2, 3, 4],
+    }
+    if (
+        certification.get("execution_class") != expected_class
+        or amendment.get("execution_safety_certification")
+        != expected_amendment_binding
+    ):
+        raise PreflightError("execution-class artifacts do not bind one certification")
+
+    for relative, expected_digest in implementation_files.items():
+        if (
+            not isinstance(expected_digest, str)
+            or SHA256.fullmatch(expected_digest) is None
+        ):
+            raise PreflightError(
+                "execution-safety descriptor contains an invalid implementation hash"
+            )
+        working = _source_regular_bytes(
+            SOURCE_ROOT / relative,
+            context=f"execution-safety implementation {relative}",
+            max_bytes=64 * 1024 * 1024,
+        )
+        if hashlib.sha256(working).hexdigest() != expected_digest:
+            raise PreflightError(
+                "working checkout safety-critical blob differs from "
+                f"certification: {relative}"
+            )
+
+    if (
+        _git("rev-parse", "HEAD") != execution_commit
+        or any(
+            _source_regular_bytes(
+                SOURCE_ROOT / path,
+                context=f"execution-class artifact {path}",
+            )
+            != raw
+            for path, raw in artifacts.items()
+        )
+    ):
+        raise PreflightError("execution-class lineage changed during validation")
+    return {
+        "acceptance_commit": amendment_commit,
+        "certification_sha256": hashlib.sha256(
+            artifacts[EXECUTION_SAFETY_CERTIFICATION_RELATIVE_PATH]
+        ).hexdigest(),
+        "descriptor_sha256": descriptor_sha256,
+        "execution_class_id": EXECUTION_CLASS_ID,
+        "fingerprint_sha256": descriptor["fingerprint_sha256"],
+        "reviewed_implementation_commit": implementation_commit,
+    }
 
 
 def _accepted_amendment(
@@ -2192,13 +2749,18 @@ def _validate_plan_execution_lineage(
     *,
     plan_commit: str,
     execution_commit: str,
-) -> None:
+) -> dict[str, str] | None:
     """Prove plan/execution lineage using only this hash-bound handler."""
 
     if GIT_COMMIT.fullmatch(plan_commit) is None:
         raise PreflightError("GPU preflight plan code_commit is not a Git identity")
     if GIT_COMMIT.fullmatch(execution_commit) is None:
         raise PreflightError("GPU preflight execution commit is not a Git identity")
+    if _execution_class_successor_present(execution_commit=execution_commit):
+        return _validate_execution_class_plan_lineage(
+            plan_commit=plan_commit,
+            execution_commit=execution_commit,
+        )
     accepted_raw, implementation_commit = _accepted_amendment(
         execution_commit=execution_commit
     )
@@ -2214,6 +2776,7 @@ def _validate_plan_execution_lineage(
             raise PreflightError(
                 "GPU preflight execution contains post-plan implementation changes"
             )
+    return None
 
 
 def _publish_once(descriptor: int, name: str, payload: object) -> None:
@@ -2376,6 +2939,11 @@ def _publish_report(context: dict[str, Any], gathered: list[Any], torch: Any) ->
         "visible_cuda_devices": torch.cuda.device_count(),
         "world_size": gpu_count,
     }
+    execution_safety = context.get("execution_safety")
+    if execution_safety is not None:
+        if not isinstance(execution_safety, dict):
+            raise PreflightError("execution-safety evidence context is invalid")
+        report["execution_safety"] = dict(execution_safety)
     if not report["nccl_all_reduce"]:
         raise PreflightError("NCCL diagnostic rows are inconsistent")
     if not report["qwen_forward_finite"]:
@@ -2513,6 +3081,7 @@ def _spawn_safe_script_path() -> str:
 def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
     invocation = _parse_outer(argv)
+    _validate_held_running_manifest(invocation)
     _validate_environment(invocation.gpu_count)
     execution_commit = _require_clean_git()
     payloads, prereg = _read_inputs(invocation)
@@ -2530,7 +3099,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
         prereg,
         code_commit=plan_commit,
     )
-    _validate_plan_execution_lineage(
+    execution_safety = _validate_plan_execution_lineage(
         plan_commit=plan_commit,
         execution_commit=execution_commit,
     )
@@ -2549,6 +3118,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "code_commit": execution_commit,
             "gpu_count": invocation.gpu_count,
             "input_hashes": invocation.input_hashes,
+            "execution_safety": execution_safety,
             "job_id": invocation.job_id,
             "manifest_sha256": invocation.manifest_sha256,
             "output_path": f"/proc/{os.getpid()}/fd/{invocation.output_descriptor}",

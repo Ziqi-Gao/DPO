@@ -52,6 +52,9 @@ from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.datasets.proofgraph.rendering import render_example
 from posttrain_circuits.learning.teacher.hf_scorer import HuggingFaceTeacherScorer
 from posttrain_circuits.learning.training.evaluation import build_proofgraph_evaluator
+from posttrain_circuits.learning.training.execution_safety_kernel import (
+    batch_token_contract as execution_class_batch_token_contract,
+)
 from posttrain_circuits.learning.training.factorial_trainer import FactorialTrainer, TrainerConfig
 from posttrain_circuits.learning.training.factories import build_state_source, build_supervisor
 from posttrain_circuits.learning.training.optimizer import build_adamw
@@ -83,7 +86,8 @@ def _validate_allocation_neutral_prompt_population(
     The accepted teacher-demo cursor is rank local.  Allocation-neutral sample
     order therefore additionally requires one unique global prompt population
     whose length is an exact multiple of the 64-slot optimizer window.  The
-    production G0 request freezes that population at 256 prompts.
+    legacy Candidate E v1 freezes that population at 256 prompts; the reusable
+    execution class accepts aligned populations inside its certified envelope.
     """
 
     if type(global_batch_size) is not int or global_batch_size < 1:
@@ -137,6 +141,8 @@ def _validate_teacher_demo_model_input_lengths(
     attempts: list[TeacherDemoAttempt],
     manifest: dict[str, Any],
     *,
+    expected_prompt_count: int,
+    candidates_per_prompt: int,
     max_prompt_tokens: int,
     max_new_tokens: int,
     max_model_input_length: int,
@@ -149,7 +155,13 @@ def _validate_teacher_demo_model_input_lengths(
     checks every materialized supervision tensor.
     """
 
-    limits = (max_prompt_tokens, max_new_tokens, max_model_input_length)
+    limits = (
+        expected_prompt_count,
+        candidates_per_prompt,
+        max_prompt_tokens,
+        max_new_tokens,
+        max_model_input_length,
+    )
     if any(type(value) is not int or value < 1 for value in limits):
         raise ValueError("teacher-demo model-input length limits must be positive integers")
     if max_prompt_tokens + max_new_tokens > max_model_input_length:
@@ -158,12 +170,22 @@ def _validate_teacher_demo_model_input_lengths(
     if not isinstance(generation, dict) or (
         generation.get("max_prompt_tokens") != max_prompt_tokens
         or generation.get("max_new_tokens") != max_new_tokens
+        or generation.get("candidates_per_prompt") != candidates_per_prompt
     ):
         raise ValueError(
-            "teacher-demo generation length contract differs from the reviewed G0 config"
+            "teacher-demo generation envelope differs from the reviewed G0 config"
         )
     if not attempts:
         raise ValueError("teacher-demo accepted view is empty")
+    maximum_records = expected_prompt_count * candidates_per_prompt
+    if (
+        manifest.get("attempt_count") != maximum_records
+        or manifest.get("accepted_count") != len(attempts)
+        or len(attempts) > maximum_records
+    ):
+        raise ValueError(
+            "teacher-demo store exceeds or differs from the reviewed memory envelope"
+        )
     observed_prompt = 0
     observed_response = 0
     observed_total = 0
@@ -190,6 +212,8 @@ def _validate_teacher_demo_model_input_lengths(
         "max_model_input_length": max_model_input_length,
         "max_new_tokens": max_new_tokens,
         "max_prompt_tokens": max_prompt_tokens,
+        "maximum_accepted_records": maximum_records,
+        "observed_accepted_records": len(attempts),
         "observed_max_model_input_tokens": observed_total,
         "observed_max_prompt_tokens": observed_prompt,
         "observed_max_response_tokens": observed_response,
@@ -406,6 +430,8 @@ def main(argv: list[str] | None = None) -> None:
             teacher_demo_length_contract = _validate_teacher_demo_model_input_lengths(
                 teacher_demos,
                 teacher_demo_manifest,
+                expected_prompt_count=train_count,
+                candidates_per_prompt=config["state_source"].get("num_candidates"),
                 max_prompt_tokens=config["state_source"].get("max_prompt_tokens"),
                 max_new_tokens=config["state_source"].get("max_new_tokens"),
                 max_model_input_length=max_model_input_length,
@@ -487,12 +513,26 @@ def main(argv: list[str] | None = None) -> None:
             expected_prompt_ids=[example.example_id for example in examples],
             expected_prompt_count=(
                 _QWEN3_V2_G0_PROMPT_POPULATION_SIZE
-                if production_scale and config.get("protocol_track") == "qwen3_v2"
+                if production_scale
+                and config.get("protocol_track") == "qwen3_v2"
+                and config.get("protocol_amendment_path")
+                != "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
                 else None
             ),
         )
     launch_rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    execution_class_contract: dict[str, Any] | None = None
+    if (
+        production_scale
+        and config.get("protocol_track") == "qwen3_v2"
+        and config.get("protocol_amendment_path")
+        == "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
+    ):
+        execution_class_contract = execution_class_batch_token_contract(
+            world_size,
+            len(global_prompt_ids),
+        )
     if batch_partition_protocol == ALLOCATION_NEUTRAL_EXACT_GLOBAL_BATCH_V1:
         assert global_batch_size is not None
         assert max_microbatch_size is not None
@@ -504,6 +544,18 @@ def main(argv: list[str] | None = None) -> None:
             global_batch_size=global_batch_size,
             max_microbatch_size=max_microbatch_size,
         )
+        if execution_class_contract is not None:
+            plan = prompt_scheduler.exact_global_batch_plan
+            if (
+                plan is None
+                or plan.local_sequence_count
+                != execution_class_contract["samples_by_rank"][launch_rank]
+                or list(plan.microbatch_sizes)
+                != execution_class_contract["microbatch_schedule_by_rank"][launch_rank]
+            ):
+                raise ValueError(
+                    "training prompt scheduler differs from the certified execution kernel"
+                )
     else:
         prompt_scheduler = PromptScheduler.for_distributed_rank(
             global_prompt_ids,
@@ -925,6 +977,7 @@ def main(argv: list[str] | None = None) -> None:
             validation_examples,
             tokenizer,
             max_completion_length=evaluation_completion_length,
+            max_model_input_length=trainer_config.max_model_input_length,
             model_config=config["model"],
         ),
     )

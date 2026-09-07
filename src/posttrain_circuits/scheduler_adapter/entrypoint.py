@@ -14,7 +14,7 @@ from posttrain_circuits.scheduler_adapter.environment import (
     validate_scheduler_environment,
 )
 from posttrain_circuits.scheduler_adapter.errors import AdapterError, AdapterValidationError
-from posttrain_circuits.scheduler_adapter.manifest import load_running_manifest
+from posttrain_circuits.scheduler_adapter.manifest import hold_running_manifest
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.registry import (
     ADDITIONAL_RUNTIME_ROOTS,
@@ -47,39 +47,41 @@ def main(
     environment = os.environ if environ is None else environ
     try:
         manifest_path = _parse_manifest_argument(arguments)
-        manifest = load_running_manifest(manifest_path)
-        envelope = validate_scheduler_environment(
-            manifest, manifest_path=manifest_path, environ=environment
-        )
-        handler = require_handler(manifest.task, registry=HANDLER_REGISTRY)
-        layout = WorkflowLayout.production()
-        layout.validate()
-        with handler.prepare(
-            manifest,
-            approved_code_root=layout.code_root,
-            approved_runtime_root=FIXED_RUNTIME_ROOT,
-            additional_runtime_roots=ADDITIONAL_RUNTIME_ROOTS,
-            observed_gpu_models=None,
-        ) as prepared:
-            configure_thread_environment(
-                cpu_cores=manifest.allocation.cpu_cores,
-                process_count=prepared.profile.process_count_for(manifest),
-                environ=environment,
+        manifest, running_manifest = hold_running_manifest(manifest_path)
+        with running_manifest:
+            envelope = validate_scheduler_environment(
+                manifest, manifest_path=manifest_path, environ=environment
             )
-
-            # Keep this import below manifest/env/allocation/deployment/thread
-            # validation. runtime imports workflows and completion code.
-            from posttrain_circuits.scheduler_adapter.runtime import execute_validated_unit
-
-            return_code = execute_validated_unit(
+            handler = require_handler(manifest.task, registry=HANDLER_REGISTRY)
+            layout = WorkflowLayout.production()
+            layout.validate()
+            with handler.prepare(
                 manifest,
-                envelope,
-                prepared,
-                layout=layout,
-                handler_registry=HANDLER_REGISTRY,
-                environ=environment,
-                popen=subprocess.Popen,
-            )
+                approved_code_root=layout.code_root,
+                approved_runtime_root=FIXED_RUNTIME_ROOT,
+                additional_runtime_roots=ADDITIONAL_RUNTIME_ROOTS,
+                observed_gpu_models=None,
+            ) as prepared:
+                configure_thread_environment(
+                    cpu_cores=manifest.allocation.cpu_cores,
+                    process_count=prepared.profile.process_count_for(manifest),
+                    environ=environment,
+                )
+
+                # Keep this import below manifest/env/allocation/deployment/thread
+                # validation. runtime imports workflows and completion code.
+                from posttrain_circuits.scheduler_adapter.runtime import execute_validated_unit
+
+                return_code = execute_validated_unit(
+                    manifest,
+                    envelope,
+                    prepared,
+                    running_manifest=running_manifest,
+                    layout=layout,
+                    handler_registry=HANDLER_REGISTRY,
+                    environ=environment,
+                    popen=subprocess.Popen,
+                )
         return propagate_child_signal(return_code)
     except (AdapterError, OSError, TypeError, ValueError) as error:
         print(f"OPD ServerScheduler entrypoint rejected execution: {error}", file=sys.stderr)

@@ -165,13 +165,53 @@ Do not propose `gpu_count_policy = "scheduler"` unless the same task and
 entrypoint have reviewed scientific semantics and fail-closed fixture evidence
 for every centrally permitted count 1, 2, 3, and 4, including batch/token/RNG
 semantics, CPU-thread allocation, one-GPU memory safety, the three-GPU case,
-and checkpoint/resume across changed world sizes. Otherwise declare
-`gpu_count_policy = "fixed"` with one exact registered count. The current
-Candidate E implementation makes both Qwen3-v2 GPU entrypoints scheduler-managed
-over exactly 1, 2, 3, and 4 GPUs. It is not operational until its proposed
-amendment is independently accepted and its disabled central registration is
-separately reviewed, installed, enabled, and piloted. Historical Candidate D
+same-world checkpoint/resume, and fail-closed changed-world rejection.
+Otherwise declare `gpu_count_policy = "fixed"` with one exact registered
+count. Candidate E's
+accepted v1 implementation makes both Qwen3-v2 GPU entrypoints
+scheduler-managed over exactly 1, 2, 3, and 4 GPUs, but its accepted
+project-specific first-G0 gate still requires four real pilots. The proposed
+execution-class successor is not operational until its amendment and
+certificate and Candidate E execution-science protocol are jointly accepted,
+and its disabled central registration is separately reviewed, installed, and
+enabled. Historical Candidate D
 remains only a recoverable fixed-two-GPU baseline.
+
+Treat that 1/2/3/4 proof as certification of a reusable elastic execution
+class, not as four task variants and not as a four-pilot prerequisite that is
+automatically repeated for every new scientific job. A class certification
+must bind a canonical execution-safety fingerprint covering the handler and
+fixed runtime, model and sequence shapes, batch partition and loss scaling,
+global token accounting, FSDP behavior, checkpoint/resume semantics, CPU and
+memory envelope, and supported world sizes. Real allocation evidence belongs
+to the certified class. A later job may reuse it only when its recomputed
+fingerprint is identical.
+
+Job IDs, scheduler attempts and allocations, seeds, repetitions, output
+locations, and scientific parameters that do not affect distributed execution
+are evidence provenance or experiment identity, not fingerprint inputs. A
+change to the distributed implementation, runtime or dependency identity,
+model/sequence shape, batch or loss normalization, token accounting, FSDP,
+checkpoint/resume, memory envelope, or supported world sizes invalidates the
+certification. Every experiment still requires its own scientific protocol,
+configuration, artifact, and completion validation. Do not use execution-class
+certification to waive those scientific gates.
+
+For the proposed Qwen3-v2 class, the fingerprint hashes only the explicitly
+named safety-critical surfaces enumerated by the descriptor plus an explicit
+safety subject for runtime identities, model/sequence shape, batch/loss/token
+semantics, FSDP, checkpoint/resume, optimizer state, CPU/thread and memory
+envelopes, and supported world sizes. It is not a whole-repository snapshot.
+Do not add request builders, scientific protocols, or unrelated source merely
+to make the hash surface broader. The v1 descriptor currently hashes each
+named implementation surface as a whole file, so a byte change in a shared
+named file blocks reuse until reviewed even when the change may prove
+semantically irrelevant. Treat this as a conservative implementation boundary,
+not as a reason to repeat four GPU pilots automatically: first isolate or
+review the delta, and require new real-GPU evidence only when proportionate to
+an actual execution-safety change. Reuse checks compare the current kernel and
+safety subject; they do not replay every intervening commit or require
+direct-parent Git topology.
 
 After preparing an outbox request, report its absolute path, SHA-256, job ID,
 project HEAD, tracked-worktree state, and validation results. The outbox is not
@@ -254,17 +294,30 @@ zero additionally completes the pinned offline teacher forward. Each request
 receives a fresh opaque, count-neutral workflow ID; neither that ID nor its
 filename may encode a GPU count.
 
-One pilot validates only the world size actually assigned to that attempt. G0
-requires four distinct accepted-lineage reports and completions covering world
-sizes 1, 2, 3, and 4. The project-facing request cannot force a count, so this
-matrix is a central validation-plan responsibility. Static fixtures, a single
-pilot, or repeated availability probes do not authorize G0.
+One pilot validates only the world size actually assigned to that attempt. The
+accepted Candidate E v1 amendment added an OPD-specific first-G0 gate requiring
+four distinct accepted-lineage reports and completions covering world sizes 1,
+2, 3, and 4. That gate is not a generic ServerScheduler requirement and must
+not be copied into every later experiment. The project-facing request cannot
+force a count, so Candidate E's initial matrix is a central validation-plan
+responsibility. Once a successor execution class is independently certified,
+later jobs with the identical safety fingerprint reference that certification
+instead of repeating four pilots.
+
+The proposed v2 certificate uses accepted historical real W=1 and W=2 reports
+as explicitly reviewed bridge evidence and has static fail-closed coverage for
+W=1/2/3/4. W=3 uneven-tail collectives and W=4 host topology still lack a
+successful real-GPU observation. That residual risk must remain visible; v2 is
+`proposed` and non-operational until independent acceptance.
 
 ## Scheduler-managed Qwen3-v2 G0 amendment
 
-The frozen base preregistration remains unchanged. The separate amendment is
-`prereg/amendments/qwen3_v2_g0_elastic_v1.yaml`; it must remain `proposed` in
-the implementation commit. One global optimizer window always contains the
+The frozen base preregistration remains unchanged. Candidate E's accepted
+amendment is `prereg/amendments/qwen3_v2_g0_elastic_v1.yaml`; its accepted bytes
+and four-pilot gate are immutable historical authority and must not be silently
+rewritten. Any transition to reusable execution-class certification requires a
+new proposed successor amendment and its own implementation/acceptance commits.
+One global optimizer window always contains the
 same 64 logical samples. With maximum physical microbatch size 4, the reviewed
 rank-local sample totals are `64`, `32/32`, `22/21/21`, and `16/16/16/16` for
 world sizes 1, 2, 3, and 4. The three-rank tail is exactly `2/1/1`; framework
@@ -297,22 +350,37 @@ single-rank full-state export must use `offload_to_cpu=false` and
 `rank0_only=false`, matching the fixed Accelerate 1.10.1 workaround; multi-rank
 exports use rank-zero CPU offload.
 
-Acceptance uses two Git commits so no file contains its own commit identity:
+Candidate E v1 retains its historical two-commit, amendment-only acceptance.
+The proposed execution-class successor also uses an implementation commit and
+a later review-only acceptance commit. The latter jointly reviews the
+successor amendment, certificate, and Candidate E execution-science protocol
+so no artifact contains its own commit identity:
 
 1. The user creates a clean implementation commit containing the complete
-   implementation and the `proposed` amendment.
-2. After independent scientific review, change only the amendment `review`
-   block to `accepted`, bind `reviewed_implementation_commit` to step 1, update
-   this handoff if needed, and create a separate acceptance commit.
-3. Runtime validation requires the implementation commit to be an ancestor and
-   permits only the amendment and handoff between implementation and
-   acceptance. After acceptance, only `docs/refactor/current_handoff.md` may
-   differ between the preflight, request-generation, and execution commits.
-   Any source, configuration, handler, test, or protocol delta fails closed.
+   implementation, proposed successor amendment, immutable descriptor,
+   proposed certificate, and proposed execution-science protocol.
+2. After independent review, change only the three `review` blocks to the same
+   accepted metadata, bind their `reviewed_implementation_commit` fields to
+   step 1, optionally update this handoff, and create one joint acceptance
+   commit.
+3. Runtime validation requires the implementation and joint acceptance commits
+   to be ancestors but does not require a direct-parent relationship. The
+   descriptor, certificate, and every safety-critical blob named by the
+   descriptor must match at use time; later non-safety commits and merges do
+   not invalidate the execution class. Candidate E separately binds its
+   accepted execution-science protocol, storage-neutral scientific config, and
+   reviewed scientific implementation; later `src/`, `scripts/`, or `configs/`
+   changes require a new science review but do not by themselves invalidate the
+   execution class. A different experiment must supply its own scientific
+   review before reusing the class certificate.
 
-The G0 request builder rejects a proposed amendment, a dirty tracked checkout,
-anything other than a distinct accepted-lineage 1/2/3/4 GPU-preflight matrix,
-or an unreviewed Git delta.
+The accepted Candidate E v1 G0 request builder rejects a dirty tracked checkout,
+anything other than its distinct accepted-lineage 1/2/3/4 GPU-preflight matrix,
+or an unreviewed Git delta. A successor builder must instead reject a proposed
+successor amendment, a non-accepted or fingerprint-mismatched execution-class
+certification, and any unreviewed safety-critical delta. It must not expand a
+class certificate back into experiment-owned count-specific requests or raw
+preflight inputs.
 The disabled registration proposal is not authorization to install, enable, or
 submit. Amendment acceptance, central proposal installation, registration
 enablement, preflight submission, G0 request generation, and central G0

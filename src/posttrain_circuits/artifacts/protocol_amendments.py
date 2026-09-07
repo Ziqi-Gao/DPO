@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import re
-import stat
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,10 +14,51 @@ from typing import Any
 
 import yaml
 
+from posttrain_circuits.artifacts.io import read_regular_bytes_nofollow
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    CERTIFICATION_ID as EXECUTION_SAFETY_CERTIFICATION_ID,
+    CERTIFICATION_RELATIVE_PATH,
+    DESCRIPTOR_RELATIVE_PATH,
+    EXECUTION_CLASS_ID,
+    INVALIDATING_DIMENSIONS,
+    NON_INVALIDATING_DIMENSIONS,
+    PROPOSED_REVIEW as EXECUTION_SAFETY_PROPOSED_REVIEW,
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+    SUPPORTED_WORLD_SIZES,
+    ExecutionSafetyCertificationBinding,
+    certification_core_sha256,
+    load_execution_safety_certification_bytes,
+    load_execution_safety_descriptor_bytes,
+)
+from posttrain_circuits.artifacts.execution_science_protocol import (
+    ExecutionScienceProtocolError,
+    PROPOSED_REVIEW as EXECUTION_SCIENCE_PROPOSED_REVIEW,
+    load_execution_science_protocol_yaml_bytes,
+    validate_execution_science_protocol_review_transition,
+)
+
 
 AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_elastic_v1.yaml")
 BASE_PREREG_RELATIVE_PATH = Path("prereg/qwen3_v2.yaml")
 AMENDMENT_ID = "qwen3_v2_g0_elastic_v1"
+EXECUTION_CLASS_AMENDMENT_ID = "qwen3_v2_g0_execution_class_v2"
+CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH = Path(
+    "prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_v1.yaml"
+)
+CANDIDATE_E_SCIENTIFIC_CONFIG_SCHEMA = "qwen3-v2-candidate-e-scientific-config-v1"
+CANDIDATE_E_SCIENTIFIC_CONFIG_SHA256 = (
+    "407675667c513735bf5fe56bac3614d0feacbff102467f79c1cd168e8d733468"
+)
+CANDIDATE_E_SCIENTIFIC_LOCATOR_PATHS = (
+    "anti_shortcut.report_path",
+    "experiment.random_reward_calibration_path",
+    "output_root",
+    "production_safety.initial_checkpoint_path",
+    "production_safety.probe_cohort_manifest",
+    "production_safety.readiness_report",
+    "state_source.store_path",
+    "task.dataset_family_path",
+)
 BASE_PREREG_VERSION = "qwen3_v2"
 BASE_PREREG_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
 FROZEN_IMPLEMENTATION_COMMIT = "b2d505b297dae1d56311616e9a68fb7df14b7bee"
@@ -58,6 +99,18 @@ class ProtocolAmendmentBinding:
     sha256: str
     git_commit: str
     reviewed_implementation_commit: str
+
+
+@dataclass(frozen=True)
+class ExecutionClassAmendmentBinding:
+    path: Path
+    amendment_id: str
+    sha256: str
+    git_commit: str
+    reviewed_implementation_commit: str
+    descriptor_path: Path
+    certification_path: Path
+    certification_binding: ExecutionSafetyCertificationBinding
 
 
 @dataclass(frozen=True)
@@ -349,8 +402,263 @@ def load_protocol_amendment_bytes(raw: bytes) -> dict[str, Any]:
     return payload
 
 
+def _validate_execution_class_review(review: object) -> None:
+    if not isinstance(review, dict) or set(review) != set(PROPOSED_REVIEW):
+        raise ProtocolAmendmentError(
+            "execution-class amendment review fields differ from schema"
+        )
+    if review["status"] == "proposed":
+        if review != PROPOSED_REVIEW:
+            raise ProtocolAmendmentError(
+                "proposed execution-class amendment cannot contain review metadata"
+            )
+        return
+    if review["status"] != "accepted":
+        raise ProtocolAmendmentError(
+            "execution-class amendment review status is invalid"
+        )
+    implementation_commit = review["reviewed_implementation_commit"]
+    if not isinstance(implementation_commit, str) or GIT_COMMIT.fullmatch(
+        implementation_commit
+    ) is None:
+        raise ProtocolAmendmentError(
+            "accepted execution-class amendment lacks an implementation commit"
+        )
+    for field in ("reviewer", "rationale"):
+        if not isinstance(review[field], str) or not review[field].strip():
+            raise ProtocolAmendmentError(
+                f"accepted execution-class amendment lacks {field}"
+            )
+    timestamp = review["reviewed_at_utc"]
+    if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+        raise ProtocolAmendmentError(
+            "execution-class amendment review time must be explicit UTC"
+        )
+    try:
+        parsed = datetime.fromisoformat(timestamp[:-1] + "+00:00")
+    except ValueError as error:
+        raise ProtocolAmendmentError(
+            "execution-class amendment review time is invalid"
+        ) from error
+    if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ProtocolAmendmentError(
+            "execution-class amendment review time must use UTC"
+        )
+
+
+def load_execution_class_amendment_bytes(raw: bytes) -> dict[str, Any]:
+    """Parse the proposed reusable-execution-class successor amendment.
+
+    Candidate E's accepted v1 amendment remains immutable and continues to be
+    parsed by :func:`load_protocol_amendment_bytes`.  This versioned loader
+    cannot reinterpret v1 or silently bless this proposed successor.
+    """
+
+    payload = _load_yaml(raw, context="Qwen3-v2 execution-class G0 amendment")
+    expected_top = {
+        "schema_version",
+        "amendment_id",
+        "base_preregistration",
+        "superseded_execution_amendment",
+        "scope",
+        "scheduler_managed_allocation",
+        "execution_safety_certification",
+        "candidate_e_scientific_protocol",
+        "evidence_and_reuse",
+        "candidate_e_migration",
+        "implementation_acceptance",
+        "review",
+    }
+    if set(payload) != expected_top:
+        raise ProtocolAmendmentError(
+            "execution-class amendment top-level fields differ from schema"
+        )
+    if (
+        payload["schema_version"] != 2
+        or isinstance(payload["schema_version"], bool)
+        or payload["amendment_id"] != EXECUTION_CLASS_AMENDMENT_ID
+    ):
+        raise ProtocolAmendmentError("execution-class amendment identity differs")
+    expected_base = {
+        "path": str(BASE_PREREG_RELATIVE_PATH),
+        "version": BASE_PREREG_VERSION,
+        "sha256": BASE_PREREG_SHA256,
+        "frozen_implementation_commit": FROZEN_IMPLEMENTATION_COMMIT,
+    }
+    if payload["base_preregistration"] != expected_base:
+        raise ProtocolAmendmentError(
+            "execution-class amendment base preregistration differs"
+        )
+    expected_superseded = {
+        "path": str(AMENDMENT_RELATIVE_PATH),
+        "amendment_id": AMENDMENT_ID,
+        "accepted_sha256": (
+            "ff34cc53a85abe409f65ebe1ad3ca4d46b08a0ecd2117b76a27e22eea633a725"
+        ),
+        "role": "accepted_candidate_e_per_g0_four_pilot_gate_preserved_as_history",
+    }
+    if payload["superseded_execution_amendment"] != expected_superseded:
+        raise ProtocolAmendmentError(
+            "execution-class amendment predecessor binding differs"
+        )
+    expected_scope = {
+        "task": "qwen3_v2_g0",
+        "workflow_id_policy": "fresh_opaque_count_neutral_per_request",
+        "workflow_id_prefix": "qwen3-v2-g0-elastic-",
+        "unit_id": "g0",
+        "science_identity": "per_experiment_execution_science_protocol",
+        "claim_scope": (
+            "execution_class_only_scientific_claims_remain_per_experiment"
+        ),
+    }
+    if payload["scope"] != expected_scope:
+        raise ProtocolAmendmentError("execution-class amendment scope differs")
+    expected_allocation = {
+        "profile_cardinality": "one_elastic_profile_for_one_scientific_task",
+        "gpu_count_policy": "scheduler",
+        "allocation_candidates": list(SUPPORTED_WORLD_SIZES),
+        "request_execution_profile": "omitted",
+        "request_resources": "omitted",
+        "request_gpu_count_and_identity": "omitted",
+        "count_and_uuid_selection": "server_scheduler_claim_time_only",
+        "running_attempt_resize": "forbidden",
+    }
+    if payload["scheduler_managed_allocation"] != expected_allocation:
+        raise ProtocolAmendmentError(
+            "execution-class amendment allocation semantics differ"
+        )
+    certification = payload["execution_safety_certification"]
+    if not isinstance(certification, dict) or set(certification) != {
+        "execution_class_id",
+        "certification_id",
+        "descriptor_path",
+        "descriptor_sha256",
+        "certification_path",
+        "certification_core_sha256",
+        "fingerprint_sha256",
+        "supported_world_sizes",
+    }:
+        raise ProtocolAmendmentError(
+            "execution-class certification binding fields differ"
+        )
+    if (
+        certification["execution_class_id"] != EXECUTION_CLASS_ID
+        or certification["certification_id"]
+        != EXECUTION_SAFETY_CERTIFICATION_ID
+        or certification["descriptor_path"] != str(DESCRIPTOR_RELATIVE_PATH)
+        or certification["certification_path"]
+        != str(CERTIFICATION_RELATIVE_PATH)
+        or certification["supported_world_sizes"]
+        != list(SUPPORTED_WORLD_SIZES)
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class certification identity differs"
+        )
+    for field in (
+        "descriptor_sha256",
+        "certification_core_sha256",
+        "fingerprint_sha256",
+    ):
+        value = certification[field]
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ProtocolAmendmentError(
+                f"execution-class certification {field} is not a SHA-256 digest"
+            )
+    expected_scientific_protocol = {
+        "path": str(CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH),
+        "protocol_id": "qwen3-v2-g0-candidate-e-seed-42-v1",
+        "unit_id": "g0",
+        "seed": 42,
+        "storage_neutral_resolved_config_sha256": (
+            "6c3942f4d6cf87329e1c70ba32b0b8d4cdbd526a3bbcfdcb1afd3e1674662657"
+        ),
+        "joint_acceptance_with_execution_class": "required",
+        "execution_certification_substitutes_for_scientific_review": False,
+        "per_experiment_config_artifact_and_completion_validation": "required",
+    }
+    if payload["candidate_e_scientific_protocol"] != expected_scientific_protocol:
+        raise ProtocolAmendmentError(
+            "execution-class amendment Candidate E scientific protocol differs"
+        )
+    expected_evidence = {
+        "generic_server_scheduler_requirement": (
+            "reviewed_semantic_correctness_for_every_supported_world_size"
+        ),
+        "project_specific_predecessor_gate": (
+            "four_distinct_real_accepted_lineage_pilots_for_each_g0_plan"
+        ),
+        "successor_gate": (
+            "accepted_reusable_execution_class_certification_with_exact_fingerprint_match"
+        ),
+        "real_gpu_evidence_world_sizes": [1, 2],
+        "static_fail_closed_evidence_world_sizes": [1, 2, 3, 4],
+        "world_sizes_without_real_gpu_observation": [3, 4],
+        "repeat_four_real_pilots_for_each_new_experiment": False,
+        "per_experiment_scientific_protocol_and_completion_validation": "required",
+        "non_invalidating_dimensions": list(NON_INVALIDATING_DIMENSIONS),
+        "invalidating_dimensions": list(INVALIDATING_DIMENSIONS),
+    }
+    if payload["evidence_and_reuse"] != expected_evidence:
+        raise ProtocolAmendmentError(
+            "execution-class amendment evidence/reuse policy differs"
+        )
+    expected_migration = {
+        "predecessor_amendment_mutated": False,
+        "current_real_gpu_evidence": "W1_and_W2_accepted",
+        "current_static_evidence": "W1_W2_W3_W4_passed",
+        "remaining_risk": (
+            "W3_uneven_tail_and_W4_topology_have_no_successful_real_GPU_observation"
+        ),
+        "mitigation": (
+            "runtime_fail_closed_semantic_artifact_and_completion_validation_at_actual_"
+            "scheduler_selected_world_size"
+        ),
+        "minimum_change": (
+            "replace_per_plan_eight_artifact_matrix_with_one_descriptor_and_one_"
+            "reusable_certification"
+        ),
+        "operational_before_independent_acceptance": False,
+    }
+    if payload["candidate_e_migration"] != expected_migration:
+        raise ProtocolAmendmentError(
+            "execution-class amendment Candidate E migration terms differ"
+        )
+    expected_acceptance = {
+        "mechanism": (
+            "reviewed_implementation_plus_joint_review_and_exact_safety_fingerprint"
+        ),
+        "allowed_post_implementation_paths": [
+            str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+            str(CERTIFICATION_RELATIVE_PATH),
+            str(CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH),
+            "docs/refactor/current_handoff.md",
+        ],
+        "post_acceptance_execution_class_changes": (
+            "non_safety_commits_and_merges_allowed_when_artifacts_and_critical_blobs_match"
+        ),
+        "post_acceptance_candidate_e_science": (
+            "exact_reviewed_source_and_scientific_config_required"
+        ),
+        "proposed_documents_must_preexist_in_implementation_commit": True,
+        "amendment_and_certification_review_blocks_only_at_acceptance": True,
+        "amendment_and_certification_acceptance_same_commit": True,
+        "required_static_world_size_fixtures": [1, 2, 3, 4],
+        "required_real_gpu_pilots_for_initial_certification": [1, 2],
+    }
+    if payload["implementation_acceptance"] != expected_acceptance:
+        raise ProtocolAmendmentError(
+            "execution-class amendment acceptance mechanism differs"
+        )
+    _validate_execution_class_review(payload["review"])
+    return payload
+
+
 def validate_elastic_g0_config(config: dict[str, Any], amendment: dict[str, Any]) -> None:
     """Require an allocation-neutral G0 config to implement the amendment."""
+
+    if amendment.get("amendment_id") == EXECUTION_CLASS_AMENDMENT_ID:
+        validate_execution_class_g0_config(config, amendment)
+        return
 
     load_protocol_amendment_bytes(yaml.safe_dump(amendment, sort_keys=False).encode("utf-8"))
     trainer = config.get("trainer")
@@ -434,6 +742,202 @@ def validate_elastic_g0_config(config: dict[str, Any], amendment: dict[str, Any]
         != expected["batch_partition_protocol"]
     ):
         raise ProtocolAmendmentError("elastic G0 config lacks the amendment identity")
+
+
+def validate_execution_class_g0_config(
+    config: dict[str, Any], amendment: dict[str, Any]
+) -> None:
+    """Validate G0 science plus its reusable execution-class binding."""
+
+    load_execution_class_amendment_bytes(
+        yaml.safe_dump(amendment, sort_keys=False).encode("utf-8")
+    )
+    trainer = config.get("trainer")
+    scheduler = config.get("scheduler_g0")
+    if not isinstance(trainer, dict) or not isinstance(scheduler, dict):
+        raise ProtocolAmendmentError(
+            "execution-class G0 config lacks trainer or scheduler binding"
+        )
+    forbidden_matrix_fields = {
+        "gpu_preflight_matrix",
+        "gpu_preflight_report_sha256",
+        "gpu_preflight_completion_sha256",
+        "gpu_preflight_git_commit",
+    }
+    if forbidden_matrix_fields & set(scheduler):
+        raise ProtocolAmendmentError(
+            "execution-class G0 config must not bind per-experiment preflight rows"
+        )
+    expected_scheduler_fields = {
+        "allocation_contract",
+        "artifact_namespace",
+        "batch_partition_protocol",
+        "execution_safety_certification_sha256",
+        "execution_safety_class_id",
+        "execution_safety_descriptor_sha256",
+        "execution_safety_fingerprint_sha256",
+        "execution_safety_supported_world_sizes",
+        "execution_science_protocol_git_commit",
+        "execution_science_protocol_id",
+        "execution_science_protocol_path",
+        "execution_science_protocol_reviewed_implementation_commit",
+        "execution_science_protocol_sha256",
+        "model_revision",
+        "protocol_amendment_id",
+        "protocol_amendment_sha256",
+        "request_git_commit",
+        "reviewed_implementation_commit",
+        "task",
+        "teacher_revision",
+        "tokenizer_fingerprint",
+    }
+    if set(scheduler) != expected_scheduler_fields:
+        raise ProtocolAmendmentError(
+            "execution-class G0 scheduler provenance fields differ"
+        )
+    if "batch_size" in trainer or "gradient_accumulation_steps" in trainer:
+        raise ProtocolAmendmentError(
+            "execution-class G0 config must omit allocation-specific batch fields"
+        )
+    experiment = config.get("experiment")
+    task = config.get("task")
+    state_source = config.get("state_source")
+    supervision = config.get("supervision")
+    if (
+        not isinstance(experiment, dict)
+        or experiment.get("name") != "canonical_sft"
+        or not isinstance(task, dict)
+        or task.get("num_examples") != 256
+        or not isinstance(state_source, dict)
+        or state_source.get("name") != "teacher_demo"
+        or not isinstance(supervision, dict)
+        or supervision.get("name") != "canonical_sft"
+        or supervision.get("normalization") != "sequence"
+        or config.get("g0", {}).get("full_parameter_training") is not True
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class G0 requires the reviewed deterministic teacher-demo "
+            "canonical SFT protocol"
+        )
+    integer_values = (
+        trainer.get("global_batch_size"),
+        trainer.get("max_microbatch_size"),
+        trainer.get("max_model_input_length"),
+        trainer.get("token_budget"),
+        trainer.get("max_steps"),
+        state_source.get("max_prompt_tokens"),
+        state_source.get("max_new_tokens"),
+    )
+    if any(type(value) is not int for value in integer_values):
+        raise ProtocolAmendmentError(
+            "execution-class G0 batch/token values must be integers"
+        )
+    expected_science = {
+        "batch_partition_protocol": "allocation_neutral_exact_global_batch_v1",
+        "global_batch_size": 64,
+        "max_microbatch_size": 4,
+        "max_model_input_length": 1536,
+        "token_budget": 2_000_000,
+        "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
+        "max_steps": 120,
+        "max_prompt_tokens": 1246,
+        "max_new_tokens": 256,
+    }
+    observed_science = {
+        "batch_partition_protocol": trainer.get("batch_partition_protocol"),
+        "global_batch_size": trainer.get("global_batch_size"),
+        "max_microbatch_size": trainer.get("max_microbatch_size"),
+        "max_model_input_length": trainer.get("max_model_input_length"),
+        "token_budget": trainer.get("token_budget"),
+        "token_budget_unit": trainer.get("token_budget_unit"),
+        "max_steps": trainer.get("max_steps"),
+        "max_prompt_tokens": state_source.get("max_prompt_tokens"),
+        "max_new_tokens": state_source.get("max_new_tokens"),
+    }
+    if observed_science != expected_science:
+        raise ProtocolAmendmentError(
+            "execution-class G0 config violates batch/token invariants"
+        )
+    certification = amendment["execution_safety_certification"]
+    expected_scheduler = {
+        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
+        "batch_partition_protocol": "allocation_neutral_exact_global_batch_v1",
+        "execution_safety_class_id": certification["execution_class_id"],
+        "execution_safety_descriptor_sha256": certification["descriptor_sha256"],
+        "execution_safety_fingerprint_sha256": certification["fingerprint_sha256"],
+        "execution_safety_supported_world_sizes": list(SUPPORTED_WORLD_SIZES),
+    }
+    for field, expected in expected_scheduler.items():
+        if scheduler.get(field) != expected:
+            raise ProtocolAmendmentError(
+                f"execution-class G0 config has invalid {field}"
+            )
+    certification_sha256 = scheduler.get(
+        "execution_safety_certification_sha256"
+    )
+    if (
+        not isinstance(certification_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", certification_sha256) is None
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class G0 config lacks the certification content identity"
+        )
+    if (
+        config.get("protocol_amendment_path")
+        != str(SUCCESSOR_AMENDMENT_RELATIVE_PATH)
+        or config.get("protocol_track") != BASE_PREREG_VERSION
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class G0 config lacks the successor amendment identity"
+        )
+    # Candidate E science is reviewed by its separate execution-science
+    # protocol artifact.  This validator owns only the execution-class
+    # projection; conflating the two would make seed and experiment identity
+    # invalidate a reusable GPU-topology certification.
+
+
+def _delete_optional_dotted_path(payload: dict[str, Any], dotted: str) -> None:
+    parts = dotted.split(".")
+    parent: object = payload
+    for part in parts[:-1]:
+        if not isinstance(parent, dict) or part not in parent:
+            return
+        parent = parent[part]
+    if isinstance(parent, dict):
+        parent.pop(parts[-1], None)
+
+
+def candidate_e_scientific_config_payload(config: dict[str, Any]) -> dict[str, Any]:
+    """Return Candidate E science without scheduler provenance or storage locators."""
+
+    if not isinstance(config, dict):
+        raise ProtocolAmendmentError("Candidate E scientific config must be a mapping")
+    normalized = copy.deepcopy(config)
+    normalized.pop("scheduler_g0", None)
+    normalized.pop("protocol_amendment_path", None)
+    for dotted in CANDIDATE_E_SCIENTIFIC_LOCATOR_PATHS:
+        _delete_optional_dotted_path(normalized, dotted)
+    return {
+        "schema": CANDIDATE_E_SCIENTIFIC_CONFIG_SCHEMA,
+        "config": normalized,
+    }
+
+
+def candidate_e_scientific_config_sha256(config: dict[str, Any]) -> str:
+    payload = candidate_e_scientific_config_payload(config)
+    try:
+        encoded = json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise ProtocolAmendmentError(
+            "Candidate E scientific config is not canonical JSON"
+        ) from error
+    return hashlib.sha256(encoded).hexdigest()
 
 
 # Compatibility name for callers that have not yet migrated their import.  The
@@ -774,10 +1278,9 @@ def resolve_accepted_protocol_amendment(
     if configured_path != str(AMENDMENT_RELATIVE_PATH):
         raise ProtocolAmendmentError("configured protocol amendment path is not reviewed")
     path = code_root / AMENDMENT_RELATIVE_PATH
-    metadata = path.lstat()
-    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
-        raise ProtocolAmendmentError("protocol amendment must be one non-linked regular file")
-    raw = path.read_bytes()
+    raw = _regular_file_bytes_for_amendment(
+        path, role="protocol amendment"
+    )
     accepted = load_protocol_amendment_bytes(raw)
     if accepted["review"]["status"] != "accepted":
         raise ProtocolAmendmentError("protocol amendment remains proposed")
@@ -820,14 +1323,17 @@ def resolve_accepted_protocol_amendment(
         role="accepted amendment",
     )
     base_prereg = code_root / BASE_PREREG_RELATIVE_PATH
-    if hashlib.sha256(base_prereg.read_bytes()).hexdigest() != BASE_PREREG_SHA256:
+    if hashlib.sha256(
+        _regular_file_bytes_for_amendment(
+            base_prereg, role="base preregistration"
+        )
+    ).hexdigest() != BASE_PREREG_SHA256:
         raise ProtocolAmendmentError("base preregistration bytes changed")
     if _git(code_root, "rev-parse", "HEAD") != current_commit:
         raise ProtocolAmendmentError("amendment validation HEAD changed before completion")
-    final_metadata = path.lstat()
-    if not stat.S_ISREG(final_metadata.st_mode) or final_metadata.st_nlink != 1:
-        raise ProtocolAmendmentError("protocol amendment changed file identity during validation")
-    if path.read_bytes() != raw:
+    if _regular_file_bytes_for_amendment(
+        path, role="protocol amendment"
+    ) != raw:
         raise ProtocolAmendmentError("protocol amendment bytes changed during validation")
     if _git(
         code_root,
@@ -911,16 +1417,554 @@ def validate_accepted_lineage_commit(
         )
 
 
+def validate_execution_class_review_transition(
+    *,
+    proposed_amendment: dict[str, Any],
+    accepted_amendment: dict[str, Any],
+    proposed_certification: dict[str, Any],
+    accepted_certification: dict[str, Any],
+    implementation_commit: str,
+    current_commit: str,
+    changed_paths: tuple[str, ...],
+    implementation_is_ancestor: bool,
+) -> None:
+    """Require the joint review commit to change only its three review artifacts."""
+
+    load_execution_class_amendment_bytes(
+        yaml.safe_dump(proposed_amendment, sort_keys=False).encode("utf-8")
+    )
+    load_execution_class_amendment_bytes(
+        yaml.safe_dump(accepted_amendment, sort_keys=False).encode("utf-8")
+    )
+    if proposed_amendment["review"] != PROPOSED_REVIEW:
+        raise ProtocolAmendmentError(
+            "implementation commit did not contain the proposed execution-class amendment"
+        )
+    if proposed_certification.get("review") != EXECUTION_SAFETY_PROPOSED_REVIEW:
+        raise ProtocolAmendmentError(
+            "implementation commit did not contain the proposed execution certification"
+        )
+    accepted_review = accepted_amendment["review"]
+    certification_review = accepted_certification.get("review")
+    if accepted_review.get("status") != "accepted" or not isinstance(
+        certification_review, dict
+    ) or certification_review.get("status") != "accepted":
+        raise ProtocolAmendmentError(
+            "execution-class amendment and certification must both be accepted"
+        )
+    if accepted_review != certification_review:
+        raise ProtocolAmendmentError(
+            "execution-class amendment and certification review identities differ"
+        )
+    if accepted_review["reviewed_implementation_commit"] != implementation_commit:
+        raise ProtocolAmendmentError(
+            "execution-class acceptance names a different implementation commit"
+        )
+    if not implementation_is_ancestor or current_commit == implementation_commit:
+        raise ProtocolAmendmentError(
+            "execution-class acceptance must descend from its implementation"
+        )
+    normalized_amendment = copy.deepcopy(accepted_amendment)
+    normalized_amendment["review"] = copy.deepcopy(PROPOSED_REVIEW)
+    if normalized_amendment != proposed_amendment:
+        raise ProtocolAmendmentError(
+            "execution-class amendment scientific terms changed at acceptance"
+        )
+    normalized_certification = copy.deepcopy(accepted_certification)
+    normalized_certification["review"] = copy.deepcopy(
+        EXECUTION_SAFETY_PROPOSED_REVIEW
+    )
+    if normalized_certification != proposed_certification:
+        raise ProtocolAmendmentError(
+            "execution-safety certification evidence changed at acceptance"
+        )
+    changed = set(changed_paths)
+    required = {
+        str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+        str(CERTIFICATION_RELATIVE_PATH),
+        str(CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH),
+    }
+    allowed = required | {"docs/refactor/current_handoff.md"}
+    if not required <= changed or not changed <= allowed:
+        raise ProtocolAmendmentError(
+            "execution-class acceptance commit contains non-review changes"
+        )
+
+
+def resolve_accepted_execution_class_amendment(
+    *,
+    code_root: Path,
+    configured_path: str,
+    expected_head: str | None = None,
+) -> ExecutionClassAmendmentBinding:
+    """Resolve the accepted reusable class against the current safety surface.
+
+    Git history is used only to prove the one joint review transition.  Later
+    request, plan, seed, output, and non-safety merge commits are deliberately
+    outside this resolver: reuse depends on the current descriptor/CAS and its
+    the descriptor's named safety-critical implementation blobs, not on
+    per-experiment ancestry.
+    """
+
+    root = code_root.resolve()
+    if configured_path != str(SUCCESSOR_AMENDMENT_RELATIVE_PATH):
+        raise ProtocolAmendmentError(
+            "configured execution-class amendment path is not reviewed"
+        )
+    amendment_path = root / SUCCESSOR_AMENDMENT_RELATIVE_PATH
+    descriptor_path = root / DESCRIPTOR_RELATIVE_PATH
+    certification_path = root / CERTIFICATION_RELATIVE_PATH
+    science_path = root / CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH
+    amendment_raw = _regular_file_bytes_for_amendment(
+        amendment_path, role="execution-class amendment"
+    )
+    descriptor_raw = _regular_file_bytes_for_amendment(
+        descriptor_path, role="execution-safety descriptor"
+    )
+    certification_raw = _regular_file_bytes_for_amendment(
+        certification_path, role="execution-safety certification"
+    )
+    science_raw = _regular_file_bytes_for_amendment(
+        science_path, role="Candidate E execution-science protocol"
+    )
+    amendment = load_execution_class_amendment_bytes(amendment_raw)
+    if amendment["review"]["status"] != "accepted":
+        raise ProtocolAmendmentError("execution-class amendment remains proposed")
+    try:
+        certification_binding = load_execution_safety_certification_bytes(
+            certification_raw,
+            descriptor_raw,
+            require_accepted=True,
+            code_root=root,
+        )
+    except ValueError as error:
+        raise ProtocolAmendmentError(
+            f"execution-class certification is invalid: {error}"
+        ) from error
+    certification_terms = amendment["execution_safety_certification"]
+    expected_terms = {
+        "execution_class_id": certification_binding.execution_class_id,
+        "certification_id": certification_binding.certification_id,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": certification_binding.descriptor_sha256,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": (
+            certification_binding.certification_core_sha256
+        ),
+        "fingerprint_sha256": certification_binding.fingerprint_sha256,
+        "supported_world_sizes": list(
+            certification_binding.supported_world_sizes
+        ),
+    }
+    if certification_terms != expected_terms:
+        raise ProtocolAmendmentError(
+            "execution-class amendment does not bind the exact certification"
+        )
+    if amendment["review"] != _load_yaml(
+        certification_raw, context="execution-safety certification"
+    )["review"]:
+        raise ProtocolAmendmentError(
+            "execution-class amendment and certification reviews differ"
+        )
+    try:
+        accepted_science = load_execution_science_protocol_yaml_bytes(
+            science_raw, require_accepted=True
+        )
+    except ExecutionScienceProtocolError as error:
+        raise ProtocolAmendmentError(
+            f"Candidate E execution-science protocol is invalid: {error}"
+        ) from error
+    science_review = accepted_science["review"]
+    if science_review != amendment["review"]:
+        raise ProtocolAmendmentError(
+            "execution-class and Candidate E science reviews differ"
+        )
+    science_terms = amendment["candidate_e_scientific_protocol"]
+    science_class = accepted_science["execution_class"]
+    if science_terms != {
+        "path": str(CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH),
+        "protocol_id": accepted_science["protocol_id"],
+        "unit_id": accepted_science["scope"]["unit_id"],
+        "seed": accepted_science["scope"]["seed"],
+        "storage_neutral_resolved_config_sha256": accepted_science[
+            "science_config"
+        ]["storage_neutral_resolved_config_sha256"],
+        "joint_acceptance_with_execution_class": "required",
+        "execution_certification_substitutes_for_scientific_review": False,
+        "per_experiment_config_artifact_and_completion_validation": "required",
+    }:
+        raise ProtocolAmendmentError(
+            "execution-class amendment does not bind the Candidate E science protocol"
+        )
+    if science_class != {
+        "execution_class_id": certification_binding.execution_class_id,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": certification_binding.descriptor_sha256,
+        "fingerprint_sha256": certification_binding.fingerprint_sha256,
+        "certification_id": certification_binding.certification_id,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": (
+            certification_binding.certification_core_sha256
+        ),
+        "supported_world_sizes": list(certification_binding.supported_world_sizes),
+    }:
+        raise ProtocolAmendmentError(
+            "Candidate E science protocol names a different execution class"
+        )
+    if _git(
+        root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=no",
+        "--ignore-submodules=none",
+    ):
+        raise ProtocolAmendmentError(
+            "accepted execution-class amendment requires a clean checkout"
+        )
+    current_commit = _git(root, "rev-parse", "HEAD")
+    if GIT_COMMIT.fullmatch(current_commit) is None:
+        raise ProtocolAmendmentError("Git HEAD is not one immutable commit")
+    if expected_head is not None and current_commit != expected_head:
+        raise ProtocolAmendmentError(
+            "execution-class validation HEAD differs from execution provenance"
+        )
+    implementation_commit = amendment["review"]["reviewed_implementation_commit"]
+    assert isinstance(implementation_commit, str)
+    if certification_binding.reviewed_implementation_commit != implementation_commit:
+        raise ProtocolAmendmentError(
+            "execution-class certification names a different implementation"
+        )
+    try:
+        proposed_amendment_raw = _git_bytes(
+            root,
+            "show",
+            f"{implementation_commit}:{SUCCESSOR_AMENDMENT_RELATIVE_PATH}",
+        )
+        proposed_certification_raw = _git_bytes(
+            root,
+            "show",
+            f"{implementation_commit}:{CERTIFICATION_RELATIVE_PATH}",
+        )
+        implementation_descriptor_raw = _git_bytes(
+            root,
+            "show",
+            f"{implementation_commit}:{DESCRIPTOR_RELATIVE_PATH}",
+        )
+        proposed_science_raw = _git_bytes(
+            root,
+            "show",
+            f"{implementation_commit}:{CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH}",
+        )
+    except ProtocolAmendmentError as error:
+        raise ProtocolAmendmentError(
+            "reviewed implementation lacks the proposed execution-class documents"
+        ) from error
+    if implementation_descriptor_raw != descriptor_raw:
+        raise ProtocolAmendmentError(
+            "execution-safety descriptor changed after implementation review"
+        )
+    try:
+        implementation_descriptor = load_execution_safety_descriptor_bytes(
+            implementation_descriptor_raw
+        )
+    except ValueError as error:
+        raise ProtocolAmendmentError(
+            f"reviewed implementation descriptor is invalid: {error}"
+        ) from error
+    for relative, expected_digest in implementation_descriptor["subject"][
+        "implementation_files"
+    ].items():
+        try:
+            implementation_blob = _git_bytes(
+                root, "show", f"{implementation_commit}:{relative}"
+            )
+        except ProtocolAmendmentError as error:
+            raise ProtocolAmendmentError(
+                "reviewed implementation lacks safety-critical blob "
+                f"{relative}"
+            ) from error
+        if hashlib.sha256(implementation_blob).hexdigest() != expected_digest:
+            raise ProtocolAmendmentError(
+                "reviewed implementation safety-critical blob differs from "
+                f"descriptor: {relative}"
+            )
+    proposed_amendment = load_execution_class_amendment_bytes(
+        proposed_amendment_raw
+    )
+    try:
+        proposed_certification_binding = (
+            load_execution_safety_certification_bytes(
+                proposed_certification_raw,
+                implementation_descriptor_raw,
+                require_accepted=False,
+            )
+        )
+    except ValueError as error:
+        raise ProtocolAmendmentError(
+            f"proposed execution certification is invalid: {error}"
+        ) from error
+    if proposed_certification_binding.review_status != "proposed":
+        raise ProtocolAmendmentError(
+            "implementation commit did not contain a proposed certification"
+        )
+    proposed_certification = _load_yaml(
+        proposed_certification_raw, context="proposed execution certification"
+    )
+    accepted_certification = _load_yaml(
+        certification_raw, context="accepted execution certification"
+    )
+    try:
+        proposed_science = load_execution_science_protocol_yaml_bytes(
+            proposed_science_raw
+        )
+    except ExecutionScienceProtocolError as error:
+        raise ProtocolAmendmentError(
+            f"proposed Candidate E science protocol is invalid: {error}"
+        ) from error
+    if proposed_science["review"] != EXECUTION_SCIENCE_PROPOSED_REVIEW:
+        raise ProtocolAmendmentError(
+            "implementation commit did not contain a proposed science protocol"
+        )
+    if not _is_ancestor(root, implementation_commit, current_commit) or (
+        implementation_commit == current_commit
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class acceptance must descend from its implementation"
+        )
+    review_paths = (
+        SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+        CERTIFICATION_RELATIVE_PATH,
+        CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH,
+    )
+    touching_commits: list[str] = []
+    for relative in review_paths:
+        touching = _git(
+            root,
+            "rev-list",
+            "--reverse",
+            "--ancestry-path",
+            f"{implementation_commit}..{current_commit}",
+            "--",
+            str(relative),
+        ).splitlines()
+        if len(touching) != 1 or GIT_COMMIT.fullmatch(touching[0]) is None:
+            raise ProtocolAmendmentError(
+                "execution-class review artifacts must change together exactly once"
+            )
+        touching_commits.append(touching[0])
+    if len(set(touching_commits)) != 1:
+        raise ProtocolAmendmentError(
+            "execution-class review artifacts were not accepted jointly"
+        )
+    acceptance_commit = touching_commits[0]
+    parents = _git_commit_parents(root, acceptance_commit)
+    if len(parents) != 1 or not _is_ancestor(
+        root, implementation_commit, acceptance_commit
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class acceptance must be one descendant review commit"
+        )
+    changed_paths = _git_changed_paths(root, parents[0], acceptance_commit)
+    accepted_amendment_raw = _git_bytes(
+        root,
+        "show",
+        f"{acceptance_commit}:{SUCCESSOR_AMENDMENT_RELATIVE_PATH}",
+    )
+    accepted_certification_raw = _git_bytes(
+        root,
+        "show",
+        f"{acceptance_commit}:{CERTIFICATION_RELATIVE_PATH}",
+    )
+    accepted_science_raw = _git_bytes(
+        root,
+        "show",
+        f"{acceptance_commit}:{CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH}",
+    )
+    if (
+        accepted_amendment_raw != amendment_raw
+        or accepted_certification_raw != certification_raw
+        or accepted_science_raw != science_raw
+    ):
+        raise ProtocolAmendmentError(
+            "execution-class review artifacts changed after acceptance"
+        )
+    accepted_at_transition = load_execution_class_amendment_bytes(
+        accepted_amendment_raw
+    )
+    certification_at_transition = _load_yaml(
+        accepted_certification_raw,
+        context="accepted execution certification transition",
+    )
+    validate_execution_class_review_transition(
+        proposed_amendment=proposed_amendment,
+        accepted_amendment=accepted_at_transition,
+        proposed_certification=proposed_certification,
+        accepted_certification=certification_at_transition,
+        implementation_commit=implementation_commit,
+        current_commit=acceptance_commit,
+        changed_paths=changed_paths,
+        implementation_is_ancestor=True,
+    )
+    try:
+        validate_execution_science_protocol_review_transition(
+            proposed=proposed_science,
+            accepted=accepted_science,
+            implementation_commit=implementation_commit,
+            acceptance_commit=acceptance_commit,
+        )
+    except ExecutionScienceProtocolError as error:
+        raise ProtocolAmendmentError(
+            f"Candidate E science review transition is invalid: {error}"
+        ) from error
+    if _git(root, "rev-parse", "HEAD") != current_commit:
+        raise ProtocolAmendmentError(
+            "execution-class validation HEAD changed before completion"
+        )
+    for path, raw, role in (
+        (amendment_path, amendment_raw, "execution-class amendment"),
+        (descriptor_path, descriptor_raw, "execution-safety descriptor"),
+        (certification_path, certification_raw, "execution-safety certification"),
+        (science_path, science_raw, "Candidate E execution-science protocol"),
+    ):
+        if _regular_file_bytes_for_amendment(path, role=role) != raw:
+            raise ProtocolAmendmentError(f"{role} changed during validation")
+    if _git(
+        root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=no",
+        "--ignore-submodules=none",
+    ):
+        raise ProtocolAmendmentError(
+            "accepted execution-class checkout changed during validation"
+        )
+    return ExecutionClassAmendmentBinding(
+        path=amendment_path,
+        amendment_id=EXECUTION_CLASS_AMENDMENT_ID,
+        sha256=hashlib.sha256(amendment_raw).hexdigest(),
+        git_commit=acceptance_commit,
+        reviewed_implementation_commit=implementation_commit,
+        descriptor_path=descriptor_path,
+        certification_path=certification_path,
+        certification_binding=certification_binding,
+    )
+
+
+def validate_execution_class_lineage_commit(
+    *,
+    code_root: Path,
+    candidate_commit: str,
+    current_binding: ExecutionClassAmendmentBinding,
+    expected_head: str,
+    role: str,
+) -> None:
+    """Bind request provenance between acceptance and the executing checkout."""
+
+    if GIT_COMMIT.fullmatch(candidate_commit) is None:
+        raise ProtocolAmendmentError(f"{role} is not a Git commit")
+    root = code_root.resolve()
+    current_commit = _git(root, "rev-parse", "HEAD")
+    if current_commit != expected_head:
+        raise ProtocolAmendmentError(f"{role} validation HEAD changed")
+    if not _is_ancestor(root, current_binding.git_commit, candidate_commit):
+        raise ProtocolAmendmentError(
+            f"{role} predates or is disconnected from execution-class acceptance"
+        )
+    if not _is_ancestor(root, candidate_commit, current_commit):
+        raise ProtocolAmendmentError(
+            f"{role} is not an ancestor of the executing checkout"
+        )
+    amendment_raw = _regular_file_bytes_for_amendment(
+        root / SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+        role="current execution-class amendment",
+    )
+    descriptor_raw = _regular_file_bytes_for_amendment(
+        root / DESCRIPTOR_RELATIVE_PATH,
+        role="current execution-safety descriptor",
+    )
+    certification_raw = _regular_file_bytes_for_amendment(
+        root / CERTIFICATION_RELATIVE_PATH,
+        role="current execution-safety certification",
+    )
+    try:
+        certification_binding = load_execution_safety_certification_bytes(
+            certification_raw,
+            descriptor_raw,
+            require_accepted=True,
+            code_root=root,
+        )
+    except ValueError as error:
+        raise ProtocolAmendmentError(
+            f"{role} current execution-safety binding is invalid: {error}"
+        ) from error
+    amendment = load_execution_class_amendment_bytes(amendment_raw)
+    if amendment["review"]["status"] != "accepted":
+        raise ProtocolAmendmentError(f"{role} current execution class is not accepted")
+    if (
+        current_binding.path != root / SUCCESSOR_AMENDMENT_RELATIVE_PATH
+        or current_binding.descriptor_path != root / DESCRIPTOR_RELATIVE_PATH
+        or current_binding.certification_path != root / CERTIFICATION_RELATIVE_PATH
+        or current_binding.amendment_id != EXECUTION_CLASS_AMENDMENT_ID
+        or current_binding.sha256 != hashlib.sha256(amendment_raw).hexdigest()
+        or current_binding.certification_binding != certification_binding
+        or current_binding.reviewed_implementation_commit
+        != amendment["review"]["reviewed_implementation_commit"]
+        or amendment["execution_safety_certification"]
+        != {
+            "execution_class_id": certification_binding.execution_class_id,
+            "certification_id": certification_binding.certification_id,
+            "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+            "descriptor_sha256": certification_binding.descriptor_sha256,
+            "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+            "certification_core_sha256": (
+                certification_binding.certification_core_sha256
+            ),
+            "fingerprint_sha256": certification_binding.fingerprint_sha256,
+            "supported_world_sizes": list(
+                certification_binding.supported_world_sizes
+            ),
+        }
+    ):
+        raise ProtocolAmendmentError(
+            f"{role} current execution-class fingerprint/CAS differs from its binding"
+        )
+    if _git(root, "rev-parse", "HEAD") != current_commit:
+        raise ProtocolAmendmentError(
+            f"{role} validation HEAD changed before completion"
+        )
+
+
+def _regular_file_bytes_for_amendment(path: Path, *, role: str) -> bytes:
+    try:
+        return read_regular_bytes_nofollow(path, context=role)
+    except ValueError as error:
+        raise ProtocolAmendmentError(str(error)) from error
+
+
 __all__ = [
     "ALLOWED_AFTER_ACCEPTANCE_PATHS",
     "ALLOWED_POST_IMPLEMENTATION_PATHS",
     "AMENDMENT_ID",
     "AMENDMENT_RELATIVE_PATH",
+    "CANDIDATE_E_SCIENCE_PROTOCOL_RELATIVE_PATH",
+    "CANDIDATE_E_SCIENTIFIC_CONFIG_SCHEMA",
+    "CANDIDATE_E_SCIENTIFIC_CONFIG_SHA256",
+    "CANDIDATE_E_SCIENTIFIC_LOCATOR_PATHS",
+    "EXECUTION_CLASS_AMENDMENT_ID",
+    "ExecutionClassAmendmentBinding",
     "ProtocolAmendmentBinding",
     "ProtocolAmendmentError",
+    "SUCCESSOR_AMENDMENT_RELATIVE_PATH",
     "load_protocol_amendment_bytes",
+    "candidate_e_scientific_config_payload",
+    "candidate_e_scientific_config_sha256",
+    "load_execution_class_amendment_bytes",
     "resolve_accepted_protocol_amendment",
+    "resolve_accepted_execution_class_amendment",
     "validate_accepted_lineage_commit",
     "validate_review_transition",
+    "validate_execution_class_g0_config",
+    "validate_execution_class_lineage_commit",
+    "validate_execution_class_review_transition",
     "validate_two_gpu_g0_config",
 ]

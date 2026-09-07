@@ -48,11 +48,19 @@ TEACHER_REVISION = "b968826d9c46dd6066d109eabc6255188de91218"
 TOKENIZER_FINGERPRINT = "03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d"
 CHAT_TEMPLATE_SHA256 = "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8"
 PREREGISTRATION_SHA256 = "8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4"
-AMENDMENT_RELATIVE_PATH = Path("prereg/amendments/qwen3_v2_g0_elastic_v1.yaml")
-HANDOFF_RELATIVE_PATH = "docs/refactor/current_handoff.md"
-PROPOSED_AMENDMENT_SHA256 = (
-    "2d2444c9b2969b0b10a42d137184f8d11574d748ae488f6e40d5b5cc4fb6becc"
+AMENDMENT_RELATIVE_PATH = Path(
+    "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
 )
+CERTIFICATION_RELATIVE_PATH = Path(
+    "prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml"
+)
+DESCRIPTOR_RELATIVE_PATH = Path(
+    "prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json"
+)
+EXECUTION_CLASS_ID = "qwen3-v2-elastic-training-v1"
+CERTIFICATION_ID = "qwen3-v2-elastic-training-v1-initial-certification"
+FINGERPRINT_SCHEMA = "opd-execution-safety-fingerprint-v1"
+HANDOFF_RELATIVE_PATH = "docs/refactor/current_handoff.md"
 PROPOSED_REVIEW = {
     "status": "proposed",
     "reviewed_implementation_commit": None,
@@ -60,9 +68,13 @@ PROPOSED_REVIEW = {
     "reviewed_at_utc": None,
     "rationale": None,
 }
-ALLOWED_REVIEW_PATHS = frozenset({str(AMENDMENT_RELATIVE_PATH), HANDOFF_RELATIVE_PATH})
-ALLOWED_HANDOFF_PATHS = frozenset({HANDOFF_RELATIVE_PATH})
-MAX_LINEAGE_COMMITS = 256
+ALLOWED_REVIEW_PATHS = frozenset(
+    {
+        str(AMENDMENT_RELATIVE_PATH),
+        str(CERTIFICATION_RELATIVE_PATH),
+        HANDOFF_RELATIVE_PATH,
+    }
+)
 ALLOWED_GPU_COUNTS = (1, 2, 3, 4)
 CPU_CORE_COUNT = 24
 THREADS_PER_RANK = {count: CPU_CORE_COUNT // count for count in ALLOWED_GPU_COUNTS}
@@ -72,69 +84,192 @@ MINIMUM_HEADROOM_BYTES = max(32 * 1024**3, int(NODE_MEMORY_BYTES * 0.20))
 MAX_INPUT_BYTES = 64 * 1024 * 1024
 MAX_PREREG_BYTES = 4 * 1024 * 1024
 MAX_AMENDMENT_BYTES = 1024 * 1024
+MAX_CERTIFICATION_BYTES = 4 * 1024 * 1024
+MAX_DESCRIPTOR_BYTES = 4 * 1024 * 1024
+MAX_SCIENCE_PROTOCOL_BYTES = 4 * 1024 * 1024
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 PROC_SELF_FD = re.compile(r"/proc/self/fd/(0|[1-9][0-9]*)\Z")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*\Z")
+G0_WORKFLOW_ID = re.compile(r"qwen3-v2-g0-elastic-[0-9a-f]{32}\Z")
+SCIENCE_PROTOCOL_PATH = re.compile(
+    r"prereg/execution_science/[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.yaml\Z"
+)
+SCIENCE_OVERRIDE_KEY = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*\Z"
+)
+SCIENCE_STORAGE_LOCATOR_PATHS = (
+    ("output_root",),
+    ("prereg_path",),
+    ("protocol_amendment_path",),
+    ("execution_science_protocol_path",),
+    ("state_source", "store_path"),
+    ("task", "dataset_family_path"),
+    ("anti_shortcut", "report_path"),
+    ("production_safety", "readiness_report"),
+    ("production_safety", "probe_cohort_manifest"),
+    ("production_safety", "initial_checkpoint_path"),
+    ("experiment", "random_reward_calibration_path"),
+)
+SCIENCE_SCHEDULER_PROVENANCE_PATHS = (
+    ("scheduler",),
+    ("server_scheduler",),
+    ("scheduler_g0",),
+    ("scheduler_preflight",),
+    ("scheduler_provenance",),
+    ("execution_context",),
+    ("job_id",),
+    ("workflow_id",),
+    ("plan_sha256",),
+    ("unit_id",),
+    ("attempt",),
+)
+SCIENCE_RESOURCE_KEYS = frozenset(
+    {
+        "cpu_core_count",
+        "cpu_count",
+        "cpu_cores",
+        "cpu_thread_count",
+        "cpu_threads",
+        "cpus",
+        "cuda",
+        "cuda_device",
+        "cuda_visible_devices",
+        "device",
+        "device_map",
+        "device_uuid",
+        "devices",
+        "exclusive",
+        "execution_profile",
+        "global_rank",
+        "gpu",
+        "gpu_count",
+        "gpu_count_policy",
+        "gpu_identity",
+        "gpu_id",
+        "gpu_ids",
+        "gpu_index",
+        "gpu_indices",
+        "gpu_memory",
+        "gpu_memory_mib",
+        "gpu_memory_utilization",
+        "gpu_uuid",
+        "gpus",
+        "host_memory",
+        "host_memory_mib",
+        "local_rank",
+        "memory",
+        "memory_mib",
+        "mkl_num_threads",
+        "node_rank",
+        "nproc_per_node",
+        "num_cpus",
+        "num_gpu",
+        "num_gpus",
+        "omp_num_threads",
+        "pci_bus_id",
+        "pci_bus_ids",
+        "per_rank_threads",
+        "physical_gpu",
+        "physical_gpu_index",
+        "physical_gpu_uuid",
+        "rank",
+        "resources",
+        "supported_world_sizes",
+        "thread_count",
+        "threads",
+        "utilization",
+        "world_size",
+        "world_sizes",
+    }
+)
 
-
-def _preflight_completion_name(world_size: int) -> str:
-    return f"gpu_preflight_w{world_size}_completion_sha256"
-
-
-def _preflight_report_name(world_size: int) -> str:
-    return f"gpu_preflight_w{world_size}_report_sha256"
-
-
+# This pre-import copy is intentional.  It prevents an unreviewed project
+# module from weakening the descriptor before that module becomes importable.
+EXECUTION_SAFETY_IMPLEMENTATION_PATHS = (
+    "configs/accelerate/fsdp_server_scheduler.yaml",
+    "deployments/qwen3_v2_g0/dependency-lock.json",
+    "deployments/qwen3_v2_g0/package-manifest.json",
+    "deployments/qwen3_v2_gpu_preflight/dependency-lock.json",
+    "deployments/qwen3_v2_gpu_preflight/package-manifest.json",
+    "scripts/server_scheduler/opd-entrypoint",
+    "scripts/server_scheduler/qwen3-v2-g0-handler.py",
+    "scripts/server_scheduler/qwen3-v2-gpu-preflight-handler.py",
+    "src/posttrain_circuits/artifacts/checkpoints.py",
+    "src/posttrain_circuits/artifacts/execution_safety_certification.py",
+    "src/posttrain_circuits/artifacts/execution_safe_io.py",
+    "src/posttrain_circuits/artifacts/execution_science_protocol.py",
+    "src/posttrain_circuits/artifacts/hashing.py",
+    "src/posttrain_circuits/artifacts/protocol_amendments.py",
+    "src/posttrain_circuits/cli/compare_distributed_resume.py",
+    "src/posttrain_circuits/cli/factorial_run_validation.py",
+    "src/posttrain_circuits/cli/finalize_g0.py",
+    "src/posttrain_circuits/cli/finalize_pilot_training.py",
+    "src/posttrain_circuits/cli/train.py",
+    "src/posttrain_circuits/core/config.py",
+    "src/posttrain_circuits/core/seeding.py",
+    "src/posttrain_circuits/datasets/teacher_demos/contracts.py",
+    "src/posttrain_circuits/datasets/teacher_demos/ledger.py",
+    "src/posttrain_circuits/datasets/teacher_demos/store.py",
+    "src/posttrain_circuits/datasets/teacher_demos/views.py",
+    "src/posttrain_circuits/datasets/trajectories/contracts.py",
+    "src/posttrain_circuits/learning/collation.py",
+    "src/posttrain_circuits/learning/contracts.py",
+    "src/posttrain_circuits/learning/primitives.py",
+    "src/posttrain_circuits/learning/supervision/losses.py",
+    "src/posttrain_circuits/learning/supervision/verified_replay.py",
+    "src/posttrain_circuits/learning/teacher/demo_source.py",
+    "src/posttrain_circuits/learning/training/canonical_sft.py",
+    "src/posttrain_circuits/learning/training/evaluation.py",
+    "src/posttrain_circuits/learning/training/execution_safety_kernel.py",
+    "src/posttrain_circuits/learning/training/factorial_trainer.py",
+    "src/posttrain_circuits/learning/training/factories.py",
+    "src/posttrain_circuits/learning/training/fsdp_contract.py",
+    "src/posttrain_circuits/learning/training/optimizer.py",
+    "src/posttrain_circuits/learning/training/schedules.py",
+    "src/posttrain_circuits/learning/training/token_budget.py",
+    "src/posttrain_circuits/models/loading.py",
+    "src/posttrain_circuits/models/prompt_protocol.py",
+    "src/posttrain_circuits/scheduler_adapter/dispatch.py",
+    "src/posttrain_circuits/scheduler_adapter/entrypoint.py",
+    "src/posttrain_circuits/scheduler_adapter/environment.py",
+    "src/posttrain_circuits/scheduler_adapter/manifest.py",
+    "src/posttrain_circuits/scheduler_adapter/qwen3_v2_g0.py",
+    "src/posttrain_circuits/scheduler_adapter/registry.py",
+    "src/posttrain_circuits/scheduler_adapter/runtime.py",
+    "src/posttrain_circuits/scheduler_adapter/secure_files.py",
+    "src/posttrain_circuits/scheduler_adapter/strict_json.py",
+)
 EXPECTED_INPUT_NAMES = (
     "config_binding_sha256",
     "execution_config_sha256",
-    *tuple(
-        name
-        for world_size in ALLOWED_GPU_COUNTS
-        for name in (
-            _preflight_completion_name(world_size),
-            _preflight_report_name(world_size),
-        )
-    ),
+    "execution_safety_certification_sha256",
+    "execution_safety_descriptor_sha256",
+    "execution_science_protocol_sha256",
     "preregistration_sha256",
     "protocol_amendment_sha256",
     "resolved_config_sha256",
     "scientific_config_sha256",
 )
-YAML_INPUT_NAMES = frozenset({"preregistration_sha256", "protocol_amendment_sha256"})
-JSON_INPUT_NAMES = frozenset(EXPECTED_INPUT_NAMES) - YAML_INPUT_NAMES
-PREFLIGHT_COMPLETION_FIELDS = frozenset(
+YAML_INPUT_NAMES = frozenset(
     {
-        "completed_at",
-        "completion_kind",
-        "execution",
-        "execution_config_sha256",
-        "input_hashes",
-        "output_files",
-        "plan_sha256",
-        "project",
-        "resolved_config_sha256",
-        "run_id",
-        "schema_version",
-        "scientific_config_sha256",
-        "scientific_validation",
-        "sha256",
-        "started_at",
-        "task",
-        "unit_id",
-        "workflow_id",
+        "execution_safety_certification_sha256",
+        "execution_science_protocol_sha256",
+        "preregistration_sha256",
+        "protocol_amendment_sha256",
     }
 )
+JSON_INPUT_NAMES = frozenset(EXPECTED_INPUT_NAMES) - YAML_INPUT_NAMES
 GATE_NAMES = (
     "allocation_contract",
     "artifact_bundle",
     "batch_token_invariants",
     "config_binding",
     "distributed_resume",
+    "execution_safety_certification",
+    "execution_science_protocol",
     "g0_semantic_decision",
-    "gpu_preflight_binding",
     "memory_headroom",
     "offline_pinned_runtime",
     "protocol_amendment",
@@ -163,12 +298,6 @@ FIXED_ENVIRONMENT = {
     "TORCH_NCCL_TRACE_BUFFER_SIZE": "1048576",
 }
 _PROCESS_PYCACHE_PREFIX: str | None = None
-BASE_CONFIG_OVERRIDES = (
-    "g0=qwen3_v2_eap_separation",
-    "experiment=canonical_sft",
-    "task.num_examples=256",
-    "state_source.num_candidates=8",
-)
 SCIENTIFIC_CLIS = {
     "audit_label_leakage": "posttrain_circuits.cli.audit_label_leakage",
     "build_probe_cohorts": "posttrain_circuits.cli.build_probe_cohorts",
@@ -211,6 +340,7 @@ class Invocation:
     gpu_count: int
     manifest_sha256: str
     allocation_sha256: str
+    running_manifest_descriptor: int
     content_handles: tuple[ContentHandle, ...]
     output_descriptor: int
 
@@ -235,12 +365,17 @@ class BootstrapLineage:
     amendment_git_commit: str
     reviewed_implementation_commit: str
     request_git_commit: str
-    preflight_git_commits: tuple[str, str, str, str]
 
-    def preflight_git_commit(self, world_size: int) -> str:
-        if world_size not in ALLOWED_GPU_COUNTS:
-            raise G0Error("preflight lineage world size is outside 1..4")
-        return self.preflight_git_commits[world_size - 1]
+
+@dataclass(frozen=True)
+class BootstrapScienceProtocol:
+    science_protocol_path: str
+    science_protocol_sha256: str
+    science_protocol_id: str
+    science_protocol_git_commit: str
+    science_protocol_reviewed_implementation_commit: str
+    unit_id: str
+    hydra_override_vector: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -326,6 +461,7 @@ def _outer_parser() -> argparse.ArgumentParser:
         "gpu-count",
         "manifest-sha256",
         "allocation-sha256",
+        "running-manifest-handle",
         "output-attempt-handle",
         "attempt-completion-name",
     ):
@@ -364,6 +500,9 @@ def _held_descriptor(value: object, *, name: str) -> int:
 
 def _parse_outer(argv: Sequence[str] | None) -> Invocation:
     args = _outer_parser().parse_args(argv)
+    workflow_id = _identifier(args.workflow_id, name="workflow_id")
+    if G0_WORKFLOW_ID.fullmatch(workflow_id) is None:
+        raise G0Error("workflow_id is not a fresh count-neutral G0 identity")
     if args.attempt_completion_name != COMPLETION_NAME:
         raise G0Error("attempt completion name differs from the fixed ABI")
     if args.execution_profile != PROFILE:
@@ -393,11 +532,18 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
     descriptors = tuple(item.descriptor for item in handles)
     if len(set(descriptors)) != len(descriptors):
         raise G0Error("content handles alias the same descriptor")
+    running_manifest_descriptor = _held_descriptor(
+        args.running_manifest_handle, name="running manifest handle"
+    )
     output_descriptor = _held_descriptor(args.output_attempt_handle, name="output attempt handle")
-    if output_descriptor in descriptors or not stat.S_ISDIR(os.fstat(output_descriptor).st_mode):
+    if (
+        running_manifest_descriptor in descriptors
+        or output_descriptor in (*descriptors, running_manifest_descriptor)
+        or not stat.S_ISDIR(os.fstat(output_descriptor).st_mode)
+    ):
         raise G0Error("output attempt handle is invalid or aliases an input")
     return Invocation(
-        workflow_id=_identifier(args.workflow_id, name="workflow_id"),
+        workflow_id=workflow_id,
         plan_sha256=_sha256(args.plan_sha256, name="plan_sha256"),
         unit_id=_identifier(args.unit_id, name="unit_id"),
         run_id=_sha256(args.run_id, name="run_id"),
@@ -407,6 +553,7 @@ def _parse_outer(argv: Sequence[str] | None) -> Invocation:
         gpu_count=int(args.gpu_count),
         manifest_sha256=_sha256(args.manifest_sha256, name="manifest_sha256"),
         allocation_sha256=_sha256(args.allocation_sha256, name="allocation_sha256"),
+        running_manifest_descriptor=running_manifest_descriptor,
         content_handles=tuple(handles),
         output_descriptor=output_descriptor,
     )
@@ -433,6 +580,91 @@ def _read_held_file(descriptor: int, *, context: str, max_bytes: int) -> bytes:
     if len(raw) != before.st_size or identity(before) != identity(after):
         raise G0Error(f"{context} changed while being read")
     return raw
+
+
+def _validate_held_running_manifest(invocation: Invocation) -> None:
+    """Independently bind the child to the exact ordered scheduler allocation."""
+
+    raw = _read_held_file(
+        invocation.running_manifest_descriptor,
+        context="running manifest",
+        max_bytes=2 * 1024 * 1024,
+    )
+    if hashlib.sha256(raw).hexdigest() != invocation.manifest_sha256:
+        raise G0Error("running manifest bytes differ from manifest_sha256")
+    payload = _strict_json(raw, context="running manifest")
+    required = {
+        "allocation", "cpu_ids", "estimated_runtime_seconds", "execution_profile",
+        "exit_code", "failure_reason", "gpu_indices", "gpu_pci_bus_ids",
+        "gpu_uuids", "job_id", "numa_node", "parameters", "priority",
+        "project", "requested_profile", "resources", "schema_version", "state",
+        "stderr_log", "stdout_log", "submitted_at", "task", "updated_at",
+    }
+    if not isinstance(payload, dict) or set(payload) != required:
+        raise G0Error("running manifest fields differ from protocol-v2")
+    parameters = payload.get("parameters")
+    allocation = payload.get("allocation")
+    if (
+        payload.get("schema_version") != 2
+        or payload.get("project") != "OPD"
+        or payload.get("state") != "running"
+        or payload.get("task") != TASK
+        or payload.get("job_id") != invocation.job_id
+        or payload.get("execution_profile") != invocation.execution_profile
+        or payload.get("requested_profile") is not None
+        or payload.get("resources") is not None
+        or payload.get("exit_code") is not None
+        or payload.get("failure_reason") is not None
+        or parameters
+        != {
+            "workflow_id": invocation.workflow_id,
+            "plan_sha256": invocation.plan_sha256,
+            "unit_id": invocation.unit_id,
+        }
+        or not isinstance(allocation, dict)
+        or allocation
+        != {
+            "cpu_cores": CPU_CORE_COUNT,
+            "exclusive_gpu": True,
+            "gpu_count": invocation.gpu_count,
+            "gpu_memory_mib": 81920,
+            "gpu_utilization_pct": 95,
+            "memory_mib": 196608,
+        }
+    ):
+        raise G0Error("running manifest identity or allocation differs from invocation")
+    gpu_uuids = payload.get("gpu_uuids")
+    gpu_indices = payload.get("gpu_indices")
+    gpu_pci_bus_ids = payload.get("gpu_pci_bus_ids")
+    cpu_ids = payload.get("cpu_ids")
+    if (
+        not isinstance(gpu_uuids, list)
+        or len(gpu_uuids) != invocation.gpu_count
+        or len(set(gpu_uuids)) != len(gpu_uuids)
+        or any(not isinstance(value, str) or not value or "," in value for value in gpu_uuids)
+        or not isinstance(gpu_indices, list)
+        or len(gpu_indices) != invocation.gpu_count
+        or not isinstance(gpu_pci_bus_ids, list)
+        or len(gpu_pci_bus_ids) != invocation.gpu_count
+        or not isinstance(cpu_ids, list)
+        or len(cpu_ids) != allocation.get("cpu_cores")
+    ):
+        raise G0Error("running manifest concrete allocation is incomplete")
+    allocation_payload = {
+        "allocation": allocation,
+        "cpu_ids": cpu_ids,
+        "gpu_indices": gpu_indices,
+        "gpu_pci_bus_ids": gpu_pci_bus_ids,
+        "gpu_uuids": gpu_uuids,
+        "numa_node": payload.get("numa_node"),
+    }
+    if _sha256_value(allocation_payload) != invocation.allocation_sha256:
+        raise G0Error("running manifest allocation digest differs from invocation")
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if visible.split(",") != gpu_uuids:
+        raise G0Error(
+            "CUDA_VISIBLE_DEVICES differs from ordered running-manifest GPU UUIDs"
+        )
 
 
 def _strict_json(raw: bytes, *, context: str) -> dict[str, Any]:
@@ -482,6 +714,12 @@ def _read_inputs(
                 if handle.name == "preregistration_sha256"
                 else MAX_AMENDMENT_BYTES
                 if handle.name == "protocol_amendment_sha256"
+                else MAX_SCIENCE_PROTOCOL_BYTES
+                if handle.name == "execution_science_protocol_sha256"
+                else MAX_CERTIFICATION_BYTES
+                if handle.name == "execution_safety_certification_sha256"
+                else MAX_DESCRIPTOR_BYTES
+                if handle.name == "execution_safety_descriptor_sha256"
                 else MAX_INPUT_BYTES
             ),
         )
@@ -494,16 +732,19 @@ def _read_inputs(
         if handle.name == "protocol_amendment_sha256":
             amendment = raw
             continue
+        if handle.name in {
+            "execution_safety_certification_sha256",
+            "execution_science_protocol_sha256",
+        }:
+            # Reviewed YAML artifacts are parsed only by the pre-import
+            # bootstrap and then again by shared project validators.
+            continue
         payload = _strict_json(raw, context=f"content {handle.name!r}")
         if handle.name in JSON_INPUT_NAMES and raw != _canonical_json(payload).encode("utf-8"):
             # Config CAS uses canonical bytes without a trailing newline.  The
-            # published preflight artifacts intentionally use durable newlines.
-            if not (
-                handle.name.startswith("gpu_preflight_w")
-                and handle.name.endswith(
-                    ("_completion_sha256", "_report_sha256")
-                )
-            ):
+            # descriptor is a separately schema-validated reviewed artifact,
+            # so its exact CAS digest (rather than whitespace) is authoritative.
+            if handle.name != "execution_safety_descriptor_sha256":
                 raise G0Error(f"content {handle.name!r} is not canonical JSON bytes")
         payloads[handle.name] = payload
     if not prereg:
@@ -637,20 +878,64 @@ def _require_clean_git() -> str:
     if _git_bytes(
         "status",
         "--porcelain=v1",
-        "--untracked-files=all",
+        "--untracked-files=no",
         "--ignore-submodules=none",
     ):
         raise G0Error("G0 requires a clean source checkout")
-    unsafe = _unsafe_untracked_paths()
-    if unsafe:
-        raise G0Error(f"G0 checkout contains unsafe ignored files: {unsafe!r}")
     return _git("rev-parse", "HEAD")
 
 
-def _git_amendment_bytes(commit: str) -> bytes:
+def _git_file_bytes(commit: str, relative_path: Path | str) -> bytes:
     if GIT_COMMIT.fullmatch(commit) is None:
-        raise G0Error("amendment lookup commit is invalid")
-    return _git_bytes("show", f"{commit}:{AMENDMENT_RELATIVE_PATH}")
+        raise G0Error("Git file lookup commit is invalid")
+    path = str(relative_path)
+    parsed = Path(path)
+    if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+        raise G0Error("Git file lookup path is invalid")
+    return _git_bytes("show", f"{commit}:{path}")
+
+
+def _source_regular_bytes(path: Path, *, context: str, max_bytes: int) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise G0Error(f"{context} is unavailable") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise G0Error(f"{context} must be one non-linked regular file")
+        return _read_held_file(descriptor, context=context, max_bytes=max_bytes)
+    finally:
+        os.close(descriptor)
+
+
+def _bootstrap_json(raw: bytes, *, context: str) -> dict[str, Any]:
+    def mapping(pairs: list[tuple[object, object]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if not isinstance(key, str) or key in result:
+                raise G0Error(f"{context} contains an invalid or duplicate key")
+            result[key] = value
+        return result
+
+    try:
+        payload = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=mapping,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"non-finite JSON value {value}")
+            ),
+        )
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+        raise G0Error(f"{context} is not strict UTF-8 JSON") from error
+    if not isinstance(payload, dict):
+        raise G0Error(f"{context} must be a JSON mapping")
+    return payload
 
 
 def _is_ancestor(ancestor: str, descendant: str) -> bool:
@@ -677,23 +962,6 @@ def _commit_parents(commit: str) -> tuple[str, ...]:
     if any(GIT_COMMIT.fullmatch(parent) is None for parent in parents):
         raise G0Error("Git returned an invalid parent identity")
     return parents
-
-
-def _linear_commit_path(ancestor: str, descendant: str, *, role: str) -> tuple[str, ...]:
-    if not _is_ancestor(ancestor, descendant):
-        raise G0Error(f"{role} does not descend from the reviewed implementation")
-    commits: list[str] = []
-    cursor = descendant
-    while cursor != ancestor:
-        if len(commits) >= MAX_LINEAGE_COMMITS:
-            raise G0Error(f"{role} lineage exceeds the reviewed bound")
-        parents = _commit_parents(cursor)
-        if len(parents) != 1:
-            raise G0Error(f"{role} lineage is not a single-parent chain")
-        commits.append(cursor)
-        cursor = parents[0]
-    commits.reverse()
-    return tuple(commits)
 
 
 def _changed_paths(parent: str, commit: str) -> frozenset[str]:
@@ -778,62 +1046,158 @@ def _accepted_review_metadata(accepted_raw: bytes) -> tuple[dict[str, Any], str]
     return accepted, implementation
 
 
-def _accepted_review(
-    accepted_raw: bytes,
-    proposed_payload: dict[str, Any],
-) -> tuple[dict[str, Any], str]:
-    accepted, implementation = _accepted_review_metadata(accepted_raw)
-    normalized = dict(accepted)
-    normalized["review"] = dict(PROPOSED_REVIEW)
-    if normalized != proposed_payload:
-        raise G0Error("accepted protocol amendment changed reviewed scientific terms")
-    return accepted, implementation
+def _science_protocol_path(value: object) -> str:
+    if not isinstance(value, str) or SCIENCE_PROTOCOL_PATH.fullmatch(value) is None:
+        raise G0Error(
+            "execution science protocol path must be a direct "
+            "prereg/execution_science/*.yaml artifact"
+        )
+    parsed = Path(value)
+    if parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+        raise G0Error("execution science protocol path is not canonical")
+    return value
 
 
-def _validate_accepted_commit_chain(
+def _remove_science_path(payload: dict[str, Any], parts: tuple[str, ...]) -> None:
+    parent: object = payload
+    for part in parts[:-1]:
+        if not isinstance(parent, dict) or part not in parent:
+            return
+        parent = parent[part]
+    if isinstance(parent, dict):
+        parent.pop(parts[-1], None)
+
+
+def _reject_science_resource_fields(
+    value: object,
     *,
-    implementation: str,
-    endpoint: str,
+    path: tuple[str, ...] = (),
+) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise G0Error("resolved science config contains a non-string key")
+            lowered = key.lower().replace("-", "_")
+            collapsed = re.sub(r"[^a-z0-9]", "", key.lower())
+            forbidden_collapsed = {
+                re.sub(r"[^a-z0-9]", "", candidate)
+                for candidate in SCIENCE_RESOURCE_KEYS
+            }
+            if (
+                lowered in SCIENCE_RESOURCE_KEYS
+                or collapsed in forbidden_collapsed
+                or lowered.startswith(
+                    (
+                        "physical_gpu",
+                        "gpu_count",
+                        "gpu_uuid",
+                        "gpu_index",
+                        "cuda_device",
+                        "device_map",
+                        "nproc_per_node",
+                        "world_size",
+                    )
+                )
+                or (
+                    lowered.startswith("cpu_")
+                    and any(token in lowered for token in ("core", "thread"))
+                )
+                or (
+                    lowered.startswith(("host_memory", "gpu_memory"))
+                    and any(token in lowered for token in ("mib", "gib", "bytes"))
+                )
+            ):
+                raise G0Error(
+                    "resolved science config contains forbidden resource steering "
+                    f"field {'.'.join((*path, key))!r}"
+                )
+            _reject_science_resource_fields(item, path=(*path, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_science_resource_fields(item, path=(*path, str(index)))
+
+
+def _bootstrap_science_config_sha256(resolved: dict[str, Any]) -> str:
+    try:
+        normalized = json.loads(_canonical_json(resolved))
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        raise G0Error("resolved science config is not strict JSON data") from error
+    if not isinstance(normalized, dict):
+        raise G0Error("resolved science config must be a mapping")
+    for parts in SCIENCE_STORAGE_LOCATOR_PATHS:
+        _remove_science_path(normalized, parts)
+    for parts in SCIENCE_SCHEDULER_PROVENANCE_PATHS:
+        _remove_science_path(normalized, parts)
+    _reject_science_resource_fields(normalized)
+    return _sha256_value(normalized)
+
+
+def _bootstrap_hydra_override_vector(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) > 128:
+        raise G0Error("execution science Hydra override vector is invalid")
+    result: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if (
+            not isinstance(item, str)
+            or not item
+            or len(item) > 1024
+            or item != item.strip()
+            or any(ord(character) < 32 for character in item)
+            or "=" not in item
+        ):
+            raise G0Error(f"execution science Hydra override {index} is invalid")
+        key, serialized = item.split("=", 1)
+        components = tuple(part.lower().replace("-", "_") for part in key.split("."))
+        if (
+            SCIENCE_OVERRIDE_KEY.fullmatch(key) is None
+            or not serialized
+            or key in seen
+            or any(
+                component in SCIENCE_RESOURCE_KEYS
+                or component.startswith(
+                    ("scheduler", "server_scheduler", "gpu_", "physical_gpu")
+                )
+                for component in components
+            )
+        ):
+            raise G0Error(
+                f"execution science Hydra override {index} contains invalid or "
+                "resource-steering syntax"
+            )
+        seen.add(key)
+        result.append(item)
+    return tuple(result)
+
+
+def _accepted_science_protocol_metadata(
     accepted_raw: bytes,
-    role: str,
-) -> str:
-    proposed_raw = _git_amendment_bytes(implementation)
-    if hashlib.sha256(proposed_raw).hexdigest() != PROPOSED_AMENDMENT_SHA256:
-        raise G0Error(f"{role} reviewed implementation amendment bytes differ")
-    proposed = _bootstrap_yaml(proposed_raw, context="reviewed proposed amendment")
-    if proposed.get("review") != PROPOSED_REVIEW:
-        raise G0Error(f"{role} implementation did not contain the proposed amendment")
-    _, reviewed_implementation = _accepted_review(accepted_raw, proposed)
-    if reviewed_implementation != implementation:
-        raise G0Error(f"{role} accepted amendment names another implementation")
-
-    transition_commit: str | None = None
-    parent = implementation
-    for commit in _linear_commit_path(implementation, endpoint, role=role):
-        changed = _changed_paths(parent, commit)
-        if not changed:
-            raise G0Error(f"{role} contains an empty commit")
-        if str(AMENDMENT_RELATIVE_PATH) in changed:
-            if transition_commit is not None or not changed <= ALLOWED_REVIEW_PATHS:
-                raise G0Error(f"{role} contains an invalid amendment transition")
-            if _git_amendment_bytes(commit) != accepted_raw:
-                raise G0Error(f"{role} amendment transition differs from accepted bytes")
-            transition_commit = commit
-        elif not changed <= ALLOWED_HANDOFF_PATHS:
-            raise G0Error(f"{role} contains a non-handoff implementation change")
-        parent = commit
-    if transition_commit is None or _git_amendment_bytes(endpoint) != accepted_raw:
-        raise G0Error(f"{role} does not contain exactly one accepted review transition")
-    return transition_commit
-
-
-def _validate_handoff_only_path(ancestor: str, descendant: str, *, role: str) -> None:
-    parent = ancestor
-    for commit in _linear_commit_path(ancestor, descendant, role=role):
-        changed = _changed_paths(parent, commit)
-        if not changed or not changed <= ALLOWED_HANDOFF_PATHS:
-            raise G0Error(f"{role} contains a post-acceptance implementation change")
-        parent = commit
+) -> tuple[dict[str, Any], str]:
+    accepted = _bootstrap_yaml(
+        accepted_raw,
+        context="accepted execution science protocol",
+    )
+    review = accepted.get("review")
+    if not isinstance(review, dict) or set(review) != set(PROPOSED_REVIEW):
+        raise G0Error("accepted execution science protocol review fields differ")
+    implementation = review.get("reviewed_implementation_commit")
+    if review.get("status") != "accepted" or not isinstance(implementation, str):
+        raise G0Error("execution science protocol is not accepted")
+    if GIT_COMMIT.fullmatch(implementation) is None:
+        raise G0Error("execution science protocol names an invalid implementation commit")
+    for field in ("reviewer", "rationale"):
+        if not isinstance(review.get(field), str) or not review[field].strip():
+            raise G0Error(f"accepted execution science protocol lacks {field}")
+    timestamp = review.get("reviewed_at_utc")
+    if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+        raise G0Error("execution science protocol review timestamp is invalid")
+    try:
+        parsed = datetime.fromisoformat(timestamp[:-1] + "+00:00")
+    except ValueError as error:
+        raise G0Error("execution science protocol review timestamp is invalid") from error
+    if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise G0Error("execution science protocol review timestamp is not UTC")
+    return accepted, implementation
 
 
 def _bootstrap_accepted_lineage(
@@ -841,112 +1205,439 @@ def _bootstrap_accepted_lineage(
     code_commit: str,
     resolved: dict[str, Any],
     amendment: bytes,
+    descriptor_raw: bytes,
+    certification_raw: bytes,
 ) -> BootstrapLineage:
+    """Authenticate the reviewed execution class before importing project code."""
+
     if _git("rev-parse", "HEAD") != code_commit:
         raise G0Error("trusted lineage HEAD changed before source import")
-    source_path = SOURCE_ROOT / AMENDMENT_RELATIVE_PATH
-    flags = os.O_RDONLY
-    if hasattr(os, "O_CLOEXEC"):
-        flags |= os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor = os.open(source_path, flags)
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
-            raise G0Error("protocol amendment must be one non-linked regular file")
-        source_raw = _read_held_file(
-            descriptor,
+    source_amendment = _source_regular_bytes(
+        SOURCE_ROOT / AMENDMENT_RELATIVE_PATH,
+        context="source protocol amendment",
+        max_bytes=MAX_AMENDMENT_BYTES,
+    )
+    source_descriptor = _source_regular_bytes(
+        SOURCE_ROOT / DESCRIPTOR_RELATIVE_PATH,
+        context="source execution-safety descriptor",
+        max_bytes=MAX_DESCRIPTOR_BYTES,
+    )
+    source_certification = _source_regular_bytes(
+        SOURCE_ROOT / CERTIFICATION_RELATIVE_PATH,
+        context="source execution-safety certification",
+        max_bytes=MAX_CERTIFICATION_BYTES,
+    )
+    if (
+        source_amendment != amendment
+        or source_descriptor != descriptor_raw
+        or source_certification != certification_raw
+        or _git_file_bytes(code_commit, AMENDMENT_RELATIVE_PATH) != source_amendment
+        or _git_file_bytes(code_commit, DESCRIPTOR_RELATIVE_PATH) != source_descriptor
+        or _git_file_bytes(code_commit, CERTIFICATION_RELATIVE_PATH)
+        != source_certification
+    ):
+        raise G0Error("held execution-class artifacts differ from the clean checkout")
+
+    accepted_amendment, implementation = _accepted_review_metadata(source_amendment)
+    accepted_certification = _bootstrap_yaml(
+        source_certification,
+        context="accepted execution-safety certification",
+    )
+    certification_review = accepted_certification.get("review")
+    if certification_review != accepted_amendment.get("review"):
+        raise G0Error("amendment and certification review identities differ")
+    proposed_amendment = _bootstrap_yaml(
+        _git_file_bytes(implementation, AMENDMENT_RELATIVE_PATH),
+        context="reviewed proposed amendment",
+    )
+    proposed_certification = _bootstrap_yaml(
+        _git_file_bytes(implementation, CERTIFICATION_RELATIVE_PATH),
+        context="reviewed proposed certification",
+    )
+    if (
+        proposed_amendment.get("review") != PROPOSED_REVIEW
+        or proposed_certification.get("review") != PROPOSED_REVIEW
+    ):
+        raise G0Error("reviewed implementation did not contain both proposals")
+    normalized_amendment = dict(accepted_amendment)
+    normalized_amendment["review"] = dict(PROPOSED_REVIEW)
+    normalized_certification = dict(accepted_certification)
+    normalized_certification["review"] = dict(PROPOSED_REVIEW)
+    if (
+        normalized_amendment != proposed_amendment
+        or normalized_certification != proposed_certification
+    ):
+        raise G0Error("accepted execution-class review changed non-review content")
+
+    amendment_commit = _git(
+        "log",
+        "-n1",
+        "--format=%H",
+        code_commit,
+        "--",
+        str(AMENDMENT_RELATIVE_PATH),
+    )
+    certification_commit = _git(
+        "log",
+        "-n1",
+        "--format=%H",
+        code_commit,
+        "--",
+        str(CERTIFICATION_RELATIVE_PATH),
+    )
+    acceptance_parents = _commit_parents(amendment_commit)
+    acceptance_parent = acceptance_parents[0] if len(acceptance_parents) == 1 else ""
+    changed_at_acceptance = (
+        _changed_paths(acceptance_parent, amendment_commit)
+        if acceptance_parent
+        else frozenset()
+    )
+    additional_review_paths = changed_at_acceptance - ALLOWED_REVIEW_PATHS
+    if (
+        amendment_commit != certification_commit
+        or not acceptance_parent
+        or not _is_ancestor(implementation, acceptance_parent)
+        or not {
+            str(AMENDMENT_RELATIVE_PATH),
+            str(CERTIFICATION_RELATIVE_PATH),
+        }
+        <= changed_at_acceptance
+        or len(additional_review_paths) > 1
+        or any(
+            SCIENCE_PROTOCOL_PATH.fullmatch(path) is None
+            for path in additional_review_paths
+        )
+        or _git_file_bytes(implementation, DESCRIPTOR_RELATIVE_PATH)
+        != source_descriptor
+    ):
+        raise G0Error("execution-class lineage lacks one pure joint acceptance")
+
+    scheduler = resolved.get("scheduler_g0")
+    if not isinstance(scheduler, dict):
+        raise G0Error("resolved config lacks scheduler G0 provenance")
+    request_commit = scheduler.get("request_git_commit")
+    for name in (
+        "execution_safety_fingerprint_sha256",
+        "execution_safety_descriptor_sha256",
+        "execution_safety_certification_sha256",
+    ):
+        if not isinstance(scheduler.get(name), str) or SHA256.fullmatch(
+            scheduler[name]
+        ) is None:
+            raise G0Error("resolved config contains invalid execution-safety hashes")
+    if (
+        not isinstance(request_commit, str)
+        or GIT_COMMIT.fullmatch(request_commit) is None
+        or scheduler.get("execution_safety_class_id") != EXECUTION_CLASS_ID
+    ):
+        raise G0Error("resolved config contains invalid execution-class identity")
+
+    descriptor = _bootstrap_json(
+        source_descriptor,
+        context="execution-safety descriptor",
+    )
+    if set(descriptor) != {
+        "execution_class_id",
+        "fingerprint_schema",
+        "fingerprint_sha256",
+        "kind",
+        "schema_version",
+        "subject",
+    }:
+        raise G0Error("execution-safety descriptor fields differ")
+    subject = descriptor.get("subject")
+    if (
+        descriptor.get("schema_version") != 1
+        or descriptor.get("kind") != "qwen3_v2_execution_safety_descriptor"
+        or descriptor.get("execution_class_id") != EXECUTION_CLASS_ID
+        or descriptor.get("fingerprint_schema") != FINGERPRINT_SCHEMA
+        or not isinstance(subject, dict)
+        or descriptor.get("fingerprint_sha256") != _sha256_value(subject)
+    ):
+        raise G0Error("execution-safety descriptor identity is invalid")
+    implementation_files = subject.get("implementation_files")
+    if (
+        not isinstance(implementation_files, dict)
+        or set(implementation_files) != set(EXECUTION_SAFETY_IMPLEMENTATION_PATHS)
+    ):
+        raise G0Error("execution-safety descriptor critical file set differs")
+
+    descriptor_sha256 = hashlib.sha256(source_descriptor).hexdigest()
+    certification_sha256 = hashlib.sha256(source_certification).hexdigest()
+    certification_core = dict(accepted_certification)
+    certification_core.pop("review", None)
+    certification_core_sha256 = _sha256_value(certification_core)
+    certification_class = accepted_certification.get("execution_class")
+    amendment_certification = accepted_amendment.get(
+        "execution_safety_certification"
+    )
+    if (
+        scheduler["execution_safety_descriptor_sha256"] != descriptor_sha256
+        or scheduler["execution_safety_certification_sha256"]
+        != certification_sha256
+        or scheduler["execution_safety_fingerprint_sha256"]
+        != descriptor["fingerprint_sha256"]
+        or not isinstance(certification_class, dict)
+        or certification_class.get("execution_class_id") != EXECUTION_CLASS_ID
+        or certification_class.get("descriptor_sha256") != descriptor_sha256
+        or certification_class.get("fingerprint_sha256")
+        != descriptor["fingerprint_sha256"]
+        or certification_class.get("supported_world_sizes") != [1, 2, 3, 4]
+        or accepted_certification.get("certification_id") != CERTIFICATION_ID
+        or not isinstance(amendment_certification, dict)
+        or amendment_certification.get("execution_class_id") != EXECUTION_CLASS_ID
+        or amendment_certification.get("certification_id") != CERTIFICATION_ID
+        or amendment_certification.get("descriptor_path")
+        != str(DESCRIPTOR_RELATIVE_PATH)
+        or amendment_certification.get("descriptor_sha256") != descriptor_sha256
+        or amendment_certification.get("certification_path")
+        != str(CERTIFICATION_RELATIVE_PATH)
+        or amendment_certification.get("certification_core_sha256")
+        != certification_core_sha256
+        or amendment_certification.get("fingerprint_sha256")
+        != descriptor["fingerprint_sha256"]
+        or amendment_certification.get("supported_world_sizes") != [1, 2, 3, 4]
+    ):
+        raise G0Error("execution-class artifacts do not bind one exact certification")
+
+    for relative, expected_digest in implementation_files.items():
+        if not isinstance(expected_digest, str) or SHA256.fullmatch(
+            expected_digest
+        ) is None:
+            raise G0Error("execution-safety descriptor contains an invalid file hash")
+        working_raw = _source_regular_bytes(
+            SOURCE_ROOT / relative,
+            context=f"execution-safety implementation {relative}",
+            max_bytes=64 * 1024 * 1024,
+        )
+        if hashlib.sha256(working_raw).hexdigest() != expected_digest:
+            raise G0Error(
+                f"execution-safety critical file differs from certification: {relative}"
+            )
+
+    if (
+        _require_clean_git() != code_commit
+        or _git("rev-parse", "HEAD") != code_commit
+        or _source_regular_bytes(
+            SOURCE_ROOT / AMENDMENT_RELATIVE_PATH,
             context="source protocol amendment",
             max_bytes=MAX_AMENDMENT_BYTES,
         )
-        if source_raw != amendment or _git_amendment_bytes(code_commit) != source_raw:
-            raise G0Error("held amendment differs from the clean source checkout")
-        _, implementation = _accepted_review_metadata(source_raw)
-        proposed_payload = _bootstrap_yaml(
-            _git_amendment_bytes(implementation),
-            context="reviewed proposed amendment",
+        != source_amendment
+        or _source_regular_bytes(
+            SOURCE_ROOT / DESCRIPTOR_RELATIVE_PATH,
+            context="source execution-safety descriptor",
+            max_bytes=MAX_DESCRIPTOR_BYTES,
         )
-        _, implementation = _accepted_review(source_raw, proposed_payload)
-        amendment_commit = _validate_accepted_commit_chain(
-            implementation=implementation,
-            endpoint=code_commit,
-            accepted_raw=source_raw,
-            role="execution HEAD",
+        != source_descriptor
+        or _source_regular_bytes(
+            SOURCE_ROOT / CERTIFICATION_RELATIVE_PATH,
+            context="source execution-safety certification",
+            max_bytes=MAX_CERTIFICATION_BYTES,
+        )
+        != source_certification
+    ):
+        raise G0Error("trusted execution-class lineage changed during bootstrap")
+    return BootstrapLineage(
+        amendment_sha256=hashlib.sha256(source_amendment).hexdigest(),
+        amendment_git_commit=amendment_commit,
+        reviewed_implementation_commit=implementation,
+        request_git_commit=request_commit,
+    )
+
+
+def _bootstrap_science_protocol_lineage(
+    *,
+    code_commit: str,
+    resolved: dict[str, Any],
+    science_protocol_raw: bytes,
+    unit_id: str,
+) -> BootstrapScienceProtocol:
+    """Authenticate one accepted per-experiment protocol before source import."""
+
+    scheduler = resolved.get("scheduler_g0")
+    if not isinstance(scheduler, dict):
+        raise G0Error("resolved config lacks scheduler G0 provenance")
+    configured_path = _science_protocol_path(
+        scheduler.get("execution_science_protocol_path")
+    )
+    source_path = SOURCE_ROOT / configured_path
+    source_raw = _source_regular_bytes(
+        source_path,
+        context="source execution science protocol",
+        max_bytes=MAX_SCIENCE_PROTOCOL_BYTES,
+    )
+    source_sha256 = hashlib.sha256(source_raw).hexdigest()
+    if (
+        source_raw != science_protocol_raw
+        or _git_file_bytes(code_commit, configured_path) != source_raw
+        or scheduler.get("execution_science_protocol_sha256") != source_sha256
+    ):
+        raise G0Error(
+            "execution science protocol CAS differs from the clean source commit"
         )
 
-        scheduler = resolved.get("scheduler_g0")
-        if not isinstance(scheduler, dict):
-            raise G0Error("resolved config lacks scheduler G0 provenance")
-        request_commit = scheduler.get("request_git_commit")
-        preflight_matrix = scheduler.get("gpu_preflight_matrix")
-        if (
-            not isinstance(request_commit, str)
-            or GIT_COMMIT.fullmatch(request_commit) is None
-            or not isinstance(preflight_matrix, dict)
-            or set(preflight_matrix) != {str(value) for value in ALLOWED_GPU_COUNTS}
-        ):
-            raise G0Error("resolved config contains invalid request/preflight Git provenance")
-        preflight_commits: list[str] = []
-        candidates = [(request_commit, "G0 request commit")]
-        for world_size in ALLOWED_GPU_COUNTS:
-            row = preflight_matrix[str(world_size)]
-            if not isinstance(row, dict):
-                raise G0Error("resolved config preflight matrix row is invalid")
-            candidate = row.get("git_commit")
-            if not isinstance(candidate, str) or GIT_COMMIT.fullmatch(candidate) is None:
-                raise G0Error("resolved config contains invalid preflight Git provenance")
-            preflight_commits.append(candidate)
-            candidates.append((candidate, f"GPU preflight W={world_size} commit"))
-        for candidate, role in candidates:
-            candidate_amendment_commit = _validate_accepted_commit_chain(
-                implementation=implementation,
-                endpoint=candidate,
-                accepted_raw=source_raw,
-                role=role,
-            )
-            if candidate_amendment_commit != amendment_commit:
-                raise G0Error(f"{role} names a different acceptance transition")
-            _validate_handoff_only_path(candidate, code_commit, role=f"{role} to execution")
+    accepted, implementation = _accepted_science_protocol_metadata(source_raw)
+    proposed_raw = _git_file_bytes(implementation, configured_path)
+    proposed = _bootstrap_yaml(
+        proposed_raw,
+        context="reviewed proposed execution science protocol",
+    )
+    if proposed.get("review") != PROPOSED_REVIEW:
+        raise G0Error(
+            "science protocol implementation did not contain a proposed artifact"
+        )
+    normalized = dict(accepted)
+    normalized["review"] = dict(PROPOSED_REVIEW)
+    if normalized != proposed:
+        raise G0Error("accepted science protocol changed non-review terms")
 
-        after = os.fstat(descriptor)
-        path_after = source_path.lstat()
-        identity = lambda row: (  # noqa: E731
-            row.st_dev,
-            row.st_ino,
-            row.st_mode,
-            row.st_nlink,
-            row.st_size,
-            row.st_mtime_ns,
-            row.st_ctime_ns,
+    acceptance_commit = _git(
+        "log",
+        "-n1",
+        "--format=%H",
+        code_commit,
+        "--",
+        configured_path,
+    )
+    acceptance_parents = _commit_parents(acceptance_commit)
+    acceptance_parent = acceptance_parents[0] if len(acceptance_parents) == 1 else ""
+    changed_at_acceptance = (
+        _changed_paths(acceptance_parent, acceptance_commit)
+        if acceptance_parent
+        else frozenset()
+    )
+    class_acceptance_commit = _git(
+        "log",
+        "-n1",
+        "--format=%H",
+        code_commit,
+        "--",
+        str(AMENDMENT_RELATIVE_PATH),
+    )
+    allowed_review_paths = frozenset({configured_path, HANDOFF_RELATIVE_PATH})
+    if acceptance_commit == class_acceptance_commit:
+        allowed_review_paths |= frozenset(
+            {str(AMENDMENT_RELATIVE_PATH), str(CERTIFICATION_RELATIVE_PATH)}
         )
-        if (
-            _require_clean_git() != code_commit
-            or _read_held_file(
-                descriptor,
-                context="source protocol amendment",
-                max_bytes=MAX_AMENDMENT_BYTES,
-            )
-            != source_raw
-            or identity(before) != identity(after)
-            or identity(after) != identity(path_after)
-            or _git_amendment_bytes(code_commit) != source_raw
-        ):
-            raise G0Error("trusted lineage changed during bootstrap validation")
-        return BootstrapLineage(
-            amendment_sha256=hashlib.sha256(source_raw).hexdigest(),
-            amendment_git_commit=amendment_commit,
-            reviewed_implementation_commit=implementation,
-            request_git_commit=request_commit,
-            preflight_git_commits=(
-                preflight_commits[0],
-                preflight_commits[1],
-                preflight_commits[2],
-                preflight_commits[3],
-            ),
+    if (
+        not acceptance_parent
+        or not _is_ancestor(implementation, acceptance_parent)
+        or configured_path not in changed_at_acceptance
+        or not changed_at_acceptance
+        <= allowed_review_paths
+        or _git_file_bytes(acceptance_commit, configured_path) != source_raw
+    ):
+        raise G0Error(
+            "execution science protocol lacks one pure-review acceptance"
         )
-    finally:
-        os.close(descriptor)
+
+    request_commit = scheduler.get("request_git_commit")
+    if (
+        not isinstance(request_commit, str)
+        or GIT_COMMIT.fullmatch(request_commit) is None
+    ):
+        raise G0Error("execution science protocol request identity is invalid")
+
+    expected_top = {
+        "schema_version",
+        "kind",
+        "protocol_id",
+        "scope",
+        "execution_class",
+        "science_config",
+        "review_contract",
+        "review",
+    }
+    scope = accepted.get("scope")
+    execution_class = accepted.get("execution_class")
+    science_config = accepted.get("science_config")
+    protocol_id = accepted.get("protocol_id")
+    if (
+        set(accepted) != expected_top
+        or accepted.get("schema_version") != 1
+        or accepted.get("kind") != "opd_execution_science_protocol"
+        or not isinstance(protocol_id, str)
+        or IDENTIFIER.fullmatch(protocol_id) is None
+        or not isinstance(scope, dict)
+        or set(scope) != {"unit_id", "seed"}
+        or scope.get("unit_id") != unit_id
+        or type(scope.get("seed")) is not int
+        or not 0 <= scope["seed"] < 2**63
+        or resolved.get("seed") != scope["seed"]
+        or not isinstance(execution_class, dict)
+        or not isinstance(science_config, dict)
+    ):
+        raise G0Error("execution science protocol identity or scope is invalid")
+
+    certification_raw = _source_regular_bytes(
+        SOURCE_ROOT / CERTIFICATION_RELATIVE_PATH,
+        context="source execution-safety certification",
+        max_bytes=MAX_CERTIFICATION_BYTES,
+    )
+    certification = _bootstrap_yaml(
+        certification_raw,
+        context="accepted execution-safety certification",
+    )
+    certification_core = dict(certification)
+    certification_core.pop("review", None)
+    expected_execution_class = {
+        "execution_class_id": EXECUTION_CLASS_ID,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": scheduler.get(
+            "execution_safety_descriptor_sha256"
+        ),
+        "fingerprint_sha256": scheduler.get(
+            "execution_safety_fingerprint_sha256"
+        ),
+        "certification_id": CERTIFICATION_ID,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": _sha256_value(certification_core),
+        "supported_world_sizes": [1, 2, 3, 4],
+    }
+    if execution_class != expected_execution_class:
+        raise G0Error(
+            "execution science protocol does not bind the exact execution class"
+        )
+
+    override_vector = _bootstrap_hydra_override_vector(
+        science_config.get("hydra_override_vector")
+    )
+    expected_science_sha256 = science_config.get(
+        "storage_neutral_resolved_config_sha256"
+    )
+    if (
+        not isinstance(expected_science_sha256, str)
+        or SHA256.fullmatch(expected_science_sha256) is None
+        or expected_science_sha256 != _bootstrap_science_config_sha256(resolved)
+        or scheduler.get("execution_science_protocol_id") != protocol_id
+        or scheduler.get("execution_science_protocol_git_commit")
+        != acceptance_commit
+        or scheduler.get("execution_science_protocol_reviewed_implementation_commit")
+        != implementation
+    ):
+        raise G0Error("resolved science config differs from its accepted protocol")
+
+    if (
+        _require_clean_git() != code_commit
+        or _git("rev-parse", "HEAD") != code_commit
+        or _source_regular_bytes(
+            source_path,
+            context="source execution science protocol",
+            max_bytes=MAX_SCIENCE_PROTOCOL_BYTES,
+        )
+        != source_raw
+    ):
+        raise G0Error("execution science protocol changed during bootstrap")
+    return BootstrapScienceProtocol(
+        science_protocol_path=configured_path,
+        science_protocol_sha256=source_sha256,
+        science_protocol_id=protocol_id,
+        science_protocol_git_commit=acceptance_commit,
+        science_protocol_reviewed_implementation_commit=implementation,
+        unit_id=unit_id,
+        hydra_override_vector=override_vector,
+    )
 
 
 def _validate_allocation_environment(
@@ -1063,7 +1754,7 @@ def _validate_environment(gpu_count: int) -> tuple[str, ...]:
     return devices
 
 
-def _validate_config_and_preflight(
+def _validate_config_and_certification(
     invocation: Invocation,
     payloads: dict[str, dict[str, Any]],
     prereg: bytes,
@@ -1072,22 +1763,32 @@ def _validate_config_and_preflight(
     *,
     code_commit: str,
     bootstrap_lineage: BootstrapLineage,
-) -> tuple[dict[str, Any], dict[int, dict[str, Any]], Any]:
+    bootstrap_science: BootstrapScienceProtocol,
+) -> tuple[dict[str, Any], Any, Any, Any]:
     from posttrain_circuits.artifacts.config_bindings import ConfigBinding, validate_config_binding
     from posttrain_circuits.artifacts.protocol_amendments import (
-        AMENDMENT_ID,
-        AMENDMENT_RELATIVE_PATH,
-        load_protocol_amendment_bytes,
-        resolve_accepted_protocol_amendment,
-        validate_accepted_lineage_commit,
-        validate_elastic_g0_config,
+        load_execution_class_amendment_bytes,
+        resolve_accepted_execution_class_amendment,
+        validate_execution_class_lineage_commit,
     )
-    from posttrain_circuits.core.config import compose_config
-    from posttrain_circuits.scheduler_adapter.qwen3_v2_gpu_preflight import (
-        GATE_NAMES as preflight_gates,
-        PROFILE_NAME as preflight_profile,
-        _validate_report as validate_preflight_report,
-        validate_preflight_workflow_id,
+    from posttrain_circuits.artifacts.execution_science_protocol import (
+        canonical_science_config_sha256,
+        resolve_accepted_execution_science_protocol,
+    )
+    from posttrain_circuits.artifacts.execution_safety_certification import (
+        CERTIFICATION_CONTENT_NAME,
+        CERTIFICATION_ID,
+        CERTIFICATION_RELATIVE_PATH,
+        DESCRIPTOR_CONTENT_NAME,
+        DESCRIPTOR_RELATIVE_PATH,
+        EXECUTION_CLASS_ID,
+        current_execution_safety_fingerprint,
+        execution_safety_config_projection,
+        load_execution_safety_certification_bytes,
+        load_execution_safety_descriptor_bytes,
+    )
+    from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
+        PROTOCOL_AMENDMENT_ID,
     )
 
     binding_payload = payloads["config_binding_sha256"]
@@ -1103,18 +1804,15 @@ def _validate_config_and_preflight(
         if binding_payload.get(name) != invocation.input_hashes[name]:
             raise G0Error(f"ConfigBinding {name} differs from its CAS input")
     expected_inputs = {
-        **{
-            f"gpu_preflight_w{world_size}_completion": invocation.input_hashes[
-                _preflight_completion_name(world_size)
-            ]
-            for world_size in ALLOWED_GPU_COUNTS
-        },
-        **{
-            f"gpu_preflight_w{world_size}_report": invocation.input_hashes[
-                _preflight_report_name(world_size)
-            ]
-            for world_size in ALLOWED_GPU_COUNTS
-        },
+        "execution_safety_certification": invocation.input_hashes[
+            CERTIFICATION_CONTENT_NAME
+        ],
+        "execution_safety_descriptor": invocation.input_hashes[
+            DESCRIPTOR_CONTENT_NAME
+        ],
+        "execution_science_protocol_path": invocation.input_hashes[
+            "execution_science_protocol_sha256"
+        ],
         "prereg_path": invocation.input_hashes["preregistration_sha256"],
         "protocol_amendment_path": invocation.input_hashes["protocol_amendment_sha256"],
     }
@@ -1133,177 +1831,290 @@ def _validate_config_and_preflight(
         or invocation.input_hashes["preregistration_sha256"] != PREREGISTRATION_SHA256
     ):
         raise G0Error("preregistration content identity changed")
-    amendment_payload = load_protocol_amendment_bytes(amendment)
+    descriptor_raw = raw_inputs[DESCRIPTOR_CONTENT_NAME]
+    certification_raw = raw_inputs[CERTIFICATION_CONTENT_NAME]
+    try:
+        descriptor_payload = load_execution_safety_descriptor_bytes(
+            descriptor_raw,
+            code_root=SOURCE_ROOT,
+        )
+        certification_binding = load_execution_safety_certification_bytes(
+            certification_raw,
+            descriptor_raw,
+            require_accepted=True,
+            code_root=SOURCE_ROOT,
+        )
+    except ValueError as error:
+        raise G0Error(f"G0 execution-safety certification is invalid: {error}") from error
+    if (
+        certification_binding.execution_class_id != EXECUTION_CLASS_ID
+        or tuple(certification_binding.supported_world_sizes) != ALLOWED_GPU_COUNTS
+        or certification_binding.review_status != "accepted"
+        or certification_binding.descriptor_sha256
+        != invocation.input_hashes[DESCRIPTOR_CONTENT_NAME]
+        or certification_binding.certification_sha256
+        != invocation.input_hashes[CERTIFICATION_CONTENT_NAME]
+        or certification_binding.fingerprint_sha256
+        != current_execution_safety_fingerprint(SOURCE_ROOT)
+    ):
+        raise G0Error(
+            "G0 execution-safety certification differs from its exact CAS bytes"
+        )
+    amendment_payload = load_execution_class_amendment_bytes(amendment)
     source_amendment = SOURCE_ROOT / AMENDMENT_RELATIVE_PATH
-    if source_amendment.read_bytes() != amendment:
+    if _source_regular_bytes(
+        source_amendment,
+        context="source protocol amendment",
+        max_bytes=MAX_AMENDMENT_BYTES,
+    ) != amendment:
         raise G0Error("protocol amendment content differs from the clean source commit")
-    amendment_binding = resolve_accepted_protocol_amendment(
+    amendment_binding = resolve_accepted_execution_class_amendment(
         code_root=SOURCE_ROOT,
         configured_path=str(AMENDMENT_RELATIVE_PATH),
         expected_head=code_commit,
     )
+    expected_certification_terms = {
+        "execution_class_id": certification_binding.execution_class_id,
+        "certification_id": CERTIFICATION_ID,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": certification_binding.descriptor_sha256,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": (
+            certification_binding.certification_core_sha256
+        ),
+        "fingerprint_sha256": certification_binding.fingerprint_sha256,
+        "supported_world_sizes": list(
+            certification_binding.supported_world_sizes
+        ),
+    }
     if (
         amendment_binding.sha256 != bootstrap_lineage.amendment_sha256
         or amendment_binding.git_commit != bootstrap_lineage.amendment_git_commit
         or amendment_binding.reviewed_implementation_commit
         != bootstrap_lineage.reviewed_implementation_commit
         or amendment_payload["review"]["status"] != "accepted"
+        or amendment_payload.get("amendment_id") != PROTOCOL_AMENDMENT_ID
+        or amendment_payload.get("execution_safety_certification")
+        != expected_certification_terms
+        or amendment_binding.certification_binding != certification_binding
+        or certification_binding.reviewed_implementation_commit
+        != amendment_binding.reviewed_implementation_commit
         or hashlib.sha256(amendment).hexdigest() != amendment_binding.sha256
         or invocation.input_hashes["protocol_amendment_sha256"] != amendment_binding.sha256
     ):
         raise G0Error("protocol amendment is not the accepted Git-reviewed content")
 
-    preflights: dict[int, dict[str, Any]] = {}
-    preflight_matrix: dict[str, dict[str, Any]] = {}
-    seen_allocations: set[str] = set()
-    seen_evidence: set[str] = set()
-    seen_workflows: set[str] = set()
-    for world_size in ALLOWED_GPU_COUNTS:
-        report_name = _preflight_report_name(world_size)
-        completion_name = _preflight_completion_name(world_size)
-        preflight = payloads[report_name]
-        completion = payloads[completion_name]
-        preflight_execution = completion.get("execution")
-        preflight_outputs = completion.get("output_files")
-        preflight_validation = completion.get("scientific_validation")
-        preflight_inputs = completion.get("input_hashes")
-        completion_digest = completion.get("sha256")
-        completion_unsigned = {
-            key: value for key, value in completion.items() if key != "sha256"
-        }
-        if not isinstance(preflight_execution, dict):
-            raise G0Error("GPU preflight completion execution is invalid")
-        validate_preflight_report(
-            preflight,
-            resolved_config_sha256=str(preflight.get("resolved_config_sha256")),
-            preregistration_sha256=PREREGISTRATION_SHA256,
-            completion_execution=preflight_execution,
-        )
-        report_digest = invocation.input_hashes[report_name]
-        completion_file_digest = invocation.input_hashes[completion_name]
-        preflight_commit = preflight.get("git_commit")
-        allocation_digest = preflight_execution.get("allocation_sha256")
-        preflight_workflow_id = validate_preflight_workflow_id(
-            completion.get("workflow_id")
-        )
-        if (
-            set(completion) != PREFLIGHT_COMPLETION_FIELDS
-            or completion_digest != _sha256_value(completion_unsigned)
-            or completion.get("schema_version") != 1
-            or completion.get("completion_kind") != "scientific"
-            or completion.get("project") != PROJECT
-            or preflight.get("world_size") != world_size
-            or preflight_commit != bootstrap_lineage.preflight_git_commit(world_size)
-            or completion.get("task") != "qwen3_v2_gpu_preflight"
-            or completion.get("workflow_id") != preflight_workflow_id
-            or completion.get("unit_id") != "gpu-preflight"
-            or preflight_execution.get("execution_profile") != preflight_profile
-            or not isinstance(allocation_digest, str)
-            or SHA256.fullmatch(allocation_digest) is None
-            or not isinstance(preflight_outputs, dict)
-            or len(preflight_outputs) != 1
-            or next(iter(preflight_outputs.values()), None)
-            != hashlib.sha256(raw_inputs[report_name]).hexdigest()
-            or not isinstance(preflight_validation, dict)
-            or tuple(sorted(preflight_validation)) != preflight_gates
-            or any(value is not True for value in preflight_validation.values())
-            or not isinstance(preflight_inputs, dict)
-            or preflight_inputs.get("resolved_config_sha256")
-            != preflight.get("resolved_config_sha256")
-            or preflight_inputs.get("preregistration_sha256") != PREREGISTRATION_SHA256
-            or completion.get("resolved_config_sha256")
-            != preflight.get("resolved_config_sha256")
-            or completion.get("execution_config_sha256")
-            != preflight_inputs.get("execution_config_sha256")
-            or completion.get("scientific_config_sha256")
-            != preflight_inputs.get("scientific_config_sha256")
-            or allocation_digest in seen_allocations
-            or preflight_workflow_id in seen_workflows
-            or report_digest in seen_evidence
-            or completion_file_digest in seen_evidence
-        ):
-            raise G0Error(
-                "G0 prerequisite matrix is not four distinct successful preflights"
+    for candidate_commit, role in (
+        (bootstrap_lineage.request_git_commit, "G0 request commit"),
+        (code_commit, "G0 execution commit"),
+    ):
+        try:
+            validate_execution_class_lineage_commit(
+                code_root=SOURCE_ROOT,
+                candidate_commit=candidate_commit,
+                current_binding=amendment_binding,
+                expected_head=code_commit,
+                role=role,
             )
-        seen_allocations.add(allocation_digest)
-        seen_workflows.add(preflight_workflow_id)
-        seen_evidence.update((report_digest, completion_file_digest))
-        preflights[world_size] = preflight
-        preflight_matrix[str(world_size)] = {
-            "allocation_sha256": allocation_digest,
-            "completion_sha256": completion_file_digest,
-            "git_commit": preflight_commit,
-            "report_sha256": report_digest,
-            "workflow_id": preflight_workflow_id,
-            "world_size": world_size,
-        }
+        except ValueError as error:
+            raise G0Error(f"{role} violates reviewed lineage: {error}") from error
 
     scheduler_config = resolved.get("scheduler_g0")
     if not isinstance(scheduler_config, dict):
         raise G0Error("resolved config lacks scheduler G0 provenance")
+    expected_scheduler_fields = {
+        "allocation_contract",
+        "artifact_namespace",
+        "batch_partition_protocol",
+        "execution_safety_certification_sha256",
+        "execution_safety_class_id",
+        "execution_safety_descriptor_sha256",
+        "execution_safety_fingerprint_sha256",
+        "execution_safety_supported_world_sizes",
+        "execution_science_protocol_git_commit",
+        "execution_science_protocol_id",
+        "execution_science_protocol_path",
+        "execution_science_protocol_reviewed_implementation_commit",
+        "execution_science_protocol_sha256",
+        "model_revision",
+        "protocol_amendment_id",
+        "protocol_amendment_sha256",
+        "request_git_commit",
+        "reviewed_implementation_commit",
+        "task",
+        "teacher_revision",
+        "tokenizer_fingerprint",
+    }
     request_git_commit = scheduler_config.get("request_git_commit")
     if (
-        not isinstance(request_git_commit, str)
+        set(scheduler_config) != expected_scheduler_fields
+        or not isinstance(request_git_commit, str)
         or GIT_COMMIT.fullmatch(request_git_commit) is None
         or request_git_commit != bootstrap_lineage.request_git_commit
-        or scheduler_config.get("gpu_preflight_matrix") != preflight_matrix
-    ):
-        raise G0Error("resolved config contains invalid request/preflight provenance")
-    try:
-        validate_accepted_lineage_commit(
-            code_root=SOURCE_ROOT,
-            candidate_commit=request_git_commit,
-            current_binding=amendment_binding,
-            expected_head=code_commit,
-            role="G0 request commit",
+        or scheduler_config.get("allocation_contract")
+        != "manifest_driven_scheduler_gpu_v1"
+        or scheduler_config.get("artifact_namespace") != "qwen3-v2"
+        or scheduler_config.get("batch_partition_protocol")
+        != BATCH_PARTITION_PROTOCOL
+        or scheduler_config.get("execution_safety_class_id")
+        != certification_binding.execution_class_id
+        or scheduler_config.get("execution_safety_fingerprint_sha256")
+        != certification_binding.fingerprint_sha256
+        or scheduler_config.get("execution_safety_descriptor_sha256")
+        != certification_binding.descriptor_sha256
+        or scheduler_config.get("execution_safety_certification_sha256")
+        != certification_binding.certification_sha256
+        or scheduler_config.get("execution_safety_supported_world_sizes")
+        != list(certification_binding.supported_world_sizes)
+        or scheduler_config.get("execution_science_protocol_path")
+        != bootstrap_science.science_protocol_path
+        or scheduler_config.get("execution_science_protocol_sha256")
+        != bootstrap_science.science_protocol_sha256
+        or scheduler_config.get("execution_science_protocol_id")
+        != bootstrap_science.science_protocol_id
+        or scheduler_config.get("execution_science_protocol_git_commit")
+        != bootstrap_science.science_protocol_git_commit
+        or scheduler_config.get(
+            "execution_science_protocol_reviewed_implementation_commit"
         )
-        for world_size, preflight in preflights.items():
-            validate_accepted_lineage_commit(
-                code_root=SOURCE_ROOT,
-                candidate_commit=str(preflight["git_commit"]),
-                current_binding=amendment_binding,
-                expected_head=code_commit,
-                role=f"GPU preflight W={world_size} commit",
-            )
+        != bootstrap_science.science_protocol_reviewed_implementation_commit
+        or scheduler_config.get("model_revision") != MODEL_REVISION
+        or scheduler_config.get("protocol_amendment_id") != PROTOCOL_AMENDMENT_ID
+        or scheduler_config.get("protocol_amendment_sha256")
+        != amendment_binding.sha256
+        or scheduler_config.get("reviewed_implementation_commit")
+        != amendment_binding.reviewed_implementation_commit
+        or scheduler_config.get("task") != TASK
+        or scheduler_config.get("teacher_revision") != TEACHER_REVISION
+        or scheduler_config.get("tokenizer_fingerprint")
+        != TOKENIZER_FINGERPRINT
+    ):
+        raise G0Error(
+            "resolved config contains invalid request/execution-safety provenance"
+        )
+    if execution_safety_config_projection(resolved) != descriptor_payload["subject"][
+        "resolved_config_safety_projection"
+    ]:
+        raise G0Error(
+            "resolved config differs from the certified execution-safety projection"
+        )
+    science_raw = raw_inputs["execution_science_protocol_sha256"]
+    try:
+        resolved_science = resolve_accepted_execution_science_protocol(
+            code_root=SOURCE_ROOT,
+            configured_path=bootstrap_science.science_protocol_path,
+            expected_head=code_commit,
+        )
     except ValueError as error:
-        raise G0Error(f"G0 implementation lineage is invalid: {error}") from error
+        raise G0Error(f"G0 execution science protocol is invalid: {error}") from error
+    science_binding = resolved_science.binding
+    from posttrain_circuits.core.config import compose_config
 
-    expected = compose_config(list(BASE_CONFIG_OVERRIDES))
-    expected["scheduler_g0"] = {
-        "allocation_contract": "manifest_driven_scheduler_gpu_v1",
-        "artifact_namespace": "qwen3-v2",
-        "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
-        "gpu_preflight_matrix": preflight_matrix,
-        "model_revision": MODEL_REVISION,
-        "protocol_amendment_id": AMENDMENT_ID,
-        "protocol_amendment_sha256": amendment_binding.sha256,
-        "request_git_commit": request_git_commit,
-        "reviewed_implementation_commit": amendment_binding.reviewed_implementation_commit,
-        "task": TASK,
-        "teacher_revision": TEACHER_REVISION,
-        "tokenizer_fingerprint": TOKENIZER_FINGERPRINT,
+    try:
+        composed_science = compose_config(
+            list(science_binding.hydra_override_vector),
+            config_root=SOURCE_ROOT / "configs",
+        )
+    except (FileNotFoundError, TypeError, ValueError) as error:
+        raise G0Error(
+            f"accepted execution science vector cannot be composed: {error}"
+        ) from error
+    science_execution_class = science_binding.payload.get("execution_class")
+    expected_science_execution_class = {
+        "execution_class_id": certification_binding.execution_class_id,
+        "descriptor_path": str(DESCRIPTOR_RELATIVE_PATH),
+        "descriptor_sha256": certification_binding.descriptor_sha256,
+        "fingerprint_sha256": certification_binding.fingerprint_sha256,
+        "certification_id": CERTIFICATION_ID,
+        "certification_path": str(CERTIFICATION_RELATIVE_PATH),
+        "certification_core_sha256": (
+            certification_binding.certification_core_sha256
+        ),
+        "supported_world_sizes": list(certification_binding.supported_world_sizes),
     }
-    if resolved != expected:
-        raise G0Error("resolved config differs from the allocation-neutral G0 protocol")
-    validate_elastic_g0_config(resolved, amendment_payload)
+    if (
+        science_binding.artifact_sha256
+        != invocation.input_hashes["execution_science_protocol_sha256"]
+        or resolved_science.raw != science_raw
+        or resolved_science.acceptance_commit
+        != bootstrap_science.science_protocol_git_commit
+        or science_binding.artifact_sha256
+        != bootstrap_science.science_protocol_sha256
+        or science_binding.protocol_id != bootstrap_science.science_protocol_id
+        or science_binding.unit_id != invocation.unit_id
+        or resolved.get("seed") != science_binding.seed
+        or science_binding.reviewed_implementation_commit
+        != bootstrap_science.science_protocol_reviewed_implementation_commit
+        or science_binding.execution_class_id
+        != certification_binding.execution_class_id
+        or science_binding.execution_safety_fingerprint_sha256
+        != certification_binding.fingerprint_sha256
+        or science_execution_class != expected_science_execution_class
+        or science_binding.storage_neutral_resolved_config_sha256
+        != canonical_science_config_sha256(resolved)
+        or canonical_science_config_sha256(composed_science)
+        != science_binding.storage_neutral_resolved_config_sha256
+        or execution_safety_config_projection(composed_science)
+        != descriptor_payload["subject"]["resolved_config_safety_projection"]
+        or science_binding.hydra_override_vector
+        != bootstrap_science.hydra_override_vector
+    ):
+        raise G0Error(
+            "G0 resolved config and execution class differ from the accepted "
+            "science protocol"
+        )
     if _sha256_value(resolved) != invocation.input_hashes["resolved_config_sha256"]:
         raise G0Error("resolved G0 config hash is invalid")
     if scientific.get("input_artifact_hashes") != expected_inputs:
         raise G0Error("scientific config projection lost prerequisite identities")
-    return resolved, preflights, amendment_binding
+    return resolved, certification_binding, amendment_binding, science_binding
 
 
-def _common_overrides(root: Path, *, experiment: str = "canonical_sft") -> list[str]:
+def _common_overrides(
+    root: Path,
+    science_overrides: Sequence[str],
+    *,
+    experiment: str | None = None,
+) -> list[str]:
     dataset = root / "dataset"
     initial = root / "initial_checkpoint.pt"
     demos = root / "teacher_demos"
     probes = root / "probes" / "manifest.json"
     readiness = root / "readiness" / "readiness.json"
+    reviewed = list(_bootstrap_hydra_override_vector(list(science_overrides)))
+    handler_owned = {
+        "output_root",
+        "protocol_amendment_path",
+        "task.dataset_family_path",
+        "state_source.store_path",
+        "anti_shortcut.report_path",
+        "production_safety.readiness_report",
+        "production_safety.probe_cohort_manifest",
+        "production_safety.initial_checkpoint_path",
+        "production_safety.initial_checkpoint_hash",
+    }
+    if any(item.split("=", 1)[0] in handler_owned for item in reviewed):
+        raise G0Error(
+            "execution science protocol attempts to override a handler-owned path"
+        )
+    if experiment is not None:
+        # Teacher scoring is the one reviewed auxiliary route.  Replace the
+        # experiment selector in place so every other accepted override
+        # (notably seed and shape) remains identical and no duplicate Hydra
+        # key relies on last-write-wins behavior.
+        matches = [
+            index
+            for index, item in enumerate(reviewed)
+            if item.split("=", 1)[0] == "experiment"
+        ]
+        if len(matches) != 1:
+            raise G0Error(
+                "execution science protocol must select exactly one experiment"
+            )
+        reviewed[matches[0]] = f"experiment={experiment}"
     return [
-        "g0=qwen3_v2_eap_separation",
-        f"experiment={experiment}",
-        "task.num_examples=256",
-        "state_source.num_candidates=8",
+        *reviewed,
+        f"protocol_amendment_path={AMENDMENT_RELATIVE_PATH}",
         f"output_root={root}",
         f"task.dataset_family_path={dataset}",
         f"state_source.store_path={demos}",
@@ -1319,10 +2130,11 @@ def _stage_plan(
     *,
     initial_checkpoint_sha256: str,
     gpu_count: int,
+    science_overrides: Sequence[str],
 ) -> tuple[Stage, ...]:
     if gpu_count not in ALLOWED_GPU_COUNTS:
         raise G0Error("G0 stage plan GPU count is outside 1..4")
-    common = _common_overrides(root)
+    common = _common_overrides(root, science_overrides)
     initial_binding = [
         *common,
         f"production_safety.initial_checkpoint_hash={initial_checkpoint_sha256}",
@@ -1441,7 +2253,11 @@ def _stage_plan(
             "score_teacher",
             "score_teacher",
             (
-                *_common_overrides(root, experiment="offline_soft"),
+                *_common_overrides(
+                    root,
+                    science_overrides,
+                    experiment="offline_soft",
+                ),
                 f"production_safety.initial_checkpoint_hash={initial_checkpoint_sha256}",
                 "--bank",
                 str(bank),
@@ -1576,8 +2392,10 @@ def _stage_plan(
                     str(root / "distributed_resume.json"),
                     "--initial-checkpoint",
                     str(initial),
-                    "--gpu-preflight",
-                    str(root / "gpu_preflight.json"),
+                    "--execution-safety-descriptor",
+                    str(root / "execution_safety_descriptor.json"),
+                    "--execution-safety-certification",
+                    str(root / "execution_safety_certification.yaml"),
                     "--job-id",
                     "JOB_ID",
                     "--output",
@@ -1606,11 +2424,30 @@ def _run_stage(
     script_path: str,
     job_id: str,
     bootstrap_lineage: BootstrapLineage,
+    bootstrap_science: BootstrapScienceProtocol,
     code_commit: str,
     gpu_count: int,
     allocation_sha256: str,
+    execution_safety_class_id: str,
+    execution_safety_fingerprint_sha256: str,
+    execution_safety_descriptor_sha256: str,
+    execution_safety_certification_sha256: str,
 ) -> None:
-    if gpu_count not in ALLOWED_GPU_COUNTS or SHA256.fullmatch(allocation_sha256) is None:
+    if (
+        gpu_count not in ALLOWED_GPU_COUNTS
+        or SHA256.fullmatch(allocation_sha256) is None
+        or IDENTIFIER.fullmatch(execution_safety_class_id) is None
+        or SHA256.fullmatch(execution_safety_fingerprint_sha256) is None
+        or SHA256.fullmatch(execution_safety_descriptor_sha256) is None
+        or SHA256.fullmatch(execution_safety_certification_sha256) is None
+        or IDENTIFIER.fullmatch(bootstrap_science.science_protocol_id) is None
+        or SHA256.fullmatch(bootstrap_science.science_protocol_sha256) is None
+        or GIT_COMMIT.fullmatch(bootstrap_science.science_protocol_git_commit) is None
+        or GIT_COMMIT.fullmatch(
+            bootstrap_science.science_protocol_reviewed_implementation_commit
+        )
+        is None
+    ):
         raise G0Error("stage launch allocation context is invalid")
     argv = tuple(job_id if value == "JOB_ID" else value for value in stage.argv)
     scientific_argv = (
@@ -1621,8 +2458,22 @@ def _run_stage(
         code_commit,
         "--request-git-commit",
         bootstrap_lineage.request_git_commit,
-        "--preflight-git-commit",
-        bootstrap_lineage.preflight_git_commit(gpu_count),
+        "--execution-safety-class-id",
+        execution_safety_class_id,
+        "--execution-safety-fingerprint-sha256",
+        execution_safety_fingerprint_sha256,
+        "--execution-safety-descriptor-sha256",
+        execution_safety_descriptor_sha256,
+        "--execution-safety-certification-sha256",
+        execution_safety_certification_sha256,
+        "--execution-science-protocol-id",
+        bootstrap_science.science_protocol_id,
+        "--execution-science-protocol-sha256",
+        bootstrap_science.science_protocol_sha256,
+        "--execution-science-protocol-git-commit",
+        bootstrap_science.science_protocol_git_commit,
+        "--execution-science-protocol-reviewed-implementation-commit",
+        bootstrap_science.science_protocol_reviewed_implementation_commit,
         "--amendment-sha256",
         bootstrap_lineage.amendment_sha256,
         "--reviewed-implementation-commit",
@@ -1863,30 +2714,55 @@ def _completion(invocation: Invocation, *, started_at: str, completed_at: str) -
 
 def _scientific_cli(argv: Sequence[str]) -> int:
     if (
-        len(argv) < 16
+        len(argv) < 30
         or argv[0] not in SCIENTIFIC_CLIS
         or argv[1] != "--code-commit"
         or argv[3] != "--request-git-commit"
-        or argv[5] != "--preflight-git-commit"
-        or argv[7] != "--amendment-sha256"
-        or argv[9] != "--reviewed-implementation-commit"
-        or argv[11] != "--gpu-count"
-        or argv[13] != "--allocation-sha256"
-        or argv[15] != "--"
+        or argv[5] != "--execution-safety-class-id"
+        or argv[7] != "--execution-safety-fingerprint-sha256"
+        or argv[9] != "--execution-safety-descriptor-sha256"
+        or argv[11] != "--execution-safety-certification-sha256"
+        or argv[13] != "--execution-science-protocol-id"
+        or argv[15] != "--execution-science-protocol-sha256"
+        or argv[17] != "--execution-science-protocol-git-commit"
+        or argv[19]
+        != "--execution-science-protocol-reviewed-implementation-commit"
+        or argv[21] != "--amendment-sha256"
+        or argv[23] != "--reviewed-implementation-commit"
+        or argv[25] != "--gpu-count"
+        or argv[27] != "--allocation-sha256"
+        or argv[29] != "--"
     ):
         raise G0Error("scientific child invocation differs from the fixed CLI ABI")
     _configure_bytecode_isolation()
     code_commit = argv[2]
     request_commit = argv[4]
-    preflight_commit = argv[6]
-    amendment_sha256 = argv[8]
-    reviewed_implementation_commit = argv[10]
-    gpu_count_raw = argv[12]
-    allocation_sha256 = argv[14]
+    execution_safety_class_id = argv[6]
+    execution_safety_fingerprint_sha256 = argv[8]
+    execution_safety_descriptor_sha256 = argv[10]
+    execution_safety_certification_sha256 = argv[12]
+    execution_science_protocol_id = argv[14]
+    execution_science_protocol_sha256 = argv[16]
+    execution_science_protocol_git_commit = argv[18]
+    execution_science_protocol_reviewed_implementation_commit = argv[20]
+    amendment_sha256 = argv[22]
+    reviewed_implementation_commit = argv[24]
+    gpu_count_raw = argv[26]
+    allocation_sha256 = argv[28]
     if (
         GIT_COMMIT.fullmatch(code_commit) is None
         or GIT_COMMIT.fullmatch(request_commit) is None
-        or GIT_COMMIT.fullmatch(preflight_commit) is None
+        or IDENTIFIER.fullmatch(execution_safety_class_id) is None
+        or SHA256.fullmatch(execution_safety_fingerprint_sha256) is None
+        or SHA256.fullmatch(execution_safety_descriptor_sha256) is None
+        or SHA256.fullmatch(execution_safety_certification_sha256) is None
+        or IDENTIFIER.fullmatch(execution_science_protocol_id) is None
+        or SHA256.fullmatch(execution_science_protocol_sha256) is None
+        or GIT_COMMIT.fullmatch(execution_science_protocol_git_commit) is None
+        or GIT_COMMIT.fullmatch(
+            execution_science_protocol_reviewed_implementation_commit
+        )
+        is None
         or SHA256.fullmatch(amendment_sha256) is None
         or GIT_COMMIT.fullmatch(reviewed_implementation_commit) is None
         or POSITIVE_INTEGER.fullmatch(gpu_count_raw) is None
@@ -1895,19 +2771,41 @@ def _scientific_cli(argv: Sequence[str]) -> int:
         or _require_clean_git() != code_commit
     ):
         raise G0Error("scientific child lineage arguments are invalid")
-    amendment = (SOURCE_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
+    amendment = _source_regular_bytes(
+        SOURCE_ROOT / AMENDMENT_RELATIVE_PATH,
+        context="source protocol amendment",
+        max_bytes=MAX_AMENDMENT_BYTES,
+    )
+    descriptor_raw = _source_regular_bytes(
+        SOURCE_ROOT / DESCRIPTOR_RELATIVE_PATH,
+        context="source execution-safety descriptor",
+        max_bytes=MAX_DESCRIPTOR_BYTES,
+    )
+    certification_raw = _source_regular_bytes(
+        SOURCE_ROOT / CERTIFICATION_RELATIVE_PATH,
+        context="source execution-safety certification",
+        max_bytes=MAX_CERTIFICATION_BYTES,
+    )
     lineage = _bootstrap_accepted_lineage(
         code_commit=code_commit,
         resolved={
             "scheduler_g0": {
                 "request_git_commit": request_commit,
-                "gpu_preflight_matrix": {
-                    str(world_size): {"git_commit": preflight_commit}
-                    for world_size in ALLOWED_GPU_COUNTS
-                },
+                "execution_safety_class_id": execution_safety_class_id,
+                "execution_safety_fingerprint_sha256": (
+                    execution_safety_fingerprint_sha256
+                ),
+                "execution_safety_descriptor_sha256": (
+                    execution_safety_descriptor_sha256
+                ),
+                "execution_safety_certification_sha256": (
+                    execution_safety_certification_sha256
+                ),
             }
         },
         amendment=amendment,
+        descriptor_raw=descriptor_raw,
+        certification_raw=certification_raw,
     )
     if (
         lineage.amendment_sha256 != amendment_sha256
@@ -1919,7 +2817,7 @@ def _scientific_cli(argv: Sequence[str]) -> int:
     main_function = getattr(module, "main", None)
     if not callable(main_function):
         raise G0Error("reviewed scientific CLI has no callable main")
-    child_argv = list(argv[16:])
+    child_argv = list(argv[30:])
     if argv[0] == "finalize_g0":
         from posttrain_circuits.cli.finalize_g0 import ScientificInvocationContext
 
@@ -1928,7 +2826,26 @@ def _scientific_cli(argv: Sequence[str]) -> int:
             scientific_context=ScientificInvocationContext(
                 allocation_sha256=allocation_sha256,
                 code_commit=code_commit,
-                gpu_preflight_git_commit=preflight_commit,
+                execution_safety_class_id=execution_safety_class_id,
+                execution_safety_fingerprint_sha256=(
+                    execution_safety_fingerprint_sha256
+                ),
+                execution_safety_descriptor_sha256=(
+                    execution_safety_descriptor_sha256
+                ),
+                execution_safety_certification_sha256=(
+                    execution_safety_certification_sha256
+                ),
+                execution_science_protocol_id=execution_science_protocol_id,
+                execution_science_protocol_sha256=(
+                    execution_science_protocol_sha256
+                ),
+                execution_science_protocol_git_commit=(
+                    execution_science_protocol_git_commit
+                ),
+                execution_science_protocol_reviewed_implementation_commit=(
+                    execution_science_protocol_reviewed_implementation_commit
+                ),
                 protocol_amendment_sha256=amendment_sha256,
                 request_git_commit=request_commit,
                 reviewed_implementation_commit=reviewed_implementation_commit,
@@ -1946,29 +2863,50 @@ def _supervise(argv: Sequence[str] | None) -> int:
     started_at = _utc_now()
     _configure_bytecode_isolation()
     invocation = _parse_outer(argv)
-    _validate_environment(invocation.gpu_count)
+    _validate_held_running_manifest(invocation)
     code_commit = _require_clean_git()
     payloads, prereg, amendment, raw_inputs = _read_inputs(invocation)
     bootstrap_lineage = _bootstrap_accepted_lineage(
         code_commit=code_commit,
         resolved=payloads["resolved_config_sha256"],
         amendment=amendment,
+        descriptor_raw=raw_inputs["execution_safety_descriptor_sha256"],
+        certification_raw=raw_inputs["execution_safety_certification_sha256"],
+    )
+    bootstrap_science = _bootstrap_science_protocol_lineage(
+        code_commit=code_commit,
+        resolved=payloads["resolved_config_sha256"],
+        science_protocol_raw=raw_inputs["execution_science_protocol_sha256"],
+        unit_id=invocation.unit_id,
     )
     _install_source_path()
-    resolved, preflights, amendment_binding = _validate_config_and_preflight(
-        invocation,
-        payloads,
-        prereg,
-        amendment,
-        raw_inputs,
-        code_commit=code_commit,
-        bootstrap_lineage=bootstrap_lineage,
+    resolved, certification_binding, amendment_binding, science_binding = (
+        _validate_config_and_certification(
+            invocation,
+            payloads,
+            prereg,
+            amendment,
+            raw_inputs,
+            code_commit=code_commit,
+            bootstrap_lineage=bootstrap_lineage,
+            bootstrap_science=bootstrap_science,
+        )
     )
-    preflight = preflights[invocation.gpu_count]
+    _validate_environment(invocation.gpu_count)
     from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
         batch_token_contract,
         execution_context,
     )
+    from posttrain_circuits.learning.training.execution_safety_kernel import (
+        EXPECTED_EXECUTION_CONFIG_SAFETY_PROJECTION,
+        batch_token_contract as kernel_batch_token_contract,
+        build_runtime_execution_safety_attestation,
+        execution_safety_config_projection,
+    )
+    from posttrain_circuits.cli.compare_distributed_resume import (
+        validate_distributed_resume_report,
+    )
+    from posttrain_circuits.core.config import compose_config
     from posttrain_circuits.cli.finalize_g0 import G0_CHECK_NAMES
     if os.listdir(invocation.output_descriptor):
         raise G0Error("output attempt is not empty")
@@ -1979,9 +2917,36 @@ def _supervise(argv: Sequence[str] | None) -> int:
     workspace.mkdir(mode=0o750)
     bundle_temp = temporary / ".g0-artifacts.tar"
     try:
-        selected_report_name = _preflight_report_name(invocation.gpu_count)
-        (workspace / "gpu_preflight.json").write_bytes(raw_inputs[selected_report_name])
-        common = _common_overrides(workspace)
+        (workspace / "execution_safety_descriptor.json").write_bytes(
+            raw_inputs["execution_safety_descriptor_sha256"]
+        )
+        (workspace / "execution_safety_certification.yaml").write_bytes(
+            raw_inputs["execution_safety_certification_sha256"]
+        )
+        (workspace / "execution_science_protocol.yaml").write_bytes(
+            raw_inputs["execution_science_protocol_sha256"]
+        )
+        common = _common_overrides(
+            workspace,
+            science_binding.hydra_override_vector,
+        )
+        try:
+            pre_stage_config = compose_config(common, config_root=SOURCE_ROOT / "configs")
+            if (
+                execution_safety_config_projection(pre_stage_config)
+                != EXPECTED_EXECUTION_CONFIG_SAFETY_PROJECTION
+            ):
+                raise G0Error(
+                    "runtime config differs from the certified safety projection"
+                )
+            kernel_batch_token_contract(
+                invocation.gpu_count,
+                pre_stage_config["task"]["num_examples"],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise G0Error(
+                f"runtime execution-safety pre-stage gate failed: {error}"
+            ) from error
         for stage in (
             Stage(
                 "build_splits",
@@ -2009,15 +2974,27 @@ def _supervise(argv: Sequence[str] | None) -> int:
                 script_path=_script_parent_path(),
                 job_id=invocation.job_id,
                 bootstrap_lineage=bootstrap_lineage,
+                bootstrap_science=bootstrap_science,
                 code_commit=code_commit,
                 gpu_count=invocation.gpu_count,
                 allocation_sha256=invocation.allocation_sha256,
+                execution_safety_class_id=certification_binding.execution_class_id,
+                execution_safety_fingerprint_sha256=(
+                    certification_binding.fingerprint_sha256
+                ),
+                execution_safety_descriptor_sha256=(
+                    certification_binding.descriptor_sha256
+                ),
+                execution_safety_certification_sha256=(
+                    certification_binding.certification_sha256
+                ),
             )
         initial_hash = _sha256_file(workspace / "initial_checkpoint.pt")
         stages = _stage_plan(
             workspace,
             initial_checkpoint_sha256=initial_hash,
             gpu_count=invocation.gpu_count,
+            science_overrides=science_binding.hydra_override_vector,
         )[2:]
         script_path = _script_parent_path()
         for stage in stages:
@@ -2029,12 +3006,52 @@ def _supervise(argv: Sequence[str] | None) -> int:
                 script_path=script_path,
                 job_id=invocation.job_id,
                 bootstrap_lineage=bootstrap_lineage,
+                bootstrap_science=bootstrap_science,
                 code_commit=code_commit,
                 gpu_count=invocation.gpu_count,
                 allocation_sha256=invocation.allocation_sha256,
+                execution_safety_class_id=certification_binding.execution_class_id,
+                execution_safety_fingerprint_sha256=(
+                    certification_binding.fingerprint_sha256
+                ),
+                execution_safety_descriptor_sha256=(
+                    certification_binding.descriptor_sha256
+                ),
+                execution_safety_certification_sha256=(
+                    certification_binding.certification_sha256
+                ),
             )
         inner = _strict_json((workspace / "g0.json").read_bytes(), context="inner G0 report")
         inner_digest = inner.get("sha256")
+        prompt_population_size = int(resolved["task"]["num_examples"])
+        expected_batch_token_contract = batch_token_contract(
+            invocation.gpu_count,
+            prompt_population_size,
+        )
+        runtime_resolved_config_sha256 = inner.get("resolved_config_sha256")
+        descriptor_payload = _strict_json(
+            raw_inputs["execution_safety_descriptor_sha256"],
+            context="execution-safety descriptor",
+        )
+        runtime_config = compose_config(
+            [
+                *common,
+                f"production_safety.initial_checkpoint_hash={initial_hash}",
+            ],
+            config_root=SOURCE_ROOT / "configs",
+        )
+        resume_payload = validate_distributed_resume_report(
+            workspace / "distributed_resume.json",
+            config=runtime_config,
+            expected_world_size=invocation.gpu_count,
+        )
+        execution_safety_attestation = build_runtime_execution_safety_attestation(
+            config=runtime_config,
+            descriptor=descriptor_payload,
+            fingerprint_sha256=certification_binding.fingerprint_sha256,
+            resume=resume_payload,
+            world_size=invocation.gpu_count,
+        )
         if (
             inner.get("passed") is not True
             or not isinstance(inner.get("checks"), dict)
@@ -2043,6 +3060,24 @@ def _supervise(argv: Sequence[str] | None) -> int:
             or inner_digest != _sha256_value({key: value for key, value in inner.items() if key != "sha256"})
             or inner.get("protocol_amendment_id") != amendment_binding.amendment_id
             or inner.get("protocol_amendment_sha256") != amendment_binding.sha256
+            or inner.get("execution_safety_class_id")
+            != certification_binding.execution_class_id
+            or inner.get("execution_safety_fingerprint_sha256")
+            != certification_binding.fingerprint_sha256
+            or inner.get("execution_safety_descriptor_sha256")
+            != certification_binding.descriptor_sha256
+            or inner.get("execution_safety_certification_sha256")
+            != certification_binding.certification_sha256
+            or inner.get("execution_science_protocol_id")
+            != science_binding.protocol_id
+            or inner.get("execution_science_protocol_sha256")
+            != science_binding.artifact_sha256
+            or inner.get("execution_science_protocol_git_commit")
+            != bootstrap_science.science_protocol_git_commit
+            or inner.get(
+                "execution_science_protocol_reviewed_implementation_commit"
+            )
+            != science_binding.reviewed_implementation_commit
             or inner.get("reviewed_implementation_commit")
             != amendment_binding.reviewed_implementation_commit
             or inner.get("request_git_commit")
@@ -2050,7 +3085,12 @@ def _supervise(argv: Sequence[str] | None) -> int:
             or inner.get("allocation_sha256") != invocation.allocation_sha256
             or inner.get("world_size") != invocation.gpu_count
             or inner.get("batch_token_contract")
-            != batch_token_contract(invocation.gpu_count)
+            != expected_batch_token_contract
+            or not isinstance(runtime_resolved_config_sha256, str)
+            or SHA256.fullmatch(runtime_resolved_config_sha256) is None
+            or _sha256_value(runtime_config) != runtime_resolved_config_sha256
+            or execution_safety_attestation["batch_token_contract"]
+            != expected_batch_token_contract
         ):
             raise G0Error("inner G0 semantic decision did not pass")
         inventory = _artifact_inventory(workspace)
@@ -2061,7 +3101,7 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "artifact_bundle_sha256": bundle_digest,
             "artifact_inventory": inventory,
             "artifact_namespace": "qwen3-v2",
-            "batch_token_contract": batch_token_contract(invocation.gpu_count),
+            "batch_token_contract": expected_batch_token_contract,
             "chat_template_sha256": CHAT_TEMPLATE_SHA256,
             "code_commit": code_commit,
             "completed_at": completed_at,
@@ -2069,15 +3109,26 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "enable_thinking": False,
             "execution": invocation.execution,
             "execution_context": execution_context(invocation.gpu_count),
+            "execution_safety_certification_sha256": (
+                certification_binding.certification_sha256
+            ),
+            "execution_safety_class_id": certification_binding.execution_class_id,
+            "execution_safety_descriptor_sha256": (
+                certification_binding.descriptor_sha256
+            ),
+            "execution_safety_fingerprint_sha256": (
+                certification_binding.fingerprint_sha256
+            ),
+            "execution_safety_attestation": execution_safety_attestation,
+            "execution_science_protocol_git_commit": (
+                bootstrap_science.science_protocol_git_commit
+            ),
+            "execution_science_protocol_id": science_binding.protocol_id,
+            "execution_science_protocol_reviewed_implementation_commit": (
+                science_binding.reviewed_implementation_commit
+            ),
+            "execution_science_protocol_sha256": science_binding.artifact_sha256,
             "git_commit": code_commit,
-            "gpu_preflight_completion_sha256": invocation.input_hashes[
-                _preflight_completion_name(invocation.gpu_count)
-            ],
-            "gpu_preflight_git_commit": preflight["git_commit"],
-            "gpu_preflight_matrix": resolved["scheduler_g0"]["gpu_preflight_matrix"],
-            "gpu_preflight_report_sha256": invocation.input_hashes[
-                selected_report_name
-            ],
             "inner_g0_report_sha256": _sha256_file(workspace / "g0.json"),
             "model_revision": MODEL_REVISION,
             "passed": True,
@@ -2090,15 +3141,16 @@ def _supervise(argv: Sequence[str] | None) -> int:
             "protocol_amendment_id": amendment_binding.amendment_id,
             "protocol_amendment_sha256": amendment_binding.sha256,
             "provenance_validation": {
-                "preflight_to_execution_metadata_only": True,
-                "request_to_execution_metadata_only": True,
-                "reviewed_implementation_to_execution_metadata_only": True,
+                "certification_artifacts_unchanged": True,
+                "current_execution_safety_kernel_matches_descriptor": True,
+                "execution_safety_fingerprint_exact": True,
             },
             "prompt_protocol": "qwen3_non_thinking_v1",
             "protocol_track": "qwen3_v2",
             "resolved_config_sha256": invocation.input_hashes["resolved_config_sha256"],
+            "runtime_resolved_config_sha256": runtime_resolved_config_sha256,
             "request_git_commit": resolved["scheduler_g0"]["request_git_commit"],
-            "schema_version": 1,
+            "schema_version": 2,
             "started_at": started_at,
             "reviewed_implementation_commit": (
                 amendment_binding.reviewed_implementation_commit

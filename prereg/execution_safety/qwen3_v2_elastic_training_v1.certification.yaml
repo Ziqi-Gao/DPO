@@ -1,0 +1,129 @@
+schema_version: 1
+kind: qwen3_v2_execution_safety_certification
+certification_id: qwen3-v2-elastic-training-v1-initial-certification
+execution_class:
+  execution_class_id: qwen3-v2-elastic-training-v1
+  descriptor_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json
+  descriptor_sha256: 6585c7ce6989b5a14bf1150acfa94ef2bbda9997b42c3a0d333f2e2ece788dca
+  fingerprint_sha256: 656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4
+  supported_world_sizes:
+  - 1
+  - 2
+  - 3
+  - 4
+evidence_basis:
+  static_fail_closed_fixtures:
+    covered_world_sizes:
+    - 1
+    - 2
+    - 3
+    - 4
+    status: passed
+    scope: batch_loss_token_fsdp_checkpoint_memory_and_manifest_fail_closed
+  real_gpu_pilots:
+    '1':
+      status: accepted_historical_real_gpu_pilot
+      job_id: opd-9834cc5d0f88c91a94911fd63f06ad60
+      workflow_id: qwen3-v2-gpu-preflight-elastic-86b52b1018e178883638fa8667a3c407
+      plan_sha256: b1f8bcaabe593566e0fc651f99114ce574f091ff9e8248816158072affbd7a72
+      allocation_sha256: 230d3a9e20c4303684af0875a9d2b3ed32d93c0bf6d7efe41f2a92d71b9fe53c
+      git_commit: c3d396bea456691f2aa50609e64954ff3e00fb61
+      report_sha256: 592ba2a107bf185dd5821d3e14481c5a1c8e124cbebf8924655ee0de450543e2
+      completion_sha256: e4357b9fab59e27bae997ef2cc3c0edb70112200d1a5dae71862be190c168bb1
+    '2':
+      status: accepted_historical_real_gpu_pilot
+      job_id: opd-1f442a3c5c916a557a613b50f1459349
+      workflow_id: qwen3-v2-gpu-preflight-elastic-700b6054e4dcfff45a56841d6a90dbce
+      plan_sha256: 2107c67c07132a2a6a4383c6bd4ebf78f79961d5ed1ce8b920d9c545d414886d
+      allocation_sha256: f96af13c8b26c0831f2af4c4e8cd22e8a9910c2fc79606a4b1e431d79f1b5146
+      git_commit: 5c0bb34cce288aef8908e498a6f5d3259b998f5b
+      report_sha256: ca1edc3fd3053fc673e2d2093bd6dd61fe84f876d685e188dac47012205879f1
+      completion_sha256: 3760400728a55184dbd18a7b2e250ed919c76546d35fa8458b9f365a4d11671b
+    '3':
+      status: not_yet_observed
+      coverage: static_fail_closed_fixture_only
+    '4':
+      status: not_yet_observed
+      coverage: static_fail_closed_fixture_only
+legacy_evidence_condensation:
+  bridge_authority: certification_review_block
+  bridge_kind: recorded_legacy_evidence_condensation_requires_independent_certification_review
+  source_reports_embed_execution_fingerprint: false
+  attested_execution_fingerprint_sha256: 656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4
+  statement: The W1/W2 reports predate this fingerprint and do not directly attest
+    it; acceptance of this certificate independently reviews the recorded report semantics,
+    their Git-recorded historical handler/runtime/training-contract surface, and the
+    safety-relevant delta to the exact successor descriptor.
+  evidence:
+    '1':
+      world_size: 1
+      report_sha256: 592ba2a107bf185dd5821d3e14481c5a1c8e124cbebf8924655ee0de450543e2
+      completion_sha256: e4357b9fab59e27bae997ef2cc3c0edb70112200d1a5dae71862be190c168bb1
+      report_git_commit: c3d396bea456691f2aa50609e64954ff3e00fb61
+      candidate_e_acceptance_commit: 5c0bb34cce288aef8908e498a6f5d3259b998f5b
+      accepted_lineage_relation: handoff_only_descendant_of_candidate_e_acceptance
+      observed_preflight_handler_sha256: e62d370db975302e3f8321ea93d5e281894c3eb09ef814a2b615b7cf7605948c
+      observed_runtime_dependency_lock_sha256: c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f
+      observed_runtime_package_manifest_sha256: f17dc62af30eb7f96b94322b61b8ea7496a6fd0a1c3c31bb99e872dbd1466663
+      observed_runtime_executable_sha256: 848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801
+      observed_training_contract_sha256: 6ae06f330aa99ca1aad75151c2f95a9d639b8644a68a402cce76117b78793e86
+      certified_preflight_handler_sha256: 7e908dbbe0aef562b2358242336569db53e8daa14104ce873997b7e7b68692b5
+      certified_runtime_dependency_lock_sha256: c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f
+      certified_runtime_executable_sha256: 848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801
+      certified_training_contract_sha256: 6ae06f330aa99ca1aad75151c2f95a9d639b8644a68a402cce76117b78793e86
+      successor_delta_attestation: independent_review_of_lineage_bootstrap_delta_required;legacy_pilots_are_not_direct_observations_of_the_successor_handler
+      successor_handler_directly_observed_by_legacy_pilot: false
+    '2':
+      world_size: 2
+      report_sha256: ca1edc3fd3053fc673e2d2093bd6dd61fe84f876d685e188dac47012205879f1
+      completion_sha256: 3760400728a55184dbd18a7b2e250ed919c76546d35fa8458b9f365a4d11671b
+      report_git_commit: 5c0bb34cce288aef8908e498a6f5d3259b998f5b
+      candidate_e_acceptance_commit: 5c0bb34cce288aef8908e498a6f5d3259b998f5b
+      accepted_lineage_relation: candidate_e_acceptance_commit
+      observed_preflight_handler_sha256: e62d370db975302e3f8321ea93d5e281894c3eb09ef814a2b615b7cf7605948c
+      observed_runtime_dependency_lock_sha256: c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f
+      observed_runtime_package_manifest_sha256: f17dc62af30eb7f96b94322b61b8ea7496a6fd0a1c3c31bb99e872dbd1466663
+      observed_runtime_executable_sha256: 848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801
+      observed_training_contract_sha256: 6ae06f330aa99ca1aad75151c2f95a9d639b8644a68a402cce76117b78793e86
+      certified_preflight_handler_sha256: 7e908dbbe0aef562b2358242336569db53e8daa14104ce873997b7e7b68692b5
+      certified_runtime_dependency_lock_sha256: c72a990c03b9d841d399d9e0497912fcfd6c78ce3e840406ecd98c921c2b893f
+      certified_runtime_executable_sha256: 848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801
+      certified_training_contract_sha256: 6ae06f330aa99ca1aad75151c2f95a9d639b8644a68a402cce76117b78793e86
+      successor_delta_attestation: independent_review_of_lineage_bootstrap_delta_required;legacy_pilots_are_not_direct_observations_of_the_successor_handler
+      successor_handler_directly_observed_by_legacy_pilot: false
+reuse_policy:
+  reuse_requires_exact_fingerprint_match: true
+  non_invalidating_dimensions:
+  - job_id
+  - workflow_id
+  - plan_sha256
+  - seed
+  - replication_id
+  - output_directory
+  - scientific_parameters_not_affecting_distributed_execution
+  invalidating_dimensions:
+  - handler_or_execution_implementation
+  - fixed_runtime_or_dependency_lock
+  - model_or_tensor_shape
+  - maximum_sequence_length
+  - batch_partition_or_loss_scaling
+  - token_accounting
+  - fsdp_or_checkpoint_resume
+  - memory_envelope
+  - supported_world_sizes
+  per_experiment_scientific_validation_still_required: true
+residual_risk:
+  world_sizes_without_real_gpu_pilot:
+  - 3
+  - 4
+  statement: Historical W=1/W=2 preflights directly observed only their predecessor
+    preflight handler and shared production-shaped NCCL/FSDP/training path, not the
+    successor G0 handler or full G0 pipeline; W=3/W=4 lack even that historical real-GPU
+    bridge and rely on static fail-closed evidence
+  runtime_must_still_fail_closed: true
+review:
+  status: proposed
+  reviewed_implementation_commit: null
+  reviewer: null
+  reviewed_at_utc: null
+  rationale: null

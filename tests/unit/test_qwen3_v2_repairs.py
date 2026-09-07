@@ -101,6 +101,67 @@ def test_qwen3_formal_artifact_binding_rejects_dirty_source(monkeypatch, tmp_pat
 
 
 @pytest.mark.unit
+def test_qwen3_formal_artifact_binding_routes_execution_class_amendment(
+    monkeypatch, tmp_path: Path
+) -> None:
+    prereg = tmp_path / "qwen3_v2.yaml"
+    prereg.write_text("version: qwen3_v2\n", encoding="utf-8")
+    amendment = (
+        Path.cwd() / "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
+    )
+    monkeypatch.setattr(
+        provenance,
+        "resolve_preregistration",
+        lambda _config: provenance.PreregistrationBinding(
+            path=prereg,
+            version="qwen3_v2",
+            git_commit="a" * 40,
+            sha256=sha256_file(prereg),
+            dirty=False,
+        ),
+    )
+    monkeypatch.setattr(
+        provenance,
+        "require_git_output",
+        lambda args: "" if args[:2] == ["status", "--porcelain"] else "b" * 40,
+    )
+    calls: list[tuple[Path, str, str | None]] = []
+
+    def _resolve_v2(*, code_root: Path, configured_path: str, expected_head: str | None):
+        calls.append((code_root, configured_path, expected_head))
+        return SimpleNamespace(
+            path=amendment,
+            amendment_id="qwen3_v2_g0_execution_class_v2",
+            sha256="c" * 64,
+            git_commit="d" * 40,
+            reviewed_implementation_commit="e" * 40,
+        )
+
+    monkeypatch.setattr(
+        provenance, "resolve_accepted_execution_class_amendment", _resolve_v2
+    )
+    binding = provenance.formal_artifact_binding(
+        {
+            "protocol_track": "qwen3_v2",
+            "protocol_amendment_path": (
+                "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml"
+            ),
+            "model": {"prompt_protocol": {}},
+            "teacher": {},
+        }
+    )
+    assert calls == [
+        (
+            Path.cwd(),
+            "prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml",
+            "b" * 40,
+        )
+    ]
+    assert binding["protocol_amendment_id"] == "qwen3_v2_g0_execution_class_v2"
+    assert binding["reviewed_implementation_commit"] == "e" * 40
+
+
+@pytest.mark.unit
 def test_trainer_config_requires_a_real_token_budget() -> None:
     config = TrainerConfig(max_steps=10, token_budget=128)
     assert config.token_budget == 128

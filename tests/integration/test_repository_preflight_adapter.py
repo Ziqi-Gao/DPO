@@ -4,7 +4,6 @@ import json
 import subprocess
 import tempfile
 import unittest
-from dataclasses import replace
 from pathlib import Path
 
 from posttrain_circuits.artifacts.hashing import sha256_value
@@ -12,7 +11,7 @@ from posttrain_circuits.scheduler_adapter.environment import (
     THREAD_ENVIRONMENT_KEYS,
     RuntimeEnvelope,
 )
-from posttrain_circuits.scheduler_adapter.manifest import RunningManifest
+from posttrain_circuits.scheduler_adapter.manifest import hold_running_manifest
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.plan_store import publish_workflow_plan
 from posttrain_circuits.scheduler_adapter.preflight_request import (
@@ -50,7 +49,7 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
             path.mkdir()
         self.plan = build_repository_preflight_plan(layout=self.layout)
         publish_workflow_plan(self.plan, layout=self.layout)
-        payload = {
+        self.payload = {
             "allocation": {
                 "cpu_cores": 1,
                 "exclusive_gpu": False,
@@ -86,15 +85,18 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
             "task": "repository_preflight",
             "updated_at": "2026-09-02T12:00:01Z",
         }
-        self.manifest = RunningManifest.from_payload(
-            payload,
-            manifest_sha256="a" * 64,
+        self.manifest_path = self.root / "running.json"
+        self.manifest_path.write_text(
+            json.dumps(self.payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
+        self.manifest, running_manifest = hold_running_manifest(self.manifest_path)
+        running_manifest.close()
         self.envelope = RuntimeEnvelope(
             job_id=self.manifest.job_id,
             attempt=1,
             execution_profile=self.manifest.execution_profile,
-            manifest_path=self.root / "running.json",
+            manifest_path=self.manifest_path,
             manifest_sha256=self.manifest.manifest_sha256,
             allocation_sha256=sha256_value(self.manifest.allocation_payload()),
         )
@@ -105,9 +107,11 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
 
     def test_real_handler_publishes_and_reuses_semantic_completion(self) -> None:
         handler = require_handler("repository_preflight")
-        with handler.prepare(
+        manifest, running_manifest = hold_running_manifest(self.manifest_path)
+        self.assertEqual(manifest, self.manifest)
+        with running_manifest, handler.prepare(
             self.manifest,
-            approved_code_root=PROJECT_ROOT,
+            approved_code_root=handler.deployment.implementation.parents[2],
             approved_runtime_root=FIXED_RUNTIME_ROOT,
         ) as prepared:
             self.assertEqual(
@@ -115,6 +119,7 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
                     self.manifest,
                     self.envelope,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=HANDLER_REGISTRY,
                     environ=self.environment,
@@ -141,22 +146,27 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
         def must_not_launch(*_args: object, **_kwargs: object) -> object:
             raise AssertionError("valid completion must be reused without relaunch")
 
-        retry_manifest = replace(
-            self.manifest,
-            job_id="opd-repository-preflight-retry",
-            manifest_sha256="b" * 64,
+        retry_payload = json.loads(json.dumps(self.payload))
+        retry_payload["job_id"] = "opd-repository-preflight-retry"
+        retry_manifest_path = self.root / "retry-running.json"
+        retry_manifest_path.write_text(
+            json.dumps(retry_payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        retry_manifest, retry_running_manifest = hold_running_manifest(
+            retry_manifest_path
         )
         retry_envelope = RuntimeEnvelope(
             job_id=retry_manifest.job_id,
             attempt=2,
             execution_profile=retry_manifest.execution_profile,
-            manifest_path=self.root / "retry-running.json",
+            manifest_path=retry_manifest_path,
             manifest_sha256=retry_manifest.manifest_sha256,
             allocation_sha256=sha256_value(retry_manifest.allocation_payload()),
         )
-        with handler.prepare(
+        with retry_running_manifest, handler.prepare(
             retry_manifest,
-            approved_code_root=PROJECT_ROOT,
+            approved_code_root=handler.deployment.implementation.parents[2],
             approved_runtime_root=FIXED_RUNTIME_ROOT,
         ) as prepared:
             self.assertEqual(
@@ -164,6 +174,7 @@ class RepositoryPreflightAdapterTests(unittest.TestCase):
                     retry_manifest,
                     retry_envelope,
                     prepared,
+                    running_manifest=retry_running_manifest,
                     layout=self.layout,
                     handler_registry=HANDLER_REGISTRY,
                     environ=self.environment,

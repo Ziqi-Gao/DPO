@@ -11,6 +11,7 @@ from posttrain_circuits.scheduler_adapter.gpu_preflight_request import (
     PREREG_CONTENT_NAME,
     _accepted_lineage_git_commit,
     _clean_git_commit,
+    _execution_class_successor_present,
     build_qwen3_v2_gpu_preflight_plan,
     fixed_resolved_config,
     prepare_qwen3_v2_gpu_preflight_request,
@@ -66,46 +67,27 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertEqual(second["model"]["model_name_or_path"], "Qwen/Qwen3-1.7B")
         self.assertEqual(second["teacher"]["model_name_or_path"], "Qwen/Qwen3-8B")
 
-    def test_clean_commit_checks_all_untracked_files_and_submodules(self) -> None:
-        with (
-            mock.patch(
-                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
-                side_effect=("", CODE_COMMIT),
-            ) as git,
-            mock.patch(
-                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.unsafe_untracked_paths",
-                return_value=(),
-            ),
-        ):
+    def test_clean_commit_checks_tracked_files_and_submodules(self) -> None:
+        with mock.patch(
+            "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
+            side_effect=("", CODE_COMMIT),
+        ) as git:
             self.assertEqual(_clean_git_commit(PROJECT_ROOT), CODE_COMMIT)
         self.assertEqual(
             git.call_args_list[0].args[1],
             (
                 "status",
                 "--porcelain=v1",
-                "--untracked-files=all",
+                "--untracked-files=no",
                 "--ignore-submodules=none",
             ),
         )
         with (
             mock.patch(
                 "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
-                return_value="?? untracked.py",
+                return_value=" M tracked.py",
             ),
             self.assertRaisesRegex(AdapterValidationError, "clean checkout"),
-        ):
-            _clean_git_commit(PROJECT_ROOT)
-
-        with (
-            mock.patch(
-                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.require_git_output",
-                return_value="",
-            ),
-            mock.patch(
-                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.unsafe_untracked_paths",
-                return_value=("src/ignored.py",),
-            ),
-            self.assertRaisesRegex(AdapterValidationError, "ignored untracked"),
         ):
             _clean_git_commit(PROJECT_ROOT)
 
@@ -234,11 +216,37 @@ class GpuPreflightRequestTests(unittest.TestCase):
         self.assertNotIn("repository_snapshot", json.dumps(first_request))
 
     def test_request_commit_requires_current_accepted_lineage(self) -> None:
+        with (
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
+                return_value=CODE_COMMIT,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._execution_class_successor_present",
+                return_value=True,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.resolve_accepted_execution_class_amendment",
+                return_value=object(),
+            ) as resolve,
+        ):
+            self.assertEqual(_accepted_lineage_git_commit(PROJECT_ROOT), CODE_COMMIT)
+        resolve.assert_called_once_with(
+            code_root=PROJECT_ROOT,
+            configured_path="prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml",
+            expected_head=CODE_COMMIT,
+        )
+
+    def test_historical_checkout_without_successor_uses_v1_lineage(self) -> None:
         binding = object()
         with (
             mock.patch(
                 "posttrain_circuits.scheduler_adapter.gpu_preflight_request._clean_git_commit",
                 return_value=CODE_COMMIT,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._execution_class_successor_present",
+                return_value=False,
             ),
             mock.patch(
                 "posttrain_circuits.scheduler_adapter.gpu_preflight_request.resolve_accepted_protocol_amendment",
@@ -262,6 +270,9 @@ class GpuPreflightRequestTests(unittest.TestCase):
             role="GPU preflight request commit",
         )
 
+    def test_successor_presence_check_distinguishes_only_missing_file(self) -> None:
+        self.assertIs(_execution_class_successor_present(PROJECT_ROOT), True)
+
     def test_request_commit_rejects_unaccepted_lineage(self) -> None:
         with (
             mock.patch(
@@ -269,7 +280,11 @@ class GpuPreflightRequestTests(unittest.TestCase):
                 return_value=CODE_COMMIT,
             ),
             mock.patch(
-                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.resolve_accepted_protocol_amendment",
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request._execution_class_successor_present",
+                return_value=True,
+            ),
+            mock.patch(
+                "posttrain_circuits.scheduler_adapter.gpu_preflight_request.resolve_accepted_execution_class_amendment",
                 side_effect=ProtocolAmendmentError("amendment remains proposed"),
             ),
             self.assertRaisesRegex(AdapterValidationError, "implementation lineage"),

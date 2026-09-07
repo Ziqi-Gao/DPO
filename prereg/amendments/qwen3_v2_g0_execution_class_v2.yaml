@@ -1,0 +1,111 @@
+schema_version: 2
+amendment_id: qwen3_v2_g0_execution_class_v2
+
+base_preregistration:
+  path: prereg/qwen3_v2.yaml
+  version: qwen3_v2
+  sha256: 8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4
+  frozen_implementation_commit: b2d505b297dae1d56311616e9a68fb7df14b7bee
+
+superseded_execution_amendment:
+  path: prereg/amendments/qwen3_v2_g0_elastic_v1.yaml
+  amendment_id: qwen3_v2_g0_elastic_v1
+  accepted_sha256: ff34cc53a85abe409f65ebe1ad3ca4d46b08a0ecd2117b76a27e22eea633a725
+  role: accepted_candidate_e_per_g0_four_pilot_gate_preserved_as_history
+
+scope:
+  task: qwen3_v2_g0
+  workflow_id_policy: fresh_opaque_count_neutral_per_request
+  workflow_id_prefix: qwen3-v2-g0-elastic-
+  unit_id: g0
+  science_identity: per_experiment_execution_science_protocol
+  claim_scope: execution_class_only_scientific_claims_remain_per_experiment
+
+scheduler_managed_allocation:
+  profile_cardinality: one_elastic_profile_for_one_scientific_task
+  gpu_count_policy: scheduler
+  allocation_candidates: [1, 2, 3, 4]
+  request_execution_profile: omitted
+  request_resources: omitted
+  request_gpu_count_and_identity: omitted
+  count_and_uuid_selection: server_scheduler_claim_time_only
+  running_attempt_resize: forbidden
+
+execution_safety_certification:
+  execution_class_id: qwen3-v2-elastic-training-v1
+  certification_id: qwen3-v2-elastic-training-v1-initial-certification
+  descriptor_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json
+  descriptor_sha256: 6585c7ce6989b5a14bf1150acfa94ef2bbda9997b42c3a0d333f2e2ece788dca
+  certification_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml
+  certification_core_sha256: b1f5df8f7339a52636c0f2e744d8c8358838cd879af0d9abe8b99d3e1fa9826b
+  fingerprint_sha256: 656f3fef2eb010cc2193d8e722e81e72700fe342b24e247ac9462caf51b641d4
+  supported_world_sizes: [1, 2, 3, 4]
+
+candidate_e_scientific_protocol:
+  path: prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_v1.yaml
+  protocol_id: qwen3-v2-g0-candidate-e-seed-42-v1
+  unit_id: g0
+  seed: 42
+  storage_neutral_resolved_config_sha256: 6c3942f4d6cf87329e1c70ba32b0b8d4cdbd526a3bbcfdcb1afd3e1674662657
+  joint_acceptance_with_execution_class: required
+  execution_certification_substitutes_for_scientific_review: false
+  per_experiment_config_artifact_and_completion_validation: required
+
+evidence_and_reuse:
+  generic_server_scheduler_requirement: reviewed_semantic_correctness_for_every_supported_world_size
+  project_specific_predecessor_gate: four_distinct_real_accepted_lineage_pilots_for_each_g0_plan
+  successor_gate: accepted_reusable_execution_class_certification_with_exact_fingerprint_match
+  real_gpu_evidence_world_sizes: [1, 2]
+  static_fail_closed_evidence_world_sizes: [1, 2, 3, 4]
+  world_sizes_without_real_gpu_observation: [3, 4]
+  repeat_four_real_pilots_for_each_new_experiment: false
+  per_experiment_scientific_protocol_and_completion_validation: required
+  non_invalidating_dimensions:
+    - job_id
+    - workflow_id
+    - plan_sha256
+    - seed
+    - replication_id
+    - output_directory
+    - scientific_parameters_not_affecting_distributed_execution
+  invalidating_dimensions:
+    - handler_or_execution_implementation
+    - fixed_runtime_or_dependency_lock
+    - model_or_tensor_shape
+    - maximum_sequence_length
+    - batch_partition_or_loss_scaling
+    - token_accounting
+    - fsdp_or_checkpoint_resume
+    - memory_envelope
+    - supported_world_sizes
+
+candidate_e_migration:
+  predecessor_amendment_mutated: false
+  current_real_gpu_evidence: W1_and_W2_accepted
+  current_static_evidence: W1_W2_W3_W4_passed
+  remaining_risk: W3_uneven_tail_and_W4_topology_have_no_successful_real_GPU_observation
+  mitigation: runtime_fail_closed_semantic_artifact_and_completion_validation_at_actual_scheduler_selected_world_size
+  minimum_change: replace_per_plan_eight_artifact_matrix_with_one_descriptor_and_one_reusable_certification
+  operational_before_independent_acceptance: false
+
+implementation_acceptance:
+  mechanism: reviewed_implementation_plus_joint_review_and_exact_safety_fingerprint
+  allowed_post_implementation_paths:
+    - prereg/amendments/qwen3_v2_g0_execution_class_v2.yaml
+    - prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml
+    - prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_v1.yaml
+    - docs/refactor/current_handoff.md
+  post_acceptance_execution_class_changes: non_safety_commits_and_merges_allowed_when_artifacts_and_critical_blobs_match
+  post_acceptance_candidate_e_science: exact_reviewed_source_and_scientific_config_required
+  proposed_documents_must_preexist_in_implementation_commit: true
+  amendment_and_certification_review_blocks_only_at_acceptance: true
+  amendment_and_certification_acceptance_same_commit: true
+  required_static_world_size_fixtures: [1, 2, 3, 4]
+  required_real_gpu_pilots_for_initial_certification: [1, 2]
+
+review:
+  status: proposed
+  reviewed_implementation_commit: null
+  reviewer: null
+  reviewed_at_utc: null
+  rationale: null

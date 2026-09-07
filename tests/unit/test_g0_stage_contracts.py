@@ -1,16 +1,30 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
+
+import yaml
 
 from posttrain_circuits.causal_circuits.contracts import CircuitArtifact
 from posttrain_circuits.cli.build_rollout_bank import (
     _rollout_generation_batch_contract,
 )
 from posttrain_circuits.cli.finalize_g0 import (
-    _preflight_fsdp_wrapper_count,
+    _execution_safety_fsdp_wrapper_count,
+    _load_execution_science_protocol,
     _qwen3_qk_norm_hooks_pass,
+    _runtime_execution_class_checks,
     _stage_compatibility_passes,
+)
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    EXECUTION_CLASS_ID,
+    build_execution_safety_descriptor,
+)
+from posttrain_circuits.artifacts.execution_science_protocol import (
+    build_execution_science_protocol,
 )
 from posttrain_circuits.cli.score_teacher import (
     _compose_score_teacher_config,
@@ -61,44 +75,142 @@ def _circuit_artifact(**overrides: object) -> CircuitArtifact:
 
 
 class G0StageContractTests(unittest.TestCase):
-    def test_finalizer_binds_g0_fsdp_tree_to_each_selected_preflight(self) -> None:
+    def test_finalizer_binds_g0_fsdp_tree_to_certified_execution_class(self) -> None:
+        descriptor = build_execution_safety_descriptor(Path(__file__).resolve().parents[2])
         for world_size in (1, 2, 3, 4):
             with self.subTest(world_size=world_size):
-                preflight = {
-                    "rank_training_checks": [
-                        {
-                            "rank": rank,
-                            "fsdp_transformer_layer": "Qwen3DecoderLayer",
-                            "wrapped_transformer_blocks": 28,
-                            "fsdp_wrapper_count": 29,
-                        }
-                        for rank in range(world_size)
-                    ]
-                }
                 self.assertEqual(
-                    _preflight_fsdp_wrapper_count(
-                        preflight,
+                    _execution_safety_fsdp_wrapper_count(
+                        descriptor,
                         world_size=world_size,
                     ),
                     29,
                 )
+        with self.assertRaisesRegex(ValueError, "outside 1..4"):
+            _execution_safety_fsdp_wrapper_count(descriptor, world_size=5)
 
-                root_only = {
-                    "rank_training_checks": [
-                        {
-                            "rank": rank,
-                            "fsdp_transformer_layer": "Qwen3DecoderLayer",
-                            "wrapped_transformer_blocks": 28,
-                            "fsdp_wrapper_count": 1,
-                        }
-                        for rank in range(world_size)
-                    ]
+    def test_finalizer_compares_runtime_resume_evidence_to_each_world_contract(self) -> None:
+        descriptor = build_execution_safety_descriptor(Path(__file__).resolve().parents[2])
+        config = {"trainer": {"max_steps": 120}}
+        for world_size in (1, 2, 3, 4):
+            with self.subTest(world_size=world_size):
+                wrappers = _execution_safety_fsdp_wrapper_count(
+                    descriptor,
+                    world_size=world_size,
+                )
+                resume = {
+                    "format_version": 3,
+                    "passed": True,
+                    "world_size": world_size,
+                    "max_optimizer_steps": 120,
+                    "checks": {"checkpoint_state_exact": True},
+                    "fsdp_sharding_contract": {
+                        "requested_fsdp_sharding_strategy": "FULL_SHARD",
+                        "effective_fsdp_sharding_strategy": (
+                            "NO_SHARD" if world_size == 1 else "FULL_SHARD"
+                        ),
+                        "fsdp_wrapper_count": wrappers,
+                    },
                 }
-                with self.assertRaisesRegex(ValueError, "topology is invalid"):
-                    _preflight_fsdp_wrapper_count(
-                        root_only,
+                self.assertEqual(
+                    _runtime_execution_class_checks(
+                        resume,
+                        config=config,
                         world_size=world_size,
-                    )
+                        certified_fsdp_wrapper_count=wrappers,
+                    ),
+                    {
+                        "distributed_checkpoint_resume": True,
+                        "distributed_resume_fsdp_strategy": True,
+                    },
+                )
+                resume["fsdp_sharding_contract"]["fsdp_wrapper_count"] = wrappers - 1
+                self.assertFalse(
+                    _runtime_execution_class_checks(
+                        resume,
+                        config=config,
+                        world_size=world_size,
+                        certified_fsdp_wrapper_count=wrappers,
+                    )["distributed_resume_fsdp_strategy"]
+                )
+
+    def test_finalizer_binds_accepted_science_protocol_to_config_and_class(self) -> None:
+        fingerprint = "a" * 64
+        descriptor_sha256 = "b" * 64
+        certification_sha256 = "c" * 64
+        science_implementation_commit = "d" * 40
+        science_acceptance_commit = "e" * 40
+        config: dict[str, object] = {
+            "seed": 42,
+            "trainer": {"max_steps": 120},
+        }
+        protocol = build_execution_science_protocol(
+            protocol_id="qwen3-v2-g0-seed-42-v1",
+            unit_id="g0",
+            seed=42,
+            execution_class_id=EXECUTION_CLASS_ID,
+            descriptor_path="prereg/execution_safety/descriptor.json",
+            descriptor_sha256=descriptor_sha256,
+            fingerprint_sha256=fingerprint,
+            certification_id="qwen3-v2-elastic-training-v1-certification",
+            certification_path="prereg/execution_safety/certification.yaml",
+            certification_core_sha256="f" * 64,
+            resolved_config=config,
+            hydra_override_vector=("seed=42",),
+            review={
+                "status": "accepted",
+                "reviewed_implementation_commit": science_implementation_commit,
+                "reviewer": "independent-review",
+                "reviewed_at_utc": "2026-09-06T00:00:00Z",
+                "rationale": "accepted fixture",
+            },
+        )
+        raw = yaml.safe_dump(protocol, sort_keys=False).encode("utf-8")
+        import hashlib
+
+        config["scheduler_g0"] = {
+            "execution_safety_class_id": EXECUTION_CLASS_ID,
+            "execution_safety_fingerprint_sha256": fingerprint,
+            "execution_safety_descriptor_sha256": descriptor_sha256,
+            "execution_safety_certification_sha256": certification_sha256,
+            "execution_science_protocol_id": protocol["protocol_id"],
+            "execution_science_protocol_sha256": hashlib.sha256(raw).hexdigest(),
+            "execution_science_protocol_git_commit": science_acceptance_commit,
+            "execution_science_protocol_reviewed_implementation_commit": (
+                science_implementation_commit
+            ),
+        }
+        context = SimpleNamespace(
+            execution_safety_class_id=EXECUTION_CLASS_ID,
+            execution_safety_fingerprint_sha256=fingerprint,
+            execution_safety_descriptor_sha256=descriptor_sha256,
+            execution_safety_certification_sha256=certification_sha256,
+            execution_science_protocol_id=protocol["protocol_id"],
+            execution_science_protocol_sha256=hashlib.sha256(raw).hexdigest(),
+            execution_science_protocol_git_commit=science_acceptance_commit,
+            execution_science_protocol_reviewed_implementation_commit=(
+                science_implementation_commit
+            ),
+        )
+        with tempfile.TemporaryDirectory(
+            prefix=".g0-science-finalizer-", dir=Path.cwd()
+        ) as temporary:
+            path = Path(temporary) / "execution_science_protocol.yaml"
+            path.write_bytes(raw)
+            binding, acceptance_commit = _load_execution_science_protocol(
+                path,
+                config=config,  # type: ignore[arg-type]
+                scientific_context=context,  # type: ignore[arg-type]
+            )
+            self.assertEqual(binding.protocol_id, protocol["protocol_id"])
+            self.assertEqual(acceptance_commit, science_acceptance_commit)
+            config["seed"] = 43
+            with self.assertRaisesRegex(ValueError, "execution science protocol"):
+                _load_execution_science_protocol(
+                    path,
+                    config=config,  # type: ignore[arg-type]
+                    scientific_context=context,  # type: ignore[arg-type]
+                )
 
     @staticmethod
     def _compatibility(*, logit_error: float) -> dict[str, object]:

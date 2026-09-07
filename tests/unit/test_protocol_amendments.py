@@ -33,11 +33,28 @@ EXECUTION_COMMIT = "d" * 40
 SOURCE_CHANGE_COMMIT = "e" * 40
 SOURCE_REVERT_COMMIT = "f" * 40
 MERGE_PARENT_COMMIT = "1" * 40
+CHECKED_IN_ACCEPTED_REVIEW = {
+    "status": "accepted",
+    "reviewed_implementation_commit": (
+        "58df5d22f7c09ac69b807eff5294296f6927bd1c"
+    ),
+    "reviewer": "codex-independent-audit-russell",
+    "reviewed_at_utc": "2026-09-06T02:22:34Z",
+    "rationale": (
+        "Scheduler-managed 1/2/3/4-GPU seed-42 feasibility implementation "
+        "independently reviewed and accepted; real W=1/2/3/4 GPU pilots remain "
+        "required before G0."
+    ),
+}
 
 
 class ProtocolAmendmentTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.raw = (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
+        self.checked_in_raw = (PROJECT_ROOT / AMENDMENT_RELATIVE_PATH).read_bytes()
+        self.checked_in = load_protocol_amendment_bytes(self.checked_in_raw)
+        proposed = copy.deepcopy(self.checked_in)
+        proposed["review"] = copy.deepcopy(PROPOSED_REVIEW)
+        self.raw = yaml.safe_dump(proposed, sort_keys=False).encode("utf-8")
         self.proposed = load_protocol_amendment_bytes(self.raw)
 
     def _accepted(self) -> dict[str, object]:
@@ -51,11 +68,12 @@ class ProtocolAmendmentTests(unittest.TestCase):
         }
         return accepted
 
-    def test_checked_in_amendment_is_exact_and_unaccepted(self) -> None:
-        self.assertEqual(self.proposed["amendment_id"], AMENDMENT_ID)
+    def test_checked_in_amendment_is_exact_accepted_history(self) -> None:
+        self.assertEqual(self.checked_in["amendment_id"], AMENDMENT_ID)
+        self.assertEqual(self.checked_in["review"], CHECKED_IN_ACCEPTED_REVIEW)
         self.assertEqual(self.proposed["review"], PROPOSED_REVIEW)
-        batch = self.proposed["batch_token_invariants"]
-        allocation = self.proposed["allocation_semantics"]
+        batch = self.checked_in["batch_token_invariants"]
+        allocation = self.checked_in["allocation_semantics"]
         self.assertEqual(allocation["reviewed_world_sizes"], [1, 2, 3, 4])
         self.assertEqual(allocation["request_side_gpu_count"], "forbidden")
         self.assertEqual(
@@ -90,7 +108,7 @@ class ProtocolAmendmentTests(unittest.TestCase):
             "exactly_manifest_ordered_prompt_ids",
         )
         self.assertIs(
-            self.proposed["scientific_invariants"]["full_parameter_training"],
+            self.checked_in["scientific_invariants"]["full_parameter_training"],
             True,
         )
         for world_size in (1, 2, 3, 4):
@@ -98,7 +116,7 @@ class ProtocolAmendmentTests(unittest.TestCase):
                 sum(batch["per_rank_samples_by_world_size"][str(world_size)]),
                 batch["global_logical_batch_size"],
             )
-        checkpoint = self.proposed["checkpoint_retry_invariants"]
+        checkpoint = self.checked_in["checkpoint_retry_invariants"]
         self.assertEqual(checkpoint["state_source_kind"], "teacher_demo")
         self.assertEqual(
             checkpoint["state_source_cursor_protocol"],
@@ -113,12 +131,6 @@ class ProtocolAmendmentTests(unittest.TestCase):
             checkpoint["global_token_budget_state"],
             "identical_across_all_ranks",
         )
-        with self.assertRaisesRegex(ProtocolAmendmentError, "remains proposed"):
-            resolve_accepted_protocol_amendment(
-                code_root=PROJECT_ROOT,
-                configured_path=str(AMENDMENT_RELATIVE_PATH),
-            )
-
     def test_resolved_config_preserves_global_batch_and_token_budget(self) -> None:
         config = compose_config(
             [

@@ -2,7 +2,7 @@
   "dependency_lock_sha256": "18d77da454cb86a097526fe561462f4818cb76c3ca9633481261f1e563f86d90",
   "deployment_id": "qwen3-v2-g0-elastic-python312-cuda-v1",
   "executable_sha256": "848c64ae0635d363f8bbfc768f94a3be497c0d51acd28cd5087e6e8a13c44801",
-  "implementation_sha256": "a00cb4b0a59e2537bc6a6ce8daf07ed86f6dfe9d61c95f9e32223088cadb8ad4",
+  "implementation_sha256": "049b4b35a3feba8898f74246d7f223e571b7df43060151c210efa5bc2510f8da",
   "runtime_flags": [
     "-I"
   ],

@@ -11,11 +11,18 @@ from types import SimpleNamespace
 from unittest import mock
 
 from posttrain_circuits.artifacts.hashing import sha256_value
-from posttrain_circuits.cli.finalize_g0 import G0_CHECK_NAMES
+from posttrain_circuits.cli.finalize_g0 import (
+    G0_CHECK_NAMES,
+    _batch_token_contract as finalized_batch_token_contract,
+)
 from posttrain_circuits.scheduler_adapter import qwen3_v2_g0 as g0_contract
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
 from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
     BUNDLE_NAME,
+    CERTIFICATION_CONTENT_NAME,
+    DESCRIPTOR_CONTENT_NAME,
+    EXECUTION_CLASS_ID,
+    EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME,
     GATE_NAMES,
     MODEL_REVISION,
     NODE_MEMORY_BYTES,
@@ -27,8 +34,6 @@ from posttrain_circuits.scheduler_adapter.qwen3_v2_g0 import (
     TEACHER_REVISION,
     batch_token_contract,
     execution_context,
-    gpu_preflight_completion_content_name,
-    gpu_preflight_report_content_name,
     validate_qwen3_v2_g0_completion,
 )
 
@@ -40,19 +45,18 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
         self.inputs = {
             "config_binding_sha256": "1" * 64,
             "execution_config_sha256": "2" * 64,
+            CERTIFICATION_CONTENT_NAME: "3" * 64,
+            DESCRIPTOR_CONTENT_NAME: "4" * 64,
+            EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME: "5" * 64,
             "preregistration_sha256": "b" * 64,
             "protocol_amendment_sha256": "c" * 64,
             "resolved_config_sha256": "d" * 64,
             "scientific_config_sha256": "e" * 64,
         }
-        evidence_characters = iter("3456789a")
-        for world_size in (1, 2, 3, 4):
-            self.inputs[gpu_preflight_completion_content_name(world_size)] = (
-                next(evidence_characters) * 64
-            )
-            self.inputs[gpu_preflight_report_content_name(world_size)] = (
-                next(evidence_characters) * 64
-            )
+        self.execution_safety_fingerprint = "6" * 64
+        self.execution_science_protocol_id = "qwen3-v2-g0-seed-42-v1"
+        self.execution_science_protocol_git_commit = "5" * 40
+        self.execution_science_protocol_implementation_commit = "4" * 40
         self.commit = "8" * 40
 
     def tearDown(self) -> None:
@@ -69,7 +73,8 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
             f"/scr/del6500/OPD/tmp/qwen3-v2-g0-test{world_size:04d}/qwen3-v2"
         )
         allocation_sha256 = "f" * 64
-        contract = batch_token_contract(world_size)
+        contract = batch_token_contract(world_size, 256)
+        runtime_resolved_config_sha256 = "9" * 64
         inner: dict[str, object] = {
             "checks": {name: True for name in G0_CHECK_NAMES},
             "code_commit": self.commit,
@@ -78,12 +83,31 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
             "passed": True,
             "phase": "G0",
             "prereg_sha256": self.inputs["preregistration_sha256"],
-            "protocol_amendment_id": "qwen3_v2_g0_elastic_v1",
+            "protocol_amendment_id": "qwen3_v2_g0_execution_class_v2",
             "protocol_amendment_sha256": self.inputs[
                 "protocol_amendment_sha256"
             ],
+            "execution_safety_class_id": EXECUTION_CLASS_ID,
+            "execution_safety_fingerprint_sha256": self.execution_safety_fingerprint,
+            "execution_safety_descriptor_sha256": self.inputs[
+                DESCRIPTOR_CONTENT_NAME
+            ],
+            "execution_safety_certification_sha256": self.inputs[
+                CERTIFICATION_CONTENT_NAME
+            ],
+            "execution_science_protocol_git_commit": (
+                self.execution_science_protocol_git_commit
+            ),
+            "execution_science_protocol_id": self.execution_science_protocol_id,
+            "execution_science_protocol_reviewed_implementation_commit": (
+                self.execution_science_protocol_implementation_commit
+            ),
+            "execution_science_protocol_sha256": self.inputs[
+                EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME
+            ],
             "reviewed_implementation_commit": "7" * 40,
             "request_git_commit": self.commit,
+            "resolved_config_sha256": runtime_resolved_config_sha256,
             "allocation_sha256": allocation_sha256,
             "batch_token_contract": contract,
             "teacher_revision": TEACHER_REVISION,
@@ -141,32 +165,37 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
             "enable_thinking": False,
             "execution": execution,
             "execution_context": execution_context(world_size),
-            "git_commit": self.commit,
-            "gpu_preflight_completion_sha256": self.inputs[
-                gpu_preflight_completion_content_name(world_size)
+            "execution_safety_certification_sha256": self.inputs[
+                CERTIFICATION_CONTENT_NAME
             ],
-            "gpu_preflight_git_commit": self.commit,
-            "gpu_preflight_matrix": {
-                str(count): {
-                    "allocation_sha256": str(count) * 64,
-                    "completion_sha256": self.inputs[
-                        gpu_preflight_completion_content_name(count)
-                    ],
-                    "git_commit": self.commit,
-                    "report_sha256": self.inputs[
-                        gpu_preflight_report_content_name(count)
-                    ],
-                    "workflow_id": (
-                        "qwen3-v2-gpu-preflight-elastic-"
-                        + format(count, "032x")
-                    ),
-                    "world_size": count,
-                }
-                for count in (1, 2, 3, 4)
+            "execution_safety_class_id": EXECUTION_CLASS_ID,
+            "execution_safety_descriptor_sha256": self.inputs[
+                DESCRIPTOR_CONTENT_NAME
+            ],
+            "execution_safety_fingerprint_sha256": self.execution_safety_fingerprint,
+            "execution_safety_attestation": {
+                "batch_token_contract": contract,
+                "checks": {
+                    "distributed_checkpoint_resume": True,
+                    "distributed_resume_fsdp_strategy": True,
+                },
+                "config_safety_projection_sha256": "7" * 64,
+                "execution_class_id": EXECUTION_CLASS_ID,
+                "fingerprint_sha256": self.execution_safety_fingerprint,
+                "schema_version": 1,
+                "world_size": world_size,
             },
-            "gpu_preflight_report_sha256": self.inputs[
-                gpu_preflight_report_content_name(world_size)
+            "execution_science_protocol_git_commit": (
+                self.execution_science_protocol_git_commit
+            ),
+            "execution_science_protocol_id": self.execution_science_protocol_id,
+            "execution_science_protocol_reviewed_implementation_commit": (
+                self.execution_science_protocol_implementation_commit
+            ),
+            "execution_science_protocol_sha256": self.inputs[
+                EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME
             ],
+            "git_commit": self.commit,
             "inner_g0_report_sha256": hashlib.sha256(members["g0.json"]).hexdigest(),
             "model_revision": MODEL_REVISION,
             "passed": True,
@@ -176,7 +205,7 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
             "prereg_sha256": self.inputs["preregistration_sha256"],
             "prereg_version": "qwen3_v2",
             "protocol_amendment_git_commit": "6" * 40,
-            "protocol_amendment_id": "qwen3_v2_g0_elastic_v1",
+            "protocol_amendment_id": "qwen3_v2_g0_execution_class_v2",
             "protocol_amendment_sha256": self.inputs[
                 "protocol_amendment_sha256"
             ],
@@ -184,8 +213,9 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
             "prompt_protocol": "qwen3_non_thinking_v1",
             "protocol_track": "qwen3_v2",
             "resolved_config_sha256": self.inputs["resolved_config_sha256"],
+            "runtime_resolved_config_sha256": runtime_resolved_config_sha256,
             "request_git_commit": self.commit,
-            "schema_version": 1,
+            "schema_version": 2,
             "started_at": "2026-09-04T04:00:00Z",
             "reviewed_implementation_commit": "7" * 40,
             "teacher_revision": TEACHER_REVISION,
@@ -307,12 +337,13 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
             "circuits/first_rule_selection/mib_raw/compatibility.json",
             REQUIRED_BUNDLE_PATHS,
         )
+        self.assertIn("execution_science_protocol.yaml", REQUIRED_BUNDLE_PATHS)
         for world_size in (1, 2, 3, 4):
             with self.subTest(world_size=world_size):
                 completion, context = self._write_valid_outputs(world_size)
                 self.assertEqual(tuple(sorted(context.expected_output_paths)), OUTPUT_NAMES)
                 self._validate_with_replay_stub(completion, context)
-                contract = batch_token_contract(world_size)
+                contract = batch_token_contract(world_size, 256)
                 self.assertEqual(
                     contract["requested_fsdp_sharding_strategy"], "FULL_SHARD"
                 )
@@ -320,6 +351,62 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
                     contract["effective_fsdp_sharding_strategy"],
                     "NO_SHARD" if world_size == 1 else "FULL_SHARD",
                 )
+
+    def test_prompt_population_reuses_class_within_aligned_envelope(self) -> None:
+        config = {
+            "g0": {"full_parameter_training": True},
+            "task": {"num_examples": 128},
+            "trainer": {
+                "batch_partition_protocol": "allocation_neutral_exact_global_batch_v1",
+                "global_batch_size": 64,
+                "max_microbatch_size": 4,
+                "max_model_input_length": 1536,
+                "max_steps": 120,
+                "token_budget": 2_000_000,
+                "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
+            },
+        }
+        self.assertEqual(batch_token_contract(3, 128)["prompt_population_size"], 128)
+        self.assertEqual(
+            finalized_batch_token_contract(config, 3)["prompt_population_size"],
+            128,
+        )
+        for invalid in (63, 65, 257):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(AdapterValidationError):
+                    batch_token_contract(3, invalid)
+                config["task"]["num_examples"] = invalid
+                with self.assertRaises(ValueError):
+                    finalized_batch_token_contract(config, 3)
+
+    def test_same_certification_is_reusable_across_new_job_ids(self) -> None:
+        observed_certifications: set[str] = set()
+        for suffix, world_size in (("1", 1), ("2", 4)):
+            completion, context = self._write_valid_outputs(world_size)
+            report_path = context.expected_output_paths[REPORT_NAME]
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            job_id = "opd-" + suffix * 32
+            report["execution"]["job_id"] = job_id
+            report["sha256"] = sha256_value(
+                {key: value for key, value in report.items() if key != "sha256"}
+            )
+            report_path.write_bytes(self._bytes(report))
+            context.expected_execution.job_id = job_id
+            observed_certifications.add(
+                report["execution_safety_certification_sha256"]
+            )
+            self._validate_with_replay_stub(completion, context)
+        self.assertEqual(observed_certifications, {self.inputs[CERTIFICATION_CONTENT_NAME]})
+
+    def test_provenance_checks_only_current_certified_execution_kernel(self) -> None:
+        self.assertEqual(
+            PROVENANCE_VALIDATION,
+            {
+                "certification_artifacts_unchanged": True,
+                "current_execution_safety_kernel_matches_descriptor": True,
+                "execution_safety_fingerprint_exact": True,
+            },
+        )
 
     def test_dummy_artifacts_cannot_pass_without_semantic_replay(self) -> None:
         completion, context = self._write_valid_outputs(world_size=1)
@@ -410,16 +497,11 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterValidationError, "protocol"):
             validate_qwen3_v2_g0_completion(completion, context)
 
-    def test_rejects_preflight_that_predates_amendment_acceptance(self) -> None:
+    def test_rejects_request_that_predates_amendment_acceptance(self) -> None:
         completion, context = self._write_valid_outputs()
         report_path = context.expected_output_paths[REPORT_NAME]
         report = json.loads(report_path.read_text())
-        report["gpu_preflight_git_commit"] = report[
-            "reviewed_implementation_commit"
-        ]
-        report["gpu_preflight_matrix"][str(report["world_size"])][
-            "git_commit"
-        ] = report["reviewed_implementation_commit"]
+        report["request_git_commit"] = report["reviewed_implementation_commit"]
         report["sha256"] = sha256_value(
             {key: value for key, value in report.items() if key != "sha256"}
         )
@@ -433,18 +515,40 @@ class Qwen3V2G0CompletionTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterValidationError, "running attempt"):
             validate_qwen3_v2_g0_completion(completion, context)
 
-    def test_rejects_reused_preflight_matrix_evidence(self) -> None:
+    def test_rejects_certification_digest_that_differs_from_plan(self) -> None:
         completion, context = self._write_valid_outputs(world_size=2)
         report_path = context.expected_output_paths[REPORT_NAME]
         report = json.loads(report_path.read_text())
-        report["gpu_preflight_matrix"]["4"]["workflow_id"] = report[
-            "gpu_preflight_matrix"
-        ]["3"]["workflow_id"]
+        report["execution_safety_certification_sha256"] = "0" * 64
         report["sha256"] = sha256_value(
             {key: value for key, value in report.items() if key != "sha256"}
         )
         report_path.write_bytes(self._bytes(report))
-        with self.assertRaisesRegex(AdapterValidationError, "reuses workflow"):
+        with self.assertRaisesRegex(AdapterValidationError, "protocol"):
+            validate_qwen3_v2_g0_completion(completion, context)
+
+    def test_rejects_malformed_execution_safety_fingerprint(self) -> None:
+        completion, context = self._write_valid_outputs(world_size=4)
+        report_path = context.expected_output_paths[REPORT_NAME]
+        report = json.loads(report_path.read_text())
+        report["execution_safety_fingerprint_sha256"] = "not-a-digest"
+        report["sha256"] = sha256_value(
+            {key: value for key, value in report.items() if key != "sha256"}
+        )
+        report_path.write_bytes(self._bytes(report))
+        with self.assertRaisesRegex(AdapterValidationError, "lowercase SHA-256"):
+            validate_qwen3_v2_g0_completion(completion, context)
+
+    def test_rejects_science_protocol_digest_that_differs_from_plan(self) -> None:
+        completion, context = self._write_valid_outputs(world_size=3)
+        report_path = context.expected_output_paths[REPORT_NAME]
+        report = json.loads(report_path.read_text())
+        report["execution_science_protocol_sha256"] = "0" * 64
+        report["sha256"] = sha256_value(
+            {key: value for key, value in report.items() if key != "sha256"}
+        )
+        report_path.write_bytes(self._bytes(report))
+        with self.assertRaisesRegex(AdapterValidationError, "protocol"):
             validate_qwen3_v2_g0_completion(completion, context)
 
 

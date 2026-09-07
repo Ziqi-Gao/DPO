@@ -29,6 +29,21 @@ from posttrain_circuits.learning.training.fsdp_contract import (
     REQUESTED_FSDP_SHARDING_STRATEGY,
     effective_fsdp_sharding_strategy,
 )
+from posttrain_circuits.learning.training.execution_safety_kernel import (
+    batch_token_contract as execution_kernel_batch_token_contract,
+    distributed_resume_checks,
+)
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    EXECUTION_CLASS_ID,
+    execution_safety_world_size_contract,
+    load_execution_safety_certification_bytes,
+    load_execution_safety_descriptor_bytes,
+)
+from posttrain_circuits.artifacts.execution_science_protocol import (
+    ExecutionScienceProtocolBinding,
+    canonical_science_config_sha256,
+    validate_execution_science_protocol_bytes,
+)
 from posttrain_circuits.core.readiness import build_readiness_report, validate_anti_shortcut_report
 from posttrain_circuits.datasets.trajectories.store import TrajectoryStore
 from posttrain_circuits.datasets.proofgraph.leakage import validate_label_leakage_artifact
@@ -37,12 +52,12 @@ from posttrain_circuits.learning.teacher.evaluation import validate_teacher_read
 
 _GIT_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 _ALLOWED_WORLD_SIZES = (1, 2, 3, 4)
-_AMENDMENT_ID = "qwen3_v2_g0_elastic_v1"
+_AMENDMENT_ID = "qwen3_v2_g0_execution_class_v2"
 _BATCH_PARTITION_PROTOCOL = "allocation_neutral_exact_global_batch_v1"
 _GLOBAL_BATCH_SIZE = 64
 _MAX_MICROBATCH_SIZE = 4
-_PROMPT_POPULATION_SIZE = 256
 _SAMPLES_BY_WORLD_SIZE = {
     1: [64],
     2: [32, 32],
@@ -72,8 +87,9 @@ G0_CHECK_NAMES = tuple(
             "final_stage_eap_beats_matched_random",
             "fixed_bank_mixed_rewards",
             "full_corruption_sanity",
-            "gpu_preflight",
-            "gpu_preflight_binding",
+            "execution_safety_certification",
+            "execution_safety_descriptor",
+            "execution_science_protocol",
             "hf_transformerlens_gqa_parity",
             "identity_sanity",
             "label_leakage",
@@ -100,6 +116,14 @@ G0_REPORT_FIELDS = frozenset(
         "code_commit",
         "created_at",
         "enable_thinking",
+        "execution_safety_certification_sha256",
+        "execution_safety_class_id",
+        "execution_safety_descriptor_sha256",
+        "execution_safety_fingerprint_sha256",
+        "execution_science_protocol_git_commit",
+        "execution_science_protocol_id",
+        "execution_science_protocol_reviewed_implementation_commit",
+        "execution_science_protocol_sha256",
         "format_version",
         "generator_version",
         "git_commit",
@@ -138,7 +162,14 @@ class ScientificInvocationContext:
 
     allocation_sha256: str
     code_commit: str
-    gpu_preflight_git_commit: str
+    execution_safety_class_id: str
+    execution_safety_fingerprint_sha256: str
+    execution_safety_descriptor_sha256: str
+    execution_safety_certification_sha256: str
+    execution_science_protocol_id: str
+    execution_science_protocol_sha256: str
+    execution_science_protocol_git_commit: str
+    execution_science_protocol_reviewed_implementation_commit: str
     protocol_amendment_sha256: str
     request_git_commit: str
     reviewed_implementation_commit: str
@@ -147,94 +178,191 @@ class ScientificInvocationContext:
     def validate(self) -> None:
         for name in (
             "code_commit",
-            "gpu_preflight_git_commit",
             "request_git_commit",
             "reviewed_implementation_commit",
+            "execution_science_protocol_git_commit",
+            "execution_science_protocol_reviewed_implementation_commit",
         ):
             if _GIT_COMMIT.fullmatch(getattr(self, name)) is None:
                 raise ValueError(f"trusted G0 context {name} is not a Git commit")
-        for name in ("allocation_sha256", "protocol_amendment_sha256"):
+        for name in (
+            "allocation_sha256",
+            "execution_safety_fingerprint_sha256",
+            "execution_safety_descriptor_sha256",
+            "execution_safety_certification_sha256",
+            "execution_science_protocol_sha256",
+            "protocol_amendment_sha256",
+        ):
             if _SHA256.fullmatch(getattr(self, name)) is None:
                 raise ValueError(f"trusted G0 context {name} is not a SHA-256 digest")
+        if _IDENTIFIER.fullmatch(self.execution_safety_class_id) is None:
+            raise ValueError("trusted G0 context execution_safety_class_id is invalid")
+        if _IDENTIFIER.fullmatch(self.execution_science_protocol_id) is None:
+            raise ValueError("trusted G0 context execution_science_protocol_id is invalid")
         if self.world_size not in _ALLOWED_WORLD_SIZES:
             raise ValueError("trusted G0 context world_size is outside 1..4")
         if self.reviewed_implementation_commit in {
             self.code_commit,
-            self.gpu_preflight_git_commit,
             self.request_git_commit,
         }:
             raise ValueError("trusted G0 context has a self-referential review binding")
+        if (
+            self.execution_science_protocol_git_commit
+            == self.execution_science_protocol_reviewed_implementation_commit
+        ):
+            raise ValueError("trusted G0 science protocol review is self-referential")
 
 
 def _batch_token_contract(config: dict[str, Any], world_size: int) -> dict[str, Any]:
-    schedules = _MICROBATCHES_BY_WORLD_SIZE[world_size]
-    samples = _SAMPLES_BY_WORLD_SIZE[world_size]
-    if tuple(sum(schedule) for schedule in schedules) != tuple(samples):
-        raise ValueError("trusted G0 batch schedule is internally inconsistent")
-    return {
-        "batch_partition_protocol": str(config["trainer"]["batch_partition_protocol"]),
-        "requested_fsdp_sharding_strategy": REQUESTED_FSDP_SHARDING_STRATEGY,
-        "effective_fsdp_sharding_strategy": effective_fsdp_sharding_strategy(
-            world_size
-        ),
-        "global_logical_batch_size": int(config["trainer"]["global_batch_size"]),
-        "max_per_rank_microbatch_size": int(config["trainer"]["max_microbatch_size"]),
-        "max_model_input_length": int(config["trainer"]["max_model_input_length"]),
-        "full_parameter_training": bool(config["g0"]["full_parameter_training"]),
-        "prompt_population_size": int(config["task"]["num_examples"]),
-        "prompt_ids_unique": True,
-        "accepted_view_prompt_order": "exactly_manifest_ordered_prompt_ids",
-        "prompt_population_alignment": "exact_multiple_of_global_logical_batch_size",
-        "microbatch_schedule_by_rank": schedules,
-        "optimizer_microsteps": len(schedules[0]),
-        "samples_by_rank": samples,
-        "world_size": world_size,
-        "token_budget": int(config["trainer"]["token_budget"]),
-        "token_budget_unit": str(config["trainer"]["token_budget_unit"]),
-        "max_optimizer_steps": int(config["trainer"]["max_steps"]),
+    prompt_population_size = config["task"]["num_examples"]
+    contract = execution_kernel_batch_token_contract(
+        world_size, prompt_population_size
+    )
+    observed = {
+        "batch_partition_protocol": config["trainer"]["batch_partition_protocol"],
+        "full_parameter_training": config["g0"]["full_parameter_training"],
+        "global_logical_batch_size": config["trainer"]["global_batch_size"],
+        "max_model_input_length": config["trainer"]["max_model_input_length"],
+        "max_optimizer_steps": config["trainer"]["max_steps"],
+        "max_per_rank_microbatch_size": config["trainer"]["max_microbatch_size"],
+        "token_budget": config["trainer"]["token_budget"],
+        "token_budget_unit": config["trainer"]["token_budget_unit"],
     }
+    if any(observed[name] != contract[name] for name in observed):
+        raise ValueError("trusted G0 config differs from the execution-safety kernel")
+    return contract
 
 
 def _read(path: Path) -> dict[str, Any]:
     return strict_json_object(path, name=f"G0 artifact {path.name}")
 
 
-def _preflight_fsdp_wrapper_count(
-    gpu_preflight: dict[str, Any],
+def _execution_safety_fsdp_wrapper_count(
+    descriptor: dict[str, Any],
     *,
     world_size: int,
 ) -> int:
-    """Bind the G0 FSDP tree to the selected preflight's reviewed topology."""
+    """Read the canonical per-world FSDP contract from the certified class."""
 
     if world_size not in _ALLOWED_WORLD_SIZES:
-        raise ValueError("GPU preflight FSDP topology world size is outside 1..4")
-    rows = gpu_preflight.get("rank_training_checks")
-    if not isinstance(rows, list) or len(rows) != world_size:
-        raise ValueError("GPU preflight FSDP topology omits a rank")
-    wrapper_counts: set[int] = set()
-    transformer_counts: set[int] = set()
-    for rank, row in enumerate(rows):
-        if (
-            not isinstance(row, dict)
-            or type(row.get("rank")) is not int
-            or row.get("rank") != rank
-        ):
-            raise ValueError("GPU preflight FSDP topology rank order is invalid")
-        wrappers = row.get("fsdp_wrapper_count")
-        transformers = row.get("wrapped_transformer_blocks")
-        if (
-            row.get("fsdp_transformer_layer") != "Qwen3DecoderLayer"
-            or type(wrappers) is not int
-            or type(transformers) is not int
-            or transformers < 1
-            or wrappers != transformers + 1
-        ):
-            raise ValueError("GPU preflight FSDP transformer topology is invalid")
-        wrapper_counts.add(wrappers)
-        transformer_counts.add(transformers)
-    if len(wrapper_counts) != 1 or len(transformer_counts) != 1:
-        raise ValueError("GPU preflight ranks disagree on the FSDP transformer topology")
-    return next(iter(wrapper_counts))
+        raise ValueError("execution-safety FSDP world size is outside 1..4")
+    contract = execution_safety_world_size_contract(descriptor, world_size)
+    wrappers = contract.get("fsdp_wrapper_count")
+    transformers = contract.get("wrapped_transformer_blocks")
+    if (
+        contract.get("world_size") != world_size
+        or contract.get("effective_fsdp_sharding_strategy")
+        != effective_fsdp_sharding_strategy(world_size)
+        or contract.get("requested_fsdp_sharding_strategy")
+        != REQUESTED_FSDP_SHARDING_STRATEGY
+        or type(wrappers) is not int
+        or type(transformers) is not int
+        or transformers < 1
+        or wrappers != transformers + 1
+    ):
+        raise ValueError("execution-safety FSDP topology is invalid")
+    return wrappers
+
+
+def _load_execution_safety(
+    descriptor_path: Path,
+    certification_path: Path,
+    *,
+    scientific_context: ScientificInvocationContext,
+) -> tuple[dict[str, Any], int]:
+    """Validate the reusable certificate and its exact descriptor CAS bytes."""
+
+    descriptor_raw = descriptor_path.read_bytes()
+    certification_raw = certification_path.read_bytes()
+    descriptor = load_execution_safety_descriptor_bytes(descriptor_raw)
+    binding = load_execution_safety_certification_bytes(
+        certification_raw,
+        descriptor_raw,
+        require_accepted=True,
+    )
+    if (
+        binding.execution_class_id != EXECUTION_CLASS_ID
+        or binding.execution_class_id != scientific_context.execution_safety_class_id
+        or binding.fingerprint_sha256
+        != scientific_context.execution_safety_fingerprint_sha256
+        or binding.descriptor_sha256
+        != scientific_context.execution_safety_descriptor_sha256
+        or binding.certification_sha256
+        != scientific_context.execution_safety_certification_sha256
+        or binding.reviewed_implementation_commit
+        != scientific_context.reviewed_implementation_commit
+        or tuple(binding.supported_world_sizes) != _ALLOWED_WORLD_SIZES
+        or scientific_context.world_size not in binding.supported_world_sizes
+    ):
+        raise ValueError(
+            "execution-safety certification differs from the handler-owned context"
+        )
+    return descriptor, _execution_safety_fsdp_wrapper_count(
+        descriptor,
+        world_size=scientific_context.world_size,
+    )
+
+
+def _load_execution_science_protocol(
+    protocol_path: Path,
+    *,
+    config: dict[str, Any],
+    scientific_context: ScientificInvocationContext,
+) -> tuple[ExecutionScienceProtocolBinding, str]:
+    """Bind this experiment's accepted science protocol to its execution class."""
+
+    binding = validate_execution_science_protocol_bytes(
+        protocol_path.read_bytes(),
+        format="yaml",
+        require_accepted=True,
+    )
+    execution_class = binding.payload.get("execution_class")
+    acceptance_commit = scientific_context.execution_science_protocol_git_commit
+    if (
+        not isinstance(execution_class, dict)
+        or binding.unit_id != "g0"
+        or binding.seed != config.get("seed")
+        or binding.execution_class_id
+        != scientific_context.execution_safety_class_id
+        or binding.execution_safety_fingerprint_sha256
+        != scientific_context.execution_safety_fingerprint_sha256
+        or execution_class.get("descriptor_sha256")
+        != scientific_context.execution_safety_descriptor_sha256
+        or binding.protocol_id != scientific_context.execution_science_protocol_id
+        or binding.artifact_sha256
+        != scientific_context.execution_science_protocol_sha256
+        or binding.reviewed_implementation_commit
+        != scientific_context.execution_science_protocol_reviewed_implementation_commit
+        or not isinstance(acceptance_commit, str)
+        or _GIT_COMMIT.fullmatch(acceptance_commit) is None
+        or acceptance_commit
+        != scientific_context.execution_science_protocol_git_commit
+        or acceptance_commit == binding.reviewed_implementation_commit
+        or binding.storage_neutral_resolved_config_sha256
+        != canonical_science_config_sha256(config)
+    ):
+        raise ValueError(
+            "execution science protocol differs from the resolved experiment "
+            "or certified execution class"
+        )
+    return binding, acceptance_commit
+
+
+def _runtime_execution_class_checks(
+    resume: dict[str, Any],
+    *,
+    config: dict[str, Any],
+    world_size: int,
+    certified_fsdp_wrapper_count: int,
+) -> dict[str, bool]:
+    """Compare validated runtime checkpoint/FSDP evidence with the class contract."""
+
+    return distributed_resume_checks(
+        resume,
+        max_optimizer_steps=int(config["trainer"]["max_steps"]),
+        world_size=world_size,
+        certified_fsdp_wrapper_count=certified_fsdp_wrapper_count,
+    )
 
 
 def _require_finite_numbers(value: Any, *, name: str) -> None:
@@ -406,7 +534,11 @@ def replay_g0_decision(
         raise ValueError("replayed G0 workspace must be a real directory")
     paths = {
         "initial_checkpoint": workspace / "initial_checkpoint.pt",
-        "gpu_preflight": workspace / "gpu_preflight.json",
+        "execution_safety_descriptor": workspace
+        / "execution_safety_descriptor.json",
+        "execution_safety_certification": workspace
+        / "execution_safety_certification.yaml",
+        "execution_science_protocol": workspace / "execution_science_protocol.yaml",
         "base_scores": workspace / "probe_scores.json",
         "teacher_store_manifest": workspace / "teacher_scores" / "manifest.json",
         "teacher_readiness": workspace / "teacher_readiness.json",
@@ -496,14 +628,19 @@ def replay_g0_decision(
         expected_world_size=scientific_context.world_size,
         expected_formal_binding=formal_binding,
     )
-    gpu_preflight = _read(paths["gpu_preflight"])
-    gpu_digest = gpu_preflight.pop("sha256", None)
-    if gpu_digest != sha256_value(gpu_preflight) or gpu_preflight.get("passed") is not True:
-        raise ValueError("G0 requires a passed, hash-valid GPU preflight")
-    gpu_preflight["sha256"] = gpu_digest
-    preflight_fsdp_wrapper_count = _preflight_fsdp_wrapper_count(
-        gpu_preflight,
-        world_size=scientific_context.world_size,
+    execution_safety_descriptor, certified_fsdp_wrapper_count = (
+        _load_execution_safety(
+            paths["execution_safety_descriptor"],
+            paths["execution_safety_certification"],
+            scientific_context=scientific_context,
+        )
+    )
+    execution_science, execution_science_acceptance_commit = (
+        _load_execution_science_protocol(
+            paths["execution_science_protocol"],
+            config=config,
+            scientific_context=scientific_context,
+        )
     )
 
     teacher_readiness_formal = _teacher_readiness_formal_binding(teacher_readiness)
@@ -521,11 +658,9 @@ def replay_g0_decision(
         "final_compatibility": final_compatibility,
         "process_compatibility": process_compatibility,
         "distributed_resume": resume,
-        "gpu_preflight": gpu_preflight,
     }
     for artifact_name, artifact in bound_artifacts.items():
-        if artifact_name != "gpu_preflight":
-            _require_formal_binding(artifact, formal_binding, name=artifact_name)
+        _require_formal_binding(artifact, formal_binding, name=artifact_name)
 
     final_noise = estimate_estimator_noise_floor(
         final_circuit.get("bootstrap_score_vectors", []), activation_threshold=0.0
@@ -605,13 +740,6 @@ def replay_g0_decision(
             >= float(config["g0"]["minimum_spearman_bootstrap_lower_bound"])
             for artifact in (final_exact, process_exact)
         ),
-        "distributed_checkpoint_resume": resume.get("format_version") == 2
-        and resume.get("passed") is True
-        and int(resume.get("world_size", 0)) == scientific_context.world_size
-        and resume.get("max_optimizer_steps") == int(config["trainer"]["max_steps"])
-        and isinstance(resume.get("checks"), dict)
-        and bool(resume["checks"])
-        and all(value is True for value in resume["checks"].values()),
         "split_probe_isolation": probes.get("frozen_before_training") is True,
         "artifact_reconstruction": all(
             circuit.get("checkpoint_sha256") == initial_checkpoint_hash
@@ -622,14 +750,13 @@ def replay_g0_decision(
                 (process_circuit, process_exact),
             )
         ),
-        "gpu_preflight": gpu_preflight.get("passed") is True
-        and int(gpu_preflight.get("world_size", 0)) == scientific_context.world_size,
+        "execution_safety_descriptor": (
+            execution_safety_descriptor.get("execution_class_id")
+            == scientific_context.execution_safety_class_id
+        ),
+        "execution_science_protocol": True,
     }
-    checks["gpu_preflight_binding"] = (
-        gpu_preflight.get("git_commit") == scientific_context.gpu_preflight_git_commit
-        and gpu_preflight.get("model_revision") == config["model"]["model_revision"]
-        and gpu_preflight.get("teacher_revision") == config["teacher"]["model_revision"]
-    )
+    checks["execution_safety_certification"] = True
     qwen3_bindings = {
         "protocol_track": config["protocol_track"],
         "artifact_namespace": config["model"]["artifact_namespace"],
@@ -668,7 +795,7 @@ def replay_g0_decision(
         "max_per_rank_microbatch_size": _MAX_MICROBATCH_SIZE,
         "max_model_input_length": 1536,
         "full_parameter_training": True,
-        "prompt_population_size": _PROMPT_POPULATION_SIZE,
+        "prompt_population_size": int(config["task"]["num_examples"]),
         "prompt_ids_unique": True,
         "accepted_view_prompt_order": "exactly_manifest_ordered_prompt_ids",
         "prompt_population_alignment": "exact_multiple_of_global_logical_batch_size",
@@ -684,16 +811,13 @@ def replay_g0_decision(
         "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
         "max_optimizer_steps": 120,
     }
-    resume_fsdp_contract = resume.get("fsdp_sharding_contract")
-    checks["distributed_resume_fsdp_strategy"] = (
-        isinstance(resume_fsdp_contract, dict)
-        and resume_fsdp_contract.get("requested_fsdp_sharding_strategy")
-        == batch_token_contract["requested_fsdp_sharding_strategy"]
-        and resume_fsdp_contract.get("effective_fsdp_sharding_strategy")
-        == batch_token_contract["effective_fsdp_sharding_strategy"]
-        and type(resume_fsdp_contract.get("fsdp_wrapper_count")) is int
-        and resume_fsdp_contract["fsdp_wrapper_count"]
-        == preflight_fsdp_wrapper_count
+    checks.update(
+        _runtime_execution_class_checks(
+            resume,
+            config=config,
+            world_size=scientific_context.world_size,
+            certified_fsdp_wrapper_count=certified_fsdp_wrapper_count,
+        )
     )
     if tuple(sorted(checks)) != G0_CHECK_NAMES or any(value is not True for value in checks.values()):
         raise ValueError("replayed G0 decision did not pass every exact scientific check")
@@ -746,6 +870,24 @@ def replay_g0_decision(
         "batch_token_contract": batch_token_contract,
         "prompt_protocol": str(config["model"]["prompt_protocol"]["name"]),
         "enable_thinking": False,
+        "execution_safety_class_id": scientific_context.execution_safety_class_id,
+        "execution_safety_fingerprint_sha256": (
+            scientific_context.execution_safety_fingerprint_sha256
+        ),
+        "execution_safety_descriptor_sha256": (
+            scientific_context.execution_safety_descriptor_sha256
+        ),
+        "execution_safety_certification_sha256": (
+            scientific_context.execution_safety_certification_sha256
+        ),
+        "execution_science_protocol_git_commit": (
+            execution_science_acceptance_commit
+        ),
+        "execution_science_protocol_id": execution_science.protocol_id,
+        "execution_science_protocol_reviewed_implementation_commit": (
+            execution_science.reviewed_implementation_commit
+        ),
+        "execution_science_protocol_sha256": execution_science.artifact_sha256,
         "chat_template_sha256": str(
             config["model"]["prompt_protocol"]["chat_template_sha256"]
         ),
@@ -834,7 +976,9 @@ def main(
     parser.add_argument("--process-compatibility", type=Path, required=True)
     parser.add_argument("--distributed-resume", type=Path, required=True)
     parser.add_argument("--initial-checkpoint", type=Path, required=True)
-    parser.add_argument("--gpu-preflight", type=Path, required=True)
+    parser.add_argument("--execution-safety-descriptor", type=Path, required=True)
+    parser.add_argument("--execution-safety-certification", type=Path, required=True)
+    parser.add_argument("--execution-science-protocol", type=Path)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -914,14 +1058,26 @@ def main(
         config=config,
         expected_world_size=scientific_context.world_size,
     )
-    gpu_preflight = _read(args.gpu_preflight)
-    gpu_digest = gpu_preflight.pop("sha256", None)
-    if gpu_digest != sha256_value(gpu_preflight) or gpu_preflight.get("passed") is not True:
-        raise ValueError("G0 requires a passed, hash-valid GPU preflight")
-    gpu_preflight["sha256"] = gpu_digest
-    preflight_fsdp_wrapper_count = _preflight_fsdp_wrapper_count(
-        gpu_preflight,
-        world_size=scientific_context.world_size,
+    execution_safety_descriptor, certified_fsdp_wrapper_count = (
+        _load_execution_safety(
+            args.execution_safety_descriptor,
+            args.execution_safety_certification,
+            scientific_context=scientific_context,
+        )
+    )
+    execution_science_path = (
+        args.execution_science_protocol
+        if args.execution_science_protocol is not None
+        else args.execution_safety_descriptor.with_name(
+            "execution_science_protocol.yaml"
+        )
+    )
+    execution_science, execution_science_acceptance_commit = (
+        _load_execution_science_protocol(
+            execution_science_path,
+            config=config,
+            scientific_context=scientific_context,
+        )
     )
     if str(config.get("protocol_track", "")).startswith("qwen3_"):
         teacher_readiness_formal = _teacher_readiness_formal_binding(teacher_readiness)
@@ -939,11 +1095,8 @@ def main(
             "final_compatibility": final_compatibility,
             "process_compatibility": process_compatibility,
             "distributed_resume": resume,
-            "gpu_preflight": gpu_preflight,
         }
         for artifact_name, artifact in bound_artifacts.items():
-            if artifact_name == "gpu_preflight":
-                continue
             _require_formal_binding(artifact, formal_binding, name=artifact_name)
     final_noise = estimate_estimator_noise_floor(
         final_circuit.get("bootstrap_score_vectors", []), activation_threshold=0.0
@@ -1012,13 +1165,6 @@ def main(
             >= float(config["g0"]["minimum_spearman_bootstrap_lower_bound"])
             for artifact in (final_exact, process_exact)
         ),
-        "distributed_checkpoint_resume": resume.get("format_version") == 2
-        and resume.get("passed") is True
-        and int(resume.get("world_size", 0)) == scientific_context.world_size
-        and resume.get("max_optimizer_steps") == int(config["trainer"]["max_steps"])
-        and isinstance(resume.get("checks"), dict)
-        and bool(resume["checks"])
-        and all(value is True for value in resume["checks"].values()),
         "split_probe_isolation": probes.get("frozen_before_training") is True,
         "artifact_reconstruction": all(
             circuit.get("checkpoint_sha256") == initial_checkpoint_hash
@@ -1028,15 +1174,13 @@ def main(
                 (process_circuit, process_exact),
             )
         ),
-        "gpu_preflight": gpu_preflight.get("passed") is True
-        and int(gpu_preflight.get("world_size", 0)) == scientific_context.world_size,
+        "execution_safety_descriptor": (
+            execution_safety_descriptor.get("execution_class_id")
+            == scientific_context.execution_safety_class_id
+        ),
+        "execution_science_protocol": True,
     }
-    checks["gpu_preflight_binding"] = (
-        gpu_preflight.get("git_commit")
-        == scientific_context.gpu_preflight_git_commit
-        and gpu_preflight.get("model_revision") == config["model"]["model_revision"]
-        and gpu_preflight.get("teacher_revision") == config["teacher"]["model_revision"]
-    )
+    checks["execution_safety_certification"] = True
     prereg_path = str(config["prereg_path"])
     prereg_commit = require_git_output(["log", "-n", "1", "--format=%H", "--", prereg_path])
     if str(config.get("protocol_track", "")).startswith("qwen3_"):
@@ -1073,7 +1217,7 @@ def main(
         "max_per_rank_microbatch_size": _MAX_MICROBATCH_SIZE,
         "max_model_input_length": 1536,
         "full_parameter_training": True,
-        "prompt_population_size": _PROMPT_POPULATION_SIZE,
+        "prompt_population_size": int(config["task"]["num_examples"]),
         "prompt_ids_unique": True,
         "accepted_view_prompt_order": "exactly_manifest_ordered_prompt_ids",
         "prompt_population_alignment": "exact_multiple_of_global_logical_batch_size",
@@ -1089,16 +1233,13 @@ def main(
         "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
         "max_optimizer_steps": 120,
     }
-    resume_fsdp_contract = resume.get("fsdp_sharding_contract")
-    checks["distributed_resume_fsdp_strategy"] = (
-        isinstance(resume_fsdp_contract, dict)
-        and resume_fsdp_contract.get("requested_fsdp_sharding_strategy")
-        == batch_token_contract["requested_fsdp_sharding_strategy"]
-        and resume_fsdp_contract.get("effective_fsdp_sharding_strategy")
-        == batch_token_contract["effective_fsdp_sharding_strategy"]
-        and type(resume_fsdp_contract.get("fsdp_wrapper_count")) is int
-        and resume_fsdp_contract["fsdp_wrapper_count"]
-        == preflight_fsdp_wrapper_count
+    checks.update(
+        _runtime_execution_class_checks(
+            resume,
+            config=config,
+            world_size=scientific_context.world_size,
+            certified_fsdp_wrapper_count=certified_fsdp_wrapper_count,
+        )
     )
     if tuple(sorted(checks)) != G0_CHECK_NAMES:
         raise RuntimeError("G0 decision check schema differs from the reviewed contract")
@@ -1112,6 +1253,24 @@ def main(
         "batch_token_contract": batch_token_contract,
         "prompt_protocol": str(config["model"].get("prompt_protocol", {}).get("name", "legacy_raw_v1")),
         "enable_thinking": False,
+        "execution_safety_class_id": scientific_context.execution_safety_class_id,
+        "execution_safety_fingerprint_sha256": (
+            scientific_context.execution_safety_fingerprint_sha256
+        ),
+        "execution_safety_descriptor_sha256": (
+            scientific_context.execution_safety_descriptor_sha256
+        ),
+        "execution_safety_certification_sha256": (
+            scientific_context.execution_safety_certification_sha256
+        ),
+        "execution_science_protocol_git_commit": (
+            execution_science_acceptance_commit
+        ),
+        "execution_science_protocol_id": execution_science.protocol_id,
+        "execution_science_protocol_reviewed_implementation_commit": (
+            execution_science.reviewed_implementation_commit
+        ),
+        "execution_science_protocol_sha256": execution_science.artifact_sha256,
         "chat_template_sha256": str(
             config["model"].get("prompt_protocol", {}).get("chat_template_sha256", "legacy-unrecorded")
         ),
@@ -1181,7 +1340,11 @@ def main(
             name: sha256_file(path)
             for name, path in {
                 "initial_checkpoint": args.initial_checkpoint,
-                "gpu_preflight": args.gpu_preflight,
+                "execution_safety_descriptor": args.execution_safety_descriptor,
+                "execution_safety_certification": (
+                    args.execution_safety_certification
+                ),
+                "execution_science_protocol": execution_science_path,
                 "base_scores": args.base_scores,
                 "teacher_store_manifest": args.teacher_store_manifest,
                 "teacher_readiness": args.teacher_readiness,

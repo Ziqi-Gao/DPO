@@ -21,13 +21,26 @@ from posttrain_circuits.learning.training.fsdp_contract import (
     REQUESTED_FSDP_SHARDING_STRATEGY,
     effective_fsdp_sharding_strategy,
 )
+from posttrain_circuits.learning.training.execution_safety_kernel import (
+    BATCH_PARTITION_PROTOCOL,
+    GLOBAL_BATCH_SIZE,
+    batch_token_contract as _kernel_batch_token_contract,
+    build_runtime_execution_safety_attestation,
+    validate_runtime_execution_safety_attestation,
+)
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    CERTIFICATION_CONTENT_NAME,
+    DESCRIPTOR_CONTENT_NAME,
+    EXECUTION_CLASS_ID,
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+)
 from posttrain_circuits.scheduler_adapter.strict_json import read_strict_json
 
 
 TASK_NAME = "qwen3_v2_g0"
 PROFILE_NAME = "qwen3-v2-g0-elastic"
-WORKFLOW_ID = "qwen3-v2-g0-elastic-v1"
+WORKFLOW_ID_PREFIX = "qwen3-v2-g0-elastic-"
 UNIT_ID = "g0"
 REPORT_NAME = "g0.json"
 BUNDLE_NAME = "g0_artifacts.tar"
@@ -56,42 +69,13 @@ PREREG_VERSION = "qwen3_v2"
 
 PREREG_CONTENT_NAME = "preregistration_sha256"
 PROTOCOL_AMENDMENT_CONTENT_NAME = "protocol_amendment_sha256"
-
-
-def gpu_preflight_completion_content_name(world_size: int) -> str:
-    if world_size not in ALLOWED_GPU_COUNTS:
-        raise AdapterValidationError(
-            "GPU preflight evidence world_size is outside 1..4"
-        )
-    return f"gpu_preflight_w{world_size}_completion_sha256"
-
-
-def gpu_preflight_report_content_name(world_size: int) -> str:
-    if world_size not in ALLOWED_GPU_COUNTS:
-        raise AdapterValidationError(
-            "GPU preflight evidence world_size is outside 1..4"
-        )
-    return f"gpu_preflight_w{world_size}_report_sha256"
-
-
-GPU_PREFLIGHT_COMPLETION_CONTENT_NAMES = tuple(
-    gpu_preflight_completion_content_name(world_size)
-    for world_size in ALLOWED_GPU_COUNTS
-)
-GPU_PREFLIGHT_REPORT_CONTENT_NAMES = tuple(
-    gpu_preflight_report_content_name(world_size) for world_size in ALLOWED_GPU_COUNTS
-)
+EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME = "execution_science_protocol_sha256"
 EXPECTED_INPUT_NAMES = (
     "config_binding_sha256",
     "execution_config_sha256",
-    *tuple(
-        name
-        for world_size in ALLOWED_GPU_COUNTS
-        for name in (
-            gpu_preflight_completion_content_name(world_size),
-            gpu_preflight_report_content_name(world_size),
-        )
-    ),
+    CERTIFICATION_CONTENT_NAME,
+    DESCRIPTOR_CONTENT_NAME,
+    EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME,
     PREREG_CONTENT_NAME,
     PROTOCOL_AMENDMENT_CONTENT_NAME,
     "resolved_config_sha256",
@@ -104,53 +88,19 @@ GATE_NAMES = (
     "batch_token_invariants",
     "config_binding",
     "distributed_resume",
+    "execution_safety_certification",
+    "execution_science_protocol",
     "g0_semantic_decision",
-    "gpu_preflight_binding",
     "memory_headroom",
     "offline_pinned_runtime",
     "protocol_amendment",
     "scientific_artifact_chain",
 )
 
-BATCH_PARTITION_PROTOCOL = "allocation_neutral_exact_global_batch_v1"
-GLOBAL_BATCH_SIZE = 64
-MAX_MICROBATCH_SIZE = 4
-MAX_MODEL_INPUT_LENGTH = 1536
-PROMPT_POPULATION_SIZE = 256
-_SAMPLES_BY_WORLD_SIZE = {
-    1: (64,),
-    2: (32, 32),
-    3: (22, 21, 21),
-    4: (16, 16, 16, 16),
-}
-_MICROBATCHES_BY_WORLD_SIZE = {
-    1: ((4,) * 16,),
-    2: ((4,) * 8, (4,) * 8),
-    3: (
-        (4, 4, 4, 4, 4, 2),
-        (4, 4, 4, 4, 4, 1),
-        (4, 4, 4, 4, 4, 1),
-    ),
-    4: ((4,) * 4, (4,) * 4, (4,) * 4, (4,) * 4),
-}
-_BATCH_TOKEN_INVARIANTS = {
-    "batch_partition_protocol": BATCH_PARTITION_PROTOCOL,
-    "global_logical_batch_size": GLOBAL_BATCH_SIZE,
-    "max_per_rank_microbatch_size": MAX_MICROBATCH_SIZE,
-    "max_model_input_length": MAX_MODEL_INPUT_LENGTH,
-    "full_parameter_training": True,
-    "prompt_population_size": PROMPT_POPULATION_SIZE,
-    "prompt_ids_unique": True,
-    "accepted_view_prompt_order": "exactly_manifest_ordered_prompt_ids",
-    "prompt_population_alignment": "exact_multiple_of_global_logical_batch_size",
-    "token_budget": 2_000_000,
-    "token_budget_unit": "global_nonpadding_model_input_tokens_processed",
-    "max_optimizer_steps": 120,
-}
 PROVENANCE_VALIDATION = {
-    "preflight_to_execution_metadata_only": True,
-    "request_to_execution_metadata_only": True,
-    "reviewed_implementation_to_execution_metadata_only": True,
+    "certification_artifacts_unchanged": True,
+    "current_execution_safety_kernel_matches_descriptor": True,
+    "execution_safety_fingerprint_exact": True,
 }
 
 REQUIRED_BUNDLE_PATHS = frozenset(
@@ -170,6 +120,9 @@ REQUIRED_BUNDLE_PATHS = frozenset(
         "circuits/first_rule_selection/mib_raw/compatibility.json",
         "dataset/manifest.json",
         "distributed_resume.json",
+        "execution_safety_certification.yaml",
+        "execution_safety_descriptor.json",
+        "execution_science_protocol.yaml",
         "g0.json",
         "initial_checkpoint.pt",
         "label_leakage.json",
@@ -206,11 +159,16 @@ REPORT_FIELDS = frozenset(
         "enable_thinking",
         "execution",
         "execution_context",
+        "execution_safety_certification_sha256",
+        "execution_safety_class_id",
+        "execution_safety_descriptor_sha256",
+        "execution_safety_fingerprint_sha256",
+        "execution_safety_attestation",
+        "execution_science_protocol_git_commit",
+        "execution_science_protocol_id",
+        "execution_science_protocol_reviewed_implementation_commit",
+        "execution_science_protocol_sha256",
         "git_commit",
-        "gpu_preflight_completion_sha256",
-        "gpu_preflight_git_commit",
-        "gpu_preflight_matrix",
-        "gpu_preflight_report_sha256",
         "inner_g0_report_sha256",
         "model_revision",
         "passed",
@@ -226,6 +184,7 @@ REPORT_FIELDS = frozenset(
         "prompt_protocol",
         "protocol_track",
         "resolved_config_sha256",
+        "runtime_resolved_config_sha256",
         "request_git_commit",
         "schema_version",
         "sha256",
@@ -258,47 +217,22 @@ EXECUTION_FIELDS = frozenset(
         "manifest_sha256",
     }
 )
-PREFLIGHT_MATRIX_FIELDS = frozenset(
-    {
-        "allocation_sha256",
-        "completion_sha256",
-        "git_commit",
-        "report_sha256",
-        "workflow_id",
-        "world_size",
-    }
-)
-PROTOCOL_AMENDMENT_ID = "qwen3_v2_g0_elastic_v1"
-PROTOCOL_AMENDMENT_PATH = "prereg/amendments/qwen3_v2_g0_elastic_v1.yaml"
+PROTOCOL_AMENDMENT_ID = "qwen3_v2_g0_execution_class_v2"
+PROTOCOL_AMENDMENT_PATH = str(SUCCESSOR_AMENDMENT_RELATIVE_PATH)
 REPLAY_SCRATCH_ROOT = Path("/scr/del6500/OPD/tmp")
 _REPLAY_PARENT_NAME = re.compile(r"\.qwen3-v2-g0-replay-[A-Za-z0-9_-]+\Z")
 
 
-def batch_token_contract(world_size: int) -> dict[str, Any]:
-    """Return the exact 64-slot realization for one scheduler allocation."""
+def batch_token_contract(
+    world_size: int,
+    prompt_population_size: int,
+) -> dict[str, Any]:
+    """Return the shared execution-kernel contract with adapter errors."""
 
-    if world_size not in ALLOWED_GPU_COUNTS:
-        _fail("G0 world_size is outside the reviewed 1--4 GPU capability")
-    schedules = _MICROBATCHES_BY_WORLD_SIZE[world_size]
-    samples = _SAMPLES_BY_WORLD_SIZE[world_size]
-    if (
-        len(schedules) != world_size
-        or tuple(sum(schedule) for schedule in schedules) != samples
-        or sum(samples) != GLOBAL_BATCH_SIZE
-        or len({len(schedule) for schedule in schedules}) != 1
-    ):
-        _fail("G0 batch partition table is internally inconsistent")
-    return {
-        **_BATCH_TOKEN_INVARIANTS,
-        "requested_fsdp_sharding_strategy": REQUESTED_FSDP_SHARDING_STRATEGY,
-        "effective_fsdp_sharding_strategy": effective_fsdp_sharding_strategy(
-            world_size
-        ),
-        "microbatch_schedule_by_rank": [list(schedule) for schedule in schedules],
-        "optimizer_microsteps": len(schedules[0]),
-        "samples_by_rank": list(samples),
-        "world_size": world_size,
-    }
+    try:
+        return _kernel_batch_token_contract(world_size, prompt_population_size)
+    except ValueError as error:
+        raise AdapterValidationError(str(error)) from error
 
 
 def execution_context(world_size: int) -> dict[str, Any]:
@@ -422,69 +356,6 @@ def _validate_cgroup_memory(value: object) -> None:
         _fail("G0 cgroup-memory evidence did not pass the exact 192-GiB contract")
 
 
-def _validate_preflight_matrix(
-    value: object,
-    *,
-    expected_inputs: Mapping[str, str],
-) -> dict[int, dict[str, Any]]:
-    expected_keys = {str(world_size) for world_size in ALLOWED_GPU_COUNTS}
-    if not isinstance(value, dict) or set(value) != expected_keys:
-        _fail("G0 preflight matrix must contain exactly world sizes 1..4")
-    matrix: dict[int, dict[str, Any]] = {}
-    allocation_hashes: set[str] = set()
-    evidence_hashes: set[str] = set()
-    workflow_ids: set[str] = set()
-    for world_size in ALLOWED_GPU_COUNTS:
-        row = value[str(world_size)]
-        if not isinstance(row, dict) or set(row) != PREFLIGHT_MATRIX_FIELDS:
-            _fail("G0 preflight matrix row fields differ from the reviewed contract")
-        if row["world_size"] != world_size:
-            _fail("G0 preflight matrix row is filed under the wrong world size")
-        allocation = _sha256(
-            row["allocation_sha256"],
-            name=f"GPU preflight W={world_size} allocation sha256",
-        )
-        report_digest = _sha256(
-            row["report_sha256"],
-            name=f"GPU preflight W={world_size} report sha256",
-        )
-        completion_digest = _sha256(
-            row["completion_sha256"],
-            name=f"GPU preflight W={world_size} completion sha256",
-        )
-        _git_commit(
-            row["git_commit"], name=f"GPU preflight W={world_size} git_commit"
-        )
-        workflow_id = row["workflow_id"]
-        workflow_prefix = "qwen3-v2-gpu-preflight-elastic-"
-        workflow_suffix = (
-            workflow_id[len(workflow_prefix) :]
-            if isinstance(workflow_id, str) and workflow_id.startswith(workflow_prefix)
-            else ""
-        )
-        if len(workflow_suffix) != 32 or any(
-            character not in "0123456789abcdef" for character in workflow_suffix
-        ):
-            _fail("G0 preflight matrix contains an invalid opaque workflow ID")
-        if (
-            report_digest
-            != expected_inputs[gpu_preflight_report_content_name(world_size)]
-            or completion_digest
-            != expected_inputs[gpu_preflight_completion_content_name(world_size)]
-        ):
-            _fail("G0 preflight matrix differs from its content inputs")
-        if allocation in allocation_hashes or workflow_id in workflow_ids or {
-            report_digest,
-            completion_digest,
-        } & evidence_hashes:
-            _fail("G0 preflight matrix reuses workflow, allocation, or evidence bytes")
-        allocation_hashes.add(allocation)
-        workflow_ids.add(workflow_id)
-        evidence_hashes.update((report_digest, completion_digest))
-        matrix[world_size] = row
-    return matrix
-
-
 def _read_json_member(stream: BinaryIO, *, path: str, maximum: int) -> dict[str, Any]:
     raw = stream.read(maximum + 1)
     if len(raw) > maximum:
@@ -539,7 +410,9 @@ def _validate_inner_g0(payload: dict[str, Any], *, report: Mapping[str, Any]) ->
         or tuple(sorted(checks)) != G0_CHECK_NAMES
         or any(value is not True for value in checks.values())
         or checks.get("distributed_checkpoint_resume") is not True
-        or checks.get("gpu_preflight") is not True
+        or checks.get("execution_safety_descriptor") is not True
+        or checks.get("execution_safety_certification") is not True
+        or checks.get("execution_science_protocol") is not True
     ):
         _fail("inner G0 semantic decision did not pass every registered gate")
     if (
@@ -552,6 +425,22 @@ def _validate_inner_g0(payload: dict[str, Any], *, report: Mapping[str, Any]) ->
         or payload.get("protocol_amendment_id") != report["protocol_amendment_id"]
         or payload.get("protocol_amendment_sha256")
         != report["protocol_amendment_sha256"]
+        or payload.get("execution_safety_class_id")
+        != report["execution_safety_class_id"]
+        or payload.get("execution_safety_fingerprint_sha256")
+        != report["execution_safety_fingerprint_sha256"]
+        or payload.get("execution_safety_descriptor_sha256")
+        != report["execution_safety_descriptor_sha256"]
+        or payload.get("execution_safety_certification_sha256")
+        != report["execution_safety_certification_sha256"]
+        or payload.get("execution_science_protocol_git_commit")
+        != report["execution_science_protocol_git_commit"]
+        or payload.get("execution_science_protocol_id")
+        != report["execution_science_protocol_id"]
+        or payload.get("execution_science_protocol_reviewed_implementation_commit")
+        != report["execution_science_protocol_reviewed_implementation_commit"]
+        or payload.get("execution_science_protocol_sha256")
+        != report["execution_science_protocol_sha256"]
         or payload.get("reviewed_implementation_commit")
         != report["reviewed_implementation_commit"]
         or payload.get("request_git_commit") != report["request_git_commit"]
@@ -559,6 +448,8 @@ def _validate_inner_g0(payload: dict[str, Any], *, report: Mapping[str, Any]) ->
         != report["execution"]["allocation_sha256"]
         or payload.get("world_size") != report["world_size"]
         or payload.get("batch_token_contract") != report["batch_token_contract"]
+        or payload.get("resolved_config_sha256")
+        != report["runtime_resolved_config_sha256"]
     ):
         _fail("inner G0 report differs from the outer allocation binding")
 
@@ -780,8 +671,23 @@ def _replay_extracted_workspace(
         or source_workspace == workspace
     ):
         raise ValueError("bundled G0 source workspace binding is invalid")
-    if sha256_value(config) != report["resolved_config_sha256"]:
+    if sha256_value(config) != report["runtime_resolved_config_sha256"]:
         raise ValueError("bundled G0 resolved config differs from the outer report")
+    descriptor = json.loads(
+        (workspace / "execution_safety_descriptor.json").read_text(encoding="utf-8")
+    )
+    resume = json.loads(
+        (workspace / "distributed_resume.json").read_text(encoding="utf-8")
+    )
+    rebuilt_attestation = build_runtime_execution_safety_attestation(
+        config=config,
+        descriptor=descriptor,
+        fingerprint_sha256=report["execution_safety_fingerprint_sha256"],
+        resume=resume,
+        world_size=report["world_size"],
+    )
+    if rebuilt_attestation != report["execution_safety_attestation"]:
+        raise ValueError("bundled G0 execution-safety attestation differs")
     formal_binding = {
         "protocol_track": report["protocol_track"],
         "artifact_namespace": report["artifact_namespace"],
@@ -802,6 +708,16 @@ def _replay_extracted_workspace(
         "protocol_amendment_git_commit": report["protocol_amendment_git_commit"],
         "protocol_amendment_sha256": report["protocol_amendment_sha256"],
         "reviewed_implementation_commit": report["reviewed_implementation_commit"],
+        "execution_safety_class_id": report["execution_safety_class_id"],
+        "execution_safety_fingerprint_sha256": report[
+            "execution_safety_fingerprint_sha256"
+        ],
+        "execution_safety_descriptor_sha256": report[
+            "execution_safety_descriptor_sha256"
+        ],
+        "execution_safety_certification_sha256": report[
+            "execution_safety_certification_sha256"
+        ],
     }
     replay_g0_decision(
         workspace,
@@ -810,7 +726,28 @@ def _replay_extracted_workspace(
         scientific_context=ScientificInvocationContext(
             allocation_sha256=report["execution"]["allocation_sha256"],
             code_commit=report["code_commit"],
-            gpu_preflight_git_commit=report["gpu_preflight_git_commit"],
+            execution_safety_class_id=report["execution_safety_class_id"],
+            execution_safety_fingerprint_sha256=report[
+                "execution_safety_fingerprint_sha256"
+            ],
+            execution_safety_descriptor_sha256=report[
+                "execution_safety_descriptor_sha256"
+            ],
+            execution_safety_certification_sha256=report[
+                "execution_safety_certification_sha256"
+            ],
+            execution_science_protocol_id=report[
+                "execution_science_protocol_id"
+            ],
+            execution_science_protocol_sha256=report[
+                "execution_science_protocol_sha256"
+            ],
+            execution_science_protocol_git_commit=report[
+                "execution_science_protocol_git_commit"
+            ],
+            execution_science_protocol_reviewed_implementation_commit=report[
+                "execution_science_protocol_reviewed_implementation_commit"
+            ],
             protocol_amendment_sha256=report["protocol_amendment_sha256"],
             request_git_commit=report["request_git_commit"],
             reviewed_implementation_commit=report["reviewed_implementation_commit"],
@@ -906,12 +843,41 @@ def _validate_report(
     world_size = _integer(report["world_size"], name="G0 world_size", minimum=1)
     if world_size not in ALLOWED_GPU_COUNTS:
         _fail("G0 report world_size is outside the reviewed 1--4 GPU capability")
-    preflight_matrix = _validate_preflight_matrix(
-        report["gpu_preflight_matrix"], expected_inputs=expected_inputs
+    for field in (
+        "execution_safety_certification_sha256",
+        "execution_safety_descriptor_sha256",
+        "execution_safety_fingerprint_sha256",
+        "execution_science_protocol_sha256",
+        "runtime_resolved_config_sha256",
+    ):
+        _sha256(report[field], name=f"G0 report {field}")
+    batch_contract = report["batch_token_contract"]
+    if not isinstance(batch_contract, dict):
+        _fail("G0 batch-token contract must be a mapping")
+    prompt_population_size = _integer(
+        batch_contract.get("prompt_population_size"),
+        name="G0 prompt population size",
+        minimum=1,
     )
-    selected_preflight = preflight_matrix[world_size]
+    try:
+        validate_runtime_execution_safety_attestation(
+            report["execution_safety_attestation"],
+            expected_fingerprint_sha256=report[
+                "execution_safety_fingerprint_sha256"
+            ],
+            world_size=world_size,
+        )
+    except ValueError as error:
+        raise AdapterValidationError(str(error)) from error
+    science_protocol_id = report["execution_science_protocol_id"]
     if (
-        report["schema_version"] != 1
+        not isinstance(science_protocol_id, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", science_protocol_id)
+        is None
+    ):
+        _fail("G0 execution science protocol ID is invalid")
+    if (
+        report["schema_version"] != 2
         or isinstance(report["schema_version"], bool)
         or report["phase"] != TASK_NAME
         or report["passed"] is not True
@@ -930,24 +896,23 @@ def _validate_report(
         or report["protocol_amendment_id"] != PROTOCOL_AMENDMENT_ID
         or report["protocol_amendment_sha256"]
         != expected_inputs[PROTOCOL_AMENDMENT_CONTENT_NAME]
-        or report["batch_token_contract"] != batch_token_contract(world_size)
+        or report["execution_safety_class_id"] != EXECUTION_CLASS_ID
+        or report["execution_safety_descriptor_sha256"]
+        != expected_inputs[DESCRIPTOR_CONTENT_NAME]
+        or report["execution_safety_certification_sha256"]
+        != expected_inputs[CERTIFICATION_CONTENT_NAME]
+        or report["execution_science_protocol_sha256"]
+        != expected_inputs[EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME]
+        or batch_contract
+        != batch_token_contract(world_size, prompt_population_size)
         or report["provenance_validation"] != PROVENANCE_VALIDATION
         or report["resolved_config_sha256"] != expected_inputs["resolved_config_sha256"]
-        or report["gpu_preflight_report_sha256"]
-        != expected_inputs[gpu_preflight_report_content_name(world_size)]
-        or report["gpu_preflight_completion_sha256"]
-        != expected_inputs[gpu_preflight_completion_content_name(world_size)]
-        or report["gpu_preflight_git_commit"]
-        != selected_preflight["git_commit"]
         or report["execution_context"] != execution_context(world_size)
     ):
         _fail("G0 report differs from the scheduler-managed Qwen3-v2 protocol")
     git_commit = _git_commit(report["git_commit"], name="G0 git_commit")
     if report["code_commit"] != git_commit:
         _fail("G0 code_commit differs from git_commit")
-    preflight_commit = _git_commit(
-        report["gpu_preflight_git_commit"], name="GPU preflight git_commit"
-    )
     request_git_commit = _git_commit(
         report["request_git_commit"], name="G0 request_git_commit"
     )
@@ -960,10 +925,20 @@ def _validate_report(
         report["reviewed_implementation_commit"],
         name="G0 reviewed_implementation_commit",
     )
+    science_protocol_git_commit = _git_commit(
+        report["execution_science_protocol_git_commit"],
+        name="G0 execution_science_protocol_git_commit",
+    )
+    science_protocol_implementation_commit = _git_commit(
+        report["execution_science_protocol_reviewed_implementation_commit"],
+        name="G0 execution_science_protocol_reviewed_implementation_commit",
+    )
     if reviewed_implementation_commit == git_commit:
         _fail("G0 amendment binding is self-referential")
-    if reviewed_implementation_commit in {preflight_commit, request_git_commit}:
-        _fail("G0 preflight/request predates amendment acceptance")
+    if reviewed_implementation_commit == request_git_commit:
+        _fail("G0 request predates amendment acceptance")
+    if science_protocol_git_commit == science_protocol_implementation_commit:
+        _fail("G0 execution science protocol review is self-referential")
     started = _utc_timestamp(report["started_at"], name="G0 started_at")
     completed = _utc_timestamp(report["completed_at"], name="G0 completed_at")
     if completed < started:
@@ -1055,14 +1030,16 @@ __all__ = [
     "ALLOWED_GPU_COUNTS",
     "BATCH_PARTITION_PROTOCOL",
     "BUNDLE_NAME",
+    "CERTIFICATION_CONTENT_NAME",
     "CHAT_TEMPLATE_SHA256",
     "CPU_CORE_COUNT",
+    "DESCRIPTOR_CONTENT_NAME",
     "ESTIMATED_RUNTIME_SECONDS",
     "EXPECTED_INPUT_NAMES",
+    "EXECUTION_SCIENCE_PROTOCOL_CONTENT_NAME",
+    "EXECUTION_CLASS_ID",
     "GATE_NAMES",
     "GLOBAL_BATCH_SIZE",
-    "GPU_PREFLIGHT_COMPLETION_CONTENT_NAMES",
-    "GPU_PREFLIGHT_REPORT_CONTENT_NAMES",
     "GPU_MEMORY_MIB",
     "GPU_MODEL",
     "GPU_UTILIZATION_PCT",
@@ -1078,10 +1055,8 @@ __all__ = [
     "TEACHER_REVISION",
     "TOKENIZER_FINGERPRINT",
     "UNIT_ID",
-    "WORKFLOW_ID",
+    "WORKFLOW_ID_PREFIX",
     "batch_token_contract",
     "execution_context",
-    "gpu_preflight_completion_content_name",
-    "gpu_preflight_report_content_name",
     "validate_qwen3_v2_g0_completion",
 ]

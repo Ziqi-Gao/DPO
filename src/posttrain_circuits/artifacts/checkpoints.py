@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
-from posttrain_circuits.artifacts.io import atomic_torch_save
+from posttrain_circuits.artifacts.execution_safe_io import atomic_torch_save
 
 
 def accelerator_state_file_hashes(

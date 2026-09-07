@@ -31,7 +31,10 @@ from posttrain_circuits.scheduler_adapter.registry import (
     PreparedHandler,
     require_handler,
 )
-from posttrain_circuits.scheduler_adapter.secure_files import regular_file_exists_nofollow
+from posttrain_circuits.scheduler_adapter.secure_files import (
+    HeldRegularFile,
+    regular_file_exists_nofollow,
+)
 
 
 SCHEDULER_ENVIRONMENT_ALLOWLIST = frozenset(
@@ -80,6 +83,7 @@ def execute_validated_unit(
     envelope: RuntimeEnvelope,
     prepared: PreparedHandler,
     *,
+    running_manifest: HeldRegularFile,
     layout: WorkflowLayout,
     handler_registry: Mapping[str, HandlerSpec] = HANDLER_REGISTRY,
     config_binding_resolver: ConfigBindingResolver | None = None,
@@ -94,6 +98,9 @@ def execute_validated_unit(
         or envelope.manifest_sha256 != manifest.manifest_sha256
         or envelope.allocation_sha256
         != sha256_value(manifest.allocation_payload())
+        or running_manifest.path != envelope.manifest_path
+        or running_manifest.sha256 != envelope.manifest_sha256
+        or running_manifest.descriptor < 0
     ):
         raise AdapterValidationError("runtime envelope differs from the validated manifest")
     handler = prepared.spec
@@ -150,6 +157,7 @@ def execute_validated_unit(
                 prepared.argv(
                     manifest,
                     envelope,
+                    running_manifest=running_manifest,
                     content_handles=content_inputs.handles,
                     output_attempt=output_attempt,
                 ),
@@ -157,6 +165,11 @@ def execute_validated_unit(
                 environ=child_environment,
                 pass_fds=(
                     *prepared.pass_fds,
+                    *(
+                        (running_manifest.descriptor,)
+                        if prepared.profile.kind == "gpu"
+                        else ()
+                    ),
                     *content_inputs.pass_fds,
                     output_attempt.descriptor,
                 ),

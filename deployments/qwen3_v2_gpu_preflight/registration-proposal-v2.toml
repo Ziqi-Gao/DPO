@@ -18,7 +18,7 @@ allow_project_file_mutation = false
 [integration]
 entrypoint = "/home/del6500/projects/OPD/scripts/server_scheduler/opd-entrypoint"
 allowed_tasks = ["repository_preflight", "qwen3_v2_gpu_preflight"]
-notes = "Disabled OPD proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. qwen3_v2_gpu_preflight exposes one scheduler-managed profile whose handler derives the concrete 1/2/3/4-GPU world size only from the running manifest and scheduler environment, preserves CUDA_VISIBLE_DEVICES, and uses logical devices 0..N-1. The handler rejects commands, environment overrides, paths, GPU counts, and resource selectors in request parameters. Static fixtures cover every centrally permitted count; real 1/2/3/4 pilots remain separate approval gates and are required before elastic G0 request generation and execution. The conservative one-GPU cold-start estimate is unmeasured and will be superseded by central per-count observations."
+notes = "Disabled OPD proposal for independent central review. Normal requests contain only workflow_id, plan_sha256, and unit_id and omit execution_profile and resources. qwen3_v2_gpu_preflight exposes one scheduler-managed profile; 1/2/3/4 GPUs are central claim-time allocation candidates, never project task variants or request fields. Its handler derives the concrete world size only from the running manifest and scheduler environment, preserves CUDA_VISIBLE_DEVICES, and uses logical devices 0..N-1. Static fixtures cover every centrally permitted count; real count-specific pilots qualify one fingerprinted execution class and are not automatically repeated for every experiment. Candidate E v1 retains its accepted initial four-pilot G0 gate until a successor amendment, class certification, and Candidate E science protocol are independently accepted. The conservative one-GPU cold-start estimate is unmeasured and will be superseded by central per-count observations. This file remains disabled and authorizes neither central installation nor enablement, submission, or execution."
 
 [[tasks]]
 name = "repository_preflight"
@@ -44,6 +44,7 @@ cpu_scaling_efficiency = 0.0
 [[tasks]]
 name = "qwen3_v2_gpu_preflight"
 selection_policy = "earliest_finish"
+preflight_gpu_count_constraint = true
 
 [[tasks.execution_profiles]]
 name = "qwen3-v2-gpu-preflight-elastic"

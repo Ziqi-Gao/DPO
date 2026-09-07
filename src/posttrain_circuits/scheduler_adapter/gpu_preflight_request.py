@@ -13,17 +13,20 @@ from typing import Any
 from posttrain_circuits.artifacts.config_bindings import ConfigBinding, bind_config
 from posttrain_circuits.artifacts.git_provenance import (
     require_git_output,
-    unsafe_untracked_paths,
 )
 from posttrain_circuits.artifacts.protocol_amendments import (
     AMENDMENT_RELATIVE_PATH,
     ProtocolAmendmentError,
+    resolve_accepted_execution_class_amendment,
     resolve_accepted_protocol_amendment,
     validate_accepted_lineage_commit,
 )
 from posttrain_circuits.scheduler_adapter.config_resolver import ConfigBindingResolver
 from posttrain_circuits.scheduler_adapter.content_store import ContentStore
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
+from posttrain_circuits.artifacts.execution_safety_certification import (
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+)
 from posttrain_circuits.scheduler_adapter.outbox import prepare_outbox_request
 from posttrain_circuits.scheduler_adapter.paths import WorkflowLayout
 from posttrain_circuits.scheduler_adapter.plan_store import publish_workflow_plan
@@ -66,7 +69,7 @@ def _clean_git_commit(code_root: Path) -> str:
         (
             "status",
             "--porcelain=v1",
-            "--untracked-files=all",
+            "--untracked-files=no",
             "--ignore-submodules=none",
         ),
     )
@@ -74,39 +77,53 @@ def _clean_git_commit(code_root: Path) -> str:
         raise AdapterValidationError(
             "GPU-preflight request preparation requires a clean checkout"
         )
-    try:
-        unsafe = unsafe_untracked_paths(code_root)
-    except (OSError, UnicodeError, ValueError) as error:
-        raise AdapterValidationError(
-            "GPU-preflight request preparation could not enumerate untracked files"
-        ) from error
-    if unsafe:
-        raise AdapterValidationError(
-            "GPU-preflight request preparation rejects ignored untracked files"
-        )
     commit = require_git_output(code_root, ("rev-parse", "HEAD"))
     if GIT_COMMIT.fullmatch(commit) is None:
         raise AdapterValidationError("Git did not return one immutable commit identity")
     return commit
 
 
+def _execution_class_successor_present(code_root: Path) -> bool:
+    try:
+        (code_root / SUCCESSOR_AMENDMENT_RELATIVE_PATH).lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise AdapterValidationError(
+            "GPU-preflight successor amendment cannot be inspected"
+        ) from error
+    return True
+
+
 def _accepted_lineage_git_commit(code_root: Path) -> str:
-    """Return clean HEAD only when it is in the accepted amendment lineage."""
+    """Return clean HEAD only when it is in an accepted amendment lineage.
+
+    A checkout containing the v2 successor must use its reusable execution-
+    class acceptance.  Falling back to Candidate E v1 is permitted only for a
+    historical checkout in which the successor document does not exist.
+    """
 
     commit = _clean_git_commit(code_root)
     try:
-        amendment = resolve_accepted_protocol_amendment(
-            code_root=code_root,
-            configured_path=str(AMENDMENT_RELATIVE_PATH),
-            expected_head=commit,
-        )
-        validate_accepted_lineage_commit(
-            code_root=code_root,
-            candidate_commit=commit,
-            current_binding=amendment,
-            expected_head=commit,
-            role="GPU preflight request commit",
-        )
+        if _execution_class_successor_present(code_root):
+            resolve_accepted_execution_class_amendment(
+                code_root=code_root,
+                configured_path=str(SUCCESSOR_AMENDMENT_RELATIVE_PATH),
+                expected_head=commit,
+            )
+        else:
+            amendment = resolve_accepted_protocol_amendment(
+                code_root=code_root,
+                configured_path=str(AMENDMENT_RELATIVE_PATH),
+                expected_head=commit,
+            )
+            validate_accepted_lineage_commit(
+                code_root=code_root,
+                candidate_commit=commit,
+                current_binding=amendment,
+                expected_head=commit,
+                role="GPU preflight request commit",
+            )
     except ProtocolAmendmentError as error:
         raise AdapterValidationError(
             f"GPU-preflight request implementation lineage is invalid: {error}"

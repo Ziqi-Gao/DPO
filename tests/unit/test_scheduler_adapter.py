@@ -54,6 +54,7 @@ from posttrain_circuits.scheduler_adapter.errors import (
 )
 from posttrain_circuits.scheduler_adapter.manifest import (
     RunningManifest,
+    hold_running_manifest,
     load_running_manifest,
 )
 from posttrain_circuits.scheduler_adapter.outbox import (
@@ -77,7 +78,10 @@ from posttrain_circuits.scheduler_adapter.registry import (
     ExecutionProfileContract,
     HandlerSpec,
 )
-from posttrain_circuits.scheduler_adapter.secure_files import published_json_bytes
+from posttrain_circuits.scheduler_adapter.secure_files import (
+    HeldRegularFile,
+    published_json_bytes,
+)
 from posttrain_circuits.scheduler_adapter.runtime import (
     build_child_environment,
     execute_validated_unit,
@@ -268,6 +272,12 @@ class SchedulerAdapterTests(unittest.TestCase):
         path = self.root / "running.json"
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return path
+
+    def _hold_manifest(
+        self, payload: dict[str, object]
+    ) -> tuple[RunningManifest, RuntimeEnvelope, HeldRegularFile]:
+        manifest, held = hold_running_manifest(self._write_manifest(payload))
+        return manifest, self._envelope(manifest), held
 
     def _publish_plan(self) -> tuple[WorkflowPlan, Path]:
         plan = _plan()
@@ -951,16 +961,17 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_runtime_reuses_only_valid_completion_and_waits_for_child_outcome(self):
         plan, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        manifest, envelope, running_manifest = self._hold_manifest(
+            _running_payload(self.root)
+        )
         handler = self._handler(manifest)
         registry = self._registry(handler)
-        envelope = self._envelope(manifest)
         self._write_completion(plan)
 
         def forbidden_popen(*_args: object, **_kwargs: object) -> object:
             raise AssertionError("valid completion must be reused before child launch")
 
-        with handler.prepare(
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -970,6 +981,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     manifest,
                     envelope,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=self._thread_environment(),
@@ -980,10 +992,11 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_runtime_rejects_zero_exit_without_scientific_completion(self):
         _plan_value, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        manifest, envelope, running_manifest = self._hold_manifest(
+            _running_payload(self.root)
+        )
         handler = self._handler(manifest)
         registry = self._registry(handler)
-        envelope = self._envelope(manifest)
 
         class Child:
             def poll(self) -> None:
@@ -995,7 +1008,15 @@ class SchedulerAdapterTests(unittest.TestCase):
             def wait(self) -> int:
                 return 0
 
-        with handler.prepare(
+        captured: dict[str, object] = {}
+
+        def popen(*args: object, **kwargs: object) -> Child:
+            captured["argv"] = args[0]
+            captured.update(kwargs)
+            return Child()
+
+        held_descriptor = running_manifest.descriptor
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1004,18 +1025,22 @@ class SchedulerAdapterTests(unittest.TestCase):
                 manifest,
                 envelope,
                 prepared,
+                running_manifest=running_manifest,
                 layout=self.layout,
                 handler_registry=registry,
                 environ=self._thread_environment(),
-                popen=lambda *_args, **_kwargs: Child(),
+                popen=popen,
             )
+        self.assertNotIn("--running-manifest-handle", captured["argv"])
+        self.assertNotIn(held_descriptor, captured["pass_fds"])
 
     def test_runtime_accepts_zero_exit_only_with_current_execution_identity(self):
         plan, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        manifest, envelope, running_manifest = self._hold_manifest(
+            _running_payload(self.root)
+        )
         handler = self._handler(manifest)
         registry = self._registry(handler)
-        envelope = self._envelope(manifest)
 
         test_case = self
 
@@ -1030,7 +1055,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                 test_case._write_attempt_result(plan, envelope)
                 return 0
 
-        with handler.prepare(
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1040,6 +1065,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     manifest,
                     envelope,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=self._thread_environment(),
@@ -1050,10 +1076,11 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_nonzero_child_exit_is_returned_without_local_retry(self):
         _plan_value, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        manifest, envelope, running_manifest = self._hold_manifest(
+            _running_payload(self.root, gpu=True)
+        )
         handler = self._handler(manifest)
         registry = self._registry(handler)
-        envelope = self._envelope(manifest)
 
         class Child:
             def poll(self) -> None:
@@ -1068,19 +1095,22 @@ class SchedulerAdapterTests(unittest.TestCase):
         captured: dict[str, object] = {}
 
         def popen(*_args: object, **kwargs: object) -> Child:
+            captured["argv"] = _args[0]
             captured.update(kwargs)
             return Child()
 
         environment = self._thread_environment()
         environment.update(
             {
-                "CUDA_VISIBLE_DEVICES": "",
+                "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+                "CUDA_VISIBLE_DEVICES": "GPU-aaaa,GPU-bbbb",
                 "SAFE_PROJECT_ENV": "must-not-pass",
                 "SERVER_SCHEDULER_JOB_ID": manifest.job_id,
                 "SERVER_SCHEDULER_LEASE_ID": "lease-must-not-reach-handler",
             }
         )
-        with handler.prepare(
+        held_descriptor = running_manifest.descriptor
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1090,6 +1120,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     manifest,
                     envelope,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=environment,
@@ -1097,10 +1128,24 @@ class SchedulerAdapterTests(unittest.TestCase):
                 ),
                 17,
             )
+        self.assertEqual(running_manifest.descriptor, -1)
+        with self.assertRaises(OSError):
+            os.fstat(held_descriptor)
+        argv = captured["argv"]
+        self.assertIsInstance(argv, tuple)
+        assert isinstance(argv, tuple)
+        option_index = argv.index("--running-manifest-handle")
+        self.assertEqual(argv[option_index + 1], f"/proc/self/fd/{held_descriptor}")
+        pass_fds = captured["pass_fds"]
+        self.assertIsInstance(pass_fds, tuple)
+        assert isinstance(pass_fds, tuple)
+        self.assertEqual(pass_fds.count(held_descriptor), 1)
         child_environment = captured["env"]
         self.assertIsInstance(child_environment, dict)
         assert isinstance(child_environment, dict)
-        self.assertEqual(child_environment["CUDA_VISIBLE_DEVICES"], "")
+        self.assertEqual(
+            child_environment["CUDA_VISIBLE_DEVICES"], "GPU-aaaa,GPU-bbbb"
+        )
         self.assertNotIn("SAFE_PROJECT_ENV", child_environment)
         self.assertEqual(child_environment["HANDLER_PROTOCOL"], "v1")
         self.assertEqual(child_environment["PYTHONNOUSERSITE"], "1")
@@ -1110,10 +1155,11 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_scheduler_retry_uses_a_fresh_attempt_and_never_reads_failed_staging(self):
         plan, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        manifest, first, running_manifest = self._hold_manifest(
+            _running_payload(self.root)
+        )
         handler = self._handler(manifest)
         registry = self._registry(handler)
-        first = self._envelope(manifest)
         test_case = self
 
         class FailedChild:
@@ -1127,7 +1173,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                 test_case._write_attempt_result(plan, first)
                 return 17
 
-        with handler.prepare(
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1137,6 +1183,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     manifest,
                     first,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=self._thread_environment(),
@@ -1172,6 +1219,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     manifest,
                     second,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=self._thread_environment(),
@@ -1191,10 +1239,10 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_new_job_restarts_attempt_count_without_reusing_failed_staging(self):
         plan, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        initial_payload = _running_payload(self.root)
+        manifest, first, running_manifest = self._hold_manifest(initial_payload)
         handler = self._handler(manifest)
         registry = self._registry(handler)
-        first = self._envelope(manifest)
         test_case = self
 
         class FailedChild:
@@ -1208,7 +1256,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                 test_case._write_attempt_result(plan, first)
                 return 17
 
-        with handler.prepare(
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1218,6 +1266,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     manifest,
                     first,
                     prepared,
+                    running_manifest=running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=self._thread_environment(),
@@ -1226,16 +1275,10 @@ class SchedulerAdapterTests(unittest.TestCase):
                 17,
             )
 
-        retry_manifest = replace(
-            manifest,
-            job_id="opd-retry-job-2",
-            manifest_sha256="b" * 64,
-        )
-        retry = replace(
-            first,
-            job_id=retry_manifest.job_id,
-            attempt=1,
-            manifest_sha256=retry_manifest.manifest_sha256,
+        retry_payload = json.loads(json.dumps(initial_payload))
+        retry_payload["job_id"] = "opd-retry-job-2"
+        retry_manifest, retry, retry_running_manifest = self._hold_manifest(
+            retry_payload
         )
 
         class SuccessfulChild:
@@ -1249,7 +1292,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                 test_case._write_attempt_result(plan, retry)
                 return 0
 
-        with handler.prepare(
+        with retry_running_manifest, handler.prepare(
             retry_manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1259,6 +1302,7 @@ class SchedulerAdapterTests(unittest.TestCase):
                     retry_manifest,
                     retry,
                     prepared,
+                    running_manifest=retry_running_manifest,
                     layout=self.layout,
                     handler_registry=registry,
                     environ=self._thread_environment(),
@@ -1703,11 +1747,12 @@ class SchedulerAdapterTests(unittest.TestCase):
 
     def test_handler_argv_contains_only_fixed_prefix_and_validated_identities(self):
         plan, _path = self._publish_plan()
-        manifest = _manifest(_running_payload(self.root))
+        manifest, envelope, running_manifest = self._hold_manifest(
+            _running_payload(self.root)
+        )
         handler = self._handler(manifest)
-        envelope = self._envelope(manifest)
         store = ContentStore(self.layout)
-        with handler.prepare(
+        with running_manifest, handler.prepare(
             manifest,
             approved_code_root=self.code_root,
             approved_runtime_root=self.scratch_root,
@@ -1723,6 +1768,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             argv = prepared.argv(
                 manifest,
                 envelope,
+                running_manifest=running_manifest,
                 content_handles=inputs.handles,
                 output_attempt=attempt,
             )
@@ -1744,6 +1790,7 @@ class SchedulerAdapterTests(unittest.TestCase):
             self.assertIn(attempt.proc_path, argv)
             self.assertIn(ATTEMPT_COMPLETION_NAME, argv)
             self.assertNotIn("--gpu-count", argv)
+            self.assertNotIn("--running-manifest-handle", argv)
             for handle in inputs.handles:
                 self.assertIn(handle.proc_path, argv)
                 self.assertIn(handle.sha256, argv)
@@ -2136,8 +2183,9 @@ class SchedulerAdapterTests(unittest.TestCase):
             r"^/scr/del6500/OPD/tmp/\.opd-entrypoint-pycache-[a-z0-9_]+$",
         )
         self.assertIs(payload["prefix_exists"], False)
+        production_src_root = Path("/home/del6500/projects/OPD/src")
         self.assertIn(
-            f"code object from {SRC_ROOT}/posttrain_circuits/",
+            f"code object from {production_src_root}/posttrain_circuits/",
             result.stderr,
         )
         self.assertNotIn(

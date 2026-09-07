@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,7 +12,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from posttrain_circuits.scheduler_adapter.errors import AdapterValidationError
-from posttrain_circuits.scheduler_adapter.strict_json import read_strict_json
+from posttrain_circuits.scheduler_adapter.secure_files import (
+    HeldRegularFile,
+    open_regular_file_nofollow,
+    read_descriptor_bytes,
+)
+from posttrain_circuits.scheduler_adapter.strict_json import parse_strict_json, read_strict_json
 
 
 PROTOCOL_VERSION = 2
@@ -346,3 +353,29 @@ def load_running_manifest(path: Path) -> RunningManifest:
         Path(path), context="ServerScheduler running manifest", max_bytes=2 * 1024 * 1024
     )
     return RunningManifest.from_payload(payload, manifest_sha256=digest)
+
+
+def hold_running_manifest(path: Path) -> tuple[RunningManifest, HeldRegularFile]:
+    """Open once and retain the exact running-manifest inode through child exit."""
+
+    candidate = Path(path)
+    descriptor = open_regular_file_nofollow(
+        candidate, context="ServerScheduler running manifest"
+    )
+    try:
+        raw = read_descriptor_bytes(
+            descriptor,
+            context="ServerScheduler running manifest",
+            max_bytes=2 * 1024 * 1024,
+        )
+        digest = hashlib.sha256(raw).hexdigest()
+        payload = parse_strict_json(raw, context="ServerScheduler running manifest")
+        manifest = RunningManifest.from_payload(payload, manifest_sha256=digest)
+        return manifest, HeldRegularFile(
+            path=candidate,
+            descriptor=descriptor,
+            sha256=digest,
+        )
+    except BaseException:
+        os.close(descriptor)
+        raise

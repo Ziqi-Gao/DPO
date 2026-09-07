@@ -22,7 +22,11 @@ from posttrain_circuits.artifacts.config_bindings import (
 from posttrain_circuits.artifacts.hashing import sha256_file, sha256_value
 from posttrain_circuits.artifacts.io import atomic_write_json
 from posttrain_circuits.artifacts.protocol_amendments import (
+    AMENDMENT_RELATIVE_PATH,
+    ExecutionClassAmendmentBinding,
     ProtocolAmendmentBinding,
+    SUCCESSOR_AMENDMENT_RELATIVE_PATH,
+    resolve_accepted_execution_class_amendment,
     resolve_accepted_protocol_amendment,
 )
 
@@ -141,16 +145,22 @@ def resolve_protocol_amendment(
     config: dict[str, Any],
     *,
     expected_head: str | None = None,
-) -> ProtocolAmendmentBinding | None:
+) -> ProtocolAmendmentBinding | ExecutionClassAmendmentBinding | None:
     """Resolve the configured accepted amendment, if this run declares one."""
 
     raw_path = str(config.get("protocol_amendment_path", "")).strip()
     if not raw_path:
         return None
-    return resolve_accepted_protocol_amendment(
-        code_root=Path.cwd(),
-        configured_path=raw_path,
-        expected_head=expected_head,
+    resolver = {
+        str(AMENDMENT_RELATIVE_PATH): resolve_accepted_protocol_amendment,
+        str(SUCCESSOR_AMENDMENT_RELATIVE_PATH): (
+            resolve_accepted_execution_class_amendment
+        ),
+    }.get(raw_path)
+    if resolver is None:
+        raise ValueError("configured protocol amendment path is not reviewed")
+    return resolver(
+        code_root=Path.cwd(), configured_path=raw_path, expected_head=expected_head
     )
 
 
@@ -293,7 +303,10 @@ class RunManifest:
         self.prereg_dirty = binding.dirty
         self.dirty_working_tree = bool(git_output(["status", "--porcelain"]) or "")
 
-    def bind_protocol_amendment(self, binding: ProtocolAmendmentBinding) -> None:
+    def bind_protocol_amendment(
+        self,
+        binding: ProtocolAmendmentBinding | ExecutionClassAmendmentBinding,
+    ) -> None:
         self.protocol_amendment_id = binding.amendment_id
         self.protocol_amendment_path = str(binding.path.relative_to(Path.cwd()))
         self.protocol_amendment_git_commit = binding.git_commit
@@ -369,11 +382,10 @@ class RunManifest:
             if not prereg.is_file():
                 raise RuntimeError("formal run refused because its bound preregistration is missing")
             prereg_payload = yaml.safe_load(prereg.read_text(encoding="utf-8")) or {}
-            amendment: ProtocolAmendmentBinding | None = None
+            amendment: ProtocolAmendmentBinding | ExecutionClassAmendmentBinding | None = None
             if self.protocol_amendment_path != "unbound":
-                amendment = resolve_accepted_protocol_amendment(
-                    code_root=Path.cwd(),
-                    configured_path=self.protocol_amendment_path,
+                amendment = resolve_protocol_amendment(
+                    {"protocol_amendment_path": self.protocol_amendment_path},
                     expected_head=self.git_commit if require_git else None,
                 )
                 observed_amendment = {

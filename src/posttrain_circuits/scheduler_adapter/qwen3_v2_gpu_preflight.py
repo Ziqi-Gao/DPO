@@ -59,6 +59,17 @@ ARTIFACT_NAMESPACE = "qwen3-v2"
 PROMPT_PROTOCOL = "qwen3_non_thinking_v1"
 PREREG_PATH = "prereg/qwen3_v2.yaml"
 PREREG_VERSION = "qwen3_v2"
+EXECUTION_CLASS_ID = "qwen3-v2-elastic-training-v1"
+EXECUTION_SAFETY_FIELDS = frozenset(
+    {
+        "acceptance_commit",
+        "certification_sha256",
+        "descriptor_sha256",
+        "execution_class_id",
+        "fingerprint_sha256",
+        "reviewed_implementation_commit",
+    }
+)
 
 GATE_NAMES = (
     "allocation_contract",
@@ -71,7 +82,7 @@ GATE_NAMES = (
     "real_forward_backward",
 )
 
-REPORT_FIELDS = frozenset(
+LEGACY_REPORT_FIELDS = frozenset(
     {
         "artifact_namespace",
         "chat_template_sha256",
@@ -114,6 +125,7 @@ REPORT_FIELDS = frozenset(
         "world_size",
     }
 )
+REPORT_FIELDS = LEGACY_REPORT_FIELDS | {"execution_safety"}
 DEVICE_FIELDS = frozenset(
     {
         "capability",
@@ -630,7 +642,10 @@ def _validate_report(
     preregistration_sha256: str,
     completion_execution: object,
 ) -> None:
-    if not isinstance(report, dict) or set(report) != REPORT_FIELDS:
+    if not isinstance(report, dict) or frozenset(report) not in {
+        LEGACY_REPORT_FIELDS,
+        REPORT_FIELDS,
+    }:
         _fail("GPU preflight report fields differ from the reviewed contract")
     digest = _sha256(report["sha256"], name="GPU preflight report sha256")
     unsigned = {key: value for key, value in report.items() if key != "sha256"}
@@ -697,6 +712,28 @@ def _validate_report(
     git_commit = _git_commit(report["git_commit"], name="GPU preflight git_commit")
     if report["code_commit"] != git_commit:
         _fail("GPU preflight code_commit differs from git_commit")
+    if "execution_safety" in report:
+        execution_safety = report["execution_safety"]
+        if (
+            not isinstance(execution_safety, dict)
+            or set(execution_safety) != EXECUTION_SAFETY_FIELDS
+            or execution_safety.get("execution_class_id") != EXECUTION_CLASS_ID
+        ):
+            _fail("GPU preflight execution-safety attestation fields differ")
+        for field in (
+            "certification_sha256",
+            "descriptor_sha256",
+            "fingerprint_sha256",
+        ):
+            _sha256(
+                execution_safety[field],
+                name=f"GPU preflight execution_safety.{field}",
+            )
+        for field in ("acceptance_commit", "reviewed_implementation_commit"):
+            _git_commit(
+                execution_safety[field],
+                name=f"GPU preflight execution_safety.{field}",
+            )
     _git_commit(report["prereg_commit"], name="GPU preflight prereg_commit")
     _utc_timestamp(report["created_at"], name="GPU preflight created_at")
     _validate_devices(report["devices"], gpu_count=gpu_count)
