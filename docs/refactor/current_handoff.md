@@ -287,15 +287,25 @@ execution_profile. Strict request, plan/CAS, accepted-science lineage and
 unchanged class validation passed. The 22:23:52Z central intake scan remained
 enabled and OPD armed with no blocker.
 
-This snapshot precedes publication: it records a staged request, not a new
-execution. After committing this handoff, use
-/scr/del6500/OPD/tmp/g0_two_phase_publication_prompt_20260909.py publish --receipt
-with the exact receipt above. Do not rerun stage or create another ID.
-Publication output and timestamped central observations are saved alongside the
-receipt as publication-result.json and central-observation-*.json. Consult those
-and authoritative central records for post-publication acceptance/status.
-Keep the launch HEAD clean and unchanged until terminal state; no new teacher
-or student success is established by staging or intake acceptance.
+Central durable state now records submission at 2026-09-09T22:25:43Z and
+terminal failure at 23:14:41Z, with exit 2 classified as application_unknown.
+Attempt 1 ran from launch HEAD 8d4a78d95ed5dd672e8439780dcbbc740b2bca28
+with one GPU. Its logs record completed build_splits and
+export_initial_checkpoint, then CUDA out of memory in build_teacher_demos;
+student training never started. The failed allocation requested another
+96 MiB while logical GPU 0 had 34.56 MiB free. The log reports PID 1121808
+using 91.87 GiB, but its ownership and the underlying memory-pressure cause
+have not been established by this inspection.
+
+Authoritative state:
+/data/del6500/ServerScheduler/state/jobs/opd-b4e756837282b3d77f61ca3e309e722e.json.
+Attempt logs:
+/scr/del6500/ServerScheduler/logs/opd-b4e756837282b3d77f61ca3e309e722e.attempt-001.stdout.log
+and the corresponding .stderr.log. The workflow has no scientific completion
+marker. This failure does not establish the repaired prompt's teacher-proof
+quality and is distinct from the earlier complete rejection ledger below.
+Do not republish or reuse this accepted job ID. This observation made no
+central changes and prepared or submitted no new request.
 
 ## Latest diagnostic G0 outcome and prompt repair
 
@@ -467,13 +477,14 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-Implementation, independent review-only acceptance, and request staging are
-complete. Commit this handoff and publish the exact staged bytes once through
-armed intake, then check the central receipt/status. Check existing publication
-evidence first; do not generate a second ID. No additional per-request
-authorization is needed in this scope. Keep the launch HEAD and tracked checkout
-unchanged until terminal state; store interim observations in OPD scratch.
-GPU safety recovery belongs to the central operator.
+Implementation, independent review-only acceptance, publication and execution
+of the prompt-repair request are complete; that execution failed before student
+training. The next unresolved step is diagnosis of the teacher-stage CUDA
+memory pressure using the recorded allocation and process evidence. Central
+GPU/process recovery belongs to the central operator. The existing request
+must not be published again. Any subsequent retry must use fresh identity and
+the applicable scientific, acceptance and intake gates; the prompt-quality
+improvement remains unmeasured.
 
 Scientific success still requires validated g0.json, g0_artifacts.tar and the
 semantic completion marker. Neither a request receipt nor a CPU test is GPU
