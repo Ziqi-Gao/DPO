@@ -9,9 +9,10 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The diagnostic implementation builds on request-handoff commit
-bc6ee8e8c6270c74af8a82198f247ec928df326b and contains a
-diagnostics-only CLI repair, tests, a proposed science successor,
+The diagnostic implementation is committed at
+7d40de186c5299cd76d4ce05cf4da324cca85175, based on
+bc6ee8e8c6270c74af8a82198f247ec928df326b. It contains a
+diagnostics-only CLI repair, tests, the new science successor,
 diagnosis/handoff documentation, and the user-requested standing Git authority
 update in AGENTS.md. Agents now own staging and committing authorized OPD work,
 including the separate implementation and independently reviewed acceptance
@@ -20,7 +21,13 @@ protected .codex/config.toml to allow .git writes and restarted the client.
 The refreshed task permission profile explicitly permits .git writes, and
 findmnt now confirms its rw mount. The former sandbox blocker is resolved.
 The agent did not edit the protected config or bypass the sandbox.
-Request generation used central-install handoff
+Independent post-commit review accepted 7d40de1... without blockers at
+2026-09-09T18:30:42Z. Review-only acceptance commit
+76543d24af032b4d8d1cc23331418ec5a080df70 changes only the new science
+protocol's review block. The actual clean-checkout science resolver accepted
+that two-commit lineage; the execution-class resolver also passed with the
+unchanged fingerprint. The new request was generated from clean 76543d2....
+The earlier failed request generation used central-install handoff
 commit ed1beab1ca1013b4e12cdd3def3dff6a51a3b953. Its parent is the earlier
 handoff synchronization commit bca406da3496a9b842535228eb43f832ea8779dc,
 which descends directly from joint successor acceptance commit
@@ -285,10 +292,45 @@ agent-Git prohibition and assigned future authorized commits to the agent;
 AGENTS.md now records that standing authorization. Central state/service
 mutations remain outside this OPD session. An earlier generic diagnostics
 builder invocation correctly rejected the dirty checkout before creating a
-plan/outbox. Git write access is restored; the implementation and independent
-science-acceptance sequence is being completed before publishing a new request.
+plan/outbox. Git write access is restored, and the implementation and independent
+science-acceptance commits are complete. The diagnostic request is recorded below.
 
-## Current formal G0 request
+## Current diagnostic G0 retry
+
+Task/profile remains qwen3_v2_g0 / qwen3-v2-g0-elastic. The existing generic
+builder prepared exactly one fresh resource-neutral request from clean
+76543d24af032b4d8d1cc23331418ec5a080df70 using the new accepted science
+protocol prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_diagnostics_v2.yaml
+(SHA-256 26f9b7a3d725998302a50f915256945c1e687b8f2d118ed6bf1412920bd2d474).
+
+- job_id: opd-15db6153a4b750c67fc4706b0c0aceb6;
+- production outbox destination:
+  /scr/del6500/OPD/scheduler/outbox/opd-15db6153a4b750c67fc4706b0c0aceb6.json;
+- exact outbox SHA-256:
+  c20ad219c4a6d39ba015142a250135f6aa35ceb3d09a811e3530cdba158ba29f;
+- workflow_id: qwen3-v2-g0-elastic-411f3e88121889ae5111230d402b6bab;
+- canonical plan SHA-256:
+  eb767fa73f31522db99a7fb9c47785464014e417351c375f41e5c91b033a018e;
+- plan path:
+  /data/del6500/OPD/workflows/plans/qwen3-v2-g0-elastic-411f3e88121889ae5111230d402b6bab/eb767fa73f31522db99a7fb9c47785464014e417351c375f41e5c91b033a018e.json;
+- staging receipt:
+  /scr/del6500/OPD/tmp/g0-publication-ugi534xk/publication-receipt.json;
+- staged request: the same filename below that directory's scheduler/outbox/.
+
+Strict project request validation, accepted-science lineage, unchanged class
+certification, and builder plan/CAS validation passed. This handoff snapshot
+precedes atomic publication: the request is staged and no new run is claimed
+here. After committing this handoff, publish its exact bytes once using
+/scr/del6500/OPD/tmp/g0_two_phase_publication_20260909.py publish --receipt
+with the receipt above. Do not rerun stage or create another job ID.
+The publication output and timestamped central receipt/status observations are
+saved alongside the staging receipt as publication-result.json and
+central-observation-*.json. Consult those and authoritative central records
+for post-publication state; file preparation alone proves no submission.
+Keep the launch HEAD and tracked checkout unchanged until the job is terminal:
+the handler verifies the same clean HEAD throughout scientific execution.
+
+## Previous failed formal G0 request
 
 The accepted Candidate E builder generated exactly one fresh resource-neutral
 request from clean project HEAD
@@ -349,7 +391,7 @@ when checked; this check did not locate a retained diagnostic ledger.
 This is a real failed G0 execution, not scientific completion or successful
 training/FSDP evidence for the successor.
 
-### Diagnosis and uncommitted retry candidate
+### Diagnosis and accepted diagnostic repair
 
 The user requested rapid diagnosis and resubmission on 2026-09-09. CPU/offline
 reconstruction matched the logged prompt population, verified all 256 canonical
@@ -377,12 +419,12 @@ is under /scr/del6500/OPD/tmp/g0-failure-diagnosis-20260909/.
 The execution descriptor recomputes to unchanged fingerprint ca27527e... and
 the existing certificate validates. The CLI is outside the named safety-file
 set, so no deployment or class-certificate update is needed for this patch.
-The proposed science successor is
+The accepted diagnostic science successor is
 prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_diagnostics_v2.yaml;
-its strict shape and identical science config validate, and its proposed status
-correctly blocks execution. Original accepted artifacts remain unchanged.
+its strict shape, identical science config, and actual two-commit acceptance
+lineage validate. The original accepted artifacts remain unchanged.
 This repair makes a retry diagnostic; it does not establish improved teacher
-success. No fresh outbox, GPU run, or central submission was created.
+success. The new staged request is recorded above; no new GPU result is claimed.
 
 ## Verification
 
@@ -429,18 +471,10 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-1. The agent creates an implementation commit containing the diagnostic CLI
-   repair, tests, proposed science successor, diagnosis report, AGENTS.md, and handoff.
-2. Independently review that actual commit, update only the new science
-   protocol review block (optionally this handoff), then create an agent-owned
-   acceptance commit. The current uncommitted review is not that acceptance.
-3. Use the generic g0_request builder with --execution-science-protocol naming
-   the new accepted protocol. To avoid dirtying or changing HEAD during G0,
-   first prepare through the existing builder with production code/data roots
-   and a fresh OPD scratch staging root. Record its exact plan, request hash,
-   job ID, and destination in this handoff, then commit the handoff. Publish
-   the unchanged builder-generated request bytes once to the armed production
-   outbox with secure_files.publish_bytes_once; do not generate a second ID.
+1. Implementation 7d40de1... and independent review-only acceptance 76543d2...
+   are complete. Commit this handoff, then publish the already-staged exact
+   request once to the armed production outbox with secure_files.publish_bytes_once;
+   do not generate a second ID. Check existing publication evidence first.
    The handler permits the request HEAD to be an ancestor, but requires its
    launch HEAD to stay clean and unchanged through finalization. Keep Git
    unchanged after publication and store interim receipt/status evidence in
@@ -448,7 +482,7 @@ Python bytecode files were removed.
    no new per-request submission approval or manual digest handoff is
    needed within the recorded scope. Clean-commit/science-review gates remain.
    Do not reuse the old outbox. GPU-safety recovery remains central.
-4. Inspect the retained generation diagnostics before claiming a cause-specific
+2. Inspect the retained generation diagnostics before claiming a cause-specific
    repair. Accept scientific success only after OPD validates g0.json,
    g0_artifacts.tar, and the semantic completion marker.
 
