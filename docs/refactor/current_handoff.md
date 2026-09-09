@@ -19,10 +19,15 @@ independent science acceptance 76543d24af032b4d8d1cc23331418ec5a080df70
 are committed. Its request ran from launch HEAD
 cbe7e3de9a5c96bb2426bd748d14a8db0aa0ccd6 and is terminally failed.
 The retained real ledger now supports a cause-specific prompt repair described
-below. This implementation proposes the new science protocol
-prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_prompt_v3.yaml;
-it still requires independent review of its implementation commit followed by
-a distinct review-only acceptance commit before request generation.
+below. Implementation commit 73fa50a37541d1e09553fc69288f1f895da2ebe3 was
+independently accepted without blockers at 2026-09-09T22:24:15Z by
+Codex independent reviewer /root/scheduler_update_review. The distinct
+review-only acceptance commit cf132e342653a95301ac4274ded984ba88c9e9dc
+changes only the review block of
+prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_prompt_v3.yaml.
+Its SHA-256 is 752fa685d795335527c639fb2b7f6cc3e94aa60ffb9a16d4329bf13099b0888e.
+The actual clean-checkout builder accepted the science lineage and unchanged
+execution-class certification and generated the single request below.
 
 The reusable execution class remains accepted by joint commit
 46352c4b88013761cd43a83282fd3c6251bf2d9e, reviewing implementation
@@ -263,6 +268,35 @@ probation with compute processes present. These are central admission concerns,
 not a reason to bypass the scheduler or duplicate requests. A new request may
 be accepted and wait. OPD performed no service or GPU operation.
 
+## Current prompt-repair G0 request
+
+The generic builder prepared exactly one fresh, allocation-neutral request from
+clean project HEAD cf132e342653a95301ac4274ded984ba88c9e9dc.
+
+- job_id: opd-b4e756837282b3d77f61ca3e309e722e;
+- production outbox path: /scr/del6500/OPD/scheduler/outbox/opd-b4e756837282b3d77f61ca3e309e722e.json;
+- exact request SHA-256: cb78fe0baeb0a553fffc48994f36e3eaba196b479c1af46b40ea72e14bc0ba0a;
+- workflow_id: qwen3-v2-g0-elastic-6b3710a3edaa8a8c8bcae74956decd34;
+- plan SHA-256: 5109dcd1e163e4ecdbf4d4083cb2c03c205233eca04e00496f3c84dca59bed69;
+- canonical plan: /data/del6500/OPD/workflows/plans/qwen3-v2-g0-elastic-6b3710a3edaa8a8c8bcae74956decd34/5109dcd1e163e4ecdbf4d4083cb2c03c205233eca04e00496f3c84dca59bed69.json;
+- staging receipt: /scr/del6500/OPD/tmp/g0-publication-l832n431/publication-receipt.json.
+
+The request contains only protocol version, fresh job ID, project, task,
+priority zero and workflow_id/plan_sha256/unit_id. It omits resources and
+execution_profile. Strict request, plan/CAS, accepted-science lineage and
+unchanged class validation passed. The 22:23:52Z central intake scan remained
+enabled and OPD armed with no blocker.
+
+This snapshot precedes publication: it records a staged request, not a new
+execution. After committing this handoff, use
+/scr/del6500/OPD/tmp/g0_two_phase_publication_prompt_20260909.py publish --receipt
+with the exact receipt above. Do not rerun stage or create another ID.
+Publication output and timestamped central observations are saved alongside the
+receipt as publication-result.json and central-observation-*.json. Consult those
+and authoritative central records for post-publication acceptance/status.
+Keep the launch HEAD clean and unchanged until terminal state; no new teacher
+or student success is established by staging or intake acceptance.
+
 ## Latest diagnostic G0 outcome and prompt repair
 
 Task/profile: qwen3_v2_g0 / qwen3-v2-g0-elastic. Job
@@ -388,7 +422,7 @@ larger envelope: its maximum prefix decreases 2020→1988, and prefix plus its
 Evidence: /scr/del6500/OPD/tmp/prompt_auxiliary_envelope_20260909.json.
 All 52 safety-file hashes, descriptor/certificate and recomposed science-config
 identity validate. AST/import and git diff --check pass. No new GPU run has
-been performed by these CPU checks; the prompt-v3 review is still proposed.
+been performed by these CPU checks. The prompt-v3 review is now accepted.
 
 Static and CPU/no-GPU verification completed on 2026-09-07:
 
@@ -433,14 +467,13 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-Prompt-fix CPU checks are complete. Create the implementation commit and obtain
-independent review. Accept only the new prompt-v3 science review block in a
-separate commit. Use the generic execution-science builder to stage one fresh
-request, commit its exact handoff, and publish the unchanged bytes once through
-armed intake. No additional per-request authorization is needed in this scope.
-Keep the launch HEAD and tracked checkout unchanged until terminal state;
-store interim receipt/status observations in OPD scratch. GPU safety recovery
-belongs to the central operator.
+Implementation, independent review-only acceptance, and request staging are
+complete. Commit this handoff and publish the exact staged bytes once through
+armed intake, then check the central receipt/status. Check existing publication
+evidence first; do not generate a second ID. No additional per-request
+authorization is needed in this scope. Keep the launch HEAD and tracked checkout
+unchanged until terminal state; store interim observations in OPD scratch.
+GPU safety recovery belongs to the central operator.
 
 Scientific success still requires validated g0.json, g0_artifacts.tar and the
 semantic completion marker. Neither a request receipt nor a CPU test is GPU
