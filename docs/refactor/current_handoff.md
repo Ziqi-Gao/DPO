@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-09-07.
+Last updated: 2026-09-09.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -9,8 +9,19 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The committed checkout is master at central-install handoff commit
-ed1beab1ca1013b4e12cdd3def3dff6a51a3b953. Its parent is the earlier
+The diagnostic implementation builds on request-handoff commit
+bc6ee8e8c6270c74af8a82198f247ec928df326b and contains a
+diagnostics-only CLI repair, tests, a proposed science successor,
+diagnosis/handoff documentation, and the user-requested standing Git authority
+update in AGENTS.md. Agents now own staging and committing authorized OPD work,
+including the separate implementation and independently reviewed acceptance
+commits. No further routine Git approval is required. The user updated the
+protected .codex/config.toml to allow .git writes and restarted the client.
+The refreshed task permission profile explicitly permits .git writes, and
+findmnt now confirms its rw mount. The former sandbox blocker is resolved.
+The agent did not edit the protected config or bypass the sandbox.
+Request generation used central-install handoff
+commit ed1beab1ca1013b4e12cdd3def3dff6a51a3b953. Its parent is the earlier
 handoff synchronization commit bca406da3496a9b842535228eb43f832ea8779dc,
 which descends directly from joint successor acceptance commit
 46352c4b88013761cd43a83282fd3c6251bf2d9e. The acceptance commit changes only
@@ -34,8 +45,11 @@ The acceptance commit was verified from a clean worktree. The successor is now
 accepted at the OPD Git/lineage layer. The later handoff-only commit is
 non-safety-critical and does not invalidate the accepted execution fingerprint.
 The exact central proposal was installed and subsequently enabled under
-separate approval. Request generation is complete; central validation and
-submission remain separate gates.
+separate approval. The formal G0 request was subsequently submitted centrally
+and ran once; it is now terminally failed at teacher-demo generation, as
+verified below. The user has authorized a diagnostic retry; the current
+continuous-submission workflow is recorded below. New requests still require
+accepted scientific inputs.
 
 Candidate E amendment
 prereg/amendments/qwen3_v2_g0_elastic_v1.yaml is unchanged, remains accepted,
@@ -201,12 +215,12 @@ world size the scheduler selects. This is the minimum migration that keeps
 dynamic scheduling, does not insert resource hints, preserves Candidate E v1,
 and avoids making four pilots a permanent per-experiment tax.
 
-Previously recorded central W=3/W=4 preflight request or queue state was not
-queried in this migration and is not asserted current here. No existing job was
-cancelled or changed. Those pilots may remain useful operational evidence, but
-they are no longer a generic prerequisite for every future experiment. The
-joint acceptance at 46352c4b... permits the Candidate E successor path to use
-the reusable class certificate; central deployment and request gates still
+The 2026-09-09 central durable records show the former W=3 request
+opd-3d20deb555e18b55a04873cc32769051 and W=4 request
+opd-44c3d75c1e8b9180d4e08ef55f173379 were operator-cancelled before launch
+as obsolete after formal G0 submission. This status check changed neither job.
+The joint acceptance at 46352c4b... permits the Candidate E successor path to
+use the reusable class certificate; central deployment and request gates still
 apply.
 
 ## Deployment proposals and hashes
@@ -245,6 +259,35 @@ G0 proposal above only by enabled = true. Its enabled central SHA-256 is
 084661f557594126285efe56cdbebd20cc240e631f97618f45a34c9ba8ca1c39.
 No service or task action was performed by this OPD session.
 
+## Current automatic intake workflow
+
+The updated central project-session guide and automatic-intake manual replace
+per-request operator handoff with atomic outbox publication and central
+receipts within an approved continuous-submission scope. The user explicitly
+confirmed that this task submission needs no further authorization. Do not ask
+again for permission to submit this retry.
+
+The 2026-09-09 13:09 CDT central handoff records the completed service restart
+at 13:05:24 CDT into PID 792882. A fresh read-only intake-status query observed
+the daemon's saved scan at 18:10:47 UTC: enabled=true, OPD armed=true,
+armed_at=18:01:58 UTC, blocked_reason=null, baseline_count=14, and no blocked
+projects. Automatic scanning is live; OPD intake-receipts was still empty.
+The arm reason records user-authorized continuous OPD submission within the
+existing registered tasks. Future acceptance is established by its central
+receipt/job record.
+
+The 14 existing outbox filenames are excluded by the arm baseline. After the
+project-owned scientific gates pass, use the existing builder to publish one
+fresh resource-neutral request and follow its central receipt/status. The
+updated scheduler workflow does not remove the OPD builder's clean-checkout or
+accepted-science requirements. The user explicitly removed the local
+agent-Git prohibition and assigned future authorized commits to the agent;
+AGENTS.md now records that standing authorization. Central state/service
+mutations remain outside this OPD session. An earlier generic diagnostics
+builder invocation correctly rejected the dirty checkout before creating a
+plan/outbox. Git write access is restored; the implementation and independent
+science-acceptance sequence is being completed before publishing a new request.
+
 ## Current formal G0 request
 
 The accepted Candidate E builder generated exactly one fresh resource-neutral
@@ -266,8 +309,80 @@ The builder and a direct strict-shape check accepted the request. It contains
 only schema_version, job_id, project, task, priority, and the three parameters
 workflow_id, plan_sha256, and unit_id. It omits execution_profile, resources,
 GPU count, and GPU identity. The canonical WorkflowPlan loader recomputed the
-same plan SHA-256. The outbox exists locally but has not been submitted or
-consumed.
+same plan SHA-256. The outbox remains present; central audit records now
+confirm its job was submitted on 2026-09-07 at 22:40:24 UTC. Do not resubmit
+this accepted job ID.
+
+### Observed execution and failure
+
+Read-only inspection of central durable jobs, retries, audit events, and
+attempt logs on 2026-09-09 around 17:49 UTC found:
+
+- task/profile: qwen3_v2_g0 / qwen3-v2-g0-elastic;
+- attempt 1 started and its runtime scope became ready at 07:04:25 UTC
+  (02:04:25 CDT), with 1 GPU, 24 CPU cores, and 196608 MiB host memory;
+- it became failed at 09:40:33 UTC (04:40:33 CDT), after 2 h 36 m 8 s,
+  with exit code 2; the lease was released;
+- stdout records completed build_splits and export_initial_checkpoint stages,
+  then the start of build_teacher_demos; no training stage was reached;
+- stderr reports `teacher-demo generation has zero-success prompts` and the
+  build_teacher_demos subprocess exiting 2. Exactly 243/256 prompts had no
+  accepted candidate (119 positive, 124 negative); raw candidate rejection
+  reasons were deleted with the failed workspace;
+- the scheduler classified the exit as gpu_unknown and retryable=false;
+  attempts_started=1 and next_attempt_at=null. That scheduler classification
+  alone is not evidence of a hardware fault;
+- the audit records quarantine of the assigned GPU at failure. Its current
+  safety state was not queried; any GPU-safety operation belongs to the central
+  operator;
+- all 14 durable OPD jobs were terminal (4 completed, 10 failed); none were
+  pending or running at this observation.
+
+Authoritative state is
+/data/del6500/ServerScheduler/state/jobs/opd-2947686c51c3e93ad1b18e5a3b7d6b22.json;
+timestamps and retry classification are in
+/data/del6500/ServerScheduler/audit/events.jsonl. Attempt logs are
+/scr/del6500/ServerScheduler/logs/opd-2947686c51c3e93ad1b18e5a3b7d6b22.attempt-001.stdout.log
+and the corresponding .stderr.log. The stderr-reported teacher-demo directory
+/scr/del6500/OPD/tmp/qwen3-v2-g0-c0sywxc7/qwen3-v2/teacher_demos was absent
+when checked; this check did not locate a retained diagnostic ledger.
+This is a real failed G0 execution, not scientific completion or successful
+training/FSDP evidence for the successor.
+
+### Diagnosis and uncommitted retry candidate
+
+The user requested rapid diagnosis and resubmission on 2026-09-09. CPU/offline
+reconstruction matched the logged prompt population, verified all 256 canonical
+proofs, and measured target lengths 53--162 tokens and prompt lengths 368--1246.
+Malformed canonical proofs and intrinsically overlength correct answers are
+not supported explanations. Actual response formatting, reasoning, citation,
+or truncation failures remain unresolved because the handler unconditionally
+deleted the full attempt ledger. Prompt instructions are underspecified, but
+this is not sufficient evidence for a speculative scientific change.
+
+The candidate changes only src/posttrain_circuits/cli/build_teacher_demos.py:
+it retains a newly failed ledger/view/manifest under the fixed
+/scr/del6500/OPD/diagnostics/teacher_demos root and logs bounded rejection and
+finish-reason statistics before re-raising the original error. It changes no
+generation, RNG, prompt, verifier, token limit, handler, or runtime. Eight new
+tests cover retention, original exceptions, success behavior, stale-store
+exclusion, and symlink rejection. Across four focused suites, 24 tests passed;
+after correcting a test assertion for inherited setgid, its exact recheck
+passed 1/1. All 25 final-candidate tests have passing evidence. Independent
+candidate code review found no blocker. Compilation/AST and git diff --check
+passed; exact commands and limitations are in
+docs/refactor/qwen3_v2_g0_failure_diagnosis_20260909.md. Reproducible CPU evidence
+is under /scr/del6500/OPD/tmp/g0-failure-diagnosis-20260909/.
+
+The execution descriptor recomputes to unchanged fingerprint ca27527e... and
+the existing certificate validates. The CLI is outside the named safety-file
+set, so no deployment or class-certificate update is needed for this patch.
+The proposed science successor is
+prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_diagnostics_v2.yaml;
+its strict shape and identical science config validate, and its proposed status
+correctly blocks execution. Original accepted artifacts remain unchanged.
+This repair makes a retry diagnostic; it does not establish improved teacher
+success. No fresh outbox, GPU run, or central submission was created.
 
 ## Verification
 
@@ -314,14 +429,28 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-1. The user commits this handoff-only record. It does not change the accepted
-   execution class, scientific protocol, plan, or request.
-2. A central operator validates the exact outbox path and SHA-256 above, then
-   submits that file without adding an execution profile, resources, or GPU
-   hints.
-3. Query central status and logs through terminal state. Accept scientific
-   success only after OPD validates g0.json, g0_artifacts.tar, and the semantic
-   completion marker.
+1. The agent creates an implementation commit containing the diagnostic CLI
+   repair, tests, proposed science successor, diagnosis report, AGENTS.md, and handoff.
+2. Independently review that actual commit, update only the new science
+   protocol review block (optionally this handoff), then create an agent-owned
+   acceptance commit. The current uncommitted review is not that acceptance.
+3. Use the generic g0_request builder with --execution-science-protocol naming
+   the new accepted protocol. To avoid dirtying or changing HEAD during G0,
+   first prepare through the existing builder with production code/data roots
+   and a fresh OPD scratch staging root. Record its exact plan, request hash,
+   job ID, and destination in this handoff, then commit the handoff. Publish
+   the unchanged builder-generated request bytes once to the armed production
+   outbox with secure_files.publish_bytes_once; do not generate a second ID.
+   The handler permits the request HEAD to be an ancestor, but requires its
+   launch HEAD to stay clean and unchanged through finalization. Keep Git
+   unchanged after publication and store interim receipt/status evidence in
+   OPD scratch until terminal state. Follow the live central intake receipts/status;
+   no new per-request submission approval or manual digest handoff is
+   needed within the recorded scope. Clean-commit/science-review gates remain.
+   Do not reuse the old outbox. GPU-safety recovery remains central.
+4. Inspect the retained generation diagnostics before claiming a cause-specific
+   repair. Accept scientific success only after OPD validates g0.json,
+   g0_artifacts.tar, and the semantic completion marker.
 
 Do not create a duplicate request or use a fixed GPU count or exact-job
 preflight constraint for G0.

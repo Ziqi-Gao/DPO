@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from contextlib import ExitStack, suppress
 from dataclasses import asdict
+import json
+import os
 from pathlib import Path
+import shutil
+import stat
+import sys
+import tempfile
+from typing import Any, Iterable
 
 from posttrain_circuits.artifacts.runs import formal_artifact_binding
 from posttrain_circuits.cli._common import enforce_production_guard, parse_cli, print_json
@@ -14,6 +23,7 @@ from posttrain_circuits.datasets.proofgraph.contracts import TaskExample
 from posttrain_circuits.datasets.teacher_demos.contracts import (
     LOGPROB_FIXTURE_UNAVAILABLE,
     TeacherCandidateOutput,
+    TeacherDemoAttempt,
 )
 from posttrain_circuits.datasets.teacher_demos.store import write_teacher_demo_store
 from posttrain_circuits.learning.teacher.demo_generation import (
@@ -23,6 +33,85 @@ from posttrain_circuits.learning.teacher.demo_generation import (
     generate_teacher_demonstrations,
 )
 from posttrain_circuits.utils.tiny_model import build_tiny_tokenizer
+
+
+_DIAGNOSTICS_ROOT = Path("/scr/del6500/OPD/diagnostics/teacher_demos")
+_DIAGNOSTIC_FILES = ("ledger.json", "accepted_view.json", "manifest.json")
+
+
+def _bounded_counts(values: Iterable[str]) -> dict[str, int]:
+    counts = Counter(str(value)[:80] for value in values)
+    bounded = dict(counts.most_common(16))
+    omitted = sum(counts.values()) - sum(bounded.values())
+    if omitted:
+        bounded["<other>"] = omitted
+    return bounded
+
+
+def _preserve_failure_diagnostics(output: Path) -> Path | None:
+    """Copy the exact failed store outside the handler's disposable workspace."""
+
+    with ExitStack() as stack:
+        try:
+            source_fd = os.open(output, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except FileNotFoundError:
+            return None
+        stack.callback(os.close, source_fd)
+        sources = []
+        for name in _DIAGNOSTIC_FILES:
+            try:
+                descriptor = os.open(
+                    name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source_fd
+                )
+            except FileNotFoundError:
+                if name == "ledger.json":
+                    return None
+                raise
+            source = stack.enter_context(os.fdopen(descriptor, "rb"))
+            if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                raise ValueError(f"diagnostic source is not a regular file: {name}")
+            sources.append((name, source))
+        if _DIAGNOSTICS_ROOT.resolve() != _DIAGNOSTICS_ROOT:
+            raise ValueError("diagnostic root must not contain symlinks")
+        _DIAGNOSTICS_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+        destination = Path(tempfile.mkdtemp(prefix="failure-", dir=_DIAGNOSTICS_ROOT))
+        for name, source in sources:
+            descriptor = os.open(destination / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as target:
+                shutil.copyfileobj(source, target)
+        return destination
+
+
+def _write_store_with_failure_diagnostics(
+    output: Path, attempts: list[TeacherDemoAttempt], **kwargs: Any
+) -> dict[str, Any]:
+    diagnostics_eligible = False
+    with suppress(OSError):
+        diagnostics_eligible = not output.exists() or (output.is_dir() and not any(output.iterdir()))
+    try:
+        return write_teacher_demo_store(output, attempts, **kwargs)
+    except Exception:
+        # Diagnostics must neither change scientific acceptance nor replace its error.
+        try:
+            destination = _preserve_failure_diagnostics(output) if diagnostics_eligible else None
+            if destination is not None:
+                summary = {
+                    "path": str(destination),
+                    "failure_code_counts": _bounded_counts(
+                        attempt.verification_trace.get("error_code") or "unspecified"
+                        for attempt in attempts if not attempt.accepted
+                    ),
+                    "finish_reason_counts": _bounded_counts(attempt.finish_reason for attempt in attempts),
+                }
+                print("Teacher-demo failure diagnostics: " + json.dumps(summary, sort_keys=True), file=sys.stderr)
+        except Exception as diagnostic_error:
+            with suppress(Exception):
+                print(
+                    "Teacher-demo diagnostic preservation failed: "
+                    + json.dumps(str(diagnostic_error)[:240]),
+                    file=sys.stderr,
+                )
+        raise
 
 
 class SmokeProofTeacher:
@@ -123,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
             "teacher-demo prompt IDs are outside the configured train family: "
             f"{sorted(unknown_prompt_ids)}"
         )
-    manifest = write_teacher_demo_store(
+    manifest = _write_store_with_failure_diagnostics(
         output,
         result.attempts,
         ordered_prompt_ids=result.ordered_prompt_ids,

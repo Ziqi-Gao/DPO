@@ -52,8 +52,8 @@ status so concurrent work is preserved. Merge non-conflicting facts; do not
 overwrite another session's updates. Delegated subagents report handoff-worthy
 facts to their parent, and the parent performs the single consolidated handoff
 edit unless it explicitly assigns one writer. Before finishing, reread the
-result and include the handoff path in the exact Git staging command given to
-the user.
+result and include the handoff in the task's Git commit. Report the resulting
+commit identity and any remaining uncommitted changes to the user.
 
 Codex loads `AGENTS.md` once when a run/session starts. New sessions receive
 this policy automatically; an already-running session must be restarted or
@@ -78,9 +78,14 @@ service. Report any required central or host operation to the user for a
 separate operator session. BIOS, IOMMU, ACS, driver, and host topology changes
 are also external operations.
 
-Do not create a Git worktree. Do not run `git add`, `git commit`, `git amend`,
-or rewrite history; give the user exact commands instead. Preserve unrelated
-user changes in a dirty checkout.
+The user has given standing authorization for OPD agents to run `git add`
+and `git commit` for authorized work. Agents own staging and creating the
+required implementation, review/acceptance, and handoff commits; do not ask
+the user to perform or separately approve these routine Git operations.
+Stage only the task's files and preserve unrelated user changes in a dirty
+checkout. Keep independent review and distinct acceptance commits where the
+scientific contract requires them. Do not create a Git worktree, amend commits,
+or rewrite history without separate explicit authorization.
 
 ## Submission and approval rules
 
@@ -93,7 +98,7 @@ The handoff sequence is:
 
 1. Implement and test the OPD handler, scientific validator, deployment
    contract, and execution profile.
-2. Finish with a clean, user-created Git commit. GPU preflight execution
+2. Finish with a clean Git commit created by the agent. GPU preflight execution
    rejects a dirty tracked checkout.
 3. Create or update an OPD-owned registration proposal with `enabled = false`.
 4. Have a central ServerScheduler operator review/install the proposal.
@@ -356,7 +361,7 @@ a later review-only acceptance commit. The latter jointly reviews the
 successor amendment, certificate, and Candidate E execution-science protocol
 so no artifact contains its own commit identity:
 
-1. The user creates a clean implementation commit containing the complete
+1. The agent creates a clean implementation commit containing the complete
    implementation, proposed successor amendment, immutable descriptor,
    proposed certificate, and proposed execution-science protocol.
 2. After independent review, change only the three `review` blocks to the same
@@ -445,4 +450,4 @@ Do not claim a GPU path works from mocks alone. Clearly separate static test
 results from evidence produced by an explicitly approved central pilot. The
 handoff must state files changed, exact tests and results, current task/profile,
 outbox path if one was prepared, whether any job actually ran, remaining
-blockers, and the Git commands the user should run.
+blockers, completed Git commit identities, and any remaining uncommitted changes.
