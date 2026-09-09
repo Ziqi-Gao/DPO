@@ -9,54 +9,28 @@ must still be verified when mutable.
 
 ## Repository and authority state
 
-The diagnostic implementation is committed at
-7d40de186c5299cd76d4ce05cf4da324cca85175, based on
-bc6ee8e8c6270c74af8a82198f247ec928df326b. It contains a
-diagnostics-only CLI repair, tests, the new science successor,
-diagnosis/handoff documentation, and the user-requested standing Git authority
-update in AGENTS.md. Agents now own staging and committing authorized OPD work,
-including the separate implementation and independently reviewed acceptance
-commits. No further routine Git approval is required. The user updated the
-protected .codex/config.toml to allow .git writes and restarted the client.
-The refreshed task permission profile explicitly permits .git writes, and
-findmnt now confirms its rw mount. The former sandbox blocker is resolved.
-The agent did not edit the protected config or bypass the sandbox.
-Independent post-commit review accepted 7d40de1... without blockers at
-2026-09-09T18:30:42Z. Review-only acceptance commit
-76543d24af032b4d8d1cc23331418ec5a080df70 changes only the new science
-protocol's review block. The actual clean-checkout science resolver accepted
-that two-commit lineage; the execution-class resolver also passed with the
-unchanged fingerprint. The new request was generated from clean 76543d2....
-The earlier failed request generation used central-install handoff
-commit ed1beab1ca1013b4e12cdd3def3dff6a51a3b953. Its parent is the earlier
-handoff synchronization commit bca406da3496a9b842535228eb43f832ea8779dc,
-which descends directly from joint successor acceptance commit
-46352c4b88013761cd43a83282fd3c6251bf2d9e. The acceptance commit changes only
-the three review-bearing successor artifacts and the handoff and binds reviewed
-implementation commit
-811fd772711d1792d59a2159174886f68721c0c4. The implementation commit's direct
-parent is the rejected candidate
-e94363527fff315e16b7ce99d7dfe3d7b7ee5063. This lineage descends from
-Candidate E v1 acceptance commit 5c0bb34cce288aef8908e498a6f5d3259b998f5b,
-whose reviewed implementation commit is
-58df5d22f7c09ac69b807eff5294296f6927bd1c.
+The user authorizes this teacher-failure repair and a fresh G0 retry through
+armed automatic intake. Agents own git add/commit for authorized work; the
+former sandbox Git blocker is resolved. No central service, registration or
+GPU-state mutation is authorized from this OPD session.
 
-The independent acceptance review of 811fd772... found no blocking findings
-and accepts that exact implementation. The narrow repair rejects every
-untracked or ignored file below src and scripts/server_scheduler before src is
-made importable, except isolated __pycache__/*.pyc files that the earlier
-private pycache-prefix boundary cannot import. Its real Git subprocess test
-covers ordinary, .gitignore, and .git/info/exclude src/json.py shadows.
+The diagnostic implementation 7d40de186c5299cd76d4ce05cf4da324cca85175 and
+independent science acceptance 76543d24af032b4d8d1cc23331418ec5a080df70
+are committed. Its request ran from launch HEAD
+cbe7e3de9a5c96bb2426bd748d14a8db0aa0ccd6 and is terminally failed.
+The retained real ledger now supports a cause-specific prompt repair described
+below. This implementation proposes the new science protocol
+prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_prompt_v3.yaml;
+it still requires independent review of its implementation commit followed by
+a distinct review-only acceptance commit before request generation.
 
-The acceptance commit was verified from a clean worktree. The successor is now
-accepted at the OPD Git/lineage layer. The later handoff-only commit is
-non-safety-critical and does not invalidate the accepted execution fingerprint.
-The exact central proposal was installed and subsequently enabled under
-separate approval. The formal G0 request was subsequently submitted centrally
-and ran once; it is now terminally failed at teacher-demo generation, as
-verified below. The user has authorized a diagnostic retry; the current
-continuous-submission workflow is recorded below. New requests still require
-accepted scientific inputs.
+The reusable execution class remains accepted by joint commit
+46352c4b88013761cd43a83282fd3c6251bf2d9e, reviewing implementation
+811fd772711d1792d59a2159174886f68721c0c4. Its entrypoint rejects untracked
+or ignored source shadows. The accepted central registration remains enabled.
+The new renderer files are outside the named safety surface; the existing
+fingerprint and certificate validate. CPU prompt-envelope evidence passes and
+is recorded below for scientific review. Git contains the earlier lineage history.
 
 Candidate E amendment
 prereg/amendments/qwen3_v2_g0_elastic_v1.yaml is unchanged, remains accepted,
@@ -274,61 +248,56 @@ receipts within an approved continuous-submission scope. The user explicitly
 confirmed that this task submission needs no further authorization. Do not ask
 again for permission to submit this retry.
 
-The 2026-09-09 13:09 CDT central handoff records the completed service restart
-at 13:05:24 CDT into PID 792882. A fresh read-only intake-status query observed
-the daemon's saved scan at 18:10:47 UTC: enabled=true, OPD armed=true,
-armed_at=18:01:58 UTC, blocked_reason=null, baseline_count=14, and no blocked
-projects. Automatic scanning is live; OPD intake-receipts was still empty.
-The arm reason records user-authorized continuous OPD submission within the
-existing registered tasks. Future acceptance is established by its central
-receipt/job record.
+The latest central handoff and verified maintenance record confirm a completed
+authorized restart at 2026-09-09T21:41:31Z into PID 992417. The revised
+classifier makes ordinary unknown application failures terminal
+application_unknown and returns cleaned devices through cooldown and health
+verification. It does not clear historical quarantine. The older sentence in
+job-contract.md saying this rollout awaits restart is superseded by the verified
+maintenance record; no additional restart is required.
 
-The 14 existing outbox filenames are excluded by the arm baseline. After the
-project-owned scientific gates pass, use the existing builder to publish one
-fresh resource-neutral request and follow its central receipt/status. The
-updated scheduler workflow does not remove the OPD builder's clean-checkout or
-accepted-science requirements. The user explicitly removed the local
-agent-Git prohibition and assigned future authorized commits to the agent;
-AGENTS.md now records that standing authorization. Central state/service
-mutations remain outside this OPD session. An earlier generic diagnostics
-builder invocation correctly rejected the dirty checkout before creating a
-plan/outbox. Git write access is restored, and the implementation and independent
-science-acceptance commits are complete. The diagnostic request is recorded below.
+At 22:14 UTC, intake.enabled=true, OPD armed=true, blocked_reason=null,
+baseline_count=14. Fresh files remain eligible. Three GPUs retain quarantine
+from the old daemon's diagnostic-job failure; the remaining device is in
+probation with compute processes present. These are central admission concerns,
+not a reason to bypass the scheduler or duplicate requests. A new request may
+be accepted and wait. OPD performed no service or GPU operation.
 
-## Current diagnostic G0 retry
+## Latest diagnostic G0 outcome and prompt repair
 
-Task/profile remains qwen3_v2_g0 / qwen3-v2-g0-elastic. The existing generic
-builder prepared exactly one fresh resource-neutral request from clean
-76543d24af032b4d8d1cc23331418ec5a080df70 using the new accepted science
-protocol prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_diagnostics_v2.yaml
-(SHA-256 26f9b7a3d725998302a50f915256945c1e687b8f2d118ed6bf1412920bd2d474).
+Task/profile: qwen3_v2_g0 / qwen3-v2-g0-elastic. Job
+opd-15db6153a4b750c67fc4706b0c0aceb6 was accepted by automatic intake at
+2026-09-09T18:32:12Z and ran once from 18:35:32Z until 21:41:05Z. It received
+three GPUs, 24 CPUs and 196608 MiB RAM, then failed build_teacher_demos with
+exit 2. Student training never started, and no automatic retry is scheduled.
+The old daemon's gpu_unknown label is not evidence of a hardware fault.
 
-- job_id: opd-15db6153a4b750c67fc4706b0c0aceb6;
-- production outbox destination:
-  /scr/del6500/OPD/scheduler/outbox/opd-15db6153a4b750c67fc4706b0c0aceb6.json;
-- exact outbox SHA-256:
-  c20ad219c4a6d39ba015142a250135f6aa35ceb3d09a811e3530cdba158ba29f;
-- workflow_id: qwen3-v2-g0-elastic-411f3e88121889ae5111230d402b6bab;
-- canonical plan SHA-256:
-  eb767fa73f31522db99a7fb9c47785464014e417351c375f41e5c91b033a018e;
-- plan path:
-  /data/del6500/OPD/workflows/plans/qwen3-v2-g0-elastic-411f3e88121889ae5111230d402b6bab/eb767fa73f31522db99a7fb9c47785464014e417351c375f41e5c91b033a018e.json;
-- staging receipt:
-  /scr/del6500/OPD/tmp/g0-publication-ugi534xk/publication-receipt.json;
-- staged request: the same filename below that directory's scheduler/outbox/.
+Its immutable request remains at
+/scr/del6500/OPD/scheduler/outbox/opd-15db6153a4b750c67fc4706b0c0aceb6.json
+with SHA-256 c20ad219c4a6d39ba015142a250135f6aa35ceb3d09a811e3530cdba158ba29f.
+Do not reuse this accepted ID. Publication evidence is under
+/scr/del6500/OPD/tmp/g0-publication-ugi534xk/; central job state and attempt
+logs remain authoritative.
 
-Strict project request validation, accepted-science lineage, unchanged class
-certification, and builder plan/CAS validation passed. This handoff snapshot
-precedes atomic publication: the request is staged and no new run is claimed
-here. After committing this handoff, publish its exact bytes once using
-/scr/del6500/OPD/tmp/g0_two_phase_publication_20260909.py publish --receipt
-with the receipt above. Do not rerun stage or create another job ID.
-The publication output and timestamped central receipt/status observations are
-saved alongside the staging receipt as publication-result.json and
-central-observation-*.json. Consult those and authoritative central records
-for post-publication state; file preparation alone proves no submission.
-Keep the launch HEAD and tracked checkout unchanged until the job is terminal:
-the handler verifies the same clean HEAD throughout scientific execution.
+The preserved ledger/view/manifest are under
+/scr/del6500/OPD/diagnostics/teacher_demos/failure-g9wqngmn/.
+All 2048 candidates were generated; only 45 passed, covering 13/256 prompts.
+Failures comprise response_syntax 881, step_syntax 872,
+antecedent_mismatch 188 and unknown_citation 62. Parsing errors are 87.5% of
+rejections. In particular, 828 step-syntax failures restate facts as Sxx: F...
+instead of applying a single rule. All 881 length-terminated outputs hit 256
+tokens. Correct accepted responses contain only rule steps and use 53–119
+tokens. The ledger SHA-256 is
+ae1429dcb75ecd5d4b27c317a9d2efa45f3dac49d1d84df4bec433dd8d7f0b61.
+
+The cause-specific repair clarifies the exact rule/citation output contract in
+proofgraph/rendering.py and shares it with anti_shortcut.py. Input punctuation
+is compacted to preserve the existing prefix bound. Base graph facts, rules,
+identifiers, polarity, order, labels and canonical targets are preserved. No verifier,
+RNG, sampling limit, candidate count or complete-coverage gate is relaxed.
+There is no answer injection or postprocessing of teacher responses. Real
+reasoning errors remain possible; improvement requires a new GPU observation.
+Details: docs/refactor/qwen3_v2_teacher_prompt_repair_20260909.md.
 
 ## Previous failed formal G0 request
 
@@ -391,42 +360,35 @@ when checked; this check did not locate a retained diagnostic ledger.
 This is a real failed G0 execution, not scientific completion or successful
 training/FSDP evidence for the successor.
 
-### Diagnosis and accepted diagnostic repair
+### Historical diagnostic repair
 
-The user requested rapid diagnosis and resubmission on 2026-09-09. CPU/offline
-reconstruction matched the logged prompt population, verified all 256 canonical
-proofs, and measured target lengths 53--162 tokens and prompt lengths 368--1246.
-Malformed canonical proofs and intrinsically overlength correct answers are
-not supported explanations. Actual response formatting, reasoning, citation,
-or truncation failures remain unresolved because the handler unconditionally
-deleted the full attempt ledger. Prompt instructions are underspecified, but
-this is not sufficient evidence for a speculative scientific change.
-
-The candidate changes only src/posttrain_circuits/cli/build_teacher_demos.py:
-it retains a newly failed ledger/view/manifest under the fixed
-/scr/del6500/OPD/diagnostics/teacher_demos root and logs bounded rejection and
-finish-reason statistics before re-raising the original error. It changes no
-generation, RNG, prompt, verifier, token limit, handler, or runtime. Eight new
-tests cover retention, original exceptions, success behavior, stale-store
-exclusion, and symlink rejection. Across four focused suites, 24 tests passed;
-after correcting a test assertion for inherited setgid, its exact recheck
-passed 1/1. All 25 final-candidate tests have passing evidence. Independent
-candidate code review found no blocker. Compilation/AST and git diff --check
-passed; exact commands and limitations are in
-docs/refactor/qwen3_v2_g0_failure_diagnosis_20260909.md. Reproducible CPU evidence
-is under /scr/del6500/OPD/tmp/g0-failure-diagnosis-20260909/.
-
-The execution descriptor recomputes to unchanged fingerprint ca27527e... and
-the existing certificate validates. The CLI is outside the named safety-file
-set, so no deployment or class-certificate update is needed for this patch.
-The accepted diagnostic science successor is
-prereg/execution_science/qwen3_v2_g0_candidate_e_seed42_diagnostics_v2.yaml;
-its strict shape, identical science config, and actual two-commit acceptance
-lineage validate. The original accepted artifacts remain unchanged.
-This repair makes a retry diagnostic; it does not establish improved teacher
-success. The new staged request is recorded above; no new GPU result is claimed.
+The original failed job deleted its temporary teacher ledger. The repair at
+7d40de1... retained newly failed ledger/view/manifest files under the fixed OPD
+scratch diagnostic root and preserved the original exception. Its 25 focused
+tests have passing evidence. The accepted diagnostics-v2 science successor
+and original artifacts remain unchanged. The latest real run demonstrates
+that retention works and supplies the response evidence summarized above.
+Historical CPU reconstruction and diagnostic test commands are documented in
+docs/refactor/qwen3_v2_g0_failure_diagnosis_20260909.md.
 
 ## Verification
+
+Prompt repair checks on 2026-09-09: 45 tests passed (14 new output-contract
+cases, 28 existing ProofGraph/stage-4/teacher-ledger/store cases, and 3 existing
+anti-shortcut cases; 14 unrelated cases deselected). The unchanged verifier
+still rejects fact restatement, prose, future citations and wrong premises.
+All 256 production teacher prompts fit 402–1246 tokens with the pinned
+offline chat tokenizer, and all 256 unchanged canonical targets verify.
+Evidence: /scr/del6500/OPD/tmp/g0-prompt-repair-20260909/teacher_prompt_envelope.json
+(SHA-256 66b4dfb2be5a427af07e726c87cf68b7e2510e6b8de2d8ad75cb18297e097283).
+Actual 128-example validation/IID/circuit populations also remain within the
+training envelope. Auxiliary serial anti-shortcut inference has an existing
+larger envelope: its maximum prefix decreases 2020→1988, and prefix plus its
+256-token completion decreases 2276→2244; do not claim it is below 1536.
+Evidence: /scr/del6500/OPD/tmp/prompt_auxiliary_envelope_20260909.json.
+All 52 safety-file hashes, descriptor/certificate and recomposed science-config
+identity validate. AST/import and git diff --check pass. No new GPU run has
+been performed by these CPU checks; the prompt-v3 review is still proposed.
 
 Static and CPU/no-GPU verification completed on 2026-09-07:
 
@@ -471,23 +433,18 @@ Python bytecode files were removed.
 
 ## Required next gates
 
-1. Implementation 7d40de1... and independent review-only acceptance 76543d2...
-   are complete. Commit this handoff, then publish the already-staged exact
-   request once to the armed production outbox with secure_files.publish_bytes_once;
-   do not generate a second ID. Check existing publication evidence first.
-   The handler permits the request HEAD to be an ancestor, but requires its
-   launch HEAD to stay clean and unchanged through finalization. Keep Git
-   unchanged after publication and store interim receipt/status evidence in
-   OPD scratch until terminal state. Follow the live central intake receipts/status;
-   no new per-request submission approval or manual digest handoff is
-   needed within the recorded scope. Clean-commit/science-review gates remain.
-   Do not reuse the old outbox. GPU-safety recovery remains central.
-2. Inspect the retained generation diagnostics before claiming a cause-specific
-   repair. Accept scientific success only after OPD validates g0.json,
-   g0_artifacts.tar, and the semantic completion marker.
+Prompt-fix CPU checks are complete. Create the implementation commit and obtain
+independent review. Accept only the new prompt-v3 science review block in a
+separate commit. Use the generic execution-science builder to stage one fresh
+request, commit its exact handoff, and publish the unchanged bytes once through
+armed intake. No additional per-request authorization is needed in this scope.
+Keep the launch HEAD and tracked checkout unchanged until terminal state;
+store interim receipt/status observations in OPD scratch. GPU safety recovery
+belongs to the central operator.
 
-Do not create a duplicate request or use a fixed GPU count or exact-job
-preflight constraint for G0.
+Scientific success still requires validated g0.json, g0_artifacts.tar and the
+semantic completion marker. Neither a request receipt nor a CPU test is GPU
+success. Never reuse old IDs, force GPU counts, or create availability probes.
 
 ## Quarantined legacy scheduler surface
 

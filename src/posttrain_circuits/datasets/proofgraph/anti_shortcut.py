@@ -13,6 +13,7 @@ from posttrain_circuits.artifacts.compatibility import scientific_compatibility_
 from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.datasets.proofgraph.contracts import Literal, ProofStep, Rule, TaskExample
 from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
+from posttrain_circuits.datasets.proofgraph.rendering import RESPONSE_FORMAT_INSTRUCTIONS
 from posttrain_circuits.datasets.proofgraph.verification import closure
 
 TRANSFORMATIONS = (
@@ -108,18 +109,17 @@ def _with_ood_distractors(example: TaskExample, count: int, seed: int) -> TaskEx
 
 
 def _paraphrased_prompt(example: TaskExample) -> str:
-    facts = "\n".join(f"- [{key}] We know {value}." for key, value in example.facts.items())
+    facts = "\n".join(f"- [{key}] {value}" for key, value in example.facts.items())
     rules = "\n".join(
-        f"- [{key}] Whenever {' plus '.join(str(item) for item in rule.antecedents)} holds, "
-        f"infer {rule.consequent}."
+        f"- [{key}] If {' plus '.join(str(item) for item in rule.antecedents)}, "
+        f"then {rule.consequent}."
         for key, rule in example.rules.items()
     )
     return (
         "KNOWN STATEMENTS\n"
         f"{facts}\n\nINFERENCE POLICY\n{rules}\n\nDECISION\n"
         f"Can {example.query} be derived from these statements?\n\n"
-        "Reply using exactly this schema:\n<proof>\n"
-        "S01: R01(F01,F02) -> CONCLUSION\n</proof>\n<answer>0 or 1</answer>"
+        f"{RESPONSE_FORMAT_INSTRUCTIONS}"
     )
 
 

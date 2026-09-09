@@ -1,0 +1,62 @@
+schema_version: 1
+kind: opd_execution_science_protocol
+protocol_id: qwen3-v2-g0-candidate-e-seed-42-prompt-v3
+
+scope:
+  unit_id: g0
+  seed: 42
+
+execution_class:
+  execution_class_id: qwen3-v2-elastic-training-v1
+  descriptor_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.descriptor.json
+  descriptor_sha256: d57c6620d090da503d5dbc5d1415a6690b7eb0110ad7cdaaf4ac1e42e6e0a739
+  fingerprint_sha256: ca27527ea4aa345114bb58859ae39078887a084bc078204c32f8782103381108
+  certification_id: qwen3-v2-elastic-training-v1-initial-certification
+  certification_path: prereg/execution_safety/qwen3_v2_elastic_training_v1.certification.yaml
+  certification_core_sha256: 2d6a9cc556b085e191ad0b0818f1dde9e6e6e52c8ff6367e8ce16935cf884d44
+  supported_world_sizes: [1, 2, 3, 4]
+
+science_config:
+  storage_neutral_resolved_config_sha256: 6c3942f4d6cf87329e1c70ba32b0b8d4cdbd526a3bbcfdcb1afd3e1674662657
+  hydra_override_vector:
+    - g0=qwen3_v2_eap_separation
+    - experiment=canonical_sft
+    - task.num_examples=256
+    - state_source.num_candidates=8
+    - seed=42
+  excluded_storage_locator_paths:
+    - output_root
+    - prereg_path
+    - protocol_amendment_path
+    - execution_science_protocol_path
+    - state_source.store_path
+    - task.dataset_family_path
+    - anti_shortcut.report_path
+    - production_safety.readiness_report
+    - production_safety.probe_cohort_manifest
+    - production_safety.initial_checkpoint_path
+    - experiment.random_reward_calibration_path
+  excluded_scheduler_provenance_paths:
+    - scheduler
+    - server_scheduler
+    - scheduler_g0
+    - scheduler_preflight
+    - scheduler_provenance
+    - execution_context
+    - job_id
+    - workflow_id
+    - plan_sha256
+    - unit_id
+    - attempt
+
+review_contract:
+  mechanism: implementation_commit_then_review_only_acceptance_commit_v1
+  acceptance_commit_self_reference: forbidden
+  non_review_change_at_acceptance: forbidden
+
+review:
+  status: proposed
+  reviewed_implementation_commit: null
+  reviewer: null
+  reviewed_at_utc: null
+  rationale: null

@@ -5,6 +5,14 @@ from __future__ import annotations
 from posttrain_circuits.datasets.proofgraph.contracts import ProofStep, TaskExample
 
 
+RESPONSE_FORMAT_INSTRUCTIONS = (
+    "Schema: one rule application per line; no prose or copied facts:\n"
+    "<proof>\nS01: R01(F01,F02) -> TRUE X\n</proof>\n<answer>0 or 1</answer>\n"
+    "Number consecutively. Cite Fxx/earlier Sxx matching antecedents "
+    "exactly. Conclusions TRUE X/NOT X. End proving query:1, negation:0."
+)
+
+
 def render_proof_literal(step: ProofStep) -> str:
     """Use a polarity-explicit, token-symmetric proof conclusion syntax."""
 
@@ -12,15 +20,16 @@ def render_proof_literal(step: ProofStep) -> str:
 
 
 def render_example(example: TaskExample) -> str:
-    facts = "\n".join(f"{key}: {value}" for key, value in example.facts.items())
+    # Compact only delimiters: preserve every graph literal, ID, and ordering.
+    # This makes room for explicit response rules inside the reviewed token bound.
+    facts = "\n".join(f"{key} {value}" for key, value in example.facts.items())
     rules = "\n".join(
-        f"{key}: {' AND '.join(str(item) for item in rule.antecedents)} -> {rule.consequent}"
+        f"{key} {' AND '.join(str(item) for item in rule.antecedents)} -> {rule.consequent}"
         for key, rule in example.rules.items()
     )
     return (
-        f"FACTS\n{facts}\n\nRULES\n{rules}\n\nQUERY\nIs {example.query} true?\n\n"
-        "OUTPUT FORMAT\n<proof>\nS01: R01(F01,F02) -> CONCLUSION\n"
-        "</proof>\n<answer>0 or 1</answer>"
+        f"FACTS\n{facts}\n\nRULES\n{rules}\n\nQUERY\n{example.query}\n\n"
+        f"{RESPONSE_FORMAT_INSTRUCTIONS}"
     )
 
 
