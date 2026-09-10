@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-09-09.
+Last updated: 2026-09-10.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -253,20 +253,17 @@ receipts within an approved continuous-submission scope. The user explicitly
 confirmed that this task submission needs no further authorization. Do not ask
 again for permission to submit this retry.
 
-The latest central handoff and verified maintenance record confirm a completed
-authorized restart at 2026-09-09T21:41:31Z into PID 992417. The revised
-classifier makes ordinary unknown application failures terminal
-application_unknown and returns cleaned devices through cooldown and health
-verification. It does not clear historical quarantine. The older sentence in
-job-contract.md saying this rollout awaits restart is superseded by the verified
-maintenance record; no additional restart is required.
+The revised classifier is operational: the latest failed OPD attempt was
+classified application_unknown, terminal without automatic retry. The central
+operator acknowledged the three older application-only quarantines on
+2026-09-09 at 22:40:28Z--22:40:29Z; do not report them as current blockers.
+The central 2026-09-10 16:56 CDT handoff reports intake enabled/unblocked.
 
-At 22:14 UTC, intake.enabled=true, OPD armed=true, blocked_reason=null,
-baseline_count=14. Fresh files remain eligible. Three GPUs retain quarantine
-from the old daemon's diagnostic-job failure; the remaining device is in
-probation with compute processes present. These are central admission concerns,
-not a reason to bypass the scheduler or duplicate requests. A new request may
-be accepted and wait. OPD performed no service or GPU operation.
+A direct read of central GPU safety state at 2026-09-10T21:59:17Z found all
+four devices in probation with reason "GPU still has compute processes",
+no quarantined devices and dispatch_paused=false. No device was ready for
+exclusive OPD admission at that snapshot. These observations do not authorize
+OPD to alter processes or GPU state. OPD performed no service or GPU operation.
 
 ## Current prompt-repair G0 request
 
@@ -290,12 +287,35 @@ enabled and OPD armed with no blocker.
 Central durable state now records submission at 2026-09-09T22:25:43Z and
 terminal failure at 23:14:41Z, with exit 2 classified as application_unknown.
 Attempt 1 ran from launch HEAD 8d4a78d95ed5dd672e8439780dcbbc740b2bca28
-with one GPU. Its logs record completed build_splits and
+with one GPU, 24 CPUs and 192 GiB host RAM. The central runtime_scope_ready
+event establishes startup at 23:09:20Z: 18:09:20--18:14:41 CDT on September 9,
+lasting 5m21s. Its logs record completed build_splits and
 export_initial_checkpoint, then CUDA out of memory in build_teacher_demos;
 student training never started. The failed allocation requested another
-96 MiB while logical GPU 0 had 34.56 MiB free. The log reports PID 1121808
-using 91.87 GiB, but its ownership and the underlying memory-pressure cause
-have not been established by this inspection.
+96 MiB while logical GPU 0 had 34.56 MiB free out of 94.97 GiB total.
+The log distinguishes PID 1121808 occupying 91.87 GiB from the reporting
+process occupying 3.06 GiB (2.50 GiB allocated by PyTorch; 17.95 MiB reserved
+but unallocated). Another process's GPU occupancy is therefore the directly
+observed memory-pressure cause, not evidence of a 92-GiB teacher allocation.
+
+The central payload PID was 1121809, while the scientific command references
+supervisor PID 1121813. PID 1121808's owner, program and relationship to the
+job cannot be established from retained records; do not call it VLLM or assign
+it to a user from today's process list. The prelaunch_verified audit event
+persists UUID/PCI/lease, not an actual GPU-memory/process snapshot. It cannot
+distinguish occupancy already present at admission from a later competing
+launch. The suppressed scientific traceback also prevents identifying the
+exact failing Python statement. A code fix or smaller token limit is not
+established as the remedy by this evidence.
+
+Read-only verification on September 10 found this is still the latest OPD job,
+attempts_started=1 and next_attempt_at=null. Its workflow output/completion
+directories contain no files, its temporary workspace is deleted, and no new
+teacher diagnostic ledger was published. The earlier 2048-row rejection ledger
+must not be attributed to this OOM attempt. Authoritative audit events are in
+/data/del6500/ServerScheduler/audit/events.jsonl (prelaunch line 2190,
+runtime_scope_ready line 2193); OOM is stderr line 5. Stderr SHA-256:
+34e3666ae377da9107dbba028baf9c6a97e7a5904de6981e114eaa2d3973463a.
 
 Authoritative state:
 /data/del6500/ServerScheduler/state/jobs/opd-b4e756837282b3d77f61ca3e309e722e.json.
@@ -417,6 +437,13 @@ docs/refactor/qwen3_v2_g0_failure_diagnosis_20260909.md.
 
 ## Verification
 
+The 2026-09-10 diagnosis cross-checked durable job/retry records, full attempt
+logs, central launch audit, OPD artifact directories and current central GPU
+safety state. Independent review confirmed the same process-memory distinction
+and missing historical snapshots. Only this handoff changed; git diff --check
+passed. No scientific code, test fixture, model or GPU execution was changed
+or run, and no request was prepared or submitted by this inspection.
+
 Prompt repair checks on 2026-09-09: 45 tests passed (14 new output-contract
 cases, 28 existing ProofGraph/stage-4/teacher-ledger/store cases, and 3 existing
 anti-shortcut cases; 14 unrelated cases deselected). The unchanged verifier
@@ -479,9 +506,11 @@ Python bytecode files were removed.
 
 Implementation, independent review-only acceptance, publication and execution
 of the prompt-repair request are complete; that execution failed before student
-training. The next unresolved step is diagnosis of the teacher-stage CUDA
-memory pressure using the recorded allocation and process evidence. Central
-GPU/process recovery belongs to the central operator. The existing request
+training. The immediate OOM cause is established as competing process memory;
+historical process attribution and admission timing remain unresolved. Before
+retry, the central operator needs to establish adequate GPU availability and
+investigate concurrent occupancy during the claimed exclusive allocation.
+Central GPU/process recovery belongs to that operator. The existing request
 must not be published again. Any subsequent retry must use fresh identity and
 the applicable scientific, acceptance and intake gates; the prompt-quality
 improvement remains unmeasured.
