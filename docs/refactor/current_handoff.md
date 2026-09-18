@@ -1,11 +1,327 @@
 # OPD current handoff
 
-Last updated: 2026-09-10.
+Last updated: 2026-09-18 17:02 UTC (teacher repair implemented; diagnostic pending maintenance); server observations below remain
+dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
 approval rules. Source, Git, scientific artifacts, and central scheduler state
 must still be verified when mutable.
+
+## Quest development / SDSC Expanse workflow
+
+The user has now explicitly authorized starting formal training on SDSC and
+selecting GPU count/resources from the workload. This includes preparation,
+model/runtime setup, storage and distributed preflights, and the gated Qwen3-v2
+path. Proceed with G0 and then a seed-42 pilot; do not infer authorization for the
+full three-seed factorial or Gemma. Do not ask again for the already authorized
+work. Scientific gates and duplicate-submission protection still apply.
+
+A second infrastructure job, `54345521`, completed with ExitCode 0:0 in 18
+seconds on H100 node `exp-19-07`. It verified actual read/write/publication on
+Lustre at `/expanse/lustre/projects/nwu181/zgao12/OPD/control-results`, without
+adding a Lustre constraint. Small results were fetched under
+`.sdsc/fetched/54345521/fetch-y8o28zud/`. Each future job must still verify its
+own mounts. Project group quota was queried as 50 TiB, with about 381 GiB used
+across the group; this is not a personal allocation guarantee.
+
+Preparation uses persistent project root
+`/expanse/lustre/projects/nwu181/zgao12/OPD`: a new Conda runtime is
+installed at `envs/qwen3-v2-g0-py31213-cu128-v1`, and the exact pinned Qwen3
+1.7B/8B snapshots (20,476,854,927 bytes) were downloaded directly into
+`cache/huggingface`. Bootstrap status/logs are under the remote `bootstrap/`;
+local preparation responses/plans are under `.sdsc/`. Check those before any
+continuation or retry; directory existence alone does not mean preparation
+completed. Runtime installation completed at 2026-09-18T02:12:30Z, all 19
+G0 dependency pins matched and pip check passed. Python 3.12.13 executable SHA
+is `2777d5f6632ec0d7268ad754c28c96372e1e2097e15c22a6688db157cf750c19`.
+A two-H100 preflight passed real model loading, NCCL, one global-64 optimizer
+window, same-world state restore, memory and persistent output verification.
+Its real job ID is `54345604`, intent `ce3205630acc4742a2bef829e210ec45`,
+run `20260918T020133Z-dd9ab354eaeb-d631b1ce`, code SHA
+`dd9ab354eaeb944a3e682629e7e851f9d845bd4f4071492f152878243e1c6324`.
+Resources were 2 H100 / 24 CPU / 192 GiB / 30 minutes. It completed on
+exp-19-04 in 2m48s, with job/batch/extern COMPLETED and ExitCode 0:0.
+Actual cgroup ancestor limit was 192 GiB, peak 70.47 GiB and headroom 121.53 GiB;
+peak reserved GPU memory was 44.89 / 29.79 GiB. Full model, optimizer, scheduler
+and both CPU/CUDA RNG states were saved, perturbed and restored with hash checks.
+The 10.95 GB checkpoint remains on project storage; five small reports/logs were
+fetched under `.sdsc/fetched/54345604/fetch-q7k9dm9n/`. Final verified status is
+`.sdsc/preflight-54345604-final-status.json`. The three prior test-only walltime
+probes were estimates, not submitted jobs.
+The old Blackwell execution certificate must not be presented as H100 evidence.
+New Git-provenance tooling exports bounded genuine committed history separately
+from the dirty wrapper snapshot; it must not create a fake clean scientific HEAD.
+
+The formal pipeline stopped after failed teacher-data job **54345715**, intent
+`f98dca38ea9d4d9bbe4f3917e151a796`, run
+`20260918T021516Z-82d6fc51200a-2cf5f753`. It was submitted at
+2026-09-18T02:19:59Z. The supervisor's retained SDSC accounting reports
+`FAILED`, ExitCode `1:0`, elapsed **02:21:48**, with the batch step also failed.
+Fresh SSH/accounting after reauthentication on quser34 independently confirmed
+this same terminal result; the persisted failure artifacts were hash-verified.
+Resources: 1 H100 / 24 CPU / 192 GiB, at most 4 hours. It uses unchanged accepted
+prompt-v3 science at real HEAD 0215c356; the original teacher generator is serial.
+It creates the full 144000-example family and then 2048 candidates on 256
+ordered prompts, preserving teacher generation seed 31415 and experiment seed
+42. Metadata-only validation passed on the actual restored checkout before
+submission, then again on the GPU node. Logs confirm full dataset creation and
+teacher weight loading, followed by the original store's coverage rejection:
+**252/256 prompts had zero accepted candidates** (126 positive, 126 negative).
+There are eight accepted candidates. Exact rejection counts are antecedent_mismatch
+1099, response_syntax 829, step_syntax 111 and conclusion_mismatch 1. The literal
+TRUE X occurs in 1875 outputs; 1468 copy the fake schema line verbatim. All 829
+response-syntax failures are length-terminated. This supports a prompt-induced
+schema-copying failure, with additional reasoning failures still possible.
+The worker log matches its publication SHA. The wrapper's receipt records
+successful persistent read-back of the 46,630,071-byte attempt ledger, manifest,
+accepted view and dataset. A secondary legacy diagnostic-copy attempt failed
+on `/scr` permissions, but the SDSC wrapper still preserved these artifacts.
+Local failure evidence is `.sdsc/fetched/54345715/fetch-qi5c9hbc/`; the ledger
+remains on SDSC with SHA
+`28233d89872739b2d9d34d2dba4704ba5e857ca737005166c5776249fd8229ab`.
+Never blindly resubmit or relax coverage to advance this run.
+Admission evidence is `.sdsc/teacher-54345715-admission.json`; status/logs must
+query this existing job. Results use the project control-results root, not HOME.
+
+The next implemented task is `qwen3-v2-g0-calibration`: 2 H100 / 24 CPU /
+192 GiB, using the original Accelerate FSDP canonical-SFT entrypoint, global
+batch 64, at most 120 steps / 2M nonpadding tokens, validation/checkpoint every
+20 steps. Its upstream job IDs must be explicit. Before claiming or submitting,
+the remote control plane verifies both real Slurm completions, report and source
+identities, and every consumed teacher dataset/store file. The worker independently
+verifies the same proofs and the actual accepted scientific binding. Independent
+CPU review exercised the real clean-checkout composer and train dry-run; it also
+validated the actual fetched two-H100 report. This is calibration only: full G0,
+multistep resume and the four-H100 preflight remain required before pilot.
+The original Quest quser44 supervisor (launch PID 1192904) recorded `stopped`
+at **2026-09-18T04:46:57Z** after teacher failure, with `no_retry=true`, no
+cancellation, and a successful bounded failure fetch. No calibration submission
+was attempted. Its exact plan,
+launch evidence, state and log are in
+`.sdsc/supervision/teacher-54345715-to-calibration/`. It checks every five
+minutes and stops initiating operations after eight hours. Do not re-arm or
+edit its pinned control files while active; inspect state and submission receipts
+first. No service runs on SDSC. Reconcile the recorded stopped phase
+and any submission intent before continuing; SSH authentication loss is not a
+reason to repeat a GPU submission.
+
+Its calibration release is `20260918T023430Z-91bb7848d574-73d8d61d`, 463 files /
+4,372,559 source bytes; real code SHA is
+`91bb7848d5742352708c89711af0f4b2bed9d5d66206d55872df8b7a9f38e910`.
+Companion provenance SHA is
+`3edd6179d4828c4bfd1053d9f1329bd5ec359d2dca52c64ccf6fd65ee5b3e359`;
+both were uploaded and verified. The selected calibration limit is one hour,
+with TERM 300 seconds early for stable output publication. Identical-resource
+30/60/90-minute test-only estimates all reported immediate starts at 02:35Z;
+the one-hour selection retains first-training evaluation/checkpoint/publication
+margin beyond the real 2m48s single-update preflight. Evidence is in
+`.sdsc/calibration-scheduler-estimates.json`. Those test-only IDs are not jobs.
+Calibration has no real job ID; its teacher prerequisite failed and the flow
+will not automatically restart. Student training has not begun.
+
+The complete successor remains deployed but recorded **`stopped`** at
+2026-09-18T04:49:14Z because its predecessor failed. It was launched on Quest
+quser44 as PID 1693084 at 03:54:14Z. Its `stages` map is empty: no G0,
+four-H100 preflight or pilot was submitted, and neither G0 nor pilot passed.
+The finite flow directory is
+`.sdsc/supervision/teacher54345715-g0-pilot-v1/` (plan, deployment, launch,
+review, state and log). Its independently reviewed source snapshot is
+`20260918T035115Z-7d6f46dcb09a-1e6ddd7b`, 489 files / 4,880,767 source bytes;
+code SHA `7d6f46dcb09af2a8f35fe773f807bb5578033e2183ab411487438a3902727824`.
+Uploaded genuine Git provenance SHA is
+`a74f9d86dd6a1c34a7ae32d362f80fd55467f17ca1fd6103c84b1c552c79521e`;
+local/remote plan SHA is
+`5b67b19da2e68a0b6b2f306c9f29fb55a77a5c912a86524f5c4dd0231df7f2ea`.
+Preserve both stopped flows' plans, claims and receipts; never blindly re-arm
+them. The implemented successor requires verified calibration,
+then executes G0 → four-H100 preflight → seed-42 pilot, at most four concurrent
+GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
+science, SSH loss, changed control hashes or unresolved submissions; no blind
+retry, auto-cancellation, full factorial or Gemma.
+
+The current repair session is on Quest **quser34**. Manual authentication restored
+`$HOME/.ssh/cm/sdsc-quser34`; check confirmed zgao12@login01, the discovered
+runtime and persistent paths. Only this shared master is used; no authentication
+retry occurs. Both old flows remain stopped.
+
+The prompt-v4 candidate removes the fake rule/atom example, requires actual
+rule consequents and citations, and stops at the proved query polarity. Its
+shared instructions affect normal and anti-shortcut prompts too. Graphs,
+canonical targets, verifier, candidate RNG, model/sampling and all scientific
+thresholds are unchanged. All 256 original prompts fit 395–1239 tokens under
+the pinned tokenizer (old 402–1246). All 256 canonical proofs pass; 18 retained
+raw samples replay with identical verifier traces, identities and seeds. The
+SDSC diagnostic-copy destination now stays under its output tree, and summary
+counts survive a secondary copy failure. Central defaults are preserved.
+The new prompt-v4 science protocol is **proposed**, not accepted. Its implementation
+and subsequent independent review-only acceptance must remain distinct commits.
+All 52 named execution-safety file hashes remain unchanged. The consolidated
+repair/control/science suite passed **483 tests**, with 15 dependency warnings.
+Details and exact evidence: `docs/refactor/sdsc_teacher_prompt_repair_20260918.md`
+and `.sdsc/diagnostics/teacher-54345715/`.
+
+Exactly one exploratory diagnostic job **54351516** was submitted at
+2026-09-18T16:57:16Z, intent `08139fa0cfa24f09b3838d0cad192ded`, from run
+`20260918T165336Z-2424d4393021-90ec9634`, snapshot SHA
+`2424d4393021365aea5b67be5db87413395f0dec051a4aa86bcd81e50f8519f2`.
+It uses 1 H100 / 24 CPU / 192 GiB / at most 30 minutes. Its actual initial
+state is **PENDING**, reason `ReqNodeNotAvail, Reserved for maintenance`;
+sbatch test-only estimates September 20 even for shorter/smaller probes.
+That estimate is not a start guarantee. The matching dry-run/upload covered
+493 files / 4,962,478 source bytes. No duplicate submission or cancellation.
+
+The separate read-only watcher is actually running on Quest quser34 as PID
+2037247, with first remote observation `PENDING` and phase `waiting`.
+Plan/state/launch evidence are in
+`.sdsc/supervision/probe54351516-readonly-v1/`; canonical plan SHA is
+`4e4e79ea9a0ca906cc3e73553b2150cd67f503bb7ed80777a6e5d6bc33d07b04`.
+It polls every five minutes for at most fourteen days, then fetches bounded
+reports/logs once after terminal accounting and queue disappearance. Its 19 CPU
+state-machine/integrity tests passed. It never submits, cancels, retries,
+accepts science or starts training. SSH loss or changed pinned watcher/CLI/remote
+files stops it. Do not launch a competing watcher or edit those controls while
+active. Validate the PID on the correct Quest host with the appropriate process
+visibility; a restricted process view can hide this detached process.
+
+The probe preserves raw outputs for fixed first-32 training prompts: original
+candidate zero versus repaired candidates zero through seven. Use the paired
+candidate-zero comparison for equal sampling effort. A completed diagnostic is
+not formal teacher readiness: all accepted-science/G0/readiness flags stay false.
+After GPU evidence, review prompt-v4 and generate a fresh full 256×8 store.
+Old preflight 54345604 does not match the new scientific inventory required by
+calibration admission; use a matching new preflight or separately review a
+compatibility change. Old v3-pinned adapters/plans must be migrated coherently
+before any new full successor is armed. Student training has not resumed.
+
+The new G0 adapter separates the actual runtime initial-checkpoint hash from the
+unchanged accepted base scientific projection and retains all 26 original
+scientific checks. Two explicitly named SDSC invocation/review checks replace
+the old backend/certificate checks; `execution_class_certified=false`, no fake
+ServerScheduler context. Cross-job full-state resume uses real Singularity
+private binds to preserve original absolute checkpoint paths and bytes. Login
+probes proved host Python/Torch loading, identical inodes through the old deep
+scratch path, and exact comma-separated CUDA visibility transfer. These probes
+used no GPU and do not substitute for the actual two-resume G0 checks.
+
+Pilot retains the original four-rank batches and all eight seed-42 methods.
+The original 256-prompt G0 teacher/bank cannot satisfy its 4096-prompt contract:
+16 real one-GPU teacher array tasks (`0-15%4`) use the original per-candidate
+seed function, then merge complete ledgers in original order and build the
+4096-prompt bank. Training uses real `0-7%1` four-GPU arrays and real accounting.
+The new pilot input admission explicitly binds that larger bank to the passed
+G0 report without modifying it; all other original finalizer checks remain.
+Legacy pilot recovery compares the states the original legacy trainer actually
+writes, plus all four native Accelerate rank RNG states; it does not invent
+G0-only allocation-neutral checkpoint fields.
+
+Four-card resources were discovered live: `nairr-gpu` with
+`nairr-gpu-normal`, account nwu181; shared tasks retain
+`nairr-gpu-shared` / `nairr-gpu-shared-normal`. Pilot runtime preparation uses
+`envs/qwen3-v2-pilot-trl0222-overlay-v1`, a small independent SDSC venv reading
+the verified G0 base plus pinned TRL 0.22.2. Never mutate the running G0 base.
+The slow whole-Conda-copy preparation was stopped after a real lightweight
+venv probe succeeded; the unused partial target is not a valid runtime.
+Fixed MIB revision b759df34433c9e31043ba9e02908ce0bf20e894f and submodule
+source inventories are separately recorded. Preparation is now complete:
+remote `bootstrap/pipeline-v2/environment.json` and local
+`.sdsc/pipeline-environment.json` report all 20 pins, pip check, offline pinned
+model configs/tokenizers, MIB/submodule identities and clean source passed.
+The new venv plus its base also passed actual readonly container mount/import
+checks (`.sdsc/pipeline-container-probe.json`), without using a GPU. The base's
+19 dependency versions were rechecked unchanged after installation.
+Default-thread import verification had stopped making progress; a bounded
+single-thread full-import comparison passed. Only that no-GPU checker was
+stopped, followed by complete `--verify-prepared` validation without reinstall.
+All four OMP/MKL/OpenBLAS/NumExpr thread limits are now explicit before imports:
+one for login preparation and 24 divided by GPU count for stage ranks.
+
+The expanded SDSC CPU suite, actual original CLI parser/configuration fixtures,
+deterministic teacher partition-equivalence tests, accounting/receipt/state
+machine tests, and independent code reviews cover the new path: **380 CPU tests
+passed**, with 14 dependency deprecation warnings; Ruff, shell syntax and diff
+checks passed. Final verification and deployed identities are in the flow's
+review/launch metadata. No CPU fixture is a real G0 or pilot result; this teacher
+run failed coverage and the full multi-stage GPU path remains unexecuted.
+The deployed historical flows retain genuine science HEAD 0215c356. The new
+prompt repair is a separate proposed successor; inspect Git and the current
+review block for its implementation/acceptance state. Existing workflow tools
+and docs remain separate from the committed scientific source.
+
+The initial tooling/check/dry-run stage is complete. The user subsequently
+explicitly authorized uploading a snapshot and executing one infrastructure
+smoke with one H100, four CPUs, 16 GiB and at most five minutes, including
+status/log/result checks and fetch. Do not ask again for this same authorization;
+that earlier smoke-only scope has been superseded by the formal-training
+authorization above. Quest source remains at
+`/gpfs/projects/p32737/del6500_home/OPD`; no Codex/editor server or workflow
+daemon is installed on SDSC. Historical ServerScheduler retry authorization
+below does not authorize an Expanse job. Existing server/Slurm scripts,
+environment configuration, scientific code and preregistrations are preserved.
+
+`tools/sdsc` supplies check, snapshot preview/upload, explicitly authorized
+submission, receipt reconciliation, status, bounded logs/fetch and cancellation.
+Its original executable workload is an infrastructure smoke bounded to one H100,
+four CPUs, 16 GiB and five minutes, account nwu181, partition nairr-gpu-shared,
+and QoS nairr-gpu-shared-normal (corrected from the initially supplied value
+using the live account/partition intersection). This is not G0 or a scientific
+execution-class certification.
+Snapshots bind working-tree bytes, including eligible uncommitted/new files;
+separate releases and atomic submission claims prevent overwrite or duplicate
+submission. Jobs verify/stage source on node-local storage and validate small
+persistent results before success. HOME results are limited to the dedicated
+smoke-results metadata directory, never training data or checkpoints.
+
+After manual authentication, the real check on Quest quser44 successfully reused
+`/home/del6500/.ssh/cm/sdsc-quser44` and verified zgao12@login01. Latest evidence
+is `.sdsc/check.json` (mutable; the formal runtime check supersedes the original
+2026-09-18T01:38:54Z container-only check). Slurm tools,
+account association and quota resource expanse_nairr_gpu were verified. Host
+Python is /usr/bin/python3.11 (3.11.5, no Torch); module anaconda3/2021.05 exposes
+only shared base Python 3.8.8 without Torch. Reuse the observed SingularityPRO
+4.1.2 executable /cm/local/apps/singularitypro/4.1/bin/singularity and official
+H100 example image
+/expanse/projects/qstore/installs/containers/singularity/Expanse-Air/pytorch/pytorch-nvcr-25.03.sif.
+Its /usr/bin/python is 3.12.3 with Torch 2.7.0a0+7c8ec84dab.nv25.3, suitable as
+a smoke candidate only, not OPD's pinned formal runtime. Container support keeps
+staging/publication on the host; only tiny GPU arithmetic runs inside the image.
+Image path/size/mtime are checked and recorded, not claimed as a content hash.
+
+The authorized snapshot was uploaded and verified: run ID
+`20260918T013816Z-1e6fb5739378-e1ff0d7a`, 445 files, 3,960,118 source bytes;
+code SHA-256 `1e6fb5739378f917b15edd54538519a1480bedd0945db738d101426d16f554a8`.
+The release is under `/home/zgao12/quest-runs/OPD/releases/`. The newly created
+smoke-results root is readable/writable on HOME NFS; account/QoS and container
+checks passed again. The one authorized submission received real Slurm job ID
+`54345483` at 2026-09-18T01:39:22Z, intent
+`ed6b17d1d1fd45a58c4fc206766d6324`; its local receipt is
+`.sdsc/submissions/ed6b17d1d1fd45a58c4fc206766d6324.json`. It is now COMPLETED,
+ExitCode 0:0, elapsed 16 seconds; batch and extern steps also completed 0:0.
+The final status record is `.sdsc/job-54345483-final-status.json` with
+`success: true` and verified result hash. No resubmission is authorized.
+
+Real node exp-19-04 exposed one NVIDIA H100 80GB HBM3, CUDA 12.8, visibility
+`0`; the finite 128x128 CUDA matrix product matched the CPU reference. Source
+was verified/staged under `/scratch/zgao12/job_54345483/` on node-local ext4.
+The shared image worked on this node; small JSON/log results were published
+to the dedicated HOME NFS result path and read back successfully before exit.
+Fetch returned six small artifacts (9,216 bytes) to
+`.sdsc/fetched/54345483/fetch-53tjr6t4/`; receipt hashes were checked locally.
+Result SHA-256 is `3462d93389b2e8ff3dec45afae1fd0209f12147a9df8b281dab6624b668bf817`.
+This first job is infrastructure evidence, not a formal OPD/G0 result. It used
+no dataset/model and did not establish Lustre availability. Subsequent storage
+and formal-preparation progress is recorded above. HOME remains restricted to
+source and small metadata. Later edits do not change an existing release.
+
+Earlier teacher/calibration verification: all 244 isolated CPU tests, Ruff, shell
+syntax and diff checks passed after the calibration/supervision review fixes.
+Tests cover actual archive/validator and worker/result-validator
+interfaces with temporary fixtures; all scheduler/GPU operations are mocked.
+These CPU tests are separate from the real GPU evidence above. Independent read-only container
+integration review found no blocker. Implementation remains uncommitted;
+no reset, checkout, cleanup or new Git commit was used. GitHub fast-forward
+previously brought this Quest checkout to 0215c356355b29b5e2b407978a207db2156719e1.
+Operating instructions and next commands are in `docs/sdsc_workflow.md`.
 
 ## Repository and authority state
 

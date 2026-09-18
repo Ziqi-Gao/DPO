@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import asdict
 
 import pytest
@@ -25,24 +26,30 @@ def test_compact_prompt_preserves_the_complete_ordered_graph(structure: str, pos
         {"structure": structure, "depth": 4, "positive": positive, "distractors": 16},
     )
     before = asdict(example)
-    graph, instructions = render_example(example).split("\n\nSchema: ", 1)
+    prompt = render_example(example)
+    assert prompt.endswith("\n\n" + RESPONSE_FORMAT_INSTRUCTIONS)
+    graph = prompt.removesuffix("\n\n" + RESPONSE_FORMAT_INSTRUCTIONS)
     facts_text, rules_text, query_text = graph.removeprefix("FACTS\n").split("\n\n")
     recovered_facts = [
-        (key, Literal.parse(value))
-        for key, value in (line.split(" ", 1) for line in facts_text.splitlines())
+        (key, Literal.parse(value)) for key, value in (line.split(" ", 1) for line in facts_text.splitlines())
     ]
     recovered_rules = []
     for line in rules_text.removeprefix("RULES\n").splitlines():
         key, expression = line.split(" ", 1)
         antecedents, consequent = expression.split(" -> ")
         recovered_rules.append(
-            (key, Rule(key, tuple(Literal.parse(item) for item in antecedents.split(" AND ")),
-                       Literal.parse(consequent)))
+            (
+                key,
+                Rule(
+                    key,
+                    tuple(Literal.parse(item) for item in antecedents.split(" AND ")),
+                    Literal.parse(consequent),
+                ),
+            )
         )
     assert recovered_facts == list(example.facts.items())
     assert recovered_rules == list(example.rules.items())
     assert Literal.parse(query_text.removeprefix("QUERY\n")) == example.query
-    assert "Schema: " + instructions == RESPONSE_FORMAT_INSTRUCTIONS
     assert asdict(example) == before
     assert task.verify(example, task.parse_response(render_target(example))).reward == 1.0
 
@@ -80,17 +87,73 @@ def _signed_conjunction_example(positive: bool) -> TaskExample:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("positive", [False, True])
-def test_documented_schema_supports_signed_conjunction_and_earlier_steps(positive: bool) -> None:
+def test_actual_rule_consequents_support_signed_conjunction_and_earlier_steps(positive: bool) -> None:
     task = ProofGraphTask()
     example = _signed_conjunction_example(positive)
-    schema = "<proof>" + RESPONSE_FORMAT_INSTRUCTIONS.split("<proof>", 1)[1].split("</answer>", 1)[0] + "</answer>"
+    # Following the instructions copies actual consequents, not the old fake
+    # schema's TRUE X. Bare positive literals are already valid parser inputs;
+    # the frozen canonical targets retain their original explicit TRUE form.
+    response = (
+        f"<proof>\nS01: R01(F01,F02) -> {example.rules['R01'].consequent}\n"
+        f"S02: R02(S01) -> {example.rules['R02'].consequent}\n"
+        f"</proof>\n<answer>{int(positive)}</answer>"
+    )
     signed = "TRUE Y" if positive else "NOT Y"
-    response = schema.replace("</proof>", f"S02: R02(S01) -> {signed}\n</proof>")
-    response = response.replace("0 or 1", str(int(positive)))
-    assert response == render_target(example)
+    assert render_target(example) == (
+        f"<proof>\nS01: R01(F01,F02) -> TRUE X\nS02: R02(S01) -> {signed}\n"
+        f"</proof>\n<answer>{int(positive)}</answer>"
+    )
     result = task.verify(example, task.parse_response(response))
     assert result.reward == 1.0
-    assert [step.established for step in result.step_results] == [Literal("X"), example.canonical_proof[-1].conclusion]
+    assert [step.established for step in result.step_results] == [
+        Literal("X"),
+        example.canonical_proof[-1].conclusion,
+    ]
+
+
+@pytest.mark.unit
+def test_instructions_do_not_supply_an_invented_rule_application_to_copy() -> None:
+    # Real teacher job 54345715 copied the former concrete schema line in
+    # 1,468/2,048 attempts. Instructions must not supply real-looking fact/rule
+    # IDs or a fabricated consequent, even when a task happens to use X.
+    assert re.search(r"\b[FR]\d+\b", RESPONSE_FORMAT_INSTRUCTIONS) is None
+    assert "TRUE X" not in RESPONSE_FORMAT_INSTRUCTIONS
+    assert "NOT X" not in RESPONSE_FORMAT_INSTRUCTIONS
+    assert not ProofGraphTask().parse_response(RESPONSE_FORMAT_INSTRUCTIONS).parse_valid
+
+
+@pytest.mark.unit
+def test_observed_copied_schema_is_rejected_even_before_an_otherwise_valid_proof() -> None:
+    task = ProofGraphTask()
+    example = task.generate(42, {"structure": "chain", "depth": 4, "positive": True, "distractors": 4})
+    valid = render_target(example)
+    # The actual failed first attempt started with this invented line; keeping
+    # a correct proof later must not turn it into an accepted demonstration.
+    copied = valid.replace("<proof>\n", "<proof>\nS01: R01(F01,F02) -> TRUE X\n", 1)
+    result = task.verify(example, task.parse_response(copied))
+    assert result.reward == 0.0
+    assert result.error_code == "antecedent_mismatch"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("positive", [False, True])
+def test_proof_must_stop_at_the_proved_query_polarity(positive: bool) -> None:
+    task = ProofGraphTask()
+    example = _signed_conjunction_example(positive)
+    target = render_target(example)
+    # A valid, irrelevant final step is not a proof ending at the query;
+    # proving the correct polarity does not license asserting the opposite.
+    continued = target.replace("</proof>", "S03: R01(F01,F02) -> TRUE X\n</proof>")
+    result = task.verify(example, task.parse_response(continued))
+    assert result.reward == 0.0
+    assert result.error_code == "final_conclusion_mismatch"
+    contradictory = target.replace(
+        "</proof>",
+        f"S03: R02(S01) -> {example.rules['R02'].consequent.flipped()}\n</proof>",
+    )
+    result = task.verify(example, task.parse_response(contradictory))
+    assert result.reward == 0.0
+    assert result.error_code == "conclusion_mismatch"
 
 
 @pytest.mark.unit
