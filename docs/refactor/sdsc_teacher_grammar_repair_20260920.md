@@ -1,4 +1,4 @@
-# Teacher output grammar diagnosis and prompt-v5 candidate
+# Teacher grammar and dependency-order diagnosis
 
 ## Reproduced failure
 
@@ -63,8 +63,9 @@ execution evidence.
 
 ## New GPU diagnostic
 
-Job **54368250** was submitted once at `2026-09-20T22:45:35Z` and observed
-running on `exp-19-08`. It uses one H100, 24 CPUs, 192 GiB and at most 30
+Job **54368250** was submitted once at `2026-09-20T22:45:35Z` and completed
+on `exp-19-08` with Slurm `COMPLETED / 0:0` in 20m36s. It used one H100,
+24 CPUs, 192 GiB and at most 30
 minutes, account `nwu181`, partition `nairr-gpu-shared`, QoS
 `nairr-gpu-shared-normal`.
 
@@ -82,21 +83,72 @@ IDs, response text, token logprobs and verification traces are preserved.
 Results are staged on node-local scratch and hash-verified after publication
 to the existing project Lustre path. No original release is overwritten.
 
-The finite read-only watcher uses
+The finished read-only watcher used
 `.sdsc/supervision/probe54368250-readonly-v1/`, with immutable plan SHA
 `cf8a7c41157fe2cd89eb5c6b3c8e4fab7bfecac22c18a5b70e28a1fc2cd4fbc6`.
 It observes every five minutes and fetches bounded terminal reports/logs; it
 never submits, retries, cancels or promotes diagnostic results into training.
-Inspect its actual state before continuing, and do not edit its pinned controls
-while active. Both old formal flows remain stopped.
+Its final state was recorded at `2026-09-20T23:07:18Z`. Both old formal flows
+remain stopped.
+
+The v5 candidate accepted **24/256** responses, covering **4/32** prompts.
+The paired candidate-zero comparison is v4 **0/32** versus v5 **3/32**.
+The report SHA is
+`f961e7076f601b5ffc44d2abe80d07b80306d69e3741d1148180edb41bc18864`;
+the fetched 2,350,160-byte raw ledger matches receipt SHA
+`720d76b2634d135b1a5496227ce2176e1d686f4873ff14ecb9dd162fa4441d67`.
+All 288 verification traces replay exactly. The baseline's 32 response-token
+sequences, logprobs and seeds exactly reproduce the previous v4 candidate zero.
+Narrow spacing and ID-padding hypotheses recover no additional candidates.
+
+Independent first-failure classification found 64 fact-restatement lines,
+58 references to later/self/missing steps, 32 literal/formula citations,
+22 antecedent mismatches, 20 truncated responses, 11 literal-first lines,
+10 rule-ID citations, seven empty citation lists and eight other syntax errors.
+The generic `unknown_citation` category therefore conceals a dependency-order
+problem, not just an ID-format problem. No parser relaxation is justified.
+Only 16 of the 24 valid proofs equal the canonical step sequence.
+Answer-tag correctness fell from v4's 196/256 to v5's 136/256, so the grammar
+improvement must not be described as overall reasoning improvement.
+v5 remains proposed and must not be promoted on these results.
+
+## Bounded forward-derivation candidate
+
+The proposed v6 prompt keeps the abstract grammar, attached parentheses,
+comma-separated IDs and actual rule consequents. It explicitly directs forward
+derivation from FACTS, forbids restating facts, and allows fact IDs or earlier
+step IDs as premises. Its SHA is
+`d7196f08386c4231415eaf3bdc973f8e5dcb493d5e815f308594548f839637a2`.
+The instruction remains 87 pinned-tokenizer tokens, with all 256 formatted
+prefixes at 402–1246 tokens. Hash-verified tokenizer metadata was copied once
+to Quest; local tokenization reproduces all 256 previous remote v5 lengths.
+Independent static review
+confirmed unchanged graph/target bytes, all 256 canonical proofs, and absence
+of hidden-label/reference/metadata/ID leakage in both prompt renderers.
+
+The probe baseline is now the exact v5 instruction with its explicit v5
+protocol identity. Candidate selection, population, generation and acceptance
+stay unchanged; the v6 protocol is proposed. This is one cause-specific
+diagnostic, not an automatic series of prompt-tuning jobs. If coverage remains
+poor, inspect teacher capability and the independent frozen-validation
+readiness contract before any larger training submission.
+
+The existing readiness evaluation uses one greedy response on each of 128
+validation examples, with a 128-token completion limit and an exact canonical-
+proof comparison (not merely verifier success). Its answer/proof thresholds
+remain 0.90/0.85. Full training-store coverage does not establish this gate.
+Syntax-constrained decoding or teacher calibration would change the scientific
+generation policy/model and require a separately reviewed proposal; neither
+may silently substitute solver-generated proofs for teacher responses.
 
 ## Validation and progression
 
 The targeted CPU suite passed 89 tests. Independent additional scientific
 validation passed 58 tests, including stage-4, Qwen3 prompt protocol, execution-
 science review, teacher store, method binding and anti-shortcut checks.
-These results establish preservation and fail-closed admission, not improved
-teacher generation. GPU quality remains to be measured by the new diagnostic.
+These results establish preservation and fail-closed admission. v5 improved
+grammar but failed coverage. The v6 revision again passed the same 89 targeted
+tests; its GPU quality remains to be measured separately.
 
 Formal progression requires independent review of the actual implementation
 commit and observed candidate results, followed by a separate review-only

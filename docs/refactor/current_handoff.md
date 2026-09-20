@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-20 22:47 UTC (prompt-v4 failure reproduced; explicit-grammar
-prompt-v5 diagnostic running). Central ServerScheduler observations below
+Last updated: 2026-09-20 23:18 UTC (prompt-v5 diagnostic failed coverage;
+forward-derivation prompt-v6 prepared). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -215,25 +215,48 @@ verify, graph/reference/label independence checks pass, and all 52 safety files,
 configuration, RNG and thresholds are unchanged. CPU verification passed 89
 targeted and 58 independent scientific tests. Formal acceptance remains pending.
 
-New exploratory job **54368250**, intent `9b859df2cdee4228b82f8dcf5f9d7924`,
-was submitted once at 2026-09-20T22:45:35Z and observed **RUNNING** on
+Exploratory job **54368250**, intent `9b859df2cdee4228b82f8dcf5f9d7924`,
+was submitted once at 2026-09-20T22:45:35Z and completed **COMPLETED / 0:0**
+in 20m36s on
 `exp-19-08`. Resources: 1 H100 / 24 CPU / 192 GiB / at most 30 minutes.
 Run `20260920T224412Z-332009900a23-7374520e`, code SHA
 `332009900a23a705924dae65ce93b3536a0f52c5134bfcb02d9563f552833a9b`,
 contains 499 eligible files / 5,021,219 bytes. It compares exact frozen v4
 candidate zero against v5 candidates zero through seven on the same first 32
 prompts, with original seeds. It is never a formal teacher/G0 prerequisite.
-The new read-only watcher is active on quser43, PID 1317654, under
+The read-only watcher finished at 2026-09-20T23:07:18Z under
 `.sdsc/supervision/probe54368250-readonly-v1/`; plan SHA
 `cf8a7c41157fe2cd89eb5c6b3c8e4fab7bfecac22c18a5b70e28a1fc2cd4fbc6`.
-Its state records RUNNING and five-minute observation; preserve its pinned
-controls while active. It only observes/fetches and cannot advance training.
+It fetched verified small reports/logs. Candidate v5 achieved **24/256** valid
+responses, covering **4/32** prompts; paired candidate zero improved from 0/32
+to 3/32. Exact replay of 288 records reproduced all results and the 32 baseline
+outputs match previous v4 outputs including token logprobs. Raw ledger SHA is
+`720d76b2634d135b1a5496227ce2176e1d686f4873ff14ecb9dd162fa4441d67`.
+The major remaining causes are 64 fact restatements, 58 future/self/missing
+step references, 32 literal citations and 22 true antecedent mismatches;
+spacing/ID padding fixes recover nothing. Do not accept v5 or start a full store.
+Answer-tag correctness also fell from 196/256 to 136/256; syntax improvement
+alone is not an improvement in overall teacher reasoning.
+
+Proposed **prompt-v6** explicitly requires forward derivation from FACTS,
+forbids fact restatements, and cites Fnn or earlier Snn with all premises.
+It retains abstract grammar, comma separators and actual rule consequents.
+Instruction SHA `d7196f08386c4231415eaf3bdc973f8e5dcb493d5e815f308594548f839637a2`;
+87 tokenizer tokens; all 256 formatted prefixes fit 402–1246 tokens.
+Independent static review and the 89 targeted tests pass;
+graph/target/verifier/seeds/thresholds remain unchanged. Its new bounded
+diagnostic uses exact v5 as baseline; no formal acceptance is claimed.
 Diagnosis and continuation: `docs/refactor/sdsc_teacher_grammar_repair_20260920.md`.
 
-The next step is to inspect this real diagnostic's accounting and verified raw
-results, independently review an implementation commit and make a separate
-review-only acceptance if warranted, then generate a fresh complete 256×8
-teacher store without relaxing its coverage gate. Provenance now permits up to
+If v6 still fails, stop repeated prompt micro-tuning and diagnose capability
+against the frozen validation contract before larger training. That readiness
+gate uses 128 greedy responses with 128 completion tokens and requires answer
+accuracy 0.90 and exact canonical-proof accuracy 0.85; training-store coverage
+alone cannot establish readiness. Any generation-policy/model change needs
+its own reviewed scientific proposal, not rewritten outputs or relaxed gates.
+Formal continuation still requires an independently reviewed implementation,
+separate review-only acceptance and complete fresh 256×8 teacher store.
+Provenance now permits up to
 16 audited linear unpublished commits ending in the explicit reviewed pair;
 40 tests and independent review passed, with no public-ref/history mutation.
 Old preflight 54345604 does not match the new scientific inventory required by

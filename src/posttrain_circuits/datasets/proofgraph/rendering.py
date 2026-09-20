@@ -5,10 +5,10 @@ from __future__ import annotations
 from posttrain_circuits.datasets.proofgraph.contracts import ProofStep, TaskExample
 
 RESPONSE_FORMAT_INSTRUCTIONS = (
-    "Output only:\n<proof>\nSnn: Rnn(citations) -> consequent\n</proof>\n"
-    "<answer>0 or 1</answer>\nReplace placeholders. Number S01,S02,...; "
-    "attach ( to actual rule ID. Cite comma-separated fact/earlier-step IDs "
-    "matching all antecedents, never symbols. Use rule consequent. "
+    "Only:\n<proof>\nSnn: Rnn(citations) -> consequent\n</proof>\n"
+    "<answer>0 or 1</answer>\nUse actual rules and consequents; "
+    "number S01,S02,...; attach (. Work forward from FACTS; never restate facts. "
+    "Cite comma-separated Fnn/earlier Snn matching ALL premises. "
     "Stop at QUERY (1) or its negation (0)."
 )
 

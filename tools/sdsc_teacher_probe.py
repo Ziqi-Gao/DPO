@@ -28,13 +28,13 @@ DATASET = Path(
 )
 DATASET_SHA256 = "377538a779f31246eb9aee0ee3283755641149f8dd713c942693f3da2ab1bf4b"
 BASELINE_INSTRUCTIONS = (
-    "Prove QUERY (1) or its negation (0); stop there. "
-    "Only <proof>...</proof><answer>1 or 0</answer>. "
-    "Line: step: rule(citations) -> actual consequent. "
-    "Number steps S01,S02,...; use actual rule IDs and comma-separated "
-    "fact/earlier-step IDs matching every antecedent. No unrelated steps or prose."
+    "Output only:\n<proof>\nSnn: Rnn(citations) -> consequent\n</proof>\n"
+    "<answer>0 or 1</answer>\nReplace placeholders. Number S01,S02,...; "
+    "attach ( to actual rule ID. Cite comma-separated fact/earlier-step IDs "
+    "matching all antecedents, never symbols. Use rule consequent. "
+    "Stop at QUERY (1) or its negation (0)."
 )
-BASELINE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v4"
+BASELINE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v5"
 POPULATION = 256
 PROBE_PROMPTS = 32
 
