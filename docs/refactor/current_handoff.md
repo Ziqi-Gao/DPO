@@ -1,7 +1,8 @@
 # OPD current handoff
 
-Last updated: 2026-09-18 17:02 UTC (teacher repair implemented; diagnostic pending maintenance); server observations below remain
-dated 2026-09-10 and were not reverified from Quest.
+Last updated: 2026-09-20 22:31 UTC (SDSC available; completed prompt diagnostic
+still has zero accepted proofs). Central ServerScheduler observations below
+remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -140,10 +141,17 @@ GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
 science, SSH loss, changed control hashes or unresolved submissions; no blind
 retry, auto-cancellation, full factorial or Gemma.
 
-The current repair session is on Quest **quser34**. Manual authentication restored
-`$HOME/.ssh/cm/sdsc-quser34`; check confirmed zgao12@login01, the discovered
-runtime and persistent paths. Only this shared master is used; no authentication
-retry occurs. Both old flows remain stopped.
+The latest availability check ran from Quest **quser43** at
+2026-09-20T22:31Z, using the existing runtime-computed shared master
+`$HOME/.ssh/cm/sdsc-quser43`. SSH confirmed zgao12@login01; remote Slurm queries
+succeeded. Both `nairr-gpu-shared` and `nairr-gpu` are UP, sharing the same
+34-node H100 pool: 21 idle, five mixed, three allocated and five `fail*` nodes
+at that observation. Idle state does not guarantee immediate admission. The
+account association still permits shared-normal and full-node-normal QoS for
+nwu181; the user's queue is empty. Source/project directories are readable and
+writable and the discovered runtime executable exists on the login node; this
+check does not replace per-job GPU-node mount/runtime verification. No new job
+or authentication attempt was made. Both old flows remain stopped.
 
 The prompt-v4 candidate removes the fake rule/atom example, requires actual
 rule consequents and citations, and stops at the proved query polarity. Its
@@ -165,30 +173,35 @@ Exactly one exploratory diagnostic job **54351516** was submitted at
 2026-09-18T16:57:16Z, intent `08139fa0cfa24f09b3838d0cad192ded`, from run
 `20260918T165336Z-2424d4393021-90ec9634`, snapshot SHA
 `2424d4393021365aea5b67be5db87413395f0dec051a4aa86bcd81e50f8519f2`.
-It uses 1 H100 / 24 CPU / 192 GiB / at most 30 minutes. Its actual initial
-state is **PENDING**, reason `ReqNodeNotAvail, Reserved for maintenance`;
-sbatch test-only estimates September 20 even for shorter/smaller probes.
-That estimate is not a start guarantee. The matching dry-run/upload covered
-493 files / 4,962,478 source bytes. No duplicate submission or cancellation.
+It used 1 H100 / 24 CPU / 192 GiB / at most 30 minutes. Fresh remote accounting
+on September 20 confirms **COMPLETED**, ExitCode **0:0**, elapsed **18m28s**,
+on `exp-19-03` on September 18. The initial maintenance wait and September 20
+test-only start estimate are superseded by that actual completion. The matching
+dry-run/upload covered 493 files / 4,962,478 source bytes. No duplicate submission
+or cancellation occurred.
 
-The separate read-only watcher is actually running on Quest quser34 as PID
-2037247, with first remote observation `PENDING` and phase `waiting`.
-Plan/state/launch evidence are in
+The separate read-only watcher recorded phase **finished** at
+2026-09-18T17:58:03Z and fetched five small reports/logs (23,629 bytes) under
+`.sdsc/fetched/54351516/fetch-0jf29a3f/`. Plan/state/launch evidence remain in
 `.sdsc/supervision/probe54351516-readonly-v1/`; canonical plan SHA is
 `4e4e79ea9a0ca906cc3e73553b2150cd67f503bb7ed80777a6e5d6bc33d07b04`.
-It polls every five minutes for at most fourteen days, then fetches bounded
-reports/logs once after terminal accounting and queue disappearance. Its 19 CPU
-state-machine/integrity tests passed. It never submits, cancels, retries,
-accepts science or starts training. SSH loss or changed pinned watcher/CLI/remote
-files stops it. Do not launch a competing watcher or edit those controls while
-active. Validate the PID on the correct Quest host with the appropriate process
-visibility; a restricted process view can hide this detached process.
+The fetched report SHA matches its receipt, watcher and terminal status:
+`f98d49350123c176c2661c22b7873a9b4c93ecb25e9e2972e40d34a5d2a6eb33`;
+the worker log hash also matches. Actual H100 execution, node-local scratch and
+Lustre publication succeeded. The watcher never submitted, cancelled, retried,
+accepted science or started training; it must not be re-armed for this finished
+job.
 
 The probe preserves raw outputs for fixed first-32 training prompts: original
 candidate zero versus repaired candidates zero through seven. Use the paired
-candidate-zero comparison for equal sampling effort. A completed diagnostic is
-not formal teacher readiness: all accepted-science/G0/readiness flags stay false.
-After GPU evidence, review prompt-v4 and generate a fresh full 256×8 store.
+candidate-zero comparison for equal sampling effort. The repaired candidate has
+**0/256 accepted outputs**, covering **0/32 prompts**: 228 `step_syntax` and
+28 `response_syntax` failures. Baseline and paired candidate-zero each have
+0/32 accepted outputs. Diagnostic `passed=true` means execution completed,
+not that the repair worked; all accepted-science/G0/readiness flags stay false.
+The next scientific step is to inspect the preserved raw failures and repair
+the still-invalid teacher output before independent acceptance and a fresh full
+256×8 store. Do not accept prompt-v4 or start the full store on this evidence.
 Old preflight 54345604 does not match the new scientific inventory required by
 calibration admission; use a matching new preflight or separately review a
 compatibility change. Old v3-pinned adapters/plans must be migrated coherently
