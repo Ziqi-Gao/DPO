@@ -5,11 +5,11 @@ from __future__ import annotations
 from posttrain_circuits.datasets.proofgraph.contracts import ProofStep, TaskExample
 
 RESPONSE_FORMAT_INSTRUCTIONS = (
-    "Prove QUERY (1) or its negation (0); stop there. "
-    "Only <proof>...</proof><answer>1 or 0</answer>. "
-    "Line: step: rule(citations) -> actual consequent. "
-    "Number steps S01,S02,...; use actual rule IDs and comma-separated "
-    "fact/earlier-step IDs matching every antecedent. No unrelated steps or prose."
+    "Output only:\n<proof>\nSnn: Rnn(citations) -> consequent\n</proof>\n"
+    "<answer>0 or 1</answer>\nReplace placeholders. Number S01,S02,...; "
+    "attach ( to actual rule ID. Cite comma-separated fact/earlier-step IDs "
+    "matching all antecedents, never symbols. Use rule consequent. "
+    "Stop at QUERY (1) or its negation (0)."
 )
 
 

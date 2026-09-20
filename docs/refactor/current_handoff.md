@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-20 22:31 UTC (SDSC available; completed prompt diagnostic
-still has zero accepted proofs). Central ServerScheduler observations below
+Last updated: 2026-09-20 22:47 UTC (prompt-v4 failure reproduced; explicit-grammar
+prompt-v5 diagnostic running). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -199,9 +199,43 @@ candidate-zero comparison for equal sampling effort. The repaired candidate has
 28 `response_syntax` failures. Baseline and paired candidate-zero each have
 0/32 accepted outputs. Diagnostic `passed=true` means execution completed,
 not that the repair worked; all accepted-science/G0/readiness flags stay false.
-The next scientific step is to inspect the preserved raw failures and repair
-the still-invalid teacher output before independent acceptance and a fresh full
-256×8 store. Do not accept prompt-v4 or start the full store on this evidence.
+Exact replay of all 288 original records reproduces those failures. A diagnostic
+whitespace-only substitution recovers just five candidate responses (1/32
+prompts); it is insufficient. Most outputs put symbols/formulas where rule IDs
+and citation IDs belong. The production parser/verifier and its identity stay
+unchanged; no old response is rewritten or reclassified as a published success.
+Do not accept prompt-v4 or start the full store on its evidence.
+
+The proposed **prompt-v5** uses explicit abstract grammar
+`Snn: Rnn(citations) -> consequent`, attached parentheses, ID-only citations and
+sequential step numbers. Its instruction SHA is
+`55edb00c4d57197224c49dddfcb36ad1152640c8f8a19e2b223c1f3e968c504f`.
+All 256 production prompts fit 402–1246 tokens; all canonical targets still
+verify, graph/reference/label independence checks pass, and all 52 safety files,
+configuration, RNG and thresholds are unchanged. CPU verification passed 89
+targeted and 58 independent scientific tests. Formal acceptance remains pending.
+
+New exploratory job **54368250**, intent `9b859df2cdee4228b82f8dcf5f9d7924`,
+was submitted once at 2026-09-20T22:45:35Z and observed **RUNNING** on
+`exp-19-08`. Resources: 1 H100 / 24 CPU / 192 GiB / at most 30 minutes.
+Run `20260920T224412Z-332009900a23-7374520e`, code SHA
+`332009900a23a705924dae65ce93b3536a0f52c5134bfcb02d9563f552833a9b`,
+contains 499 eligible files / 5,021,219 bytes. It compares exact frozen v4
+candidate zero against v5 candidates zero through seven on the same first 32
+prompts, with original seeds. It is never a formal teacher/G0 prerequisite.
+The new read-only watcher is active on quser43, PID 1317654, under
+`.sdsc/supervision/probe54368250-readonly-v1/`; plan SHA
+`cf8a7c41157fe2cd89eb5c6b3c8e4fab7bfecac22c18a5b70e28a1fc2cd4fbc6`.
+Its state records RUNNING and five-minute observation; preserve its pinned
+controls while active. It only observes/fetches and cannot advance training.
+Diagnosis and continuation: `docs/refactor/sdsc_teacher_grammar_repair_20260920.md`.
+
+The next step is to inspect this real diagnostic's accounting and verified raw
+results, independently review an implementation commit and make a separate
+review-only acceptance if warranted, then generate a fresh complete 256×8
+teacher store without relaxing its coverage gate. Provenance now permits up to
+16 audited linear unpublished commits ending in the explicit reviewed pair;
+40 tests and independent review passed, with no public-ref/history mutation.
 Old preflight 54345604 does not match the new scientific inventory required by
 calibration admission; use a matching new preflight or separately review a
 compatibility change. Old v3-pinned adapters/plans must be migrated coherently
