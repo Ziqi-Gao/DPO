@@ -232,6 +232,81 @@ threshold. These tests do not establish GPU capability or authorize promotion.
 
 ## Validation and progression
 
+The capability implementation is commit `78661c2`. Final affected tests passed
+72/72, including independent fixtures and both observer tasks; Ruff, shell
+syntax and diff checks passed. Independent review confirmed the restored
+renderer is byte-identical to v5 and the worker's only final delta records its
+actual instruction SHA.
+
+Diagnostic **54368737** was submitted once at 2026-09-21T00:05:39Z and completed
+on exp-19-01 with COMPLETED / 0:0 in 5m51s, using the resource envelope above. Intent
+`841f146c4b394884bbf504cdda644893`, run
+`20260921T000425Z-24c06afe7afa-8d07dad1`, source SHA
+`24c06afe7afa3df0cd72d503a7e9dcab6136708f1d196175b10047a4b73b6d3a`;
+the preview/upload contains 506 files / 5,130,786 bytes. Its separate observer
+is `.sdsc/supervision/capability54368737-readonly-v1/`, Quest quser43 PID
+1701453, plan SHA
+`b3c101d8686b14c07643f2ce52d065646c14ac1b0318693410a85f2c1946e23f`.
+No formal store, calibration, G0 or pilot has been restarted.
+
+The observer finished at 2026-09-21T00:16:17Z. The report's SHA is
+`70ac8ccfe11034b61711697047d8e344902dd28f6de8cbbdefbeb2262281a51c`;
+publication receipt SHA is
+`ff6287bce86df48676641a820168d9be107ba484493075d88d29691845d70ce5`.
+Reports/logs were fetched both on demand and by the observer. Four raw evidence
+files (8,138,235 bytes) were independently receipt-hash-verified and fetched
+into `.sdsc/fetched/54368737/raw-verified/`. The local
+`.sdsc/diagnostics/capability-v5/replay_capability.py` reproduced 128 tokenized
+prompts, seeds, output decodings and verification traces, then reproduced the
+original scientific reduction of all 256 prefix scores. It executes only the
+trusted scientific function's pure metric statements, never formal bindings
+or artifact publication. The diagnostic result is:
+
+| Metric | Observed | Required |
+| --- | --- | --- |
+| Parser-gated answer accuracy | 53/128 = 41.41% | 90% |
+| Exact canonical proof accuracy | 23/128 = 17.97% | 85% |
+| First-rule top1 | 21/64 = 32.81% | 80% |
+| Intermediate-conclusion top1 | 0/64 | 80% |
+| Minimum retained top-128 mass | 0.9999970794 | 0.90 |
+| Target coverage | 128/256 = 50% | 90% |
+| Corrupted-prefix recovery | 32/128 = 25% | 70% |
+| Minimum causal shift | -6.7364874 | nonnegative, with every valid shift positive |
+
+`metrics_passed=false`; only retained mass passes. Format validity is 72/128.
+There are 24 verifier-valid generations, of which 23 equal the canonical proof.
+Other first errors are antecedent mismatch 22, conclusion mismatch 2,
+response syntax 32, step syntax 24 and unknown citation 24.
+All 32 response-syntax failures reached the 128-token limit; 28 of those
+examples have canonical proofs that fit within that limit. Among 96 complete
+outer answers, 65 are correct, before the unchanged parser gate. The one
+verifier-valid, noncanonical proof merely swapped independent branch order.
+
+Independent replay of all 192 tokenized probes, both sides (384 total), found
+no causal-index or token-boundary mismatch. However, all 128 intermediate target
+sequences start with ` TRUE` (token 8214), while the prompt says to use the rule
+consequent, which is rendered as a bare positive symbol. None of the 128 free
+responses emits `-> TRUE `; all 24 accepted proofs use bare positive literals,
+which the parser legitimately accepts. First-rule target coverage is 128/128;
+intermediate target coverage is 0/128. Every intermediate causal shift is
+positive despite failing exact target coverage. The representation mismatch
+is a supported explanation for part of this pattern, but aggregate scores do
+not identify the exact failing token or establish general teacher incapability.
+Because bare positive literals already parse to identical canonical proof
+objects, omitting TRUE does not explain the free-generation failures. The
+step/citation and genuine antecedent/conclusion errors require separate
+attention even if a reviewed prompt clarification resolves the prefix mismatch.
+
+Adding an explicit positive-literal convention now would be validation-informed
+protocol adaptation. Preserve this failed evidence, disclose exposure of the
+first 128 validation examples, and never call a rerun on them independent
+held-out confirmation. No new prompt candidate has been generated or submitted.
+The pending research choice is to preserve the original teacher and review an
+output-contract repair first, or introduce an independently specified teacher
+adaptation stage. The latter changes the teacher checkpoint/scientific identity;
+the existing two-H100 calibration trains the 1.7B student and cannot implement
+that repair. Both alternatives retain the original success thresholds.
+
 The targeted CPU suite passed 89 tests. Independent additional scientific
 validation passed 58 tests, including stage-4, Qwen3 prompt protocol, execution-
 science review, teacher store, method binding and anti-shortcut checks.

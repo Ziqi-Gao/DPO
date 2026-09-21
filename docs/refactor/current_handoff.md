@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-21 00:03 UTC (v6 diagnostic failed quality; exact v5
-restored for a separate frozen-validation capability diagnostic). Central ServerScheduler observations below
+Last updated: 2026-09-21 00:18 UTC (capability diagnostic 54368737 completed;
+formal readiness failed, with an output-contract mismatch identified). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -201,8 +201,41 @@ exact-proof threshold is not structurally unreachable. Answer accuracy still
 requires 0.90; all other frozen prefix thresholds remain unchanged. CPU checks
 do not establish GPU capability. Actual controls were updated only after the
 v6 watcher finished at 2026-09-20T23:55:10Z. The combined control/worker suite
-passed 196 tests before the final metadata-only prompt-SHA addition.
-Inspect actual submission receipts before assuming this new task was launched.
+passed 196 tests; after exact v5 restoration, fixture isolation and the
+metadata-only prompt-SHA addition, 72 affected tests and independent review pass.
+Implementation commit is `78661c2`; this is not scientific acceptance.
+Job **54368737**, intent `841f146c4b394884bbf504cdda644893`, was submitted once
+at 2026-09-21T00:05:39Z and completed on exp-19-01, COMPLETED / 0:0 in 5m51s.
+It used one H100 / 24 CPU / 192 GiB / at most 30 minutes, nwu181,
+nairr-gpu-shared / nairr-gpu-shared-normal.
+Run `20260921T000425Z-24c06afe7afa-8d07dad1`, source SHA
+`24c06afe7afa3df0cd72d503a7e9dcab6136708f1d196175b10047a4b73b6d3a`,
+contains 506 files / 5,130,786 bytes with matching dry-run/deployment receipt.
+The finite read-only observer is under
+`.sdsc/supervision/capability54368737-readonly-v1/`, Quest quser43 PID 1701453;
+plan SHA `b3c101d8686b14c07643f2ce52d065646c14ac1b0318693410a85f2c1946e23f`.
+It finished at 2026-09-21T00:16:17Z and fetched verified small terminal results;
+it submitted no successor. Report SHA is
+`70ac8ccfe11034b61711697047d8e344902dd28f6de8cbbdefbeb2262281a51c`.
+The separately fetched 8,138,235 bytes of raw evidence are under
+`.sdsc/fetched/54368737/raw-verified/`; exact CPU replay reproduced all 128
+generation traces and the original scientific reduction of 256 prefix scores.
+
+Only retained top-k mass passed. Answer accuracy is 53/128 (41.41%, gate 90%),
+exact proof 23/128 (17.97%, gate 85%), first-rule top1 32.81%, intermediate
+top1 0%, target coverage 50%, recovery 25%, minimum causal shift -6.7365.
+Independent tokenization replay found no off-by-one error in 384 probe sides.
+Every intermediate target begins ` TRUE`, while v5 requests the rule's bare
+consequent and none of the 128 generated responses uses that TRUE convention.
+All 24 verifier-valid responses use bare positive literals, which the unchanged
+parser accepts. This representation mismatch must be addressed before claiming
+general reasoning incapability; other rule/citation failures remain real.
+The first 128 validation examples have now informed diagnosis. Any subsequent
+prompt adaptation must disclose that exposure and must not present reuse of
+these examples as independent held-out confirmation. No v7, teacher fit,
+formal store, calibration, G0 or pilot has been launched. A research-scope
+choice is pending: keep the original teacher and review an output-contract
+repair first, or add a separately specified teacher-adaptation training stage.
 
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the
