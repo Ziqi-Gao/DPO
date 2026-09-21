@@ -1,0 +1,5 @@
+#!/bin/bash
+# Finite read-only Quest process: every Expanse query goes through tools/sdsc.
+set -euo pipefail
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+exec /usr/bin/python3.12 -I -B "$repo_root/tools/sdsc_probe_watch.py" "$@"

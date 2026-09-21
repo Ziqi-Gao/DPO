@@ -133,6 +133,36 @@ diagnostic, not an automatic series of prompt-tuning jobs. If coverage remains
 poor, inspect teacher capability and the independent frozen-validation
 readiness contract before any larger training submission.
 
+The v6 implementation is commit
+`6c12ab9a278686a30b141be02e0313be38481f21`; independent review found no static
+blocker for a bounded diagnostic, while the proposed protocol still fails
+formal admission. Job **54368464** was submitted once at
+`2026-09-20T23:24:32Z` and completed on `exp-19-01` with accounting
+COMPLETED / 0:0 in 27m34s:
+
+- Run `20260920T232307Z-41ee08e5252f-77a20595`;
+  snapshot `41ee08e5252f1984f59e7a77b6522971645d631781742e04eb9297bad4155204`.
+- Intent `1e3d211e6c7e43a8b63c6aefe9d083a6`; matching preview/upload contains
+  501 files, 5,036,550 bytes.
+- One H100 / 24 CPUs / 192 GiB / at most 30 minutes, same account/shared QoS.
+- Finite read-only observer on Quest quser43, PID 1505692, under
+  `.sdsc/supervision/probe54368464-readonly-v1/`, plan SHA
+  `e03b29c62ce891fe528131c2d38f551432d1a5362e18c75f4f6853a29cbd0807`.
+
+The read-only watcher finished at 2026-09-20T23:55:10Z and verified/fetched
+publication. Report SHA is
+`3e695297bdf038f1eddcd05ecefe821c5540f015119c60d369e57a30cd99cb3a`;
+raw ledger SHA is
+`6660106e52ef6d504adc1a8193a6ad86da76b635a286d5a56fccdb811913bece`.
+All 288 traces replay exactly and all 32 v5 baseline outputs match the earlier
+job down to token IDs/logprobs. v6 has 0/256 valid candidates and 0/32 coverage.
+Every candidate begins its first proof step with Fxx instead of a rule call;
+161 complete responses fail syntax and 95 are length-terminated. Of completed
+responses, 143/161 have correct answer tags. This localizes a systematic
+prompt-induced schema/verbosity regression, not general reasoning incapability.
+Exact replay evidence is `.sdsc/diagnostics/probe-54368464/replay-diagnosis.json`.
+No successor was started by the watcher.
+
 The existing readiness evaluation uses one greedy response on each of 128
 validation examples, with a 128-token completion limit and an exact canonical-
 proof comparison (not merely verifier success). Its answer/proof thresholds
@@ -141,6 +171,65 @@ Syntax-constrained decoding or teacher calibration would change the scientific
 generation policy/model and require a separately reviewed proposal; neither
 may silently substitute solver-generated proofs for teacher responses.
 
+The first 128 validation rows were reconstructed locally and matched the
+actual preserved dataset (file SHA
+`8d9f710b8242a53f37a5714240e2ffd64769aca5828ef1d8e180c81c277f4ed3`).
+Pinned-tokenizer target lengths are 53–162; six seven-step proofs exceed 128
+tokens. Bare positive literals and compact valid syntax still leave the same
+six too long. All variants parse to identical canonical steps and verify.
+Thus the completion limit does not by itself make the 0.85 proof threshold
+unreachable: 122/128 standard targets fit. This is a CPU feasibility check,
+not a teacher-readiness measurement or a reason to change the frozen limit.
+
+## Separate capability diagnostic
+
+The inference audit reproduced every seed in both retained ledgers (576 rows)
+and all 32 cross-job baseline response IDs/logprobs exactly. All seeds are
+distinct within each candidate arm. Ten v5 prompts repeat the same response
+eight times; nine follow probability-one paths after the frozen sampling
+filters. Across v5 candidates, 98.68% of processed token logprobs are zero.
+This supports low-entropy wrong outputs under this specific policy, not a
+random-seed bug or a general claim that the model cannot reason under another
+protocol. Cache, attention masks, chat formatting, model revision and token
+alignment were also checked. The audit is reproducible with
+`.sdsc/diagnostics/probe-54368250/inference_audit.py`.
+
+The new `qwen3-v2-teacher-capability-probe` measures the fixed first 128
+validation examples using the existing readiness CLI's exact greedy generation,
+counterfactual prefix construction, tokenizer alignment, first-rule/intermediate
+scoring and thresholds. It records raw outputs and prefix scores. Its pure
+metric reduction is compared directly against the original scientific function
+in CPU fixtures; it does not invent formal Git bindings or emit
+`teacher_readiness.json`. Greedy transition logprobs retain the original
+generator's meaning; they are not probabilities of a stochastic greedy policy.
+
+Its `passed` field means diagnostic execution and publication completed.
+`metrics_passed` reports the unchanged metric conjunction separately.
+`readiness`, `accepted_science`, `full_teacher_ready`, `g0_passed`,
+`training_started` and `readiness_artifact_produced` must stay false, even if
+all metrics pass. The diagnostic receipt's task identity cannot satisfy a
+formal teacher prerequisite. It uses one H100, 24 CPUs, 192 GiB and at most
+30 minutes; source staging, node-local execution, persistent read-back and
+duplicate-submission protection follow the existing diagnostic boundary.
+
+Before any GPU validation measurement, restore exact v5 instruction bytes
+(SHA `55edb00c4d57197224c49dddfcb36ad1152640c8f8a19e2b223c1f3e968c504f`).
+This selects the better training-probe candidate and rolls back v6 without
+using validation outcomes for prompt selection. Both protocols remain proposed.
+The worker records the actual renderer instruction SHA in its report.
+
+All 128 independently checked v5 validation prefixes fit 404–1194 tokens; adding the complete
+128-token output allowance reaches at most 1322, below 1536. Original graph
+identities, parser/verifier, model weights and all 52 safety files are unchanged.
+The capability worker has 27 passing CPU tests; independent worker/wrapper
+review passed 30. The control registration was first exercised in isolated
+fixture copies (112 CLI/remote/boundary tests), preserving active observer
+hashes until the v6 observation became terminal. The actual controls then passed
+196 combined tests; final focused verification covers the restored renderer and
+metadata addition. The observer permits only a 1e-6 float32 rounding envelope
+above one for raw top-k mass, without clamping or changing any scientific
+threshold. These tests do not establish GPU capability or authorize promotion.
+
 ## Validation and progression
 
 The targeted CPU suite passed 89 tests. Independent additional scientific
@@ -148,7 +237,7 @@ validation passed 58 tests, including stage-4, Qwen3 prompt protocol, execution-
 science review, teacher store, method binding and anti-shortcut checks.
 These results establish preservation and fail-closed admission. v5 improved
 grammar but failed coverage. The v6 revision again passed the same 89 targeted
-tests; its GPU quality remains to be measured separately.
+tests; its GPU result failed every candidate despite successful infrastructure.
 
 Formal progression requires independent review of the actual implementation
 commit and observed candidate results, followed by a separate review-only

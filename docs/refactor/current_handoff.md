@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-20 23:18 UTC (prompt-v5 diagnostic failed coverage;
-forward-derivation prompt-v6 prepared). Central ServerScheduler observations below
+Last updated: 2026-09-21 00:03 UTC (v6 diagnostic failed quality; exact v5
+restored for a separate frozen-validation capability diagnostic). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -153,116 +153,67 @@ writable and the discovered runtime executable exists on the login node; this
 check does not replace per-job GPU-node mount/runtime verification. No new job
 or authentication attempt was made. Both old flows remain stopped.
 
-The prompt-v4 candidate removes the fake rule/atom example, requires actual
-rule consequents and citations, and stops at the proved query polarity. Its
-shared instructions affect normal and anti-shortcut prompts too. Graphs,
-canonical targets, verifier, candidate RNG, model/sampling and all scientific
-thresholds are unchanged. All 256 original prompts fit 395–1239 tokens under
-the pinned tokenizer (old 402–1246). All 256 canonical proofs pass; 18 retained
-raw samples replay with identical verifier traces, identities and seeds. The
-SDSC diagnostic-copy destination now stays under its output tree, and summary
-counts survive a secondary copy failure. Central defaults are preserved.
-The new prompt-v4 science protocol is **proposed**, not accepted. Its implementation
-and subsequent independent review-only acceptance must remain distinct commits.
-All 52 named execution-safety file hashes remain unchanged. The consolidated
-repair/control/science suite passed **483 tests**, with 15 dependency warnings.
-Details and exact evidence: `docs/refactor/sdsc_teacher_prompt_repair_20260918.md`
-and `.sdsc/diagnostics/teacher-54345715/`.
+Teacher prompt diagnostics are complete; none establishes formal readiness.
+All used one H100 / 24 CPU / 192 GiB / at most 30 minutes, retained exact raw
+outputs, and completed with accounting COMPLETED / 0:0 and verified publication:
 
-Exactly one exploratory diagnostic job **54351516** was submitted at
-2026-09-18T16:57:16Z, intent `08139fa0cfa24f09b3838d0cad192ded`, from run
-`20260918T165336Z-2424d4393021-90ec9634`, snapshot SHA
-`2424d4393021365aea5b67be5db87413395f0dec051a4aa86bcd81e50f8519f2`.
-It used 1 H100 / 24 CPU / 192 GiB / at most 30 minutes. Fresh remote accounting
-on September 20 confirms **COMPLETED**, ExitCode **0:0**, elapsed **18m28s**,
-on `exp-19-03` on September 18. The initial maintenance wait and September 20
-test-only start estimate are superseded by that actual completion. The matching
-dry-run/upload covered 493 files / 4,962,478 source bytes. No duplicate submission
-or cancellation occurred.
+| Prompt | Job | Valid candidates | Covered training prompts | Elapsed |
+| --- | --- | --- | --- | --- |
+| v4 | 54351516 | 0/256 | 0/32 | 18m28s |
+| v5 | 54368250 | 24/256 | 4/32 | 20m36s |
+| v6 | 54368464 | 0/256 | 0/32 | 27m34s |
 
-The separate read-only watcher recorded phase **finished** at
-2026-09-18T17:58:03Z and fetched five small reports/logs (23,629 bytes) under
-`.sdsc/fetched/54351516/fetch-0jf29a3f/`. Plan/state/launch evidence remain in
-`.sdsc/supervision/probe54351516-readonly-v1/`; canonical plan SHA is
-`4e4e79ea9a0ca906cc3e73553b2150cd67f503bb7ed80777a6e5d6bc33d07b04`.
-The fetched report SHA matches its receipt, watcher and terminal status:
-`f98d49350123c176c2661c22b7873a9b4c93ecb25e9e2972e40d34a5d2a6eb33`;
-the worker log hash also matches. Actual H100 execution, node-local scratch and
-Lustre publication succeeded. The watcher never submitted, cancelled, retried,
-accepted science or started training; it must not be re-armed for this finished
-job.
+Their read-only observers under `.sdsc/supervision/probe<job>-readonly-v1/`
+are finished and their small results were fetched. Preserve every receipt,
+release and raw ledger; never resubmit those intents. Both formal flows remain
+stopped and student training has not started. Diagnostic `passed` means only
+execution/publication completed. Prompt-v4/v5/v6 protocols remain proposed;
+no independent formal acceptance has been recorded.
 
-The probe preserves raw outputs for fixed first-32 training prompts: original
-candidate zero versus repaired candidates zero through seven. Use the paired
-candidate-zero comparison for equal sampling effort. The repaired candidate has
-**0/256 accepted outputs**, covering **0/32 prompts**: 228 `step_syntax` and
-28 `response_syntax` failures. Baseline and paired candidate-zero each have
-0/32 accepted outputs. Diagnostic `passed=true` means execution completed,
-not that the repair worked; all accepted-science/G0/readiness flags stay false.
-Exact replay of all 288 original records reproduces those failures. A diagnostic
-whitespace-only substitution recovers just five candidate responses (1/32
-prompts); it is insufficient. Most outputs put symbols/formulas where rule IDs
-and citation IDs belong. The production parser/verifier and its identity stay
-unchanged; no old response is rewritten or reclassified as a published success.
-Do not accept prompt-v4 or start the full store on its evidence.
+Exact replay reproduces all retained verification traces. Cross-job baseline
+response IDs, seeds and logprobs match exactly. v5 resolves some grammar errors
+but still has fact restatements, invalid/forward citations and antecedent errors;
+its answer-tag correctness is only 136/256. All 256 v6 responses instead begin
+proof steps with fact IDs rather than required rule calls: 161 complete outputs
+fail syntax and 95 hit the token limit. Of the complete responses, 143/161 have
+correct answer tags; this is not proof success or general model incapability.
+The independent inference audit finds low-entropy filtered outputs, with no
+identified RNG/cache/model-loading implementation fault.
 
-The proposed **prompt-v5** uses explicit abstract grammar
-`Snn: Rnn(citations) -> consequent`, attached parentheses, ID-only citations and
-sequential step numbers. Its instruction SHA is
-`55edb00c4d57197224c49dddfcb36ad1152640c8f8a19e2b223c1f3e968c504f`.
-All 256 production prompts fit 402–1246 tokens; all canonical targets still
-verify, graph/reference/label independence checks pass, and all 52 safety files,
-configuration, RNG and thresholds are unchanged. CPU verification passed 89
-targeted and 58 independent scientific tests. Formal acceptance remains pending.
+The actual renderer is restored to exact v5 instruction bytes, SHA
+`55edb00c4d57197224c49dddfcb36ad1152640c8f8a19e2b223c1f3e968c504f`,
+selected only from training-probe results before GPU validation. The failed v6
+implementation `6c12ab9a278686a30b141be02e0313be38481f21`, proposed protocol and
+raw ledger remain preserved. All graphs, canonical targets, parser/verifier,
+model revisions, sampling seeds, thresholds and 52 execution-safety files are
+unchanged. Do not continue prompt micro-tuning or accept v5 on coverage evidence.
+Detailed diagnosis and identities are in
+`docs/refactor/sdsc_teacher_grammar_repair_20260920.md`; earlier repair evidence
+is in `docs/refactor/sdsc_teacher_prompt_repair_20260918.md`.
 
-Exploratory job **54368250**, intent `9b859df2cdee4228b82f8dcf5f9d7924`,
-was submitted once at 2026-09-20T22:45:35Z and completed **COMPLETED / 0:0**
-in 20m36s on
-`exp-19-08`. Resources: 1 H100 / 24 CPU / 192 GiB / at most 30 minutes.
-Run `20260920T224412Z-332009900a23-7374520e`, code SHA
-`332009900a23a705924dae65ce93b3536a0f52c5134bfcb02d9563f552833a9b`,
-contains 499 eligible files / 5,021,219 bytes. It compares exact frozen v4
-candidate zero against v5 candidates zero through seven on the same first 32
-prompts, with original seeds. It is never a formal teacher/G0 prerequisite.
-The read-only watcher finished at 2026-09-20T23:07:18Z under
-`.sdsc/supervision/probe54368250-readonly-v1/`; plan SHA
-`cf8a7c41157fe2cd89eb5c6b3c8e4fab7bfecac22c18a5b70e28a1fc2cd4fbc6`.
-It fetched verified small reports/logs. Candidate v5 achieved **24/256** valid
-responses, covering **4/32** prompts; paired candidate zero improved from 0/32
-to 3/32. Exact replay of 288 records reproduced all results and the 32 baseline
-outputs match previous v4 outputs including token logprobs. Raw ledger SHA is
-`720d76b2634d135b1a5496227ce2176e1d686f4873ff14ecb9dd162fa4441d67`.
-The major remaining causes are 64 fact restatements, 58 future/self/missing
-step references, 32 literal citations and 22 true antecedent mismatches;
-spacing/ID padding fixes recover nothing. Do not accept v5 or start a full store.
-Answer-tag correctness also fell from 196/256 to 136/256; syntax improvement
-alone is not an improvement in overall teacher reasoning.
+The separate `qwen3-v2-teacher-capability-probe` is implemented and independently
+reviewed for one diagnostic submission. It measures the existing frozen
+validation generation and prefix gates using actual v5, without formal Git
+bindings or a readiness artifact. The first 128 rows match the preserved split;
+prefixes fit 404–1194 tokens, at most 1322 including 128 completion tokens.
+Six canonical targets exceed the original output limit; 122 fit, so the 0.85
+exact-proof threshold is not structurally unreachable. Answer accuracy still
+requires 0.90; all other frozen prefix thresholds remain unchanged. CPU checks
+do not establish GPU capability. Actual controls were updated only after the
+v6 watcher finished at 2026-09-20T23:55:10Z. The combined control/worker suite
+passed 196 tests before the final metadata-only prompt-SHA addition.
+Inspect actual submission receipts before assuming this new task was launched.
 
-Proposed **prompt-v6** explicitly requires forward derivation from FACTS,
-forbids fact restatements, and cites Fnn or earlier Snn with all premises.
-It retains abstract grammar, comma separators and actual rule consequents.
-Instruction SHA `d7196f08386c4231415eaf3bdc973f8e5dcb493d5e815f308594548f839637a2`;
-87 tokenizer tokens; all 256 formatted prefixes fit 402–1246 tokens.
-Independent static review and the 89 targeted tests pass;
-graph/target/verifier/seeds/thresholds remain unchanged. Its new bounded
-diagnostic uses exact v5 as baseline; no formal acceptance is claimed.
-Diagnosis and continuation: `docs/refactor/sdsc_teacher_grammar_repair_20260920.md`.
-
-If v6 still fails, stop repeated prompt micro-tuning and diagnose capability
-against the frozen validation contract before larger training. That readiness
-gate uses 128 greedy responses with 128 completion tokens and requires answer
-accuracy 0.90 and exact canonical-proof accuracy 0.85; training-store coverage
-alone cannot establish readiness. Any generation-policy/model change needs
-its own reviewed scientific proposal, not rewritten outputs or relaxed gates.
-Formal continuation still requires an independently reviewed implementation,
-separate review-only acceptance and complete fresh 256×8 teacher store.
-Provenance now permits up to
-16 audited linear unpublished commits ending in the explicit reviewed pair;
-40 tests and independent review passed, with no public-ref/history mutation.
-Old preflight 54345604 does not match the new scientific inventory required by
-calibration admission; use a matching new preflight or separately review a
-compatibility change. Old v3-pinned adapters/plans must be migrated coherently
-before any new full successor is armed. Student training has not resumed.
+Formal continuation still requires independently reviewed implementation,
+separate review-only acceptance, a complete fresh 256×8 teacher store and the
+original readiness gates. Any teacher model/generation-policy change needs its
+own reviewed scientific proposal; never rewrite generated outputs or relax
+thresholds. Provenance permits up to 16 audited linear unpublished commits
+ending in an explicit reviewed pair; 40 tests and independent review passed
+without public-ref/history mutation. Old preflight 54345604 does not match new
+scientific inventory: calibration needs a matching new preflight or separately
+reviewed compatibility change. Old v3-pinned adapters/plans must migrate
+coherently before any full successor is armed.
 
 The new G0 adapter separates the actual runtime initial-checkpoint hash from the
 unchanged accepted base scientific projection and retains all 26 original
