@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-27 05:52 UTC (continuing with the original teacher;
-proposed v7 repairs the signed-literal output contract). Central ServerScheduler observations below
+Last updated: 2026-09-27 05:58 UTC (v7 signed-literal diagnostic 54472139
+running on SDSC; formal training remains gated). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -246,7 +246,7 @@ The scientific/configuration suite passed 64 tests and the worker/observer
 suite 42. Two independent-review diagnostic extraction edge cases were fixed
 and regression-tested without changing the parser or rejected-response bytes.
 
-One training-only diagnostic is planned on the original first 32 prompts with
+One training-only diagnostic runs on the original first 32 prompts with
 eight candidates; stop larger progression unless all 32 have an accepted
 candidate. Before GPU results, supplemental confirmation is fixed to validation
 rows [128:256], 64 disjoint complete pairs, ordered-example SHA
@@ -257,8 +257,20 @@ first-128 readiness gate. Full plan and disclosure:
 Current quser42 shared-master, remote identity, account/QoS and empty queue
 checks passed. A routine metadata check timed out at 15 seconds; a separate
 lightweight check verified the existing Python binary hash and package pins.
-GPU-node mounts must still be checked per job. Inspect receipts for actual
-deployment/submission; no v7 job or formal successor is claimed by source alone.
+GPU-node mounts are checked per job. Implementation `b3e128c` received independent
+bounded-diagnostic review; the v7 scientific protocol remains proposed.
+Job **54472139**, intent `c53cdcdbbb3749ff8b34b29a7cc72699`, was submitted once
+at 2026-09-27T05:56:58Z and observed RUNNING on exp-19-07. Resources: one H100 /
+24 CPUs / 192 GiB / 30 minutes, nwu181, nairr-gpu-shared/shared-normal.
+Run `20260927T055545Z-2efe95b7b76c-dc55b228`, source SHA
+`2efe95b7b76c8820d170a3b8b8dbc6b8c22d930af3103f6494d91b20e32ad824`,
+contains 508 files / 5,159,679 bytes, with matching preview/deployment receipt.
+Its finite read-only observer is under
+`.sdsc/supervision/probe54472139-readonly-v1/`, Quest quser42 PID 2629236;
+plan SHA `67e2b0373818da8cff26976745148628b68b0099dcaa8eeb69b35a4fe793392c`.
+It polls every five minutes and fetches bounded terminal reports. Preserve
+pinned controls while active; no submission, retry, cancellation or promotion
+is performed by this observer. No new formal store/calibration/G0/pilot is running.
 
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the

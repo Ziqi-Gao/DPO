@@ -118,3 +118,22 @@ storage visibility does not replace GPU-node mount verification.
 The six ServerScheduler contract paths are absent on this Quest host. This
 work uses the explicit Quest/SDSC exception in AGENTS.md; no central scheduler
 code, registration, service or submission is touched.
+
+## Deployed diagnostic
+
+Implementation commit `b3e128c` was deployed only after the matching source
+preview: 508 files / 5,159,679 bytes, archive 5,632,000 bytes. The new release
+is `20260927T055545Z-2efe95b7b76c-dc55b228`, code SHA
+`2efe95b7b76c8820d170a3b8b8dbc6b8c22d930af3103f6494d91b20e32ad824`.
+Final submit dry-run had no blockers. Exactly one authorized submission returned
+job **54472139**, intent `c53cdcdbbb3749ff8b34b29a7cc72699`, at
+2026-09-27T05:56:58Z. Accounting/queue then reported RUNNING on exp-19-07.
+No final metric or successful scientific result is claimed yet.
+
+The read-only observer was launched on Quest quser42 as PID 2629236, with plan,
+launch and state under `.sdsc/supervision/probe54472139-readonly-v1/`.
+Plan SHA is
+`67e2b0373818da8cff26976745148628b68b0099dcaa8eeb69b35a4fe793392c`.
+It checks every five minutes, ends by its fourteen-day deadline, and fetches
+small terminal results without starting another operation on SSH loss or
+unknown state. It never submits a successor or promotes diagnostic quality.
