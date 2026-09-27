@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-27 05:58 UTC (v7 signed-literal diagnostic 54472139
-running on SDSC; formal training remains gated). Central ServerScheduler observations below
+Last updated: 2026-09-27 06:23 UTC (conditional Quest continuation armed for
+v7 diagnostic 54472139; formal training remains gated). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -271,6 +271,33 @@ plan SHA `67e2b0373818da8cff26976745148628b68b0099dcaa8eeb69b35a4fe793392c`.
 It polls every five minutes and fetches bounded terminal reports. Preserve
 pinned controls while active; no submission, retry, cancellation or promotion
 is performed by this observer. No new formal store/calibration/G0/pilot is running.
+
+The user explicitly requested automatic diagnostic checking and automatic
+formal continuation after success. `tools/sdsc_auto_continue` is now launched
+on Quest quser42, PID **2931946**, at 2026-09-27T06:22:37Z. Its plan/review/
+launch/state are under `.sdsc/supervision/probe54472139-auto-v1/`, plan SHA
+`a6cad6d3e93f8bd24cce49af61569d5d24304bf2391325971a76448c5c168d42`.
+Initial actual state is `waiting`, `child_started=false`. It consumes the
+existing observer every five minutes, replaying accounting/publication hashes
+and fixed v7/v5/data/prompt identities. Only complete diagnostic execution and
+**32/32** coverage may start one Quest Codex continuation. Failure stops without
+submission, retry, cancellation or automatic prompt adaptation. A permanent
+per-job claim and all previous flow state must be preserved; never re-arm it.
+Its controls and `docs/sdsc_auto_continuation_task.md` are pinned while waiting.
+
+The continuation task automatically handles the fixed supplemental cohort,
+original readiness, coherent adapter migration, actual independent acceptance,
+fresh complete teacher store/matching preflight and the authorized student
+chain. It does not equate diagnostic success with formal acceptance. Codex runs
+on Quest with `exec --approve-for-me` (workspace-write and automatic approval
+review), once for at most eight hours; the observer has a fourteen-day deadline.
+Actual no-operation and read-only SSH handshakes passed, including remote
+identity `zgao12`; 73 affected CPU tests and an independent 50-test review pass.
+This is a project-owned finite process, not an app scheduled task or SDSC service.
+Read [automatic continuation instructions](../sdsc_auto_continuation.md) and its
+actual state before any competing work. The current SSH master is foreground
+on `pts/105`; closing that authentication terminal may disconnect it. SSH loss,
+stale state, changed controls or unknown submissions stop progression.
 
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the

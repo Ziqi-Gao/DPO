@@ -1,0 +1,5 @@
+#!/bin/bash
+# Finite Quest continuation; no remote Codex, service, or local Slurm command.
+set -euo pipefail
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+exec /usr/bin/python3.12 -I -B "$repo_root/tools/sdsc_auto_continue.py" "$@"
