@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import stat
 import sys
 import time
@@ -35,6 +36,7 @@ BASELINE_INSTRUCTIONS = (
     "Stop at QUERY (1) or its negation (0)."
 )
 BASELINE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v5"
+CANDIDATE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v7"
 POPULATION = 256
 PROBE_PROMPTS = 32
 
@@ -72,8 +74,50 @@ def population(path=DATASET, expected_sha256=DATASET_SHA256):
     return rows
 
 
+def output_contract_diagnostic(parsed):
+    """Observe TRUE spelling without repairing text or changing proof validity.
+
+    Bare positive literals remain legal to the original parser/verifier. These
+    counts only measure alignment with the canonical prefix-target rendering;
+    no count here is an acceptance or readiness criterion.
+    """
+    result = {
+        "parse_valid": parsed.parse_valid,
+        "raw_TRUE_step_lines": len(
+            re.findall(r"(?:^|\n)\s*S\d+:\s*R\d+\([^)]*\)\s*->\s*TRUE ", parsed.raw_text)
+        ),
+        "parsed_positive_conclusions": None,
+        "parsed_positive_conclusions_with_TRUE": None,
+        "parsed_positive_conclusions_without_TRUE": None,
+        "all_positive_conclusions_use_TRUE": None,
+    }
+    if parsed.parse_valid:
+        # The anchored production parser permits closing-tag text inside a
+        # literal; its outer proof ends at the last closing tag before answer.
+        # Preserve such rejected proof bytes instead of splitting at an inner
+        # tag and turning an observational count into an execution failure.
+        proof = parsed.raw_text.partition("<proof>")[2].rpartition("</proof>")[0].strip()
+        lines = proof.splitlines() if proof else []
+        positives = [
+            # Citation text can contain an arrow under the original syntax;
+            # only the arrow after the rule call starts the conclusion.
+            line.partition(")")[2].partition("->")[2].strip()
+            for step, line in zip(parsed.steps, lines, strict=True)
+            if not step.conclusion.negated
+        ]
+        marked = sum(literal.startswith("TRUE ") for literal in positives)
+        result.update(
+            parsed_positive_conclusions=len(positives),
+            parsed_positive_conclusions_with_TRUE=marked,
+            parsed_positive_conclusions_without_TRUE=len(positives) - marked,
+            all_positive_conclusions_use_TRUE=(marked == len(positives)) if positives else None,
+        )
+    return result
+
+
 def summary(records):
     accepted = [record for record in records if record["accepted"]]
+    diagnostics = [record["output_contract_diagnostic"] for record in records]
     return {
         "attempt_count": len(records),
         "accepted_count": len(accepted),
@@ -87,6 +131,22 @@ def summary(records):
         "exact_schema_line": sum(
             "S01: R01(F01,F02) -> TRUE X" in record["response_text"] for record in records
         ),
+        "output_contract_diagnostic": {
+            "parsed_outputs": sum(item["parse_valid"] for item in diagnostics),
+            **{
+                name: sum(item[name] or 0 for item in diagnostics)
+                for name in (
+                    "raw_TRUE_step_lines", "parsed_positive_conclusions",
+                    "parsed_positive_conclusions_with_TRUE", "parsed_positive_conclusions_without_TRUE",
+                )
+            },
+            "outputs_with_all_positive_conclusions_using_TRUE": sum(
+                item["all_positive_conclusions_use_TRUE"] is True for item in diagnostics
+            ),
+            "outputs_with_unmarked_positive_conclusions": sum(
+                item["all_positive_conclusions_use_TRUE"] is False for item in diagnostics
+            ),
+        },
     }
 
 
@@ -138,6 +198,8 @@ def main(argv=None):
         "exploratory": True,
         "accepted_science": False,
         "full_teacher_ready": False,
+        "training_started": False,
+        "readiness_artifact_produced": False,
         "g0_passed": False,
         "execution_class_certified": False,
         "resumable": False,
@@ -148,6 +210,9 @@ def main(argv=None):
         "environment": environment,
         "scope": "fixed-first-32-training-prompts; baseline candidate 0; candidate indices 0-7",
         "baseline_protocol": BASELINE_PROTOCOL,
+        "candidate_protocol": CANDIDATE_PROTOCOL,
+        "candidate_protocol_review": "proposed",
+        "output_contract_diagnostic_means": "rendering observation only; not proof validity or readiness",
         "passed_means": "diagnostic completed and preserved; not scientific readiness",
     }
     try:
@@ -208,7 +273,8 @@ def main(argv=None):
                             top_k=20,
                             min_p=0.0,
                         )
-                        verification = task.verify(example, task.parse_response(output.response_text))
+                        parsed = task.parse_response(output.response_text)
+                        verification = task.verify(example, parsed)
                         record = {
                             "variant": variant,
                             "prompt_id": example.example_id,
@@ -221,6 +287,7 @@ def main(argv=None):
                             **asdict(output),
                             "verification_trace": asdict(verification),
                             "accepted": verification.reward == 1.0,
+                            "output_contract_diagnostic": output_contract_diagnostic(parsed),
                         }
                         stream.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
                         stream.flush()

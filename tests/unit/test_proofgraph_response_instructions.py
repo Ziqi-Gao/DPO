@@ -12,6 +12,7 @@ from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.datasets.proofgraph.rendering import (
     RESPONSE_FORMAT_INSTRUCTIONS,
     render_example,
+    render_proof_literal,
     render_target,
 )
 
@@ -87,12 +88,32 @@ def _signed_conjunction_example(positive: bool) -> TaskExample:
 
 @pytest.mark.unit
 @pytest.mark.parametrize("positive", [False, True])
-def test_actual_rule_consequents_support_signed_conjunction_and_earlier_steps(positive: bool) -> None:
+@pytest.mark.parametrize("renderer", [render_example, _paraphrased_prompt])
+def test_instructions_match_canonical_proof_and_probe_literal_representation(
+    positive: bool, renderer,
+) -> None:  # type: ignore[no-untyped-def]
+    example = _signed_conjunction_example(positive)
+    instructions = renderer(example).rsplit("\n\n", 1)[1]
+    # Read the declared convention rather than accepting the parser's more
+    # permissive bare-positive syntax. Canonical targets and intermediate
+    # prefix probes both require render_proof_literal's explicit TRUE form.
+    declared = re.search(r"positive (TRUE <atom>), negative (NOT <atom>)", instructions)
+    assert declared is not None, "the prompt must teach both canonical literal representations"
+    assert "Replace placeholders" in instructions
+    for step in example.canonical_proof:
+        template = declared.group(2 if step.conclusion.negated else 1)
+        literal = template.replace("<atom>", step.conclusion.atom)
+        assert literal == render_proof_literal(step)
+        assert f" -> {literal}\n" in render_target(example)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("positive", [False, True])
+def test_parser_preserves_existing_bare_positive_literal_compatibility(positive: bool) -> None:
     task = ProofGraphTask()
     example = _signed_conjunction_example(positive)
-    # Following the instructions copies actual consequents, not the old fake
-    # schema's TRUE X. Bare positive literals are already valid parser inputs;
-    # the frozen canonical targets retain their original explicit TRUE form.
+    # Historical bare-positive outputs remain valid parser inputs; the prompt
+    # repair changes neither their semantics nor the frozen explicit targets.
     response = (
         f"<proof>\nS01: R01(F01,F02) -> {example.rules['R01'].consequent}\n"
         f"S02: R02(S01) -> {example.rules['R02'].consequent}\n"

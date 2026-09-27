@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-21 00:18 UTC (capability diagnostic 54368737 completed;
-formal readiness failed, with an output-contract mismatch identified). Central ServerScheduler observations below
+Last updated: 2026-09-27 05:52 UTC (continuing with the original teacher;
+proposed v7 repairs the signed-literal output contract). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -232,10 +232,33 @@ parser accepts. This representation mismatch must be addressed before claiming
 general reasoning incapability; other rule/citation failures remain real.
 The first 128 validation examples have now informed diagnosis. Any subsequent
 prompt adaptation must disclose that exposure and must not present reuse of
-these examples as independent held-out confirmation. No v7, teacher fit,
-formal store, calibration, G0 or pilot has been launched. A research-scope
-choice is pending: keep the original teacher and review an output-contract
-repair first, or add a separately specified teacher-adaptation training stage.
+these examples as independent held-out confirmation.
+
+The user continued the recommended original-teacher/output-contract route on
+September 27. Proposed v7 explicitly states positive `TRUE <atom>` and negative
+`NOT <atom>` consequents. The unchanged 87-token instruction envelope preserves
+all 256 training-prefix counts (402–1246), graph/target bytes and the original
+parser/verifier, seeds, model and thresholds. Instruction SHA is
+`8126867f5b5d70543fb71fad3e94aa5d71d77976909696a44a612f5388076ea6`.
+The probe preserves exact v5 as baseline and records TRUE spelling only as an
+observation, never a new acceptance criterion. No teacher fitting is included.
+The scientific/configuration suite passed 64 tests and the worker/observer
+suite 42. Two independent-review diagnostic extraction edge cases were fixed
+and regression-tested without changing the parser or rejected-response bytes.
+
+One training-only diagnostic is planned on the original first 32 prompts with
+eight candidates; stop larger progression unless all 32 have an accepted
+candidate. Before GPU results, supplemental confirmation is fixed to validation
+rows [128:256], 64 disjoint complete pairs, ordered-example SHA
+`532b11ac85fad0b35be1e253c2d30a8ca838ea8849adf77503a43b6433236073`.
+It is conditional, diagnostic-only, and never replaces the original exposed
+first-128 readiness gate. Full plan and disclosure:
+`docs/refactor/sdsc_output_contract_repair_20260927.md`.
+Current quser42 shared-master, remote identity, account/QoS and empty queue
+checks passed. A routine metadata check timed out at 15 seconds; a separate
+lightweight check verified the existing Python binary hash and package pins.
+GPU-node mounts must still be checked per job. Inspect receipts for actual
+deployment/submission; no v7 job or formal successor is claimed by source alone.
 
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the
