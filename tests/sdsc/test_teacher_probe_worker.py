@@ -8,7 +8,10 @@ import importlib.util
 import json
 import os
 import re
+import signal
+import subprocess
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -343,6 +346,7 @@ def invocation(tmp_path, monkeypatch):
 
 
 def test_probe_uses_actual_model_keys_exact_seeds_raw_outputs_and_original_verifier(invocation):
+    prior_handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
     assert worker.main(invocation.argv) == 0
     report, = invocation.reports
     rows = [json.loads(line) for line in (invocation.output / "attempts.jsonl").read_text().splitlines()]
@@ -358,6 +362,12 @@ def test_probe_uses_actual_model_keys_exact_seeds_raw_outputs_and_original_verif
     assert report["candidate_protocol"] == worker.CANDIDATE_PROTOCOL
     assert report["candidate_protocol_review"] == "proposed"
     assert report["ordered_prompt_ids"] == [example.example_id for example in invocation.examples[:32]]
+    assert report["execution_diagnostics"]["completed_attempt_counts"] == {"baseline": 32, "candidate": 256}
+    assert "partial_results" not in report
+    assert {signum: signal.getsignal(signum) for signum in prior_handlers} == prior_handlers
+    progress = json.loads((invocation.output / "progress.json").read_text())
+    assert progress["passed"] is False and progress["not_a_completion_report"] is True
+    assert progress["completed_attempt_counts"] == {"baseline": 32, "candidate": 256}
     for row, call in zip(rows, invocation.calls, strict=True):
         identity = sha256_value(asdict(call["example"]))
         assert row["actual_sampling_seed"] == teacher_candidate_seed(31415, identity, row["candidate_index"])
@@ -449,3 +459,180 @@ def test_validate_only_does_not_generate_or_create_results(invocation):
     assert worker.main([*invocation.argv, "--validate-only"]) == 0
     assert invocation.calls == invocation.reports == []
     assert not invocation.output.exists()
+
+
+INTERRUPTION_CHILD = r'''
+import importlib.util
+import json
+import sys
+import time
+from pathlib import Path
+root, work = Path(sys.argv[1]), Path(sys.argv[2])
+mode = sys.argv[3]
+sys.path.insert(0, str(root / "src"))
+spec = importlib.util.spec_from_file_location("interrupted_probe_fixture",
+    root / "tests/sdsc/test_teacher_probe_worker.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+import pytest
+patch = pytest.MonkeyPatch()
+fixture = module.invocation.__wrapped__(work, patch)
+module.worker.STACK_INTERVAL_SECONDS = 1  # Only this CPU interruption fixture.
+def pause():
+    (work / "ready").write_text("signal-ready")
+    time.sleep(90)
+if mode == "progress_publication":
+    original_replace = module.worker.os.replace
+    def interrupted_replace(source, destination):
+        if Path(destination).name == "progress.json":
+            value = json.loads(Path(source).read_text())
+            if (value["stage"] == "candidate_generation"
+                    and value["completed_attempt_counts"]["baseline"] == 2):
+                pause()
+        return original_replace(source, destination)
+    patch.setattr(module.worker.os, "replace", interrupted_replace)
+if mode == "model_load":
+    original = module.loading.load_model_and_tokenizer
+    def load(*args, **kwargs):
+        pause()
+        return original(*args, **kwargs)
+    patch.setattr(module.loading, "load_model_and_tokenizer", load)
+else:
+    original = module.demo_generation.HfTeacherCandidateGenerator
+    class PausedGenerator(original):
+        def __call__(self, **kwargs):
+            if len(fixture.calls) == 2:
+                pause()
+            return super().__call__(**kwargs)
+    patch.setattr(module.demo_generation, "HfTeacherCandidateGenerator", PausedGenerator)
+module.worker.main(fixture.argv)
+'''
+
+
+@pytest.mark.parametrize(
+    ("mode", "signum", "completed", "failure_stage"),
+    [
+        ("model_load", signal.SIGTERM, 0, "model_load"),
+        ("after_two_candidates", signal.SIGTERM, 2, "candidate_generation"),
+        ("progress_publication", signal.SIGTERM, 2, "candidate_generation"),
+        ("after_two_candidates", signal.SIGKILL, 2, "candidate_generation"),
+    ],
+)
+def test_real_subprocess_interruption_retains_stage_stack_and_committed_evidence(
+    tmp_path, mode, signum, completed, failure_stage,
+):
+    # Run the actual worker.main in an independent OS process with the existing
+    # fake-model fixture. A real signal must exercise the lifecycle; injecting a
+    # Python exception alone missed the original SIGTERM/finally defect.
+    environment = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+                       OPENBLAS_NUM_THREADS="1", NUMEXPR_NUM_THREADS="1")
+    with (tmp_path / "stdout.log").open("wb") as stdout, (tmp_path / "stderr.log").open("wb") as stderr:
+        child = subprocess.Popen(
+            [sys.executable, "-I", "-B", "-c", INTERRUPTION_CHILD, str(ROOT), str(tmp_path), mode],
+            stdout=stdout, stderr=stderr, env=environment,
+        )
+        try:
+            deadline = time.monotonic() + 90
+            while not (tmp_path / "ready").exists():
+                assert child.poll() is None, (tmp_path / "stderr.log").read_text()
+                assert time.monotonic() < deadline, "CPU fixture did not reach interruption point"
+                time.sleep(0.05)
+            output = tmp_path / "results"
+            before = json.loads((output / "progress.json").read_text())
+            if mode == "progress_publication":
+                # The durable previous snapshot remains readable while the
+                # next fsynced temporary file has not yet been renamed.
+                assert before["stage"] == "prompt_encoding"
+                pending_files = list(output.glob(".progress.json*.tmp"))
+                assert len(pending_files) == 1
+                pending = json.loads(pending_files[0].read_text())
+                assert pending["stage"] == failure_stage
+            else:
+                assert before["stage"] == failure_stage
+            assert before["completed_attempt_counts"] == {"baseline": completed, "candidate": 0}
+            assert before["passed"] is False and before["not_a_completion_report"] is True
+            if signum == signal.SIGKILL:
+                # An uncatchable kill cannot publish a final report. Periodic
+                # faulthandler evidence and already fsynced progress must remain.
+                deadline = time.monotonic() + 5
+                while not (output / "worker-stacks.log").stat().st_size:
+                    assert time.monotonic() < deadline, "No periodic native faulthandler snapshot"
+                    time.sleep(0.05)
+            child.send_signal(signum)
+            child.wait(timeout=15)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=10)
+    ledger = output / "attempts.jsonl"
+    rows = [json.loads(line) for line in ledger.read_text().splitlines()] if ledger.exists() else []
+    assert len(rows) == completed
+    assert all(row["variant"] == "baseline" for row in rows)
+    assert "pause" in (output / "worker-stacks.log").read_text()
+    progress = json.loads((output / "progress.json").read_text())
+    if signum == signal.SIGKILL:
+        assert child.returncode == -signal.SIGKILL
+        assert not (output / "teacher-prompt-probe.json").exists()
+        assert progress["stage"] == failure_stage
+    else:
+        assert child.returncode == 128 + signal.SIGTERM
+        report = json.loads((output / "teacher-prompt-probe.json").read_text())
+        assert report["passed"] is False
+        assert report["exit_code"] == 128 + signal.SIGTERM
+        assert report["interrupted_signal"] == "SIGTERM"
+        assert report["failure_stage"] == failure_stage
+        assert report["partial_results"]["not_a_quality_estimate"] is True
+        assert report["partial_results"]["completed_attempt_counts"] == {
+            "baseline": completed, "candidate": 0,
+        }
+        assert report["partial_results"]["ledger_committed_bytes"] == (
+            ledger.stat().st_size if completed else 0
+        )
+        assert "arms" not in report and "paired_candidate_zero" not in report
+        assert progress["stage"] == "interrupted" and progress["failure_stage"] == failure_stage
+        assert not list(output.glob(".progress.json*.tmp"))
+        for field in ("accepted_science", "full_teacher_ready", "g0_passed", "training_started"):
+            assert report[field] is False
+    assert progress["passed"] is False and progress["not_a_completion_report"] is True
+    assert progress["stage_elapsed_seconds"] >= 0 and progress["elapsed_seconds"] >= 0
+
+
+def test_config_failure_is_observed_before_any_model_work(invocation, monkeypatch):
+    def fail(*_args):
+        raise RuntimeError("injected configuration failure")
+
+    monkeypatch.setattr(worker, "probe_config", fail)
+    with pytest.raises(RuntimeError, match="configuration failure"):
+        worker.main(invocation.argv)
+    report, = invocation.reports
+    assert report["passed"] is False and report["failure_stage"] == "config_composition"
+    assert report["partial_results"]["completed_attempt_counts"] == {"baseline": 0, "candidate": 0}
+    assert invocation.calls == []
+
+
+def test_progress_publication_does_not_remove_a_preexisting_unowned_temporary(tmp_path):
+    foreign = tmp_path / ".progress.json.tmp"
+    foreign.write_text("not created by this publication")
+    worker.progress_json(tmp_path / "progress.json", {"stage": "observed"})
+    assert json.loads((tmp_path / "progress.json").read_text()) == {"stage": "observed"}
+    assert foreign.read_text() == "not created by this publication"
+    assert list(tmp_path.glob(".progress.json.*.tmp")) == []
+
+
+def test_progress_cleanup_error_does_not_mask_original_interruption(tmp_path, monkeypatch):
+    def interrupt(*_args):
+        raise worker.ProbeInterrupted(signal.SIGTERM)
+
+    unlink = Path.unlink
+
+    def denied_cleanup(path, *args, **kwargs):
+        if path.name.startswith(".progress.json."):
+            raise PermissionError("injected cleanup failure")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(worker.os, "replace", interrupt)
+    monkeypatch.setattr(Path, "unlink", denied_cleanup)
+    with pytest.raises(worker.ProbeInterrupted) as error:
+        worker.progress_json(tmp_path / "progress.json", {"stage": "observed"})
+    assert error.value.signum == signal.SIGTERM
+    assert not (tmp_path / "progress.json").exists()

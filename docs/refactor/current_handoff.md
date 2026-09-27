@@ -1,7 +1,8 @@
 # OPD current handoff
 
-Last updated: 2026-09-27 21:10 UTC (v7 diagnostic 54472139 failed after SIGTERM;
-automatic continuation stopped without starting training). Central ServerScheduler observations below
+Last updated: 2026-09-27 21:40 UTC (interruption repair deployed; fresh v7
+diagnostic 54485969 RUNNING, with new Quest observation/conditional continuation).
+Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -141,19 +142,17 @@ GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
 science, SSH loss, changed control hashes or unresolved submissions; no blind
 retry, auto-cancellation, full factorial or Gemma.
 
-The latest availability check ran from Quest **quser43** at
-2026-09-20T22:31Z, using the existing runtime-computed shared master
-`$HOME/.ssh/cm/sdsc-quser43`. SSH confirmed zgao12@login01; remote Slurm queries
-succeeded. Both `nairr-gpu-shared` and `nairr-gpu` are UP, sharing the same
-34-node H100 pool: 21 idle, five mixed, three allocated and five `fail*` nodes
-at that observation. Idle state does not guarantee immediate admission. The
-account association still permits shared-normal and full-node-normal QoS for
-nwu181; the user's queue is empty. Source/project directories are readable and
-writable and the discovered runtime executable exists on the login node; this
-check does not replace per-job GPU-node mount/runtime verification. No new job
-or authentication attempt was made. Both old flows remain stopped.
+The latest connection check ran from Quest **quser33** at
+2026-09-27T21:31Z using the runtime-computed existing master
+`$HOME/.ssh/cm/sdsc-quser33`. SSH confirmed zgao12@login02; Slurm commands,
+source paths and persistent project result paths passed. The shared partition
+is UP; nwu181 and the partition jointly permit `nairr-gpu-shared-normal`.
+The user queue was empty at 21:32:39Z before the single fresh submission below.
+No authentication was attempted. GPU-node mounts remain checked per job.
+Evidence: `.sdsc/diagnostics/prompt-v7-recovery/connection-check.json` and
+`queue-before.json`. Both old formal flows remain stopped.
 
-Teacher prompt diagnostics are complete; none establishes formal readiness.
+Earlier teacher prompt diagnostics are complete; none establishes formal readiness.
 All used one H100 / 24 CPU / 192 GiB / at most 30 minutes, retained exact raw
 outputs, and completed with accounting COMPLETED / 0:0 and verified publication:
 
@@ -180,7 +179,7 @@ correct answer tags; this is not proof success or general model incapability.
 The independent inference audit finds low-entropy filtered outputs, with no
 identified RNG/cache/model-loading implementation fault.
 
-The actual renderer is restored to exact v5 instruction bytes, SHA
+After v6, the renderer was restored to exact v5 instruction bytes, SHA
 `55edb00c4d57197224c49dddfcb36ad1152640c8f8a19e2b223c1f3e968c504f`,
 selected only from training-probe results before GPU validation. The failed v6
 implementation `6c12ab9a278686a30b141be02e0313be38481f21`, proposed protocol and
@@ -254,7 +253,7 @@ rows [128:256], 64 disjoint complete pairs, ordered-example SHA
 It is conditional, diagnostic-only, and never replaces the original exposed
 first-128 readiness gate. Full plan and disclosure:
 `docs/refactor/sdsc_output_contract_repair_20260927.md`.
-Current quser42 shared-master, remote identity, account/QoS and empty queue
+Before job 54472139, quser42 shared-master, remote identity, account/QoS and empty queue
 checks passed. A routine metadata check timed out at 15 seconds; a separate
 lightweight check verified the existing Python binary hash and package pins.
 GPU-node mounts are checked per job. Implementation `b3e128c` received independent
@@ -274,8 +273,9 @@ candidate/coverage measurements. Coverage is unknown, not zero, and this is
 not a measured v7 quality failure. The submitted 30-minute request includes
 `--signal=B:TERM@60`; the timing is consistent with an early end-of-allocation
 signal, but accounting gives `Reason=None`, not an explicit timeout cause.
-The signal origin and missing diagnostic progress still need investigation
-before any reviewed fresh run. Do not blindly extend time or resubmit.
+The precise signal origin and old worker's blocking stage remain unproven.
+The reviewed interruption repair and separately authorized fresh run are below;
+never reuse this failed job's identity or erase its evidence.
 The 4,507-byte bounded fetch is `.sdsc/fetched/54472139/fetch-qx561dgs/`.
 Both receipt-listed file hashes were reverified; report SHA is
 `b1d5e86ed8b75f5f50a850e6213ed8d822be3446189b564195d20e516f7b77cf`.
@@ -296,8 +296,49 @@ launch/state are under `.sdsc/supervision/probe54472139-auto-v1/`, plan SHA
 It stopped at **2026-09-27T06:32:38Z**, reason `diagnostic_gate_failed`, with
 `child_started=false`; no continuation claim was created, no Codex successor
 ran, and no further job was submitted or cancelled. Preserve this stopped
-flow; absence of a launch claim does not authorize re-arming it. The gate
-consumes the existing observer every five minutes, replaying accounting/publication hashes
+flow; absence of a launch claim does not authorize re-arming it.
+
+The user then explicitly authorized **bug repair and fresh submission**.
+Real subprocess tests reproduced worker SIGTERM bypassing final publication,
+an interrupted progress replacement masking the original signal, and wrapper
+shutdown losing unread pipe output. The repair adds durable stage/timing and
+candidate progress, native-call stacks, safe signal cleanup and bounded final
+log draining. It preserves the complete scientific loop, all sampling/model/
+prompt bytes, 24 threads and 52 execution-safety files. A hidden-GPU SDSC check
+completed Torch import in 162.15s with only 2.62 CPU seconds; one/24-thread
+comparisons both showed slow imports. This supports startup wait, not a proven
+deadlock or a complete explanation of the old failure. Details and limits:
+`docs/refactor/sdsc_probe_interruption_repair_20260927.md`.
+Control/boundary tests passed 125; independent final worker/wrapper/boundary
+review passed 51; retargeted observer/continuation tests passed 50.
+
+Fresh diagnostic **54485969**, intent `c2d9dfddae174c0eb1d075d4738ce4f0`,
+was submitted once at **2026-09-27T21:35:17Z**. It is RUNNING on **exp-19-13**
+at the 21:39Z observation. Resources: **1 H100 / 24 CPU / 192 GiB / 60 minutes**,
+nwu181, nairr-gpu-shared / nairr-gpu-shared-normal. The extra bounded time is
+startup/publication margin; it does not waive science or permit an automatic retry.
+Run `20260927T213316Z-bb14f0613cee-3bb69dd0`, code SHA
+`bb14f0613ceee7dd476d69eaf61e9e337769fc48356c079314b5bca9d312cee3`,
+contains 515 files / 5,264,398 source bytes with matching dry-run/deployment.
+The real receipt is `.sdsc/submissions/c2d9dfddae174c0eb1d075d4738ce4f0.json`.
+Persistent results use the existing project `control-results/<run>/<intent>/`.
+Initial logs confirm source/model staging, node-local ext4 and Lustre input/output
+verification, metadata validation, and GPU identity checks; scientific imports
+were in progress. No completed quality estimate or student training is claimed.
+
+Two new finite processes launched on **Quest quser33 at 21:39:03Z**, and their
+real host PIDs were verified alive with independent sessions and PPID 1:
+
+- `.sdsc/supervision/probe54485969-readonly-v1/`, PID **430947**,
+  canonical plan SHA `f057916dfc622cce8f7a995ce1e6b91530d47267c4f649be1f6c6b24550f61ac`;
+- `.sdsc/supervision/probe54485969-auto-v1/`, PID **430973**,
+  canonical plan SHA `347a1f9be1a06b75d66cfe09018308688ec951fd22383748b695e257c0c915a4`.
+
+Both recorded `waiting`; the automatic flow has `child_started=false`.
+Inspect their actual plans, reviews, launch records and state before acting.
+They bind the new receipt/release and preserve every old stopped flow.
+Do not edit their pinned controls/task document or start competing flows.
+The gate consumes the new observer every five minutes, replaying accounting/publication hashes
 and fixed v7/v5/data/prompt identities. Only complete diagnostic execution and
 **32/32** coverage may start one Quest Codex continuation. Failure stops without
 submission, retry, cancellation or automatic prompt adaptation. A permanent
@@ -314,8 +355,9 @@ Actual no-operation and read-only SSH handshakes passed, including remote
 identity `zgao12`; 73 affected CPU tests and an independent 50-test review pass.
 This is a project-owned finite process, not an app scheduled task or SDSC service.
 Read [automatic continuation instructions](../sdsc_auto_continuation.md) and its
-actual state before any competing work. At setup the SSH master was foreground
-on `pts/105`; closing that authentication terminal may disconnect it. SSH loss,
+actual state before any competing work. The old quser42 master was foreground
+on `pts/105`; the new flow uses the existing quser33 master. Do not assume
+terminal disconnection preserves an SSH master. SSH loss,
 stale state, changed controls or unknown submissions stop progression.
 
 Formal continuation still requires independently reviewed implementation,

@@ -552,7 +552,12 @@ def resources(args):
             f"{expected['cpus']} CPUs, {expected['mem_gib']} GiB"
         )
     match = re.fullmatch(r"(\d{2}):(\d{2}):(\d{2})", value["time"])
+    # Prompt diagnostics include staging plus 288 serial generations. Retain
+    # the capability probe's independent 30-minute bound.
+    prompt_probe = args.task == "qwen3-v2-teacher-prompt-probe"
     limit = 1800 if probe else 14400 if teacher else 7200 if preflight or calibration else 300
+    if prompt_probe:
+        limit = 3600
     if (
         not match
         or int(match[2]) >= 60

@@ -581,7 +581,10 @@ def validate_resources(resources, task="gpu-smoke"):
     match = re.fullmatch(r"([0-9]{2}):([0-9]{2}):([0-9]{2})", str(resources["time"]))
     require(match is not None, "Walltime must be HH:MM:SS")
     hours, minutes, seconds = map(int, match.groups())
+    prompt_probe = task == "qwen3-v2-teacher-prompt-probe"
     limit = 1800 if probe else 14400 if teacher else 7200 if preflight or calibration else 300
+    if prompt_probe:
+        limit = 3600
     require(
         minutes < 60 and seconds < 60 and 0 < hours * 3600 + minutes * 60 + seconds <= limit,
         "Walltime exceeds the bounded task profile",

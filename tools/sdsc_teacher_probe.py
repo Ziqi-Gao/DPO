@@ -9,14 +9,19 @@ renderer. Prompt selection is fixed before generation, independent of outcomes.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import faulthandler
 import hashlib
 import importlib.util
 import json
 import os
 import re
+import signal
 import stat
 import sys
+import tempfile
 import time
+import traceback
 from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
@@ -39,11 +44,143 @@ BASELINE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v5"
 CANDIDATE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v7"
 POPULATION = 256
 PROBE_PROMPTS = 32
+STACK_INTERVAL_SECONDS = 300
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+class ProbeInterrupted(SystemExit):
+    """A catchable termination that still exits nonzero after publication."""
+
+    def __init__(self, signum):
+        self.signum = signum
+        super().__init__(128 + signum)
+
+
+def progress_json(path, value):
+    """Replace only this invocation's small local progress snapshot atomically."""
+    raw = (json.dumps(value, sort_keys=True, allow_nan=False) + "\n").encode()
+    descriptor, name = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        # Only mkstemp's owned path is removed. A TERM between fsync and
+        # replace must not leave a fixed-name file that blocks failed(). A
+        # cleanup error must also never replace the original interruption.
+        active_error = sys.exc_info()[0] is not None
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            if not active_error:
+                raise
+
+
+class ProbeObservation:
+    """Diagnostic I/O only; never changes generation, RNG, or proof acceptance."""
+
+    def __init__(self, directory, report):
+        self.directory = directory
+        self.identity = {key: report[key] for key in ("task", "job_id", "run_id", "code_sha256")}
+        self.started = self.stage_started = time.monotonic()
+        self.stage = "worker_start"
+        self.stage_started_at = dt.datetime.now(dt.UTC).isoformat()
+        self.context = {}
+        self.completed = {"baseline": 0, "candidate": 0}
+        self.committed_bytes = 0
+        self.interrupted_signal = None
+        self.timeline = (directory / "progress.jsonl").open("x", encoding="utf-8")
+        self.stacks = (directory / "worker-stacks.log").open("x", encoding="utf-8", buffering=1)
+        self.previous_handlers = {}
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            self.previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, self.interrupt)
+            # The C handler dumps even while Python is blocked in a native
+            # import/call; chaining requests normal Python cleanup when it can
+            # run. SIGKILL is uncatchable: already fsynced progress still remains.
+            faulthandler.register(signum, file=self.stacks, all_threads=True, chain=True)
+        faulthandler.dump_traceback_later(STACK_INTERVAL_SECONDS, repeat=True, file=self.stacks)
+        self.phase("worker_start")
+
+    def interrupt(self, signum, _frame):
+        if self.interrupted_signal is None:
+            self.interrupted_signal = signum
+            raise ProbeInterrupted(signum)
+
+    def snapshot(self):
+        return {
+            **self.identity, "artifact_kind": "teacher_probe_progress", "not_a_completion_report": True,
+            "passed": False, "accepted_science": False, "full_teacher_ready": False,
+            "g0_passed": False, "training_started": False,
+            "stage": self.stage, "stage_started_at": self.stage_started_at,
+            "updated_at": dt.datetime.now(dt.UTC).isoformat(),
+            "elapsed_seconds": time.monotonic() - self.started,
+            "stage_elapsed_seconds": time.monotonic() - self.stage_started,
+            "completed_attempt_counts": dict(self.completed), "ledger_committed_bytes": self.committed_bytes,
+            "interrupted_signal": self.interrupted_signal, **self.context,
+        }
+
+    def phase(self, name, **context):
+        previous_stage, previous_elapsed = self.stage, time.monotonic() - self.stage_started
+        self.stage = name
+        self.stage_started = time.monotonic()
+        self.stage_started_at = dt.datetime.now(dt.UTC).isoformat()
+        self.context = context
+        value = self.snapshot()
+        value.update(previous_stage=previous_stage, previous_stage_elapsed_seconds=previous_elapsed)
+        self.timeline.write(json.dumps(value, sort_keys=True, allow_nan=False) + "\n")
+        self.timeline.flush()
+        os.fsync(self.timeline.fileno())
+        progress_json(self.directory / "progress.json", value)
+        print(json.dumps({"event": "probe_phase", **value}, sort_keys=True, allow_nan=False), flush=True)
+
+    def committed(self, variant, stream):
+        # The ledger is already flushed; fsync before recording a completed
+        # candidate so partial evidence never claims an uncommitted response.
+        os.fsync(stream.fileno())
+        self.completed[variant] += 1
+        self.committed_bytes = os.fstat(stream.fileno()).st_size
+        self.phase("candidate_committed", **self.context)
+
+    def failed(self, error):
+        traceback.print_exception(error, file=self.stacks)
+        self.stacks.flush()
+        os.fsync(self.stacks.fileno())
+        failure_stage = self.stage
+        self.phase("interrupted" if self.interrupted_signal is not None else "failed",
+                   failure_stage=failure_stage, error=type(error).__name__ + ": " + str(error))
+
+    def close(self):
+        faulthandler.cancel_dump_traceback_later()
+        for signum, handler in self.previous_handlers.items():
+            faulthandler.unregister(signum)
+            signal.signal(signum, handler)
+        self.stacks.flush()
+        os.fsync(self.stacks.fileno())
+        self.stacks.close()
+        self.timeline.close()
+
+
+def probe_config(args, guards):
+    from posttrain_circuits.core.config import compose_config
+
+    config = compose_config(list(guards.OVERRIDES), config_root=args.science_root / "configs")
+    require(
+        config["teacher"]["generation_seed"] == 31415
+        and config["state_source"]["num_candidates"] == 8
+        and config["state_source"]["max_prompt_tokens"] == 1246
+        and config["state_source"]["max_new_tokens"] == 256,
+        "probe sampling envelope differs",
+    )
+    require(DATASET.is_file(), "verified failed-job population is unavailable")
+    return config
 
 
 def population(path=DATASET, expected_sha256=DATASET_SHA256):
@@ -173,18 +310,8 @@ def main(argv=None):
     # accepted protocol or committed-clean scientific lineage is claimed here.
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.science_root / "src"))
-    from posttrain_circuits.core.config import compose_config
-
-    config = compose_config(list(guards.OVERRIDES), config_root=args.science_root / "configs")
-    require(
-        config["teacher"]["generation_seed"] == 31415
-        and config["state_source"]["num_candidates"] == 8
-        and config["state_source"]["max_prompt_tokens"] == 1246
-        and config["state_source"]["max_new_tokens"] == 256,
-        "probe sampling envelope differs",
-    )
-    require(DATASET.is_file(), "verified failed-job population is unavailable")
     if args.validate_only:
+        probe_config(args, guards)
         print(json.dumps({"validated": True, "exploratory": True, "accepted_science": False}))
         return 0
     args.output_dir.mkdir(parents=True, exist_ok=False)
@@ -215,8 +342,14 @@ def main(argv=None):
         "output_contract_diagnostic_means": "rendering observation only; not proof validity or readiness",
         "passed_means": "diagnostic completed and preserved; not scientific readiness",
     }
+    observation = None
     try:
+        observation = ProbeObservation(args.output_dir, report)
+        observation.phase("config_composition")
+        config = probe_config(args, guards)
+        observation.phase("gpu_identity")
         report["gpu"] = guards.gpu_identity()
+        observation.phase("scientific_imports")
         from posttrain_circuits.artifacts.hashing import sha256_value
         from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
         from posttrain_circuits.datasets.proofgraph.rendering import RESPONSE_FORMAT_INSTRUCTIONS
@@ -226,7 +359,9 @@ def main(argv=None):
         from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
         from posttrain_circuits.models.prompt_protocol import format_model_prompt
 
+        observation.phase("dataset_read_and_hash")
         examples = [deserialize_example(row) for row in population()]
+        observation.phase("prompt_validation")
         report["prompt_envelope"] = guards.validate_prompts(config, examples)
         selected = examples[:PROBE_PROMPTS]
         report["ordered_prompt_ids"] = [example.example_id for example in selected]
@@ -235,7 +370,9 @@ def main(argv=None):
         ).hexdigest()
         report["baseline_instructions_sha256"] = hashlib.sha256(BASELINE_INSTRUCTIONS.encode()).hexdigest()
         teacher = config["teacher"]
+        observation.phase("model_load")
         loaded = load_model_and_tokenizer(teacher, for_training=False)
+        observation.phase("model_device_transfer")
         model = move_model_to_local_cuda(loaded.model)
         require(loaded.resolved_model_commit == teacher["model_revision"], "teacher revision differs")
         task = ProofGraphTask()
@@ -247,6 +384,7 @@ def main(argv=None):
                 return current[: -len(RESPONSE_FORMAT_INSTRUCTIONS)] + BASELINE_INSTRUCTIONS
 
         records = {"baseline": [], "candidate": []}
+        observation.phase("generator_setup")
         generator = HfTeacherCandidateGenerator(
             model, loaded.tokenizer, max_new_tokens=256, model_config=teacher
         )
@@ -255,6 +393,7 @@ def main(argv=None):
             for variant, count, renderer in (("baseline", 1, BaselineTask()), ("candidate", 8, task)):
                 generator.task = renderer
                 for example in selected:
+                    observation.phase("prompt_encoding", variant=variant, prompt_id=example.example_id)
                     prompt = renderer.render(example)
                     formatted = format_model_prompt(prompt, loaded.tokenizer, teacher)
                     input_ids = loaded.tokenizer.encode(
@@ -264,6 +403,8 @@ def main(argv=None):
                     identity = sha256_value(asdict(example))
                     for candidate_index in range(count):
                         seed = teacher_candidate_seed(31415, identity, candidate_index)
+                        observation.phase("candidate_generation", variant=variant,
+                                          prompt_id=example.example_id, candidate_index=candidate_index)
                         output = generator(
                             example=example,
                             candidate_index=candidate_index,
@@ -273,6 +414,8 @@ def main(argv=None):
                             top_k=20,
                             min_p=0.0,
                         )
+                        observation.phase("candidate_verification", variant=variant,
+                                          prompt_id=example.example_id, candidate_index=candidate_index)
                         parsed = task.parse_response(output.response_text)
                         verification = task.verify(example, parsed)
                         record = {
@@ -291,6 +434,7 @@ def main(argv=None):
                         }
                         stream.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
                         stream.flush()
+                        observation.committed(variant, stream)
                         records[variant].append(record)
                     print(
                         json.dumps(
@@ -312,13 +456,33 @@ def main(argv=None):
         report["paired_candidate_zero"] = summary(
             [row for row in records["candidate"] if row["candidate_index"] == 0]
         )
+        observation.phase("final_usage")
         report["usage"] = guards.final_usage()
         report.update(passed=True, exit_code=0, elapsed_seconds=time.monotonic() - started)
     except BaseException as error:
+        report.update(passed=False, exit_code=1)
         report["error"] = type(error).__name__ + ": " + str(error)
+        if observation is not None:
+            report["failure_stage"] = observation.stage
+            observation.failed(error)
+            report["partial_results"] = {
+                "not_a_quality_estimate": True,
+                "completed_attempt_counts": dict(observation.completed),
+                "ledger_committed_bytes": observation.committed_bytes,
+                "in_flight_response_is_not_a_completed_candidate": True,
+            }
+        if isinstance(error, ProbeInterrupted):
+            report["exit_code"] = error.code
+            report["interrupted_signal"] = signal.Signals(error.signum).name
         raise
     finally:
-        guards.publish(args.output_dir / "teacher-prompt-probe.json", report)
+        try:
+            if observation is not None:
+                report["execution_diagnostics"] = observation.snapshot()
+            guards.publish(args.output_dir / "teacher-prompt-probe.json", report)
+        finally:
+            if observation is not None:
+                observation.close()
     return 0
 
 
