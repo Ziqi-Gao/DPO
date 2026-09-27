@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-27 06:23 UTC (conditional Quest continuation armed for
-v7 diagnostic 54472139; formal training remains gated). Central ServerScheduler observations below
+Last updated: 2026-09-27 21:10 UTC (v7 diagnostic 54472139 failed after SIGTERM;
+automatic continuation stopped without starting training). Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -260,25 +260,44 @@ lightweight check verified the existing Python binary hash and package pins.
 GPU-node mounts are checked per job. Implementation `b3e128c` received independent
 bounded-diagnostic review; the v7 scientific protocol remains proposed.
 Job **54472139**, intent `c53cdcdbbb3749ff8b34b29a7cc72699`, was submitted once
-at 2026-09-27T05:56:58Z and observed RUNNING on exp-19-07. Resources: one H100 /
+at 2026-09-27T05:56:58Z on exp-19-07. Resources: one H100 /
 24 CPUs / 192 GiB / 30 minutes, nwu181, nairr-gpu-shared/shared-normal.
 Run `20260927T055545Z-2efe95b7b76c-dc55b228`, source SHA
 `2efe95b7b76c8820d170a3b8b8dbc6b8c22d930af3103f6494d91b20e32ad824`,
 contains 508 files / 5,159,679 bytes, with matching preview/deployment receipt.
-Its finite read-only observer is under
-`.sdsc/supervision/probe54472139-readonly-v1/`, Quest quser42 PID 2629236;
+Fresh SSH/accounting at 2026-09-27T21:09:42Z confirms **FAILED / 1:0**, elapsed
+**28m37s**, with the batch step also failed and the user's queue empty. The
+wrapper received SIGTERM and preserved a failure report; model staging,
+GPU-node persistent write/read checks and metadata validation had passed.
+Its worker log contains only the validation success, with no completed
+candidate/coverage measurements. Coverage is unknown, not zero, and this is
+not a measured v7 quality failure. The submitted 30-minute request includes
+`--signal=B:TERM@60`; the timing is consistent with an early end-of-allocation
+signal, but accounting gives `Reason=None`, not an explicit timeout cause.
+The signal origin and missing diagnostic progress still need investigation
+before any reviewed fresh run. Do not blindly extend time or resubmit.
+The 4,507-byte bounded fetch is `.sdsc/fetched/54472139/fetch-qx561dgs/`.
+Both receipt-listed file hashes were reverified; report SHA is
+`b1d5e86ed8b75f5f50a850e6213ed8d822be3446189b564195d20e516f7b77cf`.
+Fresh accounting/queue evidence is
+`.sdsc/diagnostics/prompt-v7/status-20260927T2109Z.json`.
+
+Its finite read-only observer finished at 2026-09-27T06:27:46Z under
+`.sdsc/supervision/probe54472139-readonly-v1/`, launch PID 2629236;
 plan SHA `67e2b0373818da8cff26976745148628b68b0099dcaa8eeb69b35a4fe793392c`.
-It polls every five minutes and fetches bounded terminal reports. Preserve
-pinned controls while active; no submission, retry, cancellation or promotion
-is performed by this observer. No new formal store/calibration/G0/pilot is running.
+It fetched the terminal reports and started no successor. No new formal
+store/calibration/G0/pilot has run.
 
 The user explicitly requested automatic diagnostic checking and automatic
-formal continuation after success. `tools/sdsc_auto_continue` is now launched
+formal continuation after success. `tools/sdsc_auto_continue` was launched
 on Quest quser42, PID **2931946**, at 2026-09-27T06:22:37Z. Its plan/review/
 launch/state are under `.sdsc/supervision/probe54472139-auto-v1/`, plan SHA
 `a6cad6d3e93f8bd24cce49af61569d5d24304bf2391325971a76448c5c168d42`.
-Initial actual state is `waiting`, `child_started=false`. It consumes the
-existing observer every five minutes, replaying accounting/publication hashes
+It stopped at **2026-09-27T06:32:38Z**, reason `diagnostic_gate_failed`, with
+`child_started=false`; no continuation claim was created, no Codex successor
+ran, and no further job was submitted or cancelled. Preserve this stopped
+flow; absence of a launch claim does not authorize re-arming it. The gate
+consumes the existing observer every five minutes, replaying accounting/publication hashes
 and fixed v7/v5/data/prompt identities. Only complete diagnostic execution and
 **32/32** coverage may start one Quest Codex continuation. Failure stops without
 submission, retry, cancellation or automatic prompt adaptation. A permanent
@@ -295,7 +314,7 @@ Actual no-operation and read-only SSH handshakes passed, including remote
 identity `zgao12`; 73 affected CPU tests and an independent 50-test review pass.
 This is a project-owned finite process, not an app scheduled task or SDSC service.
 Read [automatic continuation instructions](../sdsc_auto_continuation.md) and its
-actual state before any competing work. The current SSH master is foreground
+actual state before any competing work. At setup the SSH master was foreground
 on `pts/105`; closing that authentication terminal may disconnect it. SSH loss,
 stale state, changed controls or unknown submissions stop progression.
 
