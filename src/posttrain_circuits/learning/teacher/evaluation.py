@@ -8,8 +8,8 @@ from typing import Any
 from posttrain_circuits.artifacts.compatibility import scientific_compatibility_fields
 from posttrain_circuits.artifacts.hashing import sha256_value
 from posttrain_circuits.artifacts.runs import PROTOCOL_AMENDMENT_BINDING_FIELDS
-from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.datasets.proofgraph.contracts import TaskExample
+from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
 
 @dataclass(frozen=True)
@@ -40,55 +40,17 @@ class TeacherPrefixScore:
     causal_shift_logprob: float = 0.0
 
 
-def evaluate_teacher_readiness(
+def summarize_teacher_scores(
     examples: list[TaskExample],
     generated_responses: dict[str, str],
     prefix_scores: list[TeacherPrefixScore],
     thresholds: TeacherReadinessThresholds,
-    *,
-    bindings: dict[str, Any],
 ) -> dict[str, Any]:
-    """Evaluate full-generation and step correctness as separate conditions."""
-
+    """Reduce actual measurements with the original eight gates, without acceptance bindings."""
     if not examples:
         raise ValueError("teacher readiness requires a nonempty frozen validation set")
     if set(generated_responses) != {example.example_id for example in examples}:
         raise ValueError("teacher generation responses do not exactly cover validation examples")
-    required_bindings = {
-        "teacher_model_revision",
-        "tokenizer_revision",
-        "dataset_hash",
-        "prefix_probe_hash",
-        "code_commit",
-        "prereg_commit",
-    }
-    qwen3 = str(bindings.get("protocol_track", "")).startswith("qwen3_")
-    if qwen3:
-        required_bindings |= {
-            "teacher_model_id",
-            "student_model_revision",
-            "student_model_id",
-            "student_tokenizer_revision",
-            "teacher_tokenizer_revision",
-            "tokenizer_fingerprint",
-            "chat_template_sha256",
-            "prompt_protocol",
-            "enable_thinking",
-            "protocol_track",
-            "artifact_namespace",
-            "prereg_path",
-            "prereg_version",
-            "prereg_sha256",
-        }
-    if any(key in bindings for key in PROTOCOL_AMENDMENT_BINDING_FIELDS):
-        required_bindings.update(PROTOCOL_AMENDMENT_BINDING_FIELDS)
-    if set(bindings) < required_bindings or any(
-        bindings[key] is None or bindings[key] == "" for key in required_bindings
-    ):
-        raise ValueError("teacher readiness bindings are incomplete")
-    if qwen3 and bindings["enable_thinking"] is not False:
-        raise ValueError("teacher readiness requires the frozen non-thinking protocol")
-
     task = ProofGraphTask()
     answer_correct = 0
     exact_proof_correct = 0
@@ -157,6 +119,66 @@ def evaluate_teacher_readiness(
         and all(score.causal_shift_valid for score in all_scores)
         and metrics["minimum_causal_shift_logprob"] >= thresholds.minimum_causal_shift_logprob,
     }
+    return {
+        "metrics": metrics,
+        "checks": checks,
+        "thresholds": asdict(thresholds),
+        "full_generation_rows": rows,
+        "metrics_passed": all(checks.values()),
+    }
+
+
+def evaluate_teacher_readiness(
+    examples: list[TaskExample],
+    generated_responses: dict[str, str],
+    prefix_scores: list[TeacherPrefixScore],
+    thresholds: TeacherReadinessThresholds,
+    *,
+    bindings: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluate full-generation and step correctness as separate conditions."""
+
+    if not examples:
+        raise ValueError("teacher readiness requires a nonempty frozen validation set")
+    if set(generated_responses) != {example.example_id for example in examples}:
+        raise ValueError("teacher generation responses do not exactly cover validation examples")
+    required_bindings = {
+        "teacher_model_revision",
+        "tokenizer_revision",
+        "dataset_hash",
+        "prefix_probe_hash",
+        "code_commit",
+        "prereg_commit",
+    }
+    qwen3 = str(bindings.get("protocol_track", "")).startswith("qwen3_")
+    if qwen3:
+        required_bindings |= {
+            "teacher_model_id",
+            "student_model_revision",
+            "student_model_id",
+            "student_tokenizer_revision",
+            "teacher_tokenizer_revision",
+            "tokenizer_fingerprint",
+            "chat_template_sha256",
+            "prompt_protocol",
+            "enable_thinking",
+            "protocol_track",
+            "artifact_namespace",
+            "prereg_path",
+            "prereg_version",
+            "prereg_sha256",
+        }
+    if any(key in bindings for key in PROTOCOL_AMENDMENT_BINDING_FIELDS):
+        required_bindings.update(PROTOCOL_AMENDMENT_BINDING_FIELDS)
+    if set(bindings) < required_bindings or any(
+        bindings[key] is None or bindings[key] == "" for key in required_bindings
+    ):
+        raise ValueError("teacher readiness bindings are incomplete")
+    if qwen3 and bindings["enable_thinking"] is not False:
+        raise ValueError("teacher readiness requires the frozen non-thinking protocol")
+
+    summary = summarize_teacher_scores(examples, generated_responses, prefix_scores, thresholds)
+    metrics, checks, rows = summary["metrics"], summary["checks"], summary["full_generation_rows"]
     likely_next_action = None
     if not all(checks.values()):
         correctness = all(value for key, value in checks.items() if key not in {"topk_mass"})

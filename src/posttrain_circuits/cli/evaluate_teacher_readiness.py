@@ -24,7 +24,6 @@ from posttrain_circuits.causal_circuits.metrics.probes import (
 from posttrain_circuits.cli._common import dry_run_report, print_json
 from posttrain_circuits.core.config import compose_config
 from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
-from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 from posttrain_circuits.learning.teacher.demo_generation import HfTeacherCandidateGenerator
 from posttrain_circuits.learning.teacher.evaluation import (
@@ -32,6 +31,7 @@ from posttrain_circuits.learning.teacher.evaluation import (
     TeacherReadinessThresholds,
     evaluate_teacher_readiness,
 )
+from posttrain_circuits.models.loading import load_model_and_tokenizer, move_model_to_local_cuda
 
 
 def _selected_log_probs(
@@ -49,10 +49,35 @@ def _selected_log_probs(
 def _prefix_scores(model: object, spec: CircuitProbeSpec, *, top_k: int) -> tuple[TeacherPrefixScore, ...]:
     clean_log_probs = _selected_log_probs(model, spec.clean_input_ids, spec.clean_metric_positions)
     corrupt_log_probs = _selected_log_probs(model, spec.corrupt_input_ids, spec.corrupt_metric_positions)
+
+    def alternative_log_probs(
+        input_ids: tuple[int, ...],
+        original_targets: tuple[int, ...],
+        alternative_targets: tuple[int, ...],
+        original_log_probs: torch.Tensor,
+    ) -> torch.Tensor:
+        # A sequence probability must condition token t on THAT target's
+        # preceding tokens. Gathering alternative IDs from the original
+        # teacher-forced forward is valid only when their histories coincide.
+        if original_targets[:-1] == alternative_targets[:-1]:
+            return original_log_probs
+        context_length = len(input_ids) - len(original_targets) + 1
+        alternative_input = input_ids[:context_length] + alternative_targets[:-1]
+        alternative_positions = tuple(
+            range(context_length - 1, context_length - 1 + len(alternative_targets))
+        )
+        return _selected_log_probs(model, alternative_input, alternative_positions)
+
+    clean_alternative = alternative_log_probs(
+        spec.clean_input_ids, spec.clean_target_ids, spec.corrupt_target_ids, clean_log_probs
+    )
+    corrupt_alternative = alternative_log_probs(
+        spec.corrupt_input_ids, spec.corrupt_target_ids, spec.clean_target_ids, corrupt_log_probs
+    )
     rows = []
-    for side, selected, counterfactual_selected in (
-        ("clean", clean_log_probs, corrupt_log_probs),
-        ("corrupt", corrupt_log_probs, clean_log_probs),
+    for side, selected, alternative_selected, counterfactual_selected in (
+        ("clean", clean_log_probs, clean_alternative, corrupt_alternative),
+        ("corrupt", corrupt_log_probs, corrupt_alternative, clean_alternative),
     ):
         if side == "clean":
             input_ids = spec.clean_input_ids
@@ -72,7 +97,9 @@ def _prefix_scores(model: object, spec: CircuitProbeSpec, *, top_k: int) -> tupl
         targets = torch.tensor(target_ids, dtype=torch.long, device=device)
         alternatives = torch.tensor(alternative_ids, dtype=torch.long, device=device)
         target_log_probability = float(selected.gather(-1, targets[:, None]).sum().detach().cpu())
-        alternative_log_probability = float(selected.gather(-1, alternatives[:, None]).sum().detach().cpu())
+        alternative_log_probability = float(
+            alternative_selected.gather(-1, alternatives[:, None]).sum().detach().cpu()
+        )
         counterfactual_target_log_probability = float(
             counterfactual_selected.gather(-1, targets[:, None]).sum().detach().cpu()
         )

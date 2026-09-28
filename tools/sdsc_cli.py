@@ -115,6 +115,10 @@ TASK_SCRIPTS = {
     "qwen3-v2-teacher-prepare": "sdsc_teacher_job.sh",
     "qwen3-v2-teacher-prompt-probe": "sdsc_teacher_probe_job.sh",
     "qwen3-v2-teacher-capability-probe": "sdsc_teacher_capability_job.sh",
+    "qwen3-v2-teacher-adapt": "sdsc_teacher_adapt_job.sh",
+    "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit_job.sh",
+    "qwen3-v2-teacher-fit": "sdsc_teacher_fit_job.sh",
+    "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify_job.sh",
     "qwen3-v2-g0-calibration": "sdsc_calibration_job.sh",
 }
 TASK_RESULTS = {
@@ -123,10 +127,48 @@ TASK_RESULTS = {
     "qwen3-v2-teacher-prepare": "teacher-prepare.json",
     "qwen3-v2-teacher-prompt-probe": "teacher-prompt-probe.json",
     "qwen3-v2-teacher-capability-probe": "teacher-capability-probe.json",
+    "qwen3-v2-teacher-adapt": "teacher-adapt.json",
+    "qwen3-v2-teacher-fit-preflight": "teacher-fit.json",
+    "qwen3-v2-teacher-fit": "teacher-fit.json",
+    "qwen3-v2-teacher-qualify": "teacher-qualify.json",
     "qwen3-v2-g0-calibration": "g0-calibration.json",
 }
 
-DIAGNOSTIC_TASKS = {"qwen3-v2-teacher-prompt-probe", "qwen3-v2-teacher-capability-probe"}
+DIAGNOSTIC_TASKS = {
+    "qwen3-v2-teacher-prompt-probe",
+    "qwen3-v2-teacher-capability-probe",
+    "qwen3-v2-teacher-adapt",
+    "qwen3-v2-teacher-fit-preflight",
+    "qwen3-v2-teacher-fit",
+}
+TEACHER_FIT_TASKS = {"qwen3-v2-teacher-fit-preflight": "preflight", "qwen3-v2-teacher-fit": "full-fit"}
+TEACHER_QUALIFY_TASK = "qwen3-v2-teacher-qualify"
+TEACHER_QUALIFY_SMALL_RESULTS = {
+    "qualification-manifest.json",
+    "progress.json",
+    "stage-summary.json",
+    "acceptance-evidence.json",
+}
+TEACHER_FIT_SMALL_RESULTS = {
+    "checkpoint-manifest.json",
+    "data-isolation.json",
+    "train-metrics.jsonl",
+    "progress.json",
+    "checkpoint-selection.json",
+    "memory-environment-validate.json",
+    "memory-environment-0.json",
+    "memory-environment-1.json",
+    "memory-environment-2.json",
+    "memory-environment-3.json",
+}
+TEACHER_ADAPT_SMALL_RESULTS = {
+    "checkpoint-manifest.json",
+    "data-isolation.json",
+    "train-metrics.jsonl",
+    "dev-attempts.jsonl",
+    "dev-capability.json",
+    "progress.json",
+}
 
 
 class UserError(Exception):
@@ -371,7 +413,10 @@ def remote(payload, data=b"", control_python=None):
     payload = dict(payload, root=REMOTE_ROOT)
     source = (ROOT / "tools" / "sdsc_remote.py").read_text()
     timeout = (
-        300 if payload.get("action") == "submit" and payload.get("task") == "qwen3-v2-g0-calibration" else 150
+        300
+        if payload.get("action") == "submit"
+        and payload.get("task") in {"qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK}
+        else 150
     )
     result = ssh_call([control_python, "-c", source, canonical(payload).decode()], data, timeout=timeout)
     try:
@@ -545,19 +590,25 @@ def resources(args):
         "cpus": 24 if preflight or teacher or calibration or probe else 4,
         "mem_gib": 192 if preflight or teacher or calibration or probe else 16,
     }
+    if args.task in TEACHER_FIT_TASKS or args.task == TEACHER_QUALIFY_TASK:
+        expected.update(partition="nairr-gpu", qos="nairr-gpu-normal", gpus=4, cpus=24, mem_gib=192)
     if any(value[k] != v for k, v in expected.items()):
         raise UserError(
-            f"{args.task} requires account nwu181, partition nairr-gpu-shared, "
-            f"QoS nairr-gpu-shared-normal, {expected['gpus']} H100, "
+            f"{args.task} requires account nwu181, partition {expected['partition']}, "
+            f"QoS {expected['qos']}, {expected['gpus']} H100, "
             f"{expected['cpus']} CPUs, {expected['mem_gib']} GiB"
         )
     match = re.fullmatch(r"(\d{2}):(\d{2}):(\d{2})", value["time"])
     # Prompt diagnostics include staging plus 288 serial generations. Retain
     # the capability probe's independent 30-minute bound.
-    prompt_probe = args.task == "qwen3-v2-teacher-prompt-probe"
+    extended_diagnostic = args.task in {"qwen3-v2-teacher-prompt-probe", "qwen3-v2-teacher-adapt"}
     limit = 1800 if probe else 14400 if teacher else 7200 if preflight or calibration else 300
-    if prompt_probe:
+    if extended_diagnostic:
         limit = 3600
+    if args.task in TEACHER_FIT_TASKS:
+        limit = 3600 if TEACHER_FIT_TASKS[args.task] == "preflight" else 86400
+    if args.task == TEACHER_QUALIFY_TASK:
+        limit = 7200
     if (
         not match
         or int(match[2]) >= 60
@@ -573,7 +624,9 @@ def submit_command(args):
     preflight = args.task == "qwen3-v2-preflight"
     teacher = args.task == "qwen3-v2-teacher-prepare"
     calibration = args.task == "qwen3-v2-g0-calibration"
-    provenance_task = teacher or calibration
+    teacher_fit = args.task in TEACHER_FIT_TASKS
+    teacher_qualify = args.task == TEACHER_QUALIFY_TASK
+    provenance_task = teacher or calibration or teacher_qualify
     model_task = preflight or provenance_task or args.task in DIAGNOSTIC_TASKS
     if model_task and container is not None:
         raise UserError(f"{args.task} requires a host runtime; container flags are forbidden")
@@ -595,6 +648,22 @@ def submit_command(args):
                 )
         if args.teacher_job_id == args.preflight_job_id:
             raise UserError("Calibration requires two distinct upstream jobs")
+    elif teacher_fit:
+        if args.teacher_job_id != "54493015":
+            raise UserError("Teacher fit requires --teacher-job-id 54493015 for the one-H100 preflight")
+        if TEACHER_FIT_TASKS[args.task] == "full-fit":
+            if (
+                not re.fullmatch(r"[1-9][0-9]*", args.preflight_job_id or "")
+                or args.preflight_job_id == "54493015"
+            ):
+                raise UserError("Full teacher fit requires a distinct four-H100 --preflight-job-id")
+        elif args.preflight_job_id is not None:
+            raise UserError("Four-H100 teacher preflight does not accept a prior four-H100 job")
+    elif teacher_qualify:
+        if not re.fullmatch(r"[1-9][0-9]*", args.teacher_job_id or "") or args.preflight_job_id is not None:
+            raise UserError(
+                "Qualification requires a completed full-fit --teacher-job-id and no preflight ID"
+            )
     elif args.teacher_job_id is not None or args.preflight_job_id is not None:
         raise UserError("Upstream job arguments are only supported for calibration")
     record = run_record(args.run_id)
@@ -619,8 +688,23 @@ def submit_command(args):
         payload.update(
             provenance_dir=args.provenance_dir, provenance_manifest_sha256=args.provenance_manifest_sha256
         )
-    if calibration:
+    if calibration or teacher_fit or teacher_qualify:
         payload.update(teacher_job_id=args.teacher_job_id, preflight_job_id=args.preflight_job_id)
+    if teacher_fit:
+        contract_path = TOOL_DIR / "sdsc_teacher_fit_contract.py"
+        bound = next(
+            (row for row in manifest.get("files", []) if row["path"] == "tools/sdsc_teacher_fit_contract.py"),
+            {},
+        )
+        if sha(contract_path.read_bytes()) != bound.get("sha256"):
+            raise UserError("Current teacher fit contract differs from the deployed release")
+        spec = importlib.util.spec_from_file_location("teacher_fit_contract", contract_path)
+        contract = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(contract)
+        payload.update(
+            execution_plan_sha256=contract.sha256_value(contract.execution_plan(manifest)),
+            actual_plan_sha256=contract.sha256_value(contract.actual_plan(TEACHER_FIT_TASKS[args.task])),
+        )
     blockers = []
     if model_task:
         for name in ("hf_home", "result_root"):
@@ -668,7 +752,7 @@ def submit_command(args):
         )
         if model_task:
             intent["hf_home"] = args.hf_home or "/<UNCONFIRMED_MODEL_CACHE>"
-        if calibration:
+        if calibration or teacher_fit or teacher_qualify:
             intent["prerequisites_path"] = intent["submission_dir"] + "/prerequisites.json"
             # No SSH in dry-run: show the argument slot without claiming completed validation.
             intent["prerequisites_sha256"] = "0" * 64
@@ -714,6 +798,10 @@ def submit_command(args):
             raise UserError("Submission receipt provenance identity mismatch")
         if calibration:
             validate_calibration_receipt(reply, payload)
+        if teacher_fit:
+            validate_teacher_fit_receipt(reply, payload)
+        if teacher_qualify:
+            validate_teacher_qualify_receipt(reply, payload)
         intent.update(state="submitted", receipt=reply)
     except (UserError, subprocess.TimeoutExpired, OSError, KeyboardInterrupt) as exc:
         intent.update(state="unknown", error=str(exc))
@@ -748,6 +836,10 @@ def reconcile_command(args):
             raise UserError("Recovered receipt provenance identity mismatch")
         if intent["request"].get("task") == "qwen3-v2-g0-calibration":
             validate_calibration_receipt(result, intent["request"])
+        if intent["request"].get("task") in TEACHER_FIT_TASKS:
+            validate_teacher_fit_receipt(result, intent["request"])
+        if intent["request"].get("task") == TEACHER_QUALIFY_TASK:
+            validate_teacher_qualify_receipt(result, intent["request"])
         intent.update(state="submitted", receipt=result)
     else:
         intent.update(state="unknown", reconciliation=result)
@@ -763,6 +855,33 @@ def validate_calibration_receipt(receipt, request):
         r"[a-f0-9]{64}", receipt.get("prerequisites_sha256", "")
     ):
         raise UserError("Calibration receipt lacks bound prerequisites")
+
+
+def validate_teacher_fit_receipt(receipt, request):
+    for key in ("teacher_job_id", "preflight_job_id", "execution_plan_sha256", "actual_plan_sha256"):
+        if receipt.get(key) != request.get(key):
+            raise UserError("Teacher fit receipt identity mismatch: " + key)
+    expected = REMOTE_ROOT + "/submissions/" + request["intent_id"] + "/prerequisites.json"
+    if receipt.get("prerequisites_path") != expected or not re.fullmatch(
+        r"[a-f0-9]{64}", str(receipt.get("prerequisites_sha256", ""))
+    ):
+        raise UserError("Teacher fit receipt lacks bound prerequisites")
+
+
+def validate_teacher_qualify_receipt(receipt, request):
+    validate_calibration_receipt(receipt, request)
+    expected = REMOTE_ROOT + "/submissions/" + request["intent_id"] + "/claims.json"
+    if receipt.get("claims_path") != expected or any(
+        not re.fullmatch(r"[a-f0-9]{64}", str(receipt.get(key, "")))
+        for key in (
+            "claims_sha256",
+            "adapted_teacher_sha256",
+            "protocol_sha256",
+            "protocol_artifact_sha256",
+            "science_implementation_sha256",
+        )
+    ):
+        raise UserError("Qualification receipt lacks its immutable checkpoint/protocol/claims")
 
 
 def job_binding(job_id):
@@ -803,6 +922,35 @@ def job_command(args):
             f"slurm-{args.job_id}.out",
             f"slurm-{args.job_id}.err",
         }
+        if _intent["request"].get("task") == "qwen3-v2-teacher-adapt":
+            allowed.update(TEACHER_ADAPT_SMALL_RESULTS)
+        if _intent["request"].get("task") in TEACHER_FIT_TASKS:
+            allowed.update(TEACHER_FIT_SMALL_RESULTS)
+        if _intent["request"].get("task") == TEACHER_QUALIFY_TASK:
+            allowed.update(TEACHER_QUALIFY_SMALL_RESULTS)
+        optional = (
+            TEACHER_ADAPT_SMALL_RESULTS
+            if _intent["request"].get("task") == "qwen3-v2-teacher-adapt"
+            else TEACHER_FIT_SMALL_RESULTS
+            if _intent["request"].get("task") in TEACHER_FIT_TASKS
+            else TEACHER_QUALIFY_SMALL_RESULTS
+            if _intent["request"].get("task") == TEACHER_QUALIFY_TASK
+            else set()
+        )
+        optional = optional - {"checkpoint-manifest.json", "train-metrics.jsonl"}
+        skipped = result.get("skipped", [])
+        if not isinstance(skipped, list) or any(
+            not isinstance(item, dict)
+            or set(item) != {"path", "size", "reason"}
+            or item["path"] not in optional
+            or type(item["size"]) is not int
+            or item["size"] < 0
+            or item["reason"]
+            not in {"optional_file_exceeds_1MiB_limit", "optional_file_exceeds_total_fetch_limit"}
+            or (item["reason"] == "optional_file_exceeds_1MiB_limit" and item["size"] <= 1024 * 1024)
+            for item in skipped
+        ):
+            raise UserError("Unexpected remote skipped-file metadata; refused")
         for item in result.get("files", []):
             name = item["path"]
             if name not in allowed:
@@ -824,6 +972,7 @@ def job_command(args):
             "intent_id": intent_id,
             "destination": str(destination),
             "files": saved,
+            "skipped": skipped,
             "bytes": total,
             "note": "Small artifacts only; consult status for validated completion.",
         }
@@ -853,16 +1002,26 @@ def parser():
         "--result-root", help="confirmed persistent directory; HOME only allows smoke-results"
     )
     submit.add_argument("--storage-confirmed", action="store_true")
-    submit.add_argument("--teacher-job-id", help="calibration only: successful registered teacher task")
     submit.add_argument(
-        "--preflight-job-id", help="calibration only: successful registered two-H100 preflight"
+        "--teacher-job-id",
+        help=(
+            "successful registered teacher preparation for calibration, one-GPU adaptation for fit, "
+            "or full fit for qualification"
+        ),
+    )
+    submit.add_argument(
+        "--preflight-job-id",
+        help=(
+            "successful registered two-H100 preflight for calibration, "
+            "or four-H100 teacher fit preflight for full fit"
+        ),
     )
     submit.add_argument("--hf-home", help="explicit persistent HF cache for Qwen3 tasks")
     submit.add_argument(
-        "--provenance-dir", help="teacher preparation: separately verified remote Git artifact"
+        "--provenance-dir", help="separately verified remote Git artifact for provenance-gated teacher tasks"
     )
     submit.add_argument(
-        "--provenance-manifest-sha256", help="teacher preparation: trusted provenance manifest hash"
+        "--provenance-manifest-sha256", help="trusted manifest hash of the separately verified Git artifact"
     )
     for command in (check, submit):
         command.add_argument(

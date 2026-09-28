@@ -9,6 +9,7 @@ import base64
 import contextlib
 import datetime as dt
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -32,6 +33,10 @@ TASK_SCRIPTS = {
     "qwen3-v2-teacher-prepare": "sdsc_teacher_job.sh",
     "qwen3-v2-teacher-prompt-probe": "sdsc_teacher_probe_job.sh",
     "qwen3-v2-teacher-capability-probe": "sdsc_teacher_capability_job.sh",
+    "qwen3-v2-teacher-adapt": "sdsc_teacher_adapt_job.sh",
+    "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit_job.sh",
+    "qwen3-v2-teacher-fit": "sdsc_teacher_fit_job.sh",
+    "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify_job.sh",
     "qwen3-v2-g0-calibration": "sdsc_calibration_job.sh",
 }
 TASK_WORKERS = {
@@ -40,6 +45,10 @@ TASK_WORKERS = {
     "qwen3-v2-teacher-prepare": "sdsc_teacher_prepare.py",
     "qwen3-v2-teacher-prompt-probe": "sdsc_teacher_probe.py",
     "qwen3-v2-teacher-capability-probe": "sdsc_teacher_capability.py",
+    "qwen3-v2-teacher-adapt": "sdsc_teacher_adapt.py",
+    "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit.py",
+    "qwen3-v2-teacher-fit": "sdsc_teacher_fit.py",
+    "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify.py",
     "qwen3-v2-g0-calibration": "sdsc_g0_calibration.py",
 }
 TASK_RESULTS = {
@@ -48,11 +57,58 @@ TASK_RESULTS = {
     "qwen3-v2-teacher-prepare": "teacher-prepare.json",
     "qwen3-v2-teacher-prompt-probe": "teacher-prompt-probe.json",
     "qwen3-v2-teacher-capability-probe": "teacher-capability-probe.json",
+    "qwen3-v2-teacher-adapt": "teacher-adapt.json",
+    "qwen3-v2-teacher-fit-preflight": "teacher-fit.json",
+    "qwen3-v2-teacher-fit": "teacher-fit.json",
+    "qwen3-v2-teacher-qualify": "teacher-qualify.json",
     "qwen3-v2-g0-calibration": "g0-calibration.json",
 }
-DIAGNOSTIC_TASKS = {"qwen3-v2-teacher-prompt-probe", "qwen3-v2-teacher-capability-probe"}
+DIAGNOSTIC_TASKS = {
+    "qwen3-v2-teacher-prompt-probe",
+    "qwen3-v2-teacher-capability-probe",
+    "qwen3-v2-teacher-adapt",
+    "qwen3-v2-teacher-fit-preflight",
+    "qwen3-v2-teacher-fit",
+}
+TEACHER_FIT_TASKS = {"qwen3-v2-teacher-fit-preflight": "preflight", "qwen3-v2-teacher-fit": "full-fit"}
+TEACHER_FIT_BINDINGS = ("execution_plan_sha256", "actual_plan_sha256")
+TEACHER_QUALIFY_TASK = "qwen3-v2-teacher-qualify"
+TEACHER_QUALIFY_BINDINGS = (
+    "adapted_teacher_sha256",
+    "protocol_sha256",
+    "protocol_artifact_sha256",
+    "science_implementation_sha256",
+    "claims_path",
+    "claims_sha256",
+)
+TEACHER_QUALIFY_SMALL_RESULTS = {
+    "qualification-manifest.json",
+    "progress.json",
+    "stage-summary.json",
+    "acceptance-evidence.json",
+}
+TEACHER_FIT_SMALL_RESULTS = {
+    "checkpoint-manifest.json",
+    "data-isolation.json",
+    "train-metrics.jsonl",
+    "progress.json",
+    "checkpoint-selection.json",
+    "memory-environment-validate.json",
+    "memory-environment-0.json",
+    "memory-environment-1.json",
+    "memory-environment-2.json",
+    "memory-environment-3.json",
+}
+TEACHER_ADAPT_SMALL_RESULTS = {
+    "checkpoint-manifest.json",
+    "data-isolation.json",
+    "train-metrics.jsonl",
+    "dev-attempts.jsonl",
+    "dev-capability.json",
+    "progress.json",
+}
 PROVENANCE_BINDINGS = ("provenance_dir", "provenance_manifest_sha256", "science_git_head", "bundle_sha256")
-PROVENANCE_TASKS = {"qwen3-v2-teacher-prepare", "qwen3-v2-g0-calibration"}
+PROVENANCE_TASKS = {"qwen3-v2-teacher-prepare", "qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK}
 PREREQUISITE_BINDINGS = ("teacher_job_id", "preflight_job_id", "prerequisites_path", "prerequisites_sha256")
 PREFLIGHT_MODELS = (
     ("models--Qwen--Qwen3-1.7B", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"),
@@ -568,6 +624,8 @@ def validate_resources(resources, task="gpu-smoke"):
         "cpus": 24 if preflight or teacher or calibration or probe else 4,
         "mem_gib": 192 if preflight or teacher or calibration or probe else 16,
     }
+    if task in TEACHER_FIT_TASKS or task == TEACHER_QUALIFY_TASK:
+        expected.update(partition="nairr-gpu", qos="nairr-gpu-normal", gpus=4, cpus=24, mem_gib=192)
     require(
         isinstance(resources, dict) and set(resources) == set(expected) | {"time"},
         "All resource parameters must be explicit",
@@ -581,10 +639,14 @@ def validate_resources(resources, task="gpu-smoke"):
     match = re.fullmatch(r"([0-9]{2}):([0-9]{2}):([0-9]{2})", str(resources["time"]))
     require(match is not None, "Walltime must be HH:MM:SS")
     hours, minutes, seconds = map(int, match.groups())
-    prompt_probe = task == "qwen3-v2-teacher-prompt-probe"
+    extended_diagnostic = task in {"qwen3-v2-teacher-prompt-probe", "qwen3-v2-teacher-adapt"}
     limit = 1800 if probe else 14400 if teacher else 7200 if preflight or calibration else 300
-    if prompt_probe:
+    if extended_diagnostic:
         limit = 3600
+    if task in TEACHER_FIT_TASKS:
+        limit = 3600 if TEACHER_FIT_TASKS[task] == "preflight" else 86400
+    if task == TEACHER_QUALIFY_TASK:
+        limit = 7200
     require(
         minutes < 60 and seconds < 60 and 0 < hours * 3600 + minutes * 60 + seconds <= limit,
         "Walltime exceeds the bounded task profile",
@@ -611,8 +673,15 @@ def receipt_from(intent, job_id, recovered=False):
     receipt["hf_home"] = intent.get("hf_home")
     if intent.get("task") in PROVENANCE_TASKS:
         receipt.update({key: intent[key] for key in PROVENANCE_BINDINGS})
-    if intent.get("task") == "qwen3-v2-g0-calibration":
+    if (
+        intent.get("task") in {"qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK}
+        or intent.get("task") in TEACHER_FIT_TASKS
+    ):
         receipt.update({key: intent[key] for key in PREREQUISITE_BINDINGS})
+    if intent.get("task") in TEACHER_FIT_TASKS:
+        receipt.update({key: intent[key] for key in TEACHER_FIT_BINDINGS})
+    if intent.get("task") == TEACHER_QUALIFY_TASK:
+        receipt.update({key: intent[key] for key in TEACHER_QUALIFY_BINDINGS})
     return receipt
 
 
@@ -648,7 +717,17 @@ def build_sbatch_argv(intent, release):
         "--time=" + resources["time"],
         "--export=NONE",
         "--no-requeue",
-        "--signal=B:TERM@300" if task == "qwen3-v2-g0-calibration" else "--signal=B:TERM@60",
+        "--signal=B:TERM@900"
+        if task == "qwen3-v2-teacher-fit"
+        else "--signal=B:TERM@300"
+        if task
+        in {
+            "qwen3-v2-g0-calibration",
+            "qwen3-v2-teacher-adapt",
+            "qwen3-v2-teacher-fit-preflight",
+            TEACHER_QUALIFY_TASK,
+        }
+        else "--signal=B:TERM@60",
         "--job-name=opd-" + intent_id,
         "--comment=quest-" + intent_id,
         "--chdir=" + str(release),
@@ -689,7 +768,157 @@ def build_sbatch_argv(intent, release):
             prerequisites_path == str(directory / "prerequisites.json"), "Fixed prerequisites path required"
         )
         argv.extend((prerequisites_path, prerequisites_hash))
+    if task in TEACHER_FIT_TASKS:
+        argv.append(TEACHER_FIT_TASKS[task])
     return argv
+
+
+def teacher_fit_contract(release):
+    # Called only after release_manifest verifies every source byte. This
+    # reviewed module is stdlib-only and never imports model/runtime code.
+    path = safe_path(release / "source/tools/sdsc_teacher_fit_contract.py")
+    spec = importlib.util.spec_from_file_location("sdsc_verified_teacher_fit_contract", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def teacher_qualify_contract(release):
+    path = safe_path(release / "source/tools/sdsc_teacher_qualify_contract.py")
+    spec = importlib.util.spec_from_file_location("sdsc_verified_teacher_qualify_contract", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def teacher_qualification_prerequisites(root, release, request, provenance):
+    contract = teacher_qualify_contract(release)
+    resolved = run(
+        [
+            request["python"],
+            "-I",
+            "-B",
+            str(release / "source/tools/sdsc_teacher_qualify_contract.py"),
+            "--resolve-protocol",
+            provenance["provenance_dir"],
+            provenance["provenance_manifest_sha256"],
+            request["code_sha256"],
+            provenance["science_git_head"],
+        ],
+        timeout=120,
+    )
+    require(
+        resolved["returncode"] == 0,
+        "Accepted qualification protocol resolution failed: " + resolved["stderr"],
+    )
+    protocol = json.loads(resolved["stdout"])
+    require(
+        protocol.get("review_status") == "accepted"
+        and protocol.get("head") == provenance["science_git_head"],
+        "Qualification needs genuine accepted protocol provenance",
+    )
+    release_files = {row["path"]: row for row in read_json(release / "manifest.json")["files"]}
+    require(
+        isinstance(protocol.get("science_file_sha256"), dict)
+        and protocol["science_file_sha256"]
+        and all(
+            release_files.get(name, {}).get("sha256") == expected
+            for name, expected in protocol["science_file_sha256"].items()
+        ),
+        "Qualification release differs from reviewed named scientific/transport source",
+    )
+    upstream = upstream_evidence(
+        root, request["teacher_job_id"], "qwen3-v2-teacher-fit", "selected_full_teacher_fit"
+    )
+    contract.verify_fit_origin(upstream, protocol)
+    require(upstream["receipt"]["run_id"] != request["run_id"], "Qualification needs a fresh release")
+    selected = contract.selected_checkpoint(upstream)
+    proof = dict(
+        schema="quest-sdsc-teacher-qualification-prerequisites-v1",
+        task=TEACHER_QUALIFY_TASK,
+        target={key: request[key] for key in ("run_id", "code_sha256", "intent_id")},
+        teacher_job_id=request["teacher_job_id"],
+        created_at=now(),
+        protocol=protocol,
+        upstream=upstream,
+        selected_checkpoint=selected,
+        fit_evidence=contract.fit_evidence(upstream),
+        admission_queue=teacher_fit_queue_check(),
+    )
+    require(len(canonical(proof)) + 1 <= MAX_FILE, "Qualification proof exceeds metadata bound")
+    return proof
+
+
+def teacher_fit_queue_check():
+    """One conservative pre-submit check for a four-GPU attempt, no retry loop."""
+    user = pwd.getpwuid(os.getuid()).pw_name
+    queue = run(
+        [
+            "squeue",
+            "--noheader",
+            "--user=" + user,
+            "--states=PENDING,RUNNING,CONFIGURING,COMPLETING,SUSPENDED",
+            "--format=%i|%T|%b",
+        ]
+    )
+    require(queue["returncode"] == 0, "Cannot verify the four-GPU concurrency bound")
+    for line in queue["stdout"].splitlines():
+        fields = [field.strip() for field in line.split("|")]
+        require(len(fields) == 3 and fields[0] and fields[1], "Malformed GPU queue response")
+        require(
+            fields[2] in {"", "N/A", "(null)", "None"},
+            "Other GPU/GRES jobs remain queued or active; four-GPU teacher work is blocked",
+        )
+    return queue
+
+
+def teacher_fit_prerequisites(root, release, manifest, request):
+    contract = teacher_fit_contract(release)
+    mode = TEACHER_FIT_TASKS[request["task"]]
+    execution = contract.execution_plan(manifest)
+    execution_sha = contract.sha256_value(execution)
+    actual_sha = contract.sha256_value(contract.actual_plan(mode))
+    require(
+        request.get("execution_plan_sha256") == execution_sha
+        and request.get("actual_plan_sha256") == actual_sha,
+        "Requested teacher fit plans differ from intended release",
+    )
+    upstream = {
+        "teacher": upstream_evidence(
+            root, request["teacher_job_id"], "qwen3-v2-teacher-adapt", "one_gpu_adaptation_preflight"
+        )
+    }
+    if mode == "full-fit":
+        upstream["preflight"] = upstream_evidence(
+            root,
+            request["preflight_job_id"],
+            "qwen3-v2-teacher-fit-preflight",
+            "four_gpu_teacher_fit_preflight",
+        )
+        report = upstream["preflight"]["report"]
+        require(
+            report.get("execution_plan_sha256") == execution_sha,
+            "Four-GPU preflight does not match the intended model/runtime/trainer kernel",
+        )
+    require(
+        all(value["receipt"]["run_id"] != request["run_id"] for value in upstream.values()),
+        "Teacher fit requires a fresh source release",
+    )
+    proof = {
+        "schema": "quest-sdsc-teacher-fit-prerequisites-v1",
+        "task": request["task"],
+        "mode": mode,
+        "created_at": now(),
+        "target": {key: request[key] for key in ("run_id", "code_sha256", "intent_id")},
+        "execution_plan_sha256": execution_sha,
+        "actual_plan_sha256": actual_sha,
+        "teacher_job_id": request["teacher_job_id"],
+        "preflight_job_id": request.get("preflight_job_id"),
+        "upstream": upstream,
+        "admission_queue": teacher_fit_queue_check(),
+    }
+    require(len(canonical(proof)) + 1 <= MAX_FILE, "Teacher fit prerequisite proof exceeds size bound")
+    return proof
 
 
 def verify_provenance(root, release, manifest, request):
@@ -970,6 +1199,8 @@ def submit(request):
     validate_resources(request.get("resources"), task)
     preflight = task == "qwen3-v2-preflight"
     calibration = task == "qwen3-v2-g0-calibration"
+    teacher_fit = task in TEACHER_FIT_TASKS
+    teacher_qualify = task == TEACHER_QUALIFY_TASK
     provenance_task = task in PROVENANCE_TASKS
     model_task = preflight or provenance_task or task in DIAGNOSTIC_TASKS
     require(not model_task or request.get("container") is None, "Qwen3 tasks forbid container arguments")
@@ -979,9 +1210,29 @@ def submit(request):
         "This task does not accept provenance arguments",
     )
     require(
-        calibration or all(request.get(key) is None for key in PREREQUISITE_BINDINGS),
-        "Only calibration accepts upstream prerequisites",
+        calibration
+        or teacher_fit
+        or teacher_qualify
+        or all(request.get(key) is None for key in PREREQUISITE_BINDINGS),
+        "This task does not accept upstream prerequisites",
     )
+    require(
+        teacher_fit or all(request.get(key) is None for key in TEACHER_FIT_BINDINGS),
+        "This task does not accept teacher fit plan identities",
+    )
+    require(
+        all(request.get(key) is None for key in TEACHER_QUALIFY_BINDINGS),
+        "Qualification checkpoint/protocol/claims must be resolved remotely, not supplied",
+    )
+    if teacher_qualify:
+        teacher_job = identifier(request.get("teacher_job_id"), "job_id")
+        preflight_job = None
+        require(
+            request.get("preflight_job_id") is None
+            and request.get("prerequisites_path") is None
+            and request.get("prerequisites_sha256") is None,
+            "Qualification rejects caller-generated prerequisites",
+        )
     if calibration:
         require(
             request.get("prerequisites_path") is None and request.get("prerequisites_sha256") is None,
@@ -990,13 +1241,47 @@ def submit(request):
         teacher_job = identifier(request.get("teacher_job_id"), "job_id")
         preflight_job = identifier(request.get("preflight_job_id"), "job_id")
         require(teacher_job != preflight_job, "Two distinct upstream jobs are required")
+    if teacher_fit:
+        require(
+            request.get("prerequisites_path") is None and request.get("prerequisites_sha256") is None,
+            "Teacher fit prerequisites must be generated from live remote verification",
+        )
+        teacher_job = identifier(request.get("teacher_job_id"), "job_id")
+        require(teacher_job == "54493015", "Teacher fit requires the fixed one-GPU adaptation preflight")
+        preflight_job = None
+        if TEACHER_FIT_TASKS[task] == "full-fit":
+            preflight_job = identifier(request.get("preflight_job_id"), "job_id")
+            require(preflight_job != teacher_job, "Full fit needs a distinct four-GPU preflight")
+        else:
+            require(
+                request.get("preflight_job_id") is None, "Four-GPU preflight rejects another preflight ID"
+            )
     intent_id = identifier(request.get("intent_id"), "intent_id")
     release, manifest = release_manifest(root, request)
     required_files = {"tools/" + TASK_SCRIPTS[task], "tools/" + TASK_WORKERS[task]}
     if task in DIAGNOSTIC_TASKS:
         required_files.update({"tools/sdsc_teacher_prepare.py", "tools/sdsc_training_preflight.py"})
+    if task == "qwen3-v2-teacher-adapt":
+        required_files.update(
+            {
+                "tools/sdsc_teacher_probe.py",
+                "tools/sdsc_teacher_capability.py",
+                "src/posttrain_circuits/learning/teacher/adaptation.py",
+            }
+        )
+    if teacher_fit:
+        contract = teacher_fit_contract(release)
+        required_files.update(contract.KERNEL_PATHS)
     if provenance_task:
         required_files.add("tools/sdsc_provenance.py")
+    if teacher_qualify:
+        required_files.update(
+            {
+                "tools/sdsc_teacher_qualify_contract.py",
+                "src/posttrain_circuits/artifacts/teacher_adaptation_protocol.py",
+                "src/posttrain_circuits/artifacts/teacher_acceptance.py",
+            }
+        )
     require(
         required_files <= {record["path"] for record in manifest["files"]},
         "Snapshot manifest must bind both preflight worker files"
@@ -1043,6 +1328,10 @@ def submit(request):
             require(snapshot.is_dir(), "Pinned model snapshot is missing: " + model)
     provenance = verify_provenance(root, release, manifest, request) if provenance_task else {}
     prerequisites = calibration_prerequisites(root, request, provenance) if calibration else None
+    if teacher_fit:
+        prerequisites = teacher_fit_prerequisites(root, release, manifest, request)
+    if teacher_qualify:
+        prerequisites = teacher_qualification_prerequisites(root, release, request, provenance)
     script = safe_path(release / "source/tools" / TASK_SCRIPTS[task])
     require(script.is_file(), "Snapshot lacks the reviewed worker script")
     submissions = safe_path(root / "submissions")
@@ -1067,7 +1356,7 @@ def submit(request):
         "container": request.get("container"),
         **provenance,
     }
-    if calibration:
+    if calibration or teacher_fit or teacher_qualify:
         prerequisites_path = safe_path(directory / "prerequisites.json")
         atomic_json(prerequisites_path, prerequisites)
         prerequisites_bytes = read_bytes(prerequisites_path, MAX_FILE)
@@ -1077,6 +1366,38 @@ def submit(request):
             preflight_job_id=preflight_job,
             prerequisites_path=str(prerequisites_path),
             prerequisites_sha256=digest(prerequisites_bytes),
+        )
+    if teacher_fit:
+        intent.update({key: prerequisites[key] for key in TEACHER_FIT_BINDINGS})
+    if teacher_qualify:
+        contract = teacher_qualify_contract(release)
+        protocol = prerequisites["protocol"]
+        binding = dict(
+            prerequisites["target"],
+            teacher_job_id=teacher_job,
+            adapted_teacher_sha256=prerequisites["selected_checkpoint"]["adapted_teacher_sha256"],
+            protocol_sha256=protocol["protocol_sha256"],
+            prerequisites_sha256=intent["prerequisites_sha256"],
+            supplemental_namespace=contract.CLAIM_NAMESPACE,
+            validation_file_sha256=contract.VALIDATION_SHA256,
+            supplemental_order_sha256=contract.SUPPLEMENTAL_ORDER_SHA256,
+        )
+        claims = dict(
+            schema="quest-sdsc-teacher-qualification-reservations-v1",
+            binding=binding,
+            reservations=contract.reserve_claims(root, binding),
+            stage_root=str(root / "teacher-qualification-claims/stages" / intent_id),
+            stage_claim_ids={role: intent_id + ":" + role for role in contract.ROLES},
+        )
+        claims_path = directory / "claims.json"
+        atomic_json(claims_path, claims)
+        intent.update(
+            adapted_teacher_sha256=binding["adapted_teacher_sha256"],
+            protocol_sha256=protocol["protocol_sha256"],
+            protocol_artifact_sha256=protocol["artifact_sha256"],
+            science_implementation_sha256=protocol["science_implementation_sha256"],
+            claims_path=str(claims_path),
+            claims_sha256=digest(read_bytes(claims_path, MAX_FILE)),
         )
     atomic_json(directory / "intent.json", intent)
     argv = build_sbatch_argv(intent, release)
@@ -1188,10 +1509,231 @@ def bound_receipt(request):
         "hf_home",
         *PROVENANCE_BINDINGS,
         *PREREQUISITE_BINDINGS,
+        *TEACHER_FIT_BINDINGS,
+        *TEACHER_QUALIFY_BINDINGS,
     ):
         require(receipt.get(key) == intent.get(key), "Receipt binding mismatch")
     require(receipt.get("task", "gpu-smoke") == intent.get("task", "gpu-smoke"), "Receipt task mismatch")
     return receipt, directory
+
+
+def teacher_adapt_preflight_plan():
+    return {
+        "version": "qwen3-v2-teacher-adapt-preflight-v1",
+        "base_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "seed": 271828,
+        "train_examples": 256,
+        "dev_examples": 32,
+        "optimizer_steps": 8,
+        "global_batch_size": 32,
+        "microbatch_size": 1,
+        "max_sequence_length": 1536,
+        "learning_rate": 1e-4,
+        "weight_decay": 0.01,
+        "max_grad_norm": 1.0,
+        "lora_rank": 32,
+        "lora_alpha": 64,
+        "lora_dropout": 0.0,
+        "lora_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        "loss": "mean_of_response_token_means_per_sequence",
+        "teacher_readiness_claim": False,
+    }
+
+
+def validate_adaptation_preflight_report(result):
+    checks = {
+        "isolated_data",
+        "finite_loss_and_gradients",
+        "eight_real_optimizer_steps",
+        "nonzero_adapter_update",
+        "frozen_base_before_merge",
+        "complete_module_coverage",
+        "dense_export_reload",
+        "merged_dev_evaluated",
+        "cgroup_headroom",
+    }
+    plan = result.get("adaptation_plan")
+    require(
+        isinstance(plan, dict)
+        and canonical(plan) == canonical(teacher_adapt_preflight_plan())
+        and result.get("adaptation_plan_sha256") == digest(canonical(plan))
+        and type(result.get("optimizer_steps")) is int
+        and result["optimizer_steps"] == 8
+        and isinstance(result.get("checks"), dict)
+        and set(result["checks"]) == checks
+        and all(value is True for value in result["checks"].values()),
+        "Adaptation preflight plan, optimizer steps, or required checks differ",
+    )
+
+
+def verify_adaptation_manifest(root, result, published):
+    """Bind the small checkpoint inventory; consumers must rehash model bytes.
+
+    Status polling must not read ~16 GB of weights every five minutes. The
+    wrapper records its durable read-back; every later checkpoint consumer must
+    verify the actual bytes against this bound inventory before model loading.
+    """
+    expected_hash = identifier(result.get("checkpoint_manifest_sha256"), "code_sha256")
+    path = safe_path(root / "artifacts/checkpoint-manifest.json")
+    raw = read_bytes(path)
+    require(digest(raw) == expected_hash, "Adaptation checkpoint manifest hash differs")
+    manifest = json.loads(raw)
+    require(isinstance(manifest, dict), "Invalid adaptation checkpoint manifest")
+    content = {key: value for key, value in manifest.items() if key != "sha256"}
+    require(
+        manifest.get("sha256") == digest(canonical(content))
+        and manifest["sha256"] == result.get("adapted_teacher_sha256")
+        and manifest.get("artifact_kind") == "adapted_dense_teacher"
+        and manifest.get("base_revision") == "b968826d9c46dd6066d109eabc6255188de91218"
+        and manifest.get("formal_teacher_accepted") is False,
+        "Adaptation checkpoint identity or nonaccepting scope differs",
+    )
+    require(
+        manifest.get("adaptation_plan_sha256") == result.get("adaptation_plan_sha256"),
+        "Adaptation checkpoint and report refer to different plans",
+    )
+    records = published.get("files")
+    require(isinstance(records, list), "Missing adaptation publication inventory")
+    by_path = {}
+    for record in records:
+        require(isinstance(record, dict) and isinstance(record.get("path"), str), "Bad publication record")
+        require(record["path"] not in by_path, "Duplicate publication path")
+        by_path[record["path"]] = record
+    require(
+        by_path.get("artifacts/checkpoint-manifest.json")
+        == {"path": "artifacts/checkpoint-manifest.json", "size": len(raw), "sha256": expected_hash},
+        "Checkpoint manifest is not bound by the publication receipt",
+    )
+    metrics_path = safe_path(root / "artifacts/train-metrics.jsonl")
+    require(
+        metrics_path.is_file()
+        and stat.S_ISREG(metrics_path.stat().st_mode)
+        and metrics_path.stat().st_size <= MAX_FETCH_FILE,
+        "Bounded adaptation training metrics are missing",
+    )
+    metrics_raw = read_bytes(metrics_path)
+    metrics_sha = digest(metrics_raw)
+    require(
+        isinstance(result.get("adaptation_dataset"), dict)
+        and bool(result["adaptation_dataset"])
+        and type(result.get("consumed_tokens")) is int
+        and result["consumed_tokens"] > 0
+        and type(result.get("optimizer_steps")) is int
+        and result["optimizer_steps"] == 8,
+        "Adaptation training data or actual update counts are missing",
+    )
+    provenance = dict(
+        run_id=result.get("run_id"),
+        job_id=result.get("job_id"),
+        code_sha256=result.get("code_sha256"),
+        dataset_manifest_sha256=digest(canonical(result["adaptation_dataset"])),
+        train_metrics_sha256=metrics_sha,
+        optimizer_steps=result["optimizer_steps"],
+        consumed_tokens=result["consumed_tokens"],
+    )
+    require(
+        canonical(manifest.get("training_provenance")) == canonical(provenance)
+        and by_path.get("artifacts/train-metrics.jsonl")
+        == {"path": "artifacts/train-metrics.jsonl", "size": len(metrics_raw), "sha256": metrics_sha},
+        "Adaptation training provenance differs from report, actual metrics or publication receipt",
+    )
+    files = manifest.get("files")
+    require(isinstance(files, list) and bool(files), "Missing adapted checkpoint files")
+    seen = set()
+    for record in files:
+        require(isinstance(record, dict) and isinstance(record.get("path"), str), "Bad checkpoint file")
+        name = PurePosixPath(record["path"])
+        require(
+            not name.is_absolute()
+            and len(name.parts) >= 2
+            and name.parts[0] in {"merged", "adapter"}
+            and ".." not in name.parts
+            and str(name) == record["path"]
+            and record["path"] not in seen
+            and type(record.get("size")) is int
+            and record["size"] >= 0,
+            "Unsafe checkpoint file inventory",
+        )
+        identifier(record.get("sha256"), "code_sha256")
+        seen.add(record["path"])
+        relative = "artifacts/" + record["path"]
+        require(
+            by_path.get(relative) == dict(record, path=relative),
+            "Checkpoint file publication binding differs",
+        )
+        file = safe_path(root / relative)
+        require(
+            file.is_file() and stat.S_ISREG(file.stat().st_mode) and file.stat().st_size == record["size"],
+            "Persistent checkpoint file metadata differs",
+        )
+    required = {
+        "merged/config.json",
+        "merged/tokenizer_config.json",
+        "merged/tokenizer.json",
+        "adapter/adapter_config.json",
+        "adapter/adapter_model.safetensors",
+    }
+    require(
+        required <= seen
+        and any(name.startswith("merged/") and name.endswith(".safetensors") for name in seen),
+        "Adapted dense checkpoint/tokenizer/adapter inventory is incomplete",
+    )
+    require(
+        {name for name in by_path if name.startswith(("artifacts/merged/", "artifacts/adapter/"))}
+        == {"artifacts/" + name for name in seen},
+        "Publication contains unlisted checkpoint files",
+    )
+
+
+def verify_teacher_fit_artifacts(receipt, result, published):
+    release, manifest = release_manifest(ROOT, receipt)
+    contract = teacher_fit_contract(release)
+    expected_execution = contract.execution_plan(manifest)
+    contract.validate_report(result, expected_execution, receipt["task"])
+    require(
+        all(result.get(key) == receipt.get(key) for key in (*TEACHER_FIT_BINDINGS, *PREREQUISITE_BINDINGS)),
+        "Teacher fit report plan/prerequisite binding differs from submission",
+    )
+    proof_raw = read_bytes(safe_path(receipt["prerequisites_path"]), MAX_FILE)
+    require(digest(proof_raw) == receipt["prerequisites_sha256"], "Teacher fit prerequisite proof changed")
+    proof = json.loads(proof_raw)
+    require(
+        proof.get("schema") == "quest-sdsc-teacher-fit-prerequisites-v1"
+        and proof.get("task") == receipt["task"]
+        and proof.get("mode") == TEACHER_FIT_TASKS[receipt["task"]]
+        and proof.get("target") == {key: receipt[key] for key in ("run_id", "code_sha256", "intent_id")}
+        and all(
+            proof.get(key) == receipt.get(key)
+            for key in (*TEACHER_FIT_BINDINGS, "teacher_job_id", "preflight_job_id")
+        )
+        and receipt.get("teacher_job_id") == "54493015",
+        "Teacher fit prerequisite identity differs",
+    )
+    if TEACHER_FIT_TASKS[receipt["task"]] == "full-fit":
+        require(
+            result.get("same_world_resume_prerequisite_job_id") == receipt.get("preflight_job_id"),
+            "Full teacher fit borrowed an unrelated resume prerequisite",
+        )
+    root = safe_path(receipt["result_dir"])
+    expected = contract.checkpoint_records(root / "artifacts", result)
+    records = published.get("files")
+    require(isinstance(records, list), "Missing teacher fit publication inventory")
+    by_path = {}
+    for row in records:
+        require(
+            isinstance(row, dict) and isinstance(row.get("path"), str) and row["path"] not in by_path,
+            "Invalid/duplicate teacher fit publication record",
+        )
+        by_path[row["path"]] = row
+    for name, row in expected.items():
+        relative = "artifacts/" + name
+        require(by_path.get(relative) == dict(row, path=relative), "Teacher fit publication binding differs")
+    scope = ("artifacts/checkpoints/",)
+    require(
+        {name for name in by_path if name.startswith(scope)}
+        == {"artifacts/" + name for name in expected if name.startswith("checkpoints/")},
+        "Teacher fit publication contains unlisted checkpoints",
+    )
 
 
 def verify_result(receipt):
@@ -1204,7 +1746,8 @@ def verify_result(receipt):
         teacher = task == "qwen3-v2-teacher-prepare"
         probe = task in DIAGNOSTIC_TASKS
         calibration = task == "qwen3-v2-g0-calibration"
-        model_task = preflight or teacher or calibration or probe
+        qualification = task == TEACHER_QUALIFY_TASK
+        model_task = preflight or teacher or calibration or probe or qualification
         result_name = TASK_RESULTS[task]
         result_bytes = read_bytes(root / result_name)
         result = json.loads(result_bytes)
@@ -1242,7 +1785,7 @@ def verify_result(receipt):
                 result.get("partial_attempt_ledger_guaranteed") is False and result.get("resumable") is False,
                 "Teacher preparation cannot claim guaranteed partial ledger or resume",
             )
-        if probe:
+        if probe and task not in TEACHER_FIT_TASKS:
             require(
                 result.get("exploratory") is True
                 and result.get("accepted_science") is False
@@ -1259,6 +1802,68 @@ def verify_result(receipt):
                 and type(result.get("metrics_passed")) is bool,
                 "Capability metrics must remain explicitly diagnostic",
             )
+        if task == "qwen3-v2-teacher-adapt":
+            require(
+                result.get("artifact_kind") == "teacher_adaptation_preflight"
+                and result.get("adaptation_preflight") is True
+                and result.get("readiness_artifact_produced") is False
+                and result.get("student_training_started") is False
+                and result.get("training_started") is True,
+                "Teacher adaptation is a bounded preflight, not formal teacher readiness",
+            )
+            validate_adaptation_preflight_report(result)
+            verify_adaptation_manifest(root, result, published)
+        if task in TEACHER_FIT_TASKS:
+            verify_teacher_fit_artifacts(receipt, result, published)
+        if qualification:
+            release, unused = release_manifest(ROOT, receipt)
+            contract = teacher_qualify_contract(release)
+            proof_raw = read_bytes(safe_path(receipt["prerequisites_path"]), MAX_FILE)
+            claims_raw = read_bytes(safe_path(receipt["claims_path"]), MAX_FILE)
+            require(
+                digest(proof_raw) == receipt["prerequisites_sha256"]
+                and digest(claims_raw) == receipt["claims_sha256"],
+                "Qualification proof/claims changed",
+            )
+            proof, claims = json.loads(proof_raw), json.loads(claims_raw)
+            contract.validate_report(result, proof)
+            contract.validate_acceptance_file(root / "artifacts", result, claims)
+            scientific = {
+                "artifacts/" + name: dict(row, path="artifacts/" + name)
+                for name, row in contract.validate_inventory(root / "artifacts", result).items()
+            }
+            require(
+                all(
+                    result.get(key) == receipt.get(key)
+                    for key in (*PREREQUISITE_BINDINGS, *TEACHER_QUALIFY_BINDINGS)
+                ),
+                "Qualification result bindings differ",
+            )
+            inventory = contract.record_map(published.get("files"))
+            require(
+                sum(row["size"] for row in inventory.values()) <= contract.MAX_OUTPUT_BYTES,
+                "Qualification publication exceeds its bounded output",
+            )
+            require(
+                all(inventory.get(name) == row for name, row in scientific.items())
+                and sum(row["size"] for name, row in inventory.items() if name not in scientific)
+                <= contract.MAX_LOG_BYTES,
+                "Qualification scientific publication differs or diagnostics exceed their bound",
+            )
+            for name, row in inventory.items():
+                require(
+                    Path(name).suffix not in {".safetensors", ".pt", ".pth", ".ckpt", ".bin"},
+                    "Qualification publication duplicates weights or trainer state",
+                )
+                path = safe_path(root / name)
+                require(
+                    path.is_file()
+                    and stat.S_ISREG(path.stat().st_mode)
+                    and path.stat().st_size == row["size"],
+                    "Qualification published evidence size differs",
+                )
+                if name != "worker.log":
+                    verify_published_file(path, row)
         if calibration:
             require(
                 all(
@@ -1348,6 +1953,8 @@ def status(request):
         "hf_home": receipt.get("hf_home"),
         **{key: receipt[key] for key in PROVENANCE_BINDINGS if key in receipt},
         **{key: receipt[key] for key in PREREQUISITE_BINDINGS if key in receipt},
+        **{key: receipt[key] for key in TEACHER_FIT_BINDINGS if key in receipt},
+        **{key: receipt[key] for key in TEACHER_QUALIFY_BINDINGS if key in receipt},
         "queue": queue,
         "accounting": accounting,
         "result": result,
@@ -1371,7 +1978,7 @@ def bounded_tail(path, lines=100):
 def selected_files(receipt, directory, lines):
     result_dir = safe_path(receipt["result_dir"])
     report_name = TASK_RESULTS[receipt.get("task", "gpu-smoke")]
-    return [
+    files = [
         ("slurm-" + receipt["job_id"] + ".out", directory / ("slurm-" + receipt["job_id"] + ".out"), True),
         ("slurm-" + receipt["job_id"] + ".err", directory / ("slurm-" + receipt["job_id"] + ".err"), True),
         ("worker.log", result_dir / "worker.log", True),
@@ -1379,6 +1986,19 @@ def selected_files(receipt, directory, lines):
         (report_name, result_dir / report_name, False),
         ("receipt.json", result_dir / "receipt.json", False),
     ]
+    if receipt.get("task") == "qwen3-v2-teacher-adapt":
+        files.extend(
+            (name, result_dir / "artifacts" / name, False) for name in sorted(TEACHER_ADAPT_SMALL_RESULTS)
+        )
+    if receipt.get("task") in TEACHER_FIT_TASKS:
+        files.extend(
+            (name, result_dir / "artifacts" / name, False) for name in sorted(TEACHER_FIT_SMALL_RESULTS)
+        )
+    if receipt.get("task") == TEACHER_QUALIFY_TASK:
+        files.extend(
+            (name, result_dir / "artifacts" / name, False) for name in sorted(TEACHER_QUALIFY_SMALL_RESULTS)
+        )
+    return files
 
 
 def logs(request):
@@ -1397,10 +2017,35 @@ def logs(request):
 def fetch(request):
     receipt, directory = bound_receipt(request)
     files = []
+    skipped = []
     total = 0
+    task = receipt.get("task", "gpu-smoke")
+    optional = (
+        TEACHER_ADAPT_SMALL_RESULTS
+        if task == "qwen3-v2-teacher-adapt"
+        else TEACHER_FIT_SMALL_RESULTS
+        if task in TEACHER_FIT_TASKS
+        else TEACHER_QUALIFY_SMALL_RESULTS
+        if task == TEACHER_QUALIFY_TASK
+        else set()
+    )
+    optional = optional - {"checkpoint-manifest.json", "train-metrics.jsonl"}
     for name, path, tail in selected_files(receipt, directory, 200):
         safe_path(path)
         if not path.exists():
+            continue
+        require(path.is_file() and stat.S_ISREG(path.stat().st_mode), "Fetch input is not a regular file")
+        size = path.stat().st_size
+        if name in optional and (size > MAX_FETCH_FILE or total + size > MAX_FETCH_TOTAL):
+            skipped.append(
+                {
+                    "path": name,
+                    "size": size,
+                    "reason": "optional_file_exceeds_1MiB_limit"
+                    if size > MAX_FETCH_FILE
+                    else "optional_file_exceeds_total_fetch_limit",
+                }
+            )
             continue
         value = bounded_tail(path, 200) if tail else read_bytes(path)
         total += len(value)
@@ -1422,7 +2067,9 @@ def fetch(request):
         "hf_home": receipt.get("hf_home"),
         **{key: receipt[key] for key in PROVENANCE_BINDINGS if key in receipt},
         **{key: receipt[key] for key in PREREQUISITE_BINDINGS if key in receipt},
+        **{key: receipt[key] for key in TEACHER_FIT_BINDINGS if key in receipt},
         "files": files,
+        "skipped": skipped,
         "total_bytes": total,
         "result": verify_result(receipt),
     }

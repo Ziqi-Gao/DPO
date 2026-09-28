@@ -1,0 +1,252 @@
+# Proposed protocol only: no teacher or execution result is accepted by this file.
+schema_version: 1
+kind: opd_teacher_adaptation_protocol
+protocol_id: qwen3-teacher-adaptation-v1
+scope:
+  purpose: qualification_of_one_development_selected_dense_teacher
+  execution: sdsc_h100_teacher_only
+  protocol_acceptance_is_teacher_acceptance: false
+  student_training_authorized_by_this_artifact: false
+  blackwell_execution_class_reused: false
+preserved_base:
+  prereg_path: prereg/qwen3_v2.yaml
+  prereg_sha256: 8d6bdeab0b9302c8824c4709f556c6c41a896bd2cfce21e7794d131d176ba0a4
+  student_max_completion_length: 128
+  historical_teacher_readiness_max_new_tokens: 128
+  claim_original_128_budget_pass: false
+  original_first_128_validation_previously_exposed: true
+teacher:
+  identity_schema_version: 1
+  kind: learned_dense_checkpoint
+  base_model_id: Qwen/Qwen3-8B
+  base_revision: b968826d9c46dd6066d109eabc6255188de91218
+  tokenizer_id: Qwen/Qwen3-8B
+  tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+  tokenizer_fingerprint: 03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d
+  chat_template_sha256: a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8
+  prompt_protocol: qwen3_non_thinking_v1
+  enable_thinking: false
+  checkpoint_identity: canonical_dense_manifest_sha256_with_actual_file_rehash
+  checkpoint_selection: first_scheduled_full_dev_all_eight_pass
+  checkpoint_locator_is_scientific_identity: false
+  adapter_wrappers_allowed_for_qualification: false
+science:
+  response_instructions_version: prompt_v7_positive_TRUE_negative_NOT
+  response_instructions_sha256: 8126867f5b5d70543fb71fad3e94aa5d71d77976909696a44a612f5388076ea6
+  canonical_targets_and_verifier: unchanged_proofgraph
+  prefix_conditional_history: score_each_complete_target_on_its_own_autoregressive_history
+  prefix_pair_rule: original_active_support_path_swap_seed42_with_recorded_alignment_skips
+  prefix_stages:
+  - first_rule_selection
+  - intermediate_conclusion
+  prefix_top_k: 128
+  every_causal_side_structurally_valid_and_strictly_positive: true
+  readiness_thresholds:
+    minimum_teacher_answer_accuracy: 0.9
+    minimum_teacher_exact_proof_accuracy: 0.85
+    minimum_teacher_first_rule_top1_accuracy: 0.8
+    minimum_teacher_intermediate_top1_accuracy: 0.8
+    minimum_teacher_topk_mass: 0.9
+    minimum_teacher_topk_target_coverage: 0.9
+    minimum_corrupted_prefix_recovery_accuracy: 0.7
+    minimum_causal_shift_logprob: 0.0
+  max_new_tokens: 256
+  budget_amendment_scope: adapted_teacher_dev_supplemental_and_formal_readiness_only
+  greedy:
+    temperature: 0.0
+    top_p: 1.0
+    top_k: 0
+    min_p: 0.0
+  greedy_seed: 42_plus_original_source_index
+fit:
+  train_examples: 8192
+  development_examples: 512
+  train_raw_pair_seed_start: 70000042
+  development_raw_pair_seed_start: 80000042
+  dataset_manifest_sha256: 742b62a1ee328c8d8f660106265e4a342458fe5145243ecb08368eaa745f502d
+  train_examples_sha256: a85ac939cba53e675d1737c75d9ba77d2516ed0f2cb0def642c97774cc09522f
+  development_examples_sha256: 3bd34a2e3a743c41a5215317f220c0ae99dba66841776f81565c61768f16e4c5
+  original_family_rows_to_check: 144000
+  isolation_dimensions:
+  - semantic
+  - example_id
+  - pair_group_id
+  - pair_seed
+  retain_all_rows: true
+  formal_rows_used_for_training_or_selection: false
+  seed: 271828
+  epochs: 4
+  global_batch_size: 64
+  optimizer_steps: 512
+  world_size: 4
+  microbatch_per_rank: 1
+  loss: mean_of_response_token_means_per_sequence
+  response_supervision: canonical_response_and_EOS_prompt_and_padding_masked
+  lora:
+    rank: 32
+    alpha: 64
+    dropout: 0.0
+    modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  optimizer:
+    name: AdamW
+    learning_rate: 0.0001
+    weight_decay: 0.01
+    betas:
+    - 0.9
+    - 0.999
+    eps: 1.0e-08
+    max_grad_norm: 1.0
+    warmup_steps: 16
+    schedule: linear_warmup_then_cosine
+  max_prefix_tokens: 1280
+  max_response_tokens_with_eos: 256
+  max_model_input_tokens: 1536
+  evaluation_steps:
+  - 128
+  - 256
+  - 384
+  - 512
+  evaluation_model: freshly_reloaded_verified_merged_dense_checkpoint
+  evaluate_all_512_development_rows: true
+  preserve_all_scheduled_reports_and_complete_all_512_steps: true
+  selection_rule: first_scheduled_checkpoint_with_all_eight_development_checks_true
+  reselect_after_confirmation_exposure: false
+  preflight_results_are_formal_acceptance: false
+cohorts:
+  train_probe:
+    split: train
+    source_start: 0
+    source_stop: 32
+    count: 32
+    examples_sha256: 3dfdee4142a1b12cb82cd9e002d631849578d5364a26de17292f249bf87ca9ed
+    candidates_per_prompt: 8
+    required_covered_prompts: 32
+  supplemental:
+    split: validation
+    source_start: 128
+    source_stop: 256
+    count: 128
+    examples_sha256: 532b11ac85fad0b35be1e253c2d30a8ca838ea8849adf77503a43b6433236073
+    source_file_sha256: 8d9f710b8242a53f37a5714240e2ffd64769aca5828ef1d8e180c81c277f4ed3
+    seed_offset: 42
+    seed_uses_original_source_index: true
+    required_complete_pairs: 64
+  formal_readiness:
+    split: validation
+    source_start: 0
+    source_stop: 128
+    count: 128
+    examples_sha256: ceecd7470309dbb78351f8ecba850b98b6f35bf749aa89ac101498ba4ce921e8
+    source_file_sha256: 8d9f710b8242a53f37a5714240e2ffd64769aca5828ef1d8e180c81c277f4ed3
+    seed_offset: 42
+    seed_uses_original_source_index: true
+    prior_model_output_exposure_disclosed: true
+  formal_store:
+    split: train
+    source_start: 0
+    source_stop: 256
+    count: 256
+    examples_sha256: b2de1ba6a96f602f4ffd511f3c1e3e83104c426315123c2b3cca5bc9e216ea1c
+    candidates_per_prompt: 8
+    required_attempts: 2048
+    required_covered_prompts: 256
+candidate_generation:
+  request_seed: 31415
+  seed_derivation: existing_teacher_candidate_seed
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  min_p: 0.0
+  max_new_tokens: 256
+  max_prefix_tokens: 1246
+  retain_all_attempts_and_actual_tokens_and_logprobs: true
+  retry_resample_or_repair_generated_proof: false
+qualification:
+  ordered_stages:
+  - selected_checkpoint
+  - train_probe
+  - supplemental
+  - formal_readiness
+  - formal_store
+  - independent_artifact_acceptance
+  stop_on_any_failed_gate: true
+  same_selected_checkpoint_for_all_stages: true
+  supplemental_experiment_namespace: opd-qwen3-teacher-adaptation-confirmation-20260928
+  supplemental_claim_before_any_inference: true
+  supplemental_claim_independent_of_checkpoint_and_protocol_hash: true
+  preserve_claim_on_failure_or_unknown_outcome: true
+  supplemental_is_one_shot_no_reselection: true
+  verify_accounting_receipts_and_actual_persistent_artifacts: true
+  independent_acceptance_attestation_required: true
+  producer_may_self_accept_teacher: false
+  protocol_review_may_self_accept_teacher: false
+  downstream_student_migration_in_scope: false
+science_files:
+- configs/config.yaml
+- configs/task/proofgraph_main.yaml
+- configs/teacher/qwen3_v2_teacher_8b.yaml
+- configs/g0/qwen3_v2_eap_separation.yaml
+- configs/experiment/canonical_sft.yaml
+- src/posttrain_circuits/core/config.py
+- src/posttrain_circuits/artifacts/teacher_adaptation_protocol.py
+- src/posttrain_circuits/artifacts/teacher_acceptance.py
+- src/posttrain_circuits/artifacts/teacher_identity.py
+- src/posttrain_circuits/artifacts/compatibility.py
+- src/posttrain_circuits/artifacts/hashing.py
+- src/posttrain_circuits/artifacts/io.py
+- src/posttrain_circuits/artifacts/execution_safe_io.py
+- src/posttrain_circuits/artifacts/git_provenance.py
+- src/posttrain_circuits/models/adapted_teacher.py
+- src/posttrain_circuits/models/loading.py
+- src/posttrain_circuits/models/prompt_protocol.py
+- src/posttrain_circuits/datasets/proofgraph/contracts.py
+- src/posttrain_circuits/datasets/proofgraph/generation.py
+- src/posttrain_circuits/datasets/proofgraph/splits.py
+- src/posttrain_circuits/datasets/proofgraph/serialization.py
+- src/posttrain_circuits/datasets/proofgraph/rendering.py
+- src/posttrain_circuits/datasets/proofgraph/parsing.py
+- src/posttrain_circuits/datasets/proofgraph/verification.py
+- src/posttrain_circuits/datasets/teacher_demos/contracts.py
+- src/posttrain_circuits/learning/teacher/adaptation.py
+- src/posttrain_circuits/learning/teacher/adaptation_fit.py
+- src/posttrain_circuits/learning/teacher/adaptation_evaluation.py
+- src/posttrain_circuits/learning/teacher/adapted_candidate_generation.py
+- src/posttrain_circuits/learning/teacher/demo_generation.py
+- src/posttrain_circuits/learning/teacher/seeding.py
+- src/posttrain_circuits/learning/teacher/evaluation.py
+- src/posttrain_circuits/learning/supervision/losses.py
+- src/posttrain_circuits/cli/evaluate_teacher_readiness.py
+- src/posttrain_circuits/causal_circuits/metrics/probes.py
+- tools/sdsc_teacher_fit.py
+- tools/sdsc_teacher_fit_contract.py
+- tools/sdsc_teacher_fit_memory.py
+- tools/sdsc_teacher_fit_job.sh
+- tools/sdsc_teacher_prepare.py
+- tools/sdsc_training_preflight.py
+- tools/sdsc_teacher_adapt.py
+- tools/sdsc_teacher_probe.py
+- tools/sdsc_teacher_qualify.py
+- tools/sdsc_teacher_qualify_contract.py
+- tools/sdsc_teacher_qualify_job.sh
+- tools/sdsc_teacher_qualification_audit.py
+review_contract:
+  mechanism: implementation_commit_then_distinct_review_only_acceptance_commit
+  acceptance_commit_self_reference: forbidden
+  acceptance_allowed_changed_paths:
+  - prereg/amendments/qwen3_teacher_adaptation_v1.yaml
+  - docs/refactor/current_handoff.md
+  current_named_science_bytes_must_equal_implementation: true
+  later_unrelated_commits_invalidate_review: false
+review:
+  status: proposed
+  reviewed_implementation_commit: null
+  reviewer: null
+  reviewed_at_utc: null
+  rationale: null

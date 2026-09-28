@@ -1,7 +1,9 @@
 # OPD current handoff
 
-Last updated: 2026-09-28 (v7 quality diagnosis independently replayed;
-prompt transport/verifier checks pass, teacher proof competence remains blocked).
+Last updated: 2026-09-28 (teacher-adaptation preflight 54493015 passed execution;
+four-H100 repaired preflight 54494477 passed; full teacher fit 54494742 completed
+with all four development checkpoints passing;
+teacher acceptance pending).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -18,6 +20,14 @@ model/runtime setup, storage and distributed preflights, and the gated Qwen3-v2
 path. Proceed with G0 and then a seed-42 pilot; do not infer authorization for the
 full three-seed factorial or Gemma. Do not ask again for the already authorized
 work. Scientific gates and duplicate-submission protection still apply.
+
+The latest user instruction explicitly authorizes agents to fix bugs, submit
+tests and continue until the teacher meets its standards and passes acceptance.
+This includes evidence-led, independently reviewed teacher task adaptation;
+do not stop at diagnosis or repeatedly request per-stage authorization. Keep all
+original scientific thresholds, disjoint training/evaluation data, genuine
+checkpoint identities, independent acceptance and submission reconciliation.
+It does not authorize claiming success early or expanding to factorial/Gemma.
 
 A second infrastructure job, `54345521`, completed with ExitCode 0:0 in 18
 seconds on H100 node `exp-19-07`. It verified actual read/write/publication on
@@ -440,8 +450,8 @@ while retaining the original grounded rule sequence yields 74/256 across 11/32.
 Neither alters the official **42/256, 7/32** result or qualifies teacher data.
 The measured blocker is reliable serial proof generation under this exact
 frozen Qwen3-8B non-thinking configuration; it is not general model incapacity.
-Next work needs a reviewed teacher reasoning/generation or adaptation proposal,
-not another blind prompt retry, larger sampling budget or relaxed validator.
+The response is the separately reviewed adaptation work below, not a blind
+prompt retry, larger sampling budget or relaxed validator.
 No supplemental validation examples were exposed by this diagnosis.
 
 Full hypotheses, examples, limitations and CPU reproduction commands:
@@ -452,9 +462,202 @@ diversity and counterfactual reviews pass. This diagnosis changes only that
 report and the handoff in Git; no production science, weights, thresholds,
 submission or cancellation changed. Original uncommitted files remain untouched.
 
+The subsequent authorized repair found a separate **readiness scoring bug**:
+multi-token counterfactual likelihoods used the other target's autoregressive
+history. The scorer now evaluates the same complete target under each context,
+also correcting alternative likelihoods. A deterministic CPU regression flips
+the old incorrect negative shift to the mathematically correct positive value.
+Five new tests (three initially failing) and the 41-test affected suite pass;
+independent review reran the five tests. Own-context top-1/coverage/mass,
+probe construction and all eight thresholds are unchanged. Historical v5 has
+87/128 affected target pairs and needs new model forwards for corrected shifts;
+its old values are not corrected evidence. The v7 generation failure is unchanged.
+See `docs/refactor/qwen3_teacher_prefix_scoring_repair_20260928.md`.
+
+The proposed separate teacher-adaptation path keeps the Qwen3-8B base,
+non-thinking template, v7 rendering and strict proof gates. It trains LoRA
+rank 32 on all seven attention/MLP projection families and exports/reloads a
+new dense checkpoint. The original production adapter prohibition remains.
+`tools/sdsc_teacher_adapt.py` and its wrapper expose a fixed **1 H100 / 24 CPU /
+192 GiB / 60-minute**, eight-step, global-32 execution preflight through
+`tools/sdsc`; preflight PASS is never teacher acceptance. The actual tiny-Qwen
+training/merge/reload regression and related tests passed (46), transport and
+boundary tests passed (148), and independent worker/transport reviews passed.
+Fresh job **54493015** was submitted once at **2026-09-28T03:26:38Z**, intent
+`f17b8a53cf8a4d3b85e9d7c8d27c89c9`, and completed on **exp-19-08** with
+job/batch **COMPLETED / 0:0**, elapsed **16m48s**, plus verified persistent
+results. Run `20260928T032541Z-1ce8c1707b61-4096a87c` contains 525 files /
+5,444,453 source bytes; code SHA is
+`1ce8c1707b611a4a23e9b0c88c6608a7e370e08c1c91ee312886c431ce3a7f17`.
+Its real receipt is `.sdsc/submissions/f17b8a53cf8a4d3b85e9d7c8d27c89c9.json`.
+The real eight-step execution preflight passed; **formal teacher readiness has
+not passed**. Loss declined from 0.452631 to 0.016239; 227,814 input tokens were
+consumed, with nonzero adapter update, unchanged frozen base before merge and
+zero dense-save/reload logit error. Steady 32-sample updates took about eight
+seconds. Peak reserved GPU memory was 24.62 GiB; cgroup peak was 67.60 GiB,
+with 124.40 GiB headroom. The adapted checkpoint identity is
+`7f641e70813c33ae25bda42f659d3e124865ace7a7b858aa17d0925a84269da7`.
+The 32-example independent development set at the unchanged preflight 128-token
+cap passes six of eight metrics: first-rule 0.875, intermediate 1.0, top-k
+coverage 1.0, corrupted recovery 1.0, minimum mass 0.999977 and minimum causal
+shift +1.334107. Answer 0.875 and exact proof 0.78125 remain below 0.90/0.85.
+These are development measurements, not original validation or teacher-store
+acceptance. Small results are `.sdsc/fetched/54493015/fetch-3sn8l2nu/`; verified
+report SHA is `f0fa4dbe3027373e97b5da865463ef593c7f9d6b5a54b0e103e753e8123d40b4`.
+The first fetch exposed an optional dev JSON larger than 1 MiB; the reviewed
+fix skips it explicitly while retaining strict required-file limits. The
+295,733-byte fetch records that 1,192,578-byte skip; no weights were downloaded.
+All old observers/continuations remain terminal and must not be re-armed.
+Fresh four-H100 preflight **54493777** was submitted once at
+**2026-09-28T04:10:42Z**, intent `2ebd02659bbb44478049b1dd45c16e4f`.
+Resources: 4 H100 / 24 CPU / 192 GiB / one hour, `nwu181`,
+`nairr-gpu` / `nairr-gpu-normal`. Its release is
+`20260928T040828Z-ca6f0ae6dbf0-2a503af2`, 538 files / 5,725,597 bytes,
+code SHA `ca6f0ae6dbf0018d94df08196ec2f75a07cdf2a928b2b61044b6bfac1fef650c`.
+The matching full-fit release `20260928T040932Z-ca6f0ae6dbf0-8b0a9a17`
+is separately uploaded with identical execution bytes, but is now obsolete for
+continuation after the memory-contract repair; it was never submitted.
+Actual execution-plan SHA is
+`90cbcbcc1fe9b11a885bcc9fe81667d02787d972e6117e360d7e2fb38a381475`.
+The 04:06Z connection check passed; the four-GPU partition was UP and the
+user queue empty before submission. Final transport suite passed 173 tests,
+independent boundary review passed 24, worker/loader/identity passed 105,
+and real CPU Gloo tests covered four-rank global loss and same-world resume.
+These are execution-admission evidence, not real four-GPU or teacher PASS.
+Fresh accounting confirms **FAILED / 1:0**, elapsed **3m36s**, before numerical
+imports/model loading/training. Source/model staging and actual input/output
+Lustre plus node-local ext4 checks passed. The shared-node guard rejected
+`cgroup must expose finite 192 GiB and real peak`. Accounting records requested
+24 CPU/192 GiB, but actual allocation 72 CPUs and no memory TRES (batch mem=0)
+on the exclusive `nairr-gpu` partition with `SelectTypeParameters=CR_CORE`.
+The original guard did not retain raw levels, so its exact observed limit cannot
+be reconstructed. Preserved failure fetch:
+`.sdsc/fetched/54493777/fetch-0ua7wqtr/` (11,205 bytes).
+The separately reviewed fit-only repair records the real finite own-job/step
+cgroup boundary independently from the requested 192-GiB workload budget.
+It retains the original 20%/32-GiB headroom relative to that budget, rejects
+unattributable/UID-only counters, and records raw levels before failure.
+Actual allocation CPU count is reported separately; computation remains four
+ranks at six threads each. Legacy shared/central guards remain unchanged.
+Fresh repair preflight **54494477**, intent `9c10a6523c25490cbd6b0453b1fc1876`,
+was submitted once at **2026-09-28T04:28:34Z**, with the same explicit
+4-H100/24-CPU/192-GiB-request/one-hour envelope. Its independent source release
+is `20260928T042618Z-080501637f3e-6f05ef72`, 549 files / 5,893,665 bytes;
+code SHA `080501637f3e88f310ee4a2d98c95692f97a8c2e3620264c43950f6d5c5e0fcc`.
+Execution-plan v2 SHA is
+`a7f3ee0bda10d13158e47d3e28a1e8c4fea4f21e05c60f43a4255af9f3d11185`.
+The repair passed 43 memory/worker tests and the 222-case affected boundary
+suite, plus independent raw-counter/output-directory review and regression.
+This repaired preflight completed **COMPLETED / 0:0 in 11m24s** on exp-19-08.
+All 13 execution checks pass, including four-rank global-64 updates, actual
+same-world restore, changed-world rejection and dense export/reload. The actual
+own-job peak was 69.75 GiB against the unchanged 192-GiB budget; the measured
+finite kernel cap was 898.44 GiB, explicitly not a 192-GiB enforced cap.
+Stable updates took about 4.42 seconds. Persisted report SHA is
+`a04ea2b34f2c380cb40d7a68c068cf722a142cdd51c239cdc8d25fc124e81ffb`;
+the 279,059-byte bounded fetch is `.sdsc/fetched/54494477/fetch-5mpzfgb2/`.
+Its small development assessment still fails quality and is not acceptance.
+
+Full teacher fit **54494742**, intent `829efc1b139f4c37a89ccc1d0e01d857`,
+was submitted once at **2026-09-28T04:42:28Z** after verified preflight success.
+It uses independent release `20260928T042742Z-080501637f3e-d1b2dc92` with the
+same execution v2 bytes: 4 H100 / 24 requested CPU / 192-GiB workload budget /
+four-hour limit, account `nwu181`, partition/QoS `nairr-gpu`/`nairr-gpu-normal`.
+Its exact full-fit plan SHA is
+`6d94adb71e0f131e7b74db10a86aeb01a3903d3be59129c71d368f931c89db7c`.
+Fresh accounting at 06:04 UTC confirms job/batch/extern **COMPLETED / 0:0**;
+the job elapsed **1h19m36s**. All 512 updates, four epochs, 32,768 sequences and
+29,909,768 nonpadding input tokens completed, with all 13 execution checks passing.
+Actual own-job peak was 108.24 GiB; maximum reserved GPU memory was 43.75 GiB.
+The wrapper hash-verified 71,277,357,278 bytes on persistent storage. Report SHA
+is `a7009dac991b811879af0e99ee0fa052bd94ea3801f7533f402a2ccd78fc8629`;
+the 919,727-byte fetch is `.sdsc/fetched/54494742/fetch-n51zizjt/`.
+
+All four complete 512-row development evaluations pass all eight gates. The
+unchanged earliest-PASS rule selects step **128**, dense identity
+`6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7`.
+At this checkpoint answer accuracy is 1.0, exact proof 511/512, first-rule and
+intermediate top1, target coverage and recovery are all 1.0; minimum causal
+shift is +8.399499 and minimum top-k mass is approximately 0.9999998. Later
+checkpoints have exact-proof accuracy 1.0 but must not replace the selected one.
+Exact development summaries were separately fetched with publication/hash
+checks into `.sdsc/fetched/54494742/development-verified/`; summary SHA is
+`200911f2afc6f4f805dfa2abe07225f134624f8da548bd559ebeebd3d83c7747`.
+This is development selection, not holdout or teacher-store acceptance. Raw
+scientific replay and all fixed qualification stages remain required.
+Preserve all receipts/releases and reconcile unknown intents; never reuse
+failed 54493777 or start a competing GPU flow.
+No new detached observer or continuation process is active.
+
+The candidate `qwen3-v2-teacher-qualify` transport, four-rank worker and independent
+CPU auditor are implemented and cross-reviewed. They bind the actual fit origin
+to 37 explicitly named scientific files (all match the completed full-fit release),
+replay all four complete development evaluations and enforce the fixed first-PASS
+checkpoint, then permanently claim each ordered qualification stage before
+inference. No producer or CPU auditor can self-accept a teacher. Default fetch
+remains small; the no-inference remote CPU audit hashes all bounded raw evidence,
+checks permanent claim history and returns the actual independently recomputed
+acceptance object. Its complete fixture report is 561,526 bytes, below1MiB.
+The proposed protocol is `prereg/amendments/qwen3_teacher_adaptation_v1.yaml`,
+review-neutral core SHA
+`dcd5fca7c87bda603f930e1e053d34073ca12aa079fa884c0e4e87e32ec099f4`.
+The joint CPU suite passes **172/172**; independent worker, audit and boundary
+reviews also pass, including the final one-line recomputed-object addition.
+Review evidence: `.sdsc/diagnostics/teacher-adaptation-v1/qualification-preparation-review.json`,
+SHA `a3aec047178968b6ab1bc251d8f4711ac86a4bbd19c850602b9cae5cc0f35a3a`.
+The protocol remains **proposed**. A genuine full-fit development selection now
+exists; create the distinct implementation and review-only acceptance commits
+before any qualification submission or formal inference. The deployed
+selection rule is already frozen and must not change after observing outcomes.
+No qualification job, supplemental exposure or independent teacher acceptance
+has occurred. Preserve the remaining unrelated dirty files and all old flows.
+
+The new PEFT 0.17.1 runtime is
+`/expanse/lustre/projects/nwu181/zgao12/OPD/envs/qwen3-v2-teacher-adapt-peft0171-v1`,
+a small system-site-packages venv over the unchanged fixed G0 base. Its wheel
+SHA is `3d129d64def3d74779c32a080d2567e5f7b674e77d546e3585138216d903f99e`;
+Python binary SHA remains `2777d5f6632ec0d7268ad754c28c96372e1e2097e15c22a6688db157cf750c19`.
+Installation/pip check passed; the 03:10Z Quest quser33 shared-master check
+verified zgao12@login02, exact runtime metadata and project paths. These are
+not GPU training or GPU-node mount results. Evidence is under
+`.sdsc/diagnostics/teacher-adaptation-v1/` and remote
+`bootstrap/teacher-adapt-peft0171-v1/receipt.json`.
+
+Before GPU submission, CPU regeneration matched all seven original split files'
+exact SHA/size (144,000 examples) and found no semantic, example-ID, pair-ID or
+seed overlap with the independently generated 256-fit/32-dev preflight set.
+Its raw seed namespaces begin at 70,000,042 and 80,000,042; all targets verify
+and fit the existing token envelope. The future 8,192-fit/512-dev proposal is
+separate: 60 fit prefixes need 1,247–1,256 tokens, while all full inputs remain
+at most 1,419, below 1,536. Preserve those examples; the future teacher-fit
+prefix bound is explicitly 1,280 and does not alter original experiment bounds.
+The complete expanded 8,192/512 audit now also passes all 144,000 original rows,
+all four identity dimensions and exact original file hashes, preserving all
+8,704 canonical targets and 60 long fit prefixes. Evidence:
+`.sdsc/diagnostics/teacher-adaptation-v1/full-fit-isolation-cpu.json`, SHA
+`19300d9e725264ad62aa32903b0cc8454024b583d7f79555296440d704c8938e`.
+Its canonical dataset-manifest SHA is
+`742b62a1ee328c8d8f660106265e4a342458fe5145243ecb08368eaa745f502d`.
+
+The proposed successor explicitly gives only the adapted teacher a 256-token
+development/confirmation/readiness budget. All eight numeric thresholds and
+all rows remain; student rollout/evaluation stays at 128. This is a declared
+scientific budget intervention, not a correction to the historical 128-token
+protocol and never evidence of an original-128-budget PASS. The 512-update,
+four-epoch fit evaluates merged checkpoints at 128/256/384/512 and selects the
+first passing all eight gates on all 512 development examples, without holdout
+reselection. Before this fit, a separately reviewed real four-H100 DDP
+preflight must verify global-64 updates, same-world checkpoint reload, export,
+development measurement and persistence. Repaired real preflight 54494477
+passed these execution gates; full fit 54494742 subsequently completed and
+selected its first development-PASS checkpoint as recorded above.
+Execution evidence does not constitute teacher scientific acceptance. No supplemental model
+evaluation has occurred.
+Protocol and acceptance conditions: `docs/refactor/sdsc_teacher_adaptation_20260928.md`.
+
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the
-original readiness gates. Any teacher model/generation-policy change needs its
+readiness gates under the explicitly accepted teacher protocol. Any teacher model/generation-policy change needs its
 own reviewed scientific proposal; never rewrite generated outputs or relax
 thresholds. Provenance permits up to 16 audited linear unpublished commits
 ending in an explicit reviewed pair; 40 tests and independent review passed
