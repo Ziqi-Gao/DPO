@@ -4,7 +4,7 @@ Last updated: 2026-09-28 (teacher fit 54494742, qualification 54496291 and
 independent CPU audit 54497294 completed; adapted teacher independently accepted
 under the reviewed teacher-only 256-token protocol; acceptance published and
 hash-verified on persistent SDSC storage; a separate adapted-teacher student
-preflight/calibration implementation is prepared for independent acceptance).
+preflight/calibration implementation independently reviewed and accepted).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -709,9 +709,15 @@ The user's subsequent instruction is to start the student path. The new
 original 47 teacher science files and consume the independently accepted dense
 identity and exact nine producer/acceptance files. The in-memory SFT view only
 adds the explicit learned teacher identity columns; measurements and candidate
-order remain unchanged. The proposed successor protocol is
+order remain unchanged. The independently accepted successor protocol is
 `prereg/amendments/qwen3_adapted_student_calibration_v1.json`; genuine distinct
 implementation and review-only acceptance commits are required before execution.
+Implementation `9129f32ad2f53b8fa9073b417fd615560278a2db` passed independent
+review by `/root/student_transport_audit` at 2026-09-28T17:31:10Z, with root and
+`/root/student_migration_audit` separately reviewing that agent's worker files.
+All 46 named student and 47 frozen producer blobs match real committed bytes.
+The combined affected suite passed 260 tests and wrapper regressions passed 13.
+Only the protocol review block and this handoff change in the acceptance commit.
 Its named student implementation preserves full-parameter canonical SFT,
 seed 42, 256×8 candidates, global batch 64, 1536-token model inputs,
 120 updates / 2M tokens, evaluation/checkpoint every 20 and student generation128.
