@@ -9,8 +9,8 @@ failure 54504816 fixed by an independently reviewed transport successor;
 new preflight 54504895 completed with verified GPU and persistent-output evidence;
 student calibration 54505782 failed closed before its first update due to an
 Accelerate FSDP default; separate v2 execution correction independently accepted,
-source release uploaded, but provenance upload unconfirmed after SSH commands
-stopped responding; no v2 GPU job submitted, awaiting manual connection recovery
+source release uploaded, but provenance upload unconfirmed; the latest recovery
+check found the quser32 SSH socket absent; no v2 GPU job submitted, awaiting connection recovery
 and upload reconciliation before its new matching GPU preflight).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
@@ -178,6 +178,15 @@ operations stopped without authentication fallback or submission retry. Evidence
 an unresponsive command channel, not a proven authentication expiry or storage
 failure. The user must restore the shared connection in an ordinary terminal on
 **quser32**; compute its path as `$HOME/.ssh/cm/sdsc-$(hostname -s)` at runtime.
+After the user reported recovery and explicitly requested submission, the
+**20:10:18Z** check could not complete remote control discovery. A single
+diagnostic at **20:10:51Z** found the shared socket absent (`No such file or
+directory`) at `/home/del6500/.ssh/cm/sdsc-quser32`; its required master check
+failed before any remote diagnostic ran. No authentication retry, provenance
+upload or Slurm submission followed. Evidence:
+`.sdsc/diagnostics/adapted-student-v2/recovered-command-channel-check.json` and
+the failed `.sdsc/check.json`. Manual recovery must occur on this same Quest
+host; a connection on another host is insufficient.
 
 Earlier teacher prompt diagnostics are complete; none establishes formal readiness.
 All used one H100 / 24 CPU / 192 GiB / at most 30 minutes, retained exact raw
@@ -850,9 +859,15 @@ After manual SSH recovery, first reconcile the exact remote provenance directory
 `/home/zgao12/quest-runs/OPD/provenance/e2a32137229f1711aa32610d42690afedcd83afad018f0fda74586ed7821bc81`
 against all three locally verified files and the existing release. Preserve any
 partial upload; do not overwrite it or blindly repeat the upload. Only verified
-complete provenance permits the existing release's submit dry-run and authorized
-two-H100 preflight submission. This is an uncertain file upload, not an uncertain
-Slurm submission.
+complete provenance permits authorized two-H100 preflight submission. The exact
+argv and local-only submission dry-run are now saved as `preflight-command.json`
+and `preflight-submit-local-dry-run.json` in the v2 diagnostic directory:
+2 H100 / 24 CPUs / 192 GiB / one hour. Local validation passed, but explicitly
+did not check remote prerequisites or submit. Independent local review confirms
+19 submitted historical intents, no unknown/sending intent or intent for this
+new run, all 12 supervisors stopped/finished, and unchanged deployed control
+hashes. Current remote queue and upload state remain unverified. This is an
+uncertain file upload, not an uncertain Slurm submission.
 Later documentation commits do not change that release's genuine source HEAD or
 invalidate its existing provenance. A fresh calibration still needs its own
 release and matching reviewed science: the current exporter requires its actual
