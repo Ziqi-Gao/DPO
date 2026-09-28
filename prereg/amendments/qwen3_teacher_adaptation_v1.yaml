@@ -245,8 +245,12 @@ review_contract:
   current_named_science_bytes_must_equal_implementation: true
   later_unrelated_commits_invalidate_review: false
 review:
-  status: proposed
-  reviewed_implementation_commit: null
-  reviewer: null
-  reviewed_at_utc: null
-  rationale: null
+  status: accepted
+  reviewed_implementation_commit: d1ab8dacd834101b88d806bb6d75a44ae1949cb3
+  reviewer: /root/v7_science_review
+  reviewed_at_utc: "2026-09-28T06:09:44Z"
+  rationale: >-
+    Independent review of the actual implementation, frozen scientific sources,
+    execution tests and complete full-fit development evidence permits the fixed
+    qualification measurements. It does not accept the teacher, claim raw-evidence
+    replay, waive the remaining gates or claim an original-128-token-budget PASS.

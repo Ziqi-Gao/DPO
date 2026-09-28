@@ -598,17 +598,25 @@ inference. No producer or CPU auditor can self-accept a teacher. Default fetch
 remains small; the no-inference remote CPU audit hashes all bounded raw evidence,
 checks permanent claim history and returns the actual independently recomputed
 acceptance object. Its complete fixture report is 561,526 bytes, below1MiB.
-The proposed protocol is `prereg/amendments/qwen3_teacher_adaptation_v1.yaml`,
+The protocol is `prereg/amendments/qwen3_teacher_adaptation_v1.yaml`,
 review-neutral core SHA
 `dcd5fca7c87bda603f930e1e053d34073ca12aa079fa884c0e4e87e32ec099f4`.
 The joint CPU suite passes **172/172**; independent worker, audit and boundary
 reviews also pass, including the final one-line recomputed-object addition.
 Review evidence: `.sdsc/diagnostics/teacher-adaptation-v1/qualification-preparation-review.json`,
 SHA `a3aec047178968b6ab1bc251d8f4711ac86a4bbd19c850602b9cae5cc0f35a3a`.
-The protocol remains **proposed**. A genuine full-fit development selection now
-exists; create the distinct implementation and review-only acceptance commits
-before any qualification submission or formal inference. The deployed
-selection rule is already frozen and must not change after observing outcomes.
+Implementation commit is **d1ab8dacd834101b88d806bb6d75a44ae1949cb3**.
+Independent reviewer `/root/v7_science_review` accepted this exact implementation
+for qualification at **2026-09-28T06:09:44Z**, after checking all 47 named science
+blobs, the 37 fit-origin files and actual full-fit/development evidence.
+Independent review record canonical SHA is
+`c4c5948fdb565a25d67ad5a73bacf7025af69b902007acf68b94f813e8bf429e`.
+The separate review-only acceptance commit changes only the YAML review and this
+handoff; resolve its genuine identity from Git before deployment. This accepts
+the protocol only. Preserve the frozen selection and all remaining measurement
+and independent teacher-result acceptance gates. The Quest checkout retains
+unrelated `.gitignore`/`AGENTS.md` modifications; the genuine restored scientific
+checkout must be clean and match every accepted named blob.
 No qualification job, supplemental exposure or independent teacher acceptance
 has occurred. Preserve the remaining unrelated dirty files and all old flows.
 
