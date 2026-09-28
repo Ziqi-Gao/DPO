@@ -4,7 +4,8 @@ Last updated: 2026-09-28 (teacher fit 54494742, qualification 54496291 and
 independent CPU audit 54497294 completed; adapted teacher independently accepted
 under the reviewed teacher-only 256-token protocol; acceptance published and
 hash-verified on persistent SDSC storage; a separate adapted-teacher student
-preflight/calibration implementation independently reviewed and accepted).
+preflight/calibration implementation independently reviewed and accepted; first
+new preflight 54504816 failed before Python startup due to Slurm script relocation).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -729,7 +730,19 @@ The transport admits only matching actual completed producer/preflight jobs;
 unknown submission intents still require reconciliation. On Quest quser32,
 the shared master, exact Python binary and package metadata and all four
 published acceptance hashes were rechecked; the SDSC user queue was empty.
-No new student GPU job has yet been submitted at this implementation stage.
+Scientific acceptance is commit `77603c14802c21e0dce09fe7617705d33425ce94`.
+The actual first preflight **54504816**, intent
+`a3f7379c0975413a8093d06d757df8a0`, run
+`20260928T173238Z-1385fe5349ff-8b5bf384`, was submitted at 17:37:54Z.
+Accounting reports FAILED / 2:0 after two seconds, before Python/model execution.
+Slurm copied the shell launcher into its spool directory; its `dirname($0)`
+lookup therefore searched for the Python worker in Slurm spool instead of the
+immutable release. Preserve this job/receipt and bounded fetched startup logs.
+The proposed transport correction resolves the unchanged accepted Python worker
+through the already bound absolute release argument and requires separate review. All 46 named student
+and 47 teacher scientific files remain unchanged; the scientific protocol is
+not reaccepted or weakened. New execution needs a fresh release and job ID.
+There has been no student optimizer update or new GPU preflight success.
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
 still need separately reviewed migration. Details and next commands are in

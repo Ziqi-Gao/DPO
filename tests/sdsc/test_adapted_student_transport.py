@@ -106,7 +106,7 @@ def test_cli_dryrun_exact_two_gpu_argv_without_remote_operations(client, task, l
             "--signal=B:TERM@300",
         ]
     )
-    assert argv[-10].endswith("/tools/sdsc_student_job.sh")
+    assert argv[-10].endswith("/tools/sdsc_student_launch.sh")
     assert argv[-2:] == [args.provenance_dir, args.provenance_manifest_sha256]
     assert plan["prerequisites_sha256_is_placeholder"] is True
     assert plan["teacher_job_id"] == "54496291"
@@ -185,6 +185,7 @@ def submitted(tmp_path, monkeypatch):
         for name in (
             "tools/sdsc_student_job.py",
             "tools/sdsc_student_job.sh",
+            "tools/sdsc_student_launch.sh",
             "tools/sdsc_student_contract.py",
             "tools/sdsc_adapted_training_preflight.py",
             "tools/sdsc_adapted_calibration.py",

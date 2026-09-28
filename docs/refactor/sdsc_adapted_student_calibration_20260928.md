@@ -84,3 +84,17 @@ real read-back, tamper rejection, preservation of already published attempts,
 nonpublication after semantic failure, and bounded draining of a TERM handler
 that emits more than a pipe buffer. Ruff, shell syntax and Git whitespace checks
 pass. These tests do not claim any new GPU execution success.
+
+## Slurm startup correction
+
+First preflight `54504816` failed after two seconds (FAILED / 2:0), before
+Python or model execution. Slurm executes a spool copy of a submitted shell
+script, so its location cannot identify the immutable source release. The new
+transport entry `tools/sdsc_student_launch.sh` resolves the unchanged accepted
+Python worker through the explicit release argument. Literal argv and exact
+resource/input checks remain in the accepted Python worker. All 46 named
+student files and 47 teacher files, including the historical launcher, stay
+byte-identical. The independent transport review and actual new deployment
+identity bind this locator correction; they do not create scientific acceptance
+or permit reuse of failed-job evidence. Real regression fixtures execute the
+launcher from a separate fake Slurm spool with literal metacharacter arguments.

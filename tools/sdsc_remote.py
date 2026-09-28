@@ -37,8 +37,8 @@ TASK_SCRIPTS = {
     "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit_job.sh",
     "qwen3-v2-teacher-fit": "sdsc_teacher_fit_job.sh",
     "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify_job.sh",
-    "qwen3-v2-adapted-preflight": "sdsc_student_job.sh",
-    "qwen3-v2-adapted-calibration": "sdsc_student_job.sh",
+    "qwen3-v2-adapted-preflight": "sdsc_student_launch.sh",
+    "qwen3-v2-adapted-calibration": "sdsc_student_launch.sh",
     "qwen3-v2-g0-calibration": "sdsc_calibration_job.sh",
 }
 TASK_WORKERS = {
