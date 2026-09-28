@@ -47,6 +47,12 @@ SDSC 不安装 Codex、VS Code Server 或常驻工作流服务，也不申请用
 v3 流程，也不能把校准当作完整 G0。实际提交状态读取本地回执及 current
 handoff；操作说明见 [适配 teacher 的 student 校准](refactor/sdsc_adapted_student_calibration_20260928.md)。
 
+用户另已授权监控修复后的预检 `54506703`，验收成功后自动提交一次
+student 校准训练。独立快照重放、有限 Quest 监控、防重复提交及连接中断
+恢复规则见 [student 自动接续](sdsc_student_automation.md)。先检查实际
+supervision 状态；不要重启历史 teacher/G0 流程，也不要把校准当作完整
+正式实验的全部阶段。
+
 固定训练为 8,192 条独立训练数据、512 次优化更新，在四个预定检查点
 上完整评估独立的 512 条开发数据。后续 `qwen3-v2-teacher-qualify` 只接受
 开发集上第一个满足八项门槛的检查点，要求先完成真实 Git 实现提交及

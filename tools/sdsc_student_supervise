@@ -1,0 +1,5 @@
+#!/bin/bash
+# Finite Quest-only control process; all Expanse operations use the SSH CLI.
+set -euo pipefail
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+exec /usr/bin/python3.12 -I -B "$repo_root/tools/sdsc_student_supervise.py" "$@"

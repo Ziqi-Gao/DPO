@@ -10,8 +10,11 @@ new preflight 54504895 completed with verified GPU and persistent-output evidenc
 student calibration 54505782 failed closed before its first update due to an
 Accelerate FSDP default; separate v2 execution correction independently accepted,
 source and genuine provenance verified after SSH recovery; new matching v2
-preflight 54506703 submitted once and observed RUNNING on exp-19-01;
-its scientific result and subsequent calibration remain pending).
+preflight 54506703 completed and independently accepted on exp-19-01;
+the user authorized finite Quest monitoring and automatic submission of one
+fresh matching student calibration; its deployment, immutable supervision plan,
+independent control review and submission dry-run passed; no new calibration
+has yet been submitted).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -855,25 +858,55 @@ one hour**, account `nwu181`, partition `nairr-gpu-shared`, QoS
 `nairr-gpu-shared-normal`, no requeue. The receipt binds accepted teacher
 `54496291`, science HEAD `28c1026`, the v2 protocol and prerequisite SHA
 `8f3b98aa9cad3a02e4524289f157b810b745879bb0309558d96e3cb85b638bb6`.
-Job, batch and extern were observed **RUNNING** on **exp-19-01**; this is not
-scientific PASS. Initial logs show completed source staging, genuine history
-restore and teacher-input staging, then selected-checkpoint staging. There is
-no completed v2 preflight report or new calibration job yet. Persistent outputs
+Job, batch and extern completed **COMPLETED / 0:0** on **exp-19-01**, elapsed
+**13m48s**; the final queue is empty and publication verification succeeded.
+Independent review at **2026-09-28T20:36:44Z** accepted the actual report using
+both unchanged strict validators and checked all 46 student science files
+against genuine accepted HEAD `28c1026`. Both ranks completed the global-64,
+1536-token update and model/optimizer/scheduler/RNG save-restore checks.
+Actual host-memory peak was 103.176 GiB with 88.824 GiB headroom; peak reserved
+GPU memory was 44.887 / 29.787 GiB. The ten-file 10,946,233,937-byte publication
+includes allocation-side checkpoint read-back evidence; large checkpoints
+were not downloaded or rehashed on the login node. Five small files totaling
+62,049 bytes were fetched into `.sdsc/fetched/54506703/fetch-xhtkty_a/`.
+Report SHA is `307156e33ba88c9a6d98939a4e7a44a661e15278ce4b69ba9cb69e155a132bd7`.
+Persistent outputs
 use `control-results/20260928T183316Z-b542b2e7e7fa-1cd4c8d9/2b6229dd119b489d8029724d90c6d3b8/`.
 The actual local receipt is
 `.sdsc/submissions/2b6229dd119b489d8029724d90c6d3b8.json`; command, dry-run,
-status and bounded logs are in the v2 diagnostic directory. Continue with
-`tools/sdsc status 54506703` and `tools/sdsc logs 54506703 --lines 60`, then
-bounded fetch and actual-result validation after terminal accounting. Never
-submit this run/intent again. No new detached supervisor was started; all 12
-historical supervisor states remain stopped/finished.
+status, independent review and bounded logs are in the v2 diagnostic directory.
+The exact final files are `preflight-54506703-final-status.json` and
+`preflight-54506703-independent-review.json`. Never submit this run/intent again.
+All 12 historical supervisor states remain stopped/finished.
 
-Later documentation commits do not change that release's genuine source HEAD or
-invalidate its existing provenance. A fresh calibration still needs its own
-release and matching reviewed science: the current exporter requires its actual
-HEAD to equal the explicit acceptance commit. Do not reset the workspace, move
-public refs or relabel history to bypass that guard; any needed export extension
-must preserve genuine ancestry and receive bounded verification/review.
+Later control/documentation commits do not change that release's genuine science
+HEAD. The separate `tools/sdsc_release_replay.py` preserves its exact deployed
+bytes and genuine Git bundle, creates a fresh run/provenance wrapper, and records
+the current preparation HEAD separately. Its 22 fixture tests and independent
+review passed. The reviewed dry-run for
+`20260928T204012Z-b542b2e7e7fa-41669358` contains the same 577 files / 6,478,953
+source bytes; its immutable preparation is under
+`.sdsc/replays/replay-1e7986506c3f44dc92c08b0f908e856f/`. Source and provenance
+uploads were verified; new provenance SHA is
+`eef4035f32d96f0ada77d48257358712c06d215d7a4a244cfa26ad24f0b5fbad`, with the
+unchanged original genuine history bundle. No new calibration has been
+submitted and no new supervisor has been launched at this preparation checkpoint.
+The new finite `tools/sdsc_student_supervise` is restricted to verified preflight
+54506703 -> one matching canonical-SFT calibration -> terminal verification and
+bounded fetch, with 2 H100 / 24 CPU / 192 GiB / 2 hours, 300-second polling and a
+14-day deadline. It preserves all scientific gates and uses a permanent shared
+stage claim, immutable plan/control hashes and no automatic retry. The user has
+explicitly authorized this automatic transition; no per-stage confirmation is
+needed. Actual activation must be recorded from its launch/state/submission
+evidence, not inferred from source existence. Its plan is
+`.sdsc/supervision/student54506703-to-calibration-v2/plan.json`, SHA
+`a9a6cd30dd334803aaa5ffac6bf0521fb90c5567dc1a811883558415eabc48a0`.
+Independent review passed all 44 new control tests plus direct checks against
+real active/terminal Slurm observations, the fetched report and deployed plan.
+The combined control/provenance/student-transport suite passed 114 tests;
+Ruff, shell parsing and whitespace checks passed.
+The matching submit dry-run passed; it did not submit a job. Instructions are
+in `docs/sdsc_student_automation.md`.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
