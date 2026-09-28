@@ -8,7 +8,8 @@ preflight/calibration implementation independently reviewed and accepted; startu
 failure 54504816 fixed by an independently reviewed transport successor;
 new preflight 54504895 completed with verified GPU and persistent-output evidence;
 student calibration 54505782 failed closed before its first update due to an
-Accelerate FSDP default; separate v2 execution correction being reviewed).
+Accelerate FSDP default; separate v2 execution correction independently accepted,
+awaiting its new matching GPU preflight).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -157,18 +158,16 @@ GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
 science, SSH loss, changed control hashes or unresolved submissions; no blind
 retry, auto-cancellation, full factorial or Gemma.
 
-The latest connection check ran from Quest **quser33** at
-2026-09-28T00:54Z using the runtime-computed existing master
-`$HOME/.ssh/cm/sdsc-quser33`. SSH confirmed zgao12@login02; Slurm commands,
-source paths and persistent project result paths passed. The shared partition
-is UP; nwu181 and the partition jointly permit `nairr-gpu-shared-normal`.
-The user queue was empty at 00:56Z. The candidate metadata subprocess again
-exceeded 15 seconds; a separate lightweight check verified the unchanged Python
-binary SHA and Torch/Transformers/Accelerate/tokenizers package pins. No
-authentication or environment modification was attempted. GPU-node mounts
-remain checked per job. Evidence: `.sdsc/diagnostics/segv-54485969/`
-`connection-check.json` and `runtime-and-queue.json`. Both old formal flows
-remain stopped.
+The latest connection check ran from Quest **quser32** at
+2026-09-28T18:29Z using the runtime-computed existing master
+`$HOME/.ssh/cm/sdsc-quser32`. SSH confirmed zgao12@login02; Slurm commands,
+source paths and persistent project result paths passed. Account nwu181 and the
+shared partition jointly permit `nairr-gpu-shared-normal`. Runtime metadata now
+completed successfully: Python 3.12.13, Torch 2.8.0+cu128, NumPy 1.26.4,
+Transformers 4.56.2 and Accelerate 1.10.1. No authentication or environment
+modification was attempted. GPU-node mounts remain checked per job. Evidence:
+`.sdsc/diagnostics/adapted-student-v2/connection-check.json`. Both old formal
+flows remain stopped.
 
 Earlier teacher prompt diagnostics are complete; none establishes formal readiness.
 All used one H100 / 24 CPU / 192 GiB / at most 30 minutes, retained exact raw
@@ -800,7 +799,7 @@ Dry-run, deployment, provenance, exact command and actual submission/status
 evidence are under `.sdsc/diagnostics/adapted-student-v1/calibration-*`.
 The published 7,209-byte full `artifacts/train.log` has independently verified
 SHA `8e89ae1970096a1a1583a2628347e2f2280831c65032de9a5eca4d87a041dcb2`.
-No new detached Quest supervisor was launched. A separate proposed student-v2
+No new detached Quest supervisor was launched. A separate accepted student-v2
 execution correction preserves the original v1 protocol, teacher configuration
 and all 47 producer science files; it uses a new two-H100 Accelerate YAML with
 explicit `fsdp_use_orig_params=false` and a matching student protocol/config
@@ -816,7 +815,14 @@ separate unchanged-validator/wrapper suite passes **68**. Independent review
 additionally passes 122 cases. Python parsing, Ruff and whitespace checks pass.
 Completed calibration `logs`/`fetch` now include bounded training/export log
 tails; neither downloads checkpoints. These are CPU/transport checks, not a
-new v2 GPU PASS.
+new v2 GPU PASS. Implementation commit
+`3c1f6f1e9bdc798ecb65399165dd1be313014b42` received independent ACCEPT from
+`/root/student_migration_audit` at **2026-09-28T18:31:41Z**, with 123 independent
+checks including the bounded-log regression. The v2 review-neutral core SHA is
+`9277960e4ff3599c325ac0115888280ad32647891fd3841d045822bf7db2a320`.
+This distinct review-only commit changes only the v2 review block and handoff.
+It grants no new GPU-result acceptance; execute a fresh matching v2 preflight
+and only then a fresh calibration at the same reviewed source HEAD.
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
 still need separately reviewed migration. Details and next commands are in
