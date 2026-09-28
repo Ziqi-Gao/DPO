@@ -397,15 +397,42 @@ class ProvenanceTests(unittest.TestCase):
             self.command("rev-parse", "refs/remotes/public/master").decode().strip(), successor["public_base"]
         )
 
-    def test_local_history_limit_boundary_and_overflow(self):
-        self.local_prelude(provenance.MAX_LOCAL_COMMITS - 2)
+    def test_32_commit_local_history_roundtrip_preserves_exact_lineage_and_source(self):
+        self.local_prelude(30)
         successor = self.local_pair()
-        self.assertEqual(len(successor["commits"]), provenance.MAX_LOCAL_COMMITS)
-        self.assertTrue(self.verify(self.prepare_local(successor))["verified"])
-        # A fresh pair extends the exact same public history beyond the bound.
+        self.assertEqual(len(successor["commits"]), 32)
+        index = (self.root / ".git/index").read_bytes()
+        status = self.command("status", "--porcelain=v1")
+        prepared = self.prepare_local(successor)
+        destination = Path(self.temp.name) / "32-commit-history"
+        verified = self.verify(prepared, destination)
+        self.assertTrue(verified["verified"])
+        self.assertEqual(verified["local_successor"], successor)
+        self.assertEqual(
+            provenance.git(destination, "rev-list", "--reverse", successor["public_base"] + "..HEAD")
+            .decode()
+            .splitlines(),
+            successor["commits"],
+        )
+        self.assertEqual(provenance.git(destination, "status", "--porcelain"), b"")
+        self.assertEqual(self.command("rev-parse", "HEAD").decode().strip(), successor["acceptance"])
+        self.assertEqual(
+            self.command("rev-parse", "refs/remotes/public/master").decode().strip(), successor["public_base"]
+        )
+        self.assertEqual((self.root / ".git/index").read_bytes(), index)
+        self.assertEqual(self.command("status", "--porcelain=v1"), status)
+
+    def test_33_commit_local_history_rejected_before_export_or_import(self):
+        self.local_prelude(31)
         successor = self.local_pair()
+        self.assertEqual(len(successor["commits"]), 33)
         with self.assertRaisesRegex(provenance.ProvenanceError, "commit limit"):
             self.prepare_local(successor)
+        self.assertFalse((self.root / ".sdsc/provenance").exists())
+        # The same actual 33-commit claim is also rejected by the manifest
+        # boundary used before any isolated Git import on the consumer side.
+        with self.assertRaisesRegex(provenance.ProvenanceError, "bounded unique commit inventory"):
+            provenance.validate_local_successor(successor, self.head, successor["public_base"])
 
     def test_local_mode_rejects_intervening_or_post_acceptance_commits(self):
         successor = self.local_pair()

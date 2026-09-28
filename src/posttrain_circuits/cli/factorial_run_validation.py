@@ -568,10 +568,17 @@ def validate_factorial_run_artifacts(
     if bound_store_path != expected_bound_store_path:
         raise ValueError("active G0 teacher-demo store is outside the attempt workspace")
     store_path = actual_workspace / "teacher_demos"
-    accepted_attempts, teacher_manifest = read_teacher_demo_store(
-        store_path,
-        require_formal=True,
-    )
+    if "adapted_teacher" in resolved_config:
+        from posttrain_circuits.artifacts.adapted_teacher_sft import read_accepted_teacher_sft
+
+        accepted_attempts, teacher_manifest = read_accepted_teacher_sft(
+            store_path, config=resolved_config
+        )
+    else:
+        accepted_attempts, teacher_manifest = read_teacher_demo_store(
+            store_path,
+            require_formal=True,
+        )
     prompt_ids = list(teacher_manifest["ordered_prompt_ids"])
     attempt_ids = [attempt.attempt_id for attempt in accepted_attempts]
     if len(prompt_ids) != 256 or len(prompt_ids) != len(set(prompt_ids)):

@@ -3,7 +3,8 @@
 Last updated: 2026-09-28 (teacher fit 54494742, qualification 54496291 and
 independent CPU audit 54497294 completed; adapted teacher independently accepted
 under the reviewed teacher-only 256-token protocol; acceptance published and
-hash-verified on persistent SDSC storage).
+hash-verified on persistent SDSC storage; a separate adapted-teacher student
+preflight/calibration implementation is prepared for independent acceptance).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -702,6 +703,31 @@ The acceptance is specific to the reviewed teacher-only **256-token** protocol;
 all eight thresholds are unchanged, and **original_128_token_readiness_pass_claim
 is false**. Detailed evidence and safe recheck commands are in
 `docs/refactor/sdsc_teacher_adaptation_20260928.md` and `docs/sdsc_workflow.md`.
+
+The user's subsequent instruction is to start the student path. The new
+`qwen3-v2-adapted-preflight` and `qwen3-v2-adapted-calibration` tasks preserve the
+original 47 teacher science files and consume the independently accepted dense
+identity and exact nine producer/acceptance files. The in-memory SFT view only
+adds the explicit learned teacher identity columns; measurements and candidate
+order remain unchanged. The proposed successor protocol is
+`prereg/amendments/qwen3_adapted_student_calibration_v1.json`; genuine distinct
+implementation and review-only acceptance commits are required before execution.
+Its named student implementation preserves full-parameter canonical SFT,
+seed 42, 256×8 candidates, global batch 64, 1536-token model inputs,
+120 updates / 2M tokens, evaluation/checkpoint every 20 and student generation128.
+Both new tasks use two H100 / 24 CPU / 192 GiB on shared normal QoS, with a
+one-hour preflight and two-hour calibration limit. Node-local staging verifies
+256 GiB headroom and actual input/persistent-output mounts. All outputs and the
+original teacher evidence are read-back verified before persistent publication.
+The transport admits only matching actual completed producer/preflight jobs;
+unknown submission intents still require reconciliation. On Quest quser32,
+the shared master, exact Python binary and package metadata and all four
+published acceptance hashes were rechecked; the SDSC user queue was empty.
+No new student GPU job has yet been submitted at this implementation stage.
+Keep both old v3 flows stopped. Calibration does not complete G0 or certify
+multistep resume/pilot/Blackwell execution; their historical teacher adapters
+still need separately reviewed migration. Details and next commands are in
+`docs/refactor/sdsc_adapted_student_calibration_20260928.md`.
 
 The new PEFT 0.17.1 runtime is
 `/expanse/lustre/projects/nwu181/zgao12/OPD/envs/qwen3-v2-teacher-adapt-peft0171-v1`,

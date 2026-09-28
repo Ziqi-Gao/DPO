@@ -37,6 +37,8 @@ TASK_SCRIPTS = {
     "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit_job.sh",
     "qwen3-v2-teacher-fit": "sdsc_teacher_fit_job.sh",
     "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify_job.sh",
+    "qwen3-v2-adapted-preflight": "sdsc_student_job.sh",
+    "qwen3-v2-adapted-calibration": "sdsc_student_job.sh",
     "qwen3-v2-g0-calibration": "sdsc_calibration_job.sh",
 }
 TASK_WORKERS = {
@@ -49,6 +51,8 @@ TASK_WORKERS = {
     "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit.py",
     "qwen3-v2-teacher-fit": "sdsc_teacher_fit.py",
     "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify.py",
+    "qwen3-v2-adapted-preflight": "sdsc_student_job.py",
+    "qwen3-v2-adapted-calibration": "sdsc_student_job.py",
     "qwen3-v2-g0-calibration": "sdsc_g0_calibration.py",
 }
 TASK_RESULTS = {
@@ -61,6 +65,8 @@ TASK_RESULTS = {
     "qwen3-v2-teacher-fit-preflight": "teacher-fit.json",
     "qwen3-v2-teacher-fit": "teacher-fit.json",
     "qwen3-v2-teacher-qualify": "teacher-qualify.json",
+    "qwen3-v2-adapted-preflight": "adapted-preflight.json",
+    "qwen3-v2-adapted-calibration": "adapted-calibration.json",
     "qwen3-v2-g0-calibration": "g0-calibration.json",
 }
 DIAGNOSTIC_TASKS = {
@@ -73,6 +79,19 @@ DIAGNOSTIC_TASKS = {
 TEACHER_FIT_TASKS = {"qwen3-v2-teacher-fit-preflight": "preflight", "qwen3-v2-teacher-fit": "full-fit"}
 TEACHER_FIT_BINDINGS = ("execution_plan_sha256", "actual_plan_sha256")
 TEACHER_QUALIFY_TASK = "qwen3-v2-teacher-qualify"
+STUDENT_TASKS = {"qwen3-v2-adapted-preflight": "preflight", "qwen3-v2-adapted-calibration": "calibration"}
+STUDENT_BINDINGS = (
+    "student_protocol_sha256",
+    "student_protocol_artifact_sha256",
+    "adapted_teacher_sha256",
+    "teacher_acceptance_sha256",
+    "teacher_acceptance_inventory_sha256",
+)
+STUDENT_FIXED_BINDINGS = {
+    "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",
+    "teacher_acceptance_sha256": "5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337",
+    "teacher_acceptance_inventory_sha256": "8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed",
+}
 TEACHER_QUALIFY_BINDINGS = (
     "adapted_teacher_sha256",
     "protocol_sha256",
@@ -108,7 +127,12 @@ TEACHER_ADAPT_SMALL_RESULTS = {
     "progress.json",
 }
 PROVENANCE_BINDINGS = ("provenance_dir", "provenance_manifest_sha256", "science_git_head", "bundle_sha256")
-PROVENANCE_TASKS = {"qwen3-v2-teacher-prepare", "qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK}
+PROVENANCE_TASKS = {
+    "qwen3-v2-teacher-prepare",
+    "qwen3-v2-g0-calibration",
+    TEACHER_QUALIFY_TASK,
+    *STUDENT_TASKS,
+}
 PREREQUISITE_BINDINGS = ("teacher_job_id", "preflight_job_id", "prerequisites_path", "prerequisites_sha256")
 PREFLIGHT_MODELS = (
     ("models--Qwen--Qwen3-1.7B", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"),
@@ -615,14 +639,15 @@ def validate_resources(resources, task="gpu-smoke"):
     teacher = task == "qwen3-v2-teacher-prepare"
     probe = task in DIAGNOSTIC_TASKS
     calibration = task == "qwen3-v2-g0-calibration"
+    student = task in STUDENT_TASKS
     expected = {
         "account": "nwu181",
         "partition": "nairr-gpu-shared",
         "qos": "nairr-gpu-shared-normal",
         "gpu_type": "h100",
-        "gpus": 2 if preflight or calibration else 1,
-        "cpus": 24 if preflight or teacher or calibration or probe else 4,
-        "mem_gib": 192 if preflight or teacher or calibration or probe else 16,
+        "gpus": 2 if preflight or calibration or student else 1,
+        "cpus": 24 if preflight or teacher or calibration or probe or student else 4,
+        "mem_gib": 192 if preflight or teacher or calibration or probe or student else 16,
     }
     if task in TEACHER_FIT_TASKS or task == TEACHER_QUALIFY_TASK:
         expected.update(partition="nairr-gpu", qos="nairr-gpu-normal", gpus=4, cpus=24, mem_gib=192)
@@ -647,6 +672,8 @@ def validate_resources(resources, task="gpu-smoke"):
         limit = 3600 if TEACHER_FIT_TASKS[task] == "preflight" else 86400
     if task == TEACHER_QUALIFY_TASK:
         limit = 7200
+    if task in STUDENT_TASKS:
+        limit = 3600 if STUDENT_TASKS[task] == "preflight" else 7200
     require(
         minutes < 60 and seconds < 60 and 0 < hours * 3600 + minutes * 60 + seconds <= limit,
         "Walltime exceeds the bounded task profile",
@@ -676,12 +703,15 @@ def receipt_from(intent, job_id, recovered=False):
     if (
         intent.get("task") in {"qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK}
         or intent.get("task") in TEACHER_FIT_TASKS
+        or intent.get("task") in STUDENT_TASKS
     ):
         receipt.update({key: intent[key] for key in PREREQUISITE_BINDINGS})
     if intent.get("task") in TEACHER_FIT_TASKS:
         receipt.update({key: intent[key] for key in TEACHER_FIT_BINDINGS})
     if intent.get("task") == TEACHER_QUALIFY_TASK:
         receipt.update({key: intent[key] for key in TEACHER_QUALIFY_BINDINGS})
+    if intent.get("task") in STUDENT_TASKS:
+        receipt.update({key: intent[key] for key in STUDENT_BINDINGS})
     return receipt
 
 
@@ -726,6 +756,7 @@ def build_sbatch_argv(intent, release):
             "qwen3-v2-teacher-adapt",
             "qwen3-v2-teacher-fit-preflight",
             TEACHER_QUALIFY_TASK,
+            *STUDENT_TASKS,
         }
         else "--signal=B:TERM@60",
         "--job-name=opd-" + intent_id,
@@ -847,6 +878,193 @@ def teacher_qualification_prerequisites(root, release, request, provenance):
     )
     require(len(canonical(proof)) + 1 <= MAX_FILE, "Qualification proof exceeds metadata bound")
     return proof
+
+
+def student_contract(release):
+    path = safe_path(release / "source/tools/sdsc_student_contract.py")
+    spec = importlib.util.spec_from_file_location("sdsc_verified_student_contract", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    require(tuple(module.BINDINGS) == STUDENT_BINDINGS, "Student transport binding contract differs")
+    return module
+
+
+def student_bindings(proof):
+    values = {
+        "student_protocol_sha256": proof["protocol"]["protocol_sha256"],
+        "student_protocol_artifact_sha256": proof["protocol"]["artifact_sha256"],
+        "adapted_teacher_sha256": proof["selected_checkpoint"]["adapted_teacher_sha256"],
+        "teacher_acceptance_sha256": proof["acceptance"]["accepted_teacher_sha256"],
+        "teacher_acceptance_inventory_sha256": proof["acceptance"]["inventory_sha256"],
+    }
+    for value in values.values():
+        identifier(value, "code_sha256")
+    require(
+        all(values[key] == value for key, value in STUDENT_FIXED_BINDINGS.items()),
+        "Student prerequisite changed the accepted teacher",
+    )
+    return values
+
+
+def student_prerequisites(root, release, request, provenance):
+    """Verify actual completed producers before consuming a fresh run claim."""
+    contract = student_contract(release)
+    resolved = run(
+        [
+            request["python"],
+            "-I",
+            "-B",
+            str(release / "source/tools/sdsc_student_contract.py"),
+            "--resolve-protocol",
+            provenance["provenance_dir"],
+            provenance["provenance_manifest_sha256"],
+            request["code_sha256"],
+            provenance["science_git_head"],
+        ],
+        timeout=180,
+    )
+    require(resolved["returncode"] == 0, "Accepted adapted-student protocol resolution failed")
+    protocol = json.loads(resolved["stdout"])
+    require(
+        protocol.get("review_status") == "accepted"
+        and protocol.get("head") == provenance["science_git_head"],
+        "Student needs genuine accepted protocol provenance",
+    )
+    for name in ("implementation_commit", "acceptance_commit"):
+        require(
+            isinstance(protocol.get(name), str) and re.fullmatch(r"[0-9a-f]{40}", protocol[name]),
+            "Student protocol needs real review commit identities",
+        )
+    require(
+        protocol["implementation_commit"] != protocol["acceptance_commit"],
+        "Student protocol implementation cannot self-accept",
+    )
+    for name in ("protocol_sha256", "artifact_sha256"):
+        identifier(protocol.get(name), "code_sha256")
+    release_files = {row["path"]: row for row in read_json(release / "manifest.json")["files"]}
+    require(
+        isinstance(protocol.get("science_file_sha256"), dict)
+        and protocol["science_file_sha256"]
+        and all(
+            release_files.get(name, {}).get("sha256") == expected
+            for name, expected in protocol["science_file_sha256"].items()
+        ),
+        "Student release differs from reviewed named science",
+    )
+    require(
+        release_files.get("prereg/amendments/qwen3_adapted_student_calibration_v1.json", {}).get("sha256")
+        == protocol["artifact_sha256"],
+        "Student protocol artifact differs from release",
+    )
+    qualification = upstream_evidence(
+        root, contract.QUALIFICATION_JOB_ID, TEACHER_QUALIFY_TASK, "accepted_teacher_qualification"
+    )
+    fit = upstream_evidence(root, contract.FIT_JOB_ID, "qwen3-v2-teacher-fit", "selected_full_teacher_fit")
+    require(
+        request["teacher_job_id"] == contract.QUALIFICATION_JOB_ID,
+        "Student qualification job differs from fixed accepted origin",
+    )
+    for upstream in (qualification, fit):
+        require(upstream["receipt"]["run_id"] != request["run_id"], "Student needs a fresh release")
+    require(
+        qualification["receipt"].get("teacher_job_id") == contract.FIT_JOB_ID,
+        "Accepted teacher qualification does not bind the selected fit",
+    )
+    selected = teacher_qualify_contract(release).selected_checkpoint(fit)
+    require(
+        selected.get("adapted_teacher_sha256") == contract.DENSE_SHA256,
+        "Student checkpoint differs from independent acceptance",
+    )
+    acceptance = contract.verify_teacher_acceptance(
+        contract.ACCEPTANCE_ROOT, expected_inventory_sha256=contract.INVENTORY_SHA256
+    )
+    student_inputs, dataset_inputs = contract.input_plans(qualification)
+    preflight = None
+    if STUDENT_TASKS[request["task"]] == "calibration":
+        preflight = upstream_evidence(
+            root,
+            request["preflight_job_id"],
+            "qwen3-v2-adapted-preflight",
+            "matching_adapted_student_preflight",
+        )
+        expected = {
+            "science_git_head": protocol["head"],
+            "student_protocol_sha256": protocol["protocol_sha256"],
+            "student_protocol_artifact_sha256": protocol["artifact_sha256"],
+            "teacher_job_id": contract.QUALIFICATION_JOB_ID,
+            "python": request["python"],
+            "hf_home": request["hf_home"],
+            **STUDENT_FIXED_BINDINGS,
+        }
+        require(
+            all(preflight["receipt"].get(key) == value for key, value in expected.items()),
+            "Preflight protocol, teacher or runtime differs from calibration",
+        )
+        require(preflight["receipt"]["run_id"] != request["run_id"], "Calibration needs a fresh release")
+        prior_files = {row["path"]: row for row in preflight["release_manifest"]["files"]}
+        require(
+            all(
+                prior_files.get(name, {}).get("sha256") == expected
+                for name, expected in protocol["science_file_sha256"].items()
+            ),
+            "Preflight named science differs from calibration",
+        )
+    proof = {
+        "schema": "quest-sdsc-adapted-student-prerequisites-v1",
+        "task": request["task"],
+        "target": {key: request[key] for key in ("run_id", "code_sha256", "intent_id")},
+        "created_at": now(),
+        "protocol": protocol,
+        "qualification": qualification,
+        "fit": fit,
+        "acceptance": acceptance,
+        "selected_checkpoint": selected,
+        "student_inputs": student_inputs,
+        "dataset_inputs": dataset_inputs,
+        "preflight": preflight,
+        "admission_queue": calibration_queue_check(),
+    }
+    student_bindings(proof)
+    require(len(canonical(proof)) + 1 <= MAX_FILE, "Adapted-student prerequisite metadata exceeds limit")
+    return proof
+
+
+def verify_student_result(receipt, result, published):
+    release, unused = release_manifest(ROOT, receipt)
+    contract = student_contract(release)
+    require(
+        all(
+            value.get(key) == receipt.get(key)
+            for value in (result, published)
+            for key in (*PREREQUISITE_BINDINGS, *STUDENT_BINDINGS)
+        ),
+        "Adapted-student result/prerequisite binding differs",
+    )
+    proof_raw = read_bytes(safe_path(receipt["prerequisites_path"]), MAX_FILE)
+    require(digest(proof_raw) == receipt["prerequisites_sha256"], "Student prerequisite proof changed")
+    proof = json.loads(proof_raw)
+    require(
+        proof.get("schema") == "quest-sdsc-adapted-student-prerequisites-v1"
+        and proof.get("task") == receipt["task"]
+        and proof.get("target") == {key: receipt[key] for key in ("run_id", "code_sha256", "intent_id")}
+        and proof["protocol"]["head"] == receipt["science_git_head"]
+        and proof["qualification"]["receipt"]["job_id"] == receipt["teacher_job_id"] == "54496291"
+        and proof["fit"]["receipt"]["job_id"] == "54494742"
+        and all(receipt.get(key) == value for key, value in student_bindings(proof).items()),
+        "Student prerequisite identity differs",
+    )
+    if STUDENT_TASKS[receipt["task"]] == "preflight":
+        require(
+            proof.get("preflight") is None and receipt.get("preflight_job_id") is None,
+            "Adapted preflight borrowed unrelated execution evidence",
+        )
+    else:
+        require(
+            proof["preflight"]["receipt"]["job_id"] == receipt["preflight_job_id"],
+            "Adapted calibration preflight binding differs",
+        )
+    contract.validate_report(result, proof)
+    contract.validate_publication(safe_path(receipt["result_dir"]), result, published)
 
 
 def teacher_fit_queue_check():
@@ -1201,6 +1419,7 @@ def submit(request):
     calibration = task == "qwen3-v2-g0-calibration"
     teacher_fit = task in TEACHER_FIT_TASKS
     teacher_qualify = task == TEACHER_QUALIFY_TASK
+    student = task in STUDENT_TASKS
     provenance_task = task in PROVENANCE_TASKS
     model_task = preflight or provenance_task or task in DIAGNOSTIC_TASKS
     require(not model_task or request.get("container") is None, "Qwen3 tasks forbid container arguments")
@@ -1213,6 +1432,7 @@ def submit(request):
         calibration
         or teacher_fit
         or teacher_qualify
+        or student
         or all(request.get(key) is None for key in PREREQUISITE_BINDINGS),
         "This task does not accept upstream prerequisites",
     )
@@ -1224,6 +1444,26 @@ def submit(request):
         all(request.get(key) is None for key in TEACHER_QUALIFY_BINDINGS),
         "Qualification checkpoint/protocol/claims must be resolved remotely, not supplied",
     )
+    require(
+        all(request.get(key) is None for key in STUDENT_BINDINGS),
+        "Student identities must be resolved remotely, not supplied",
+    )
+    if student:
+        teacher_job = identifier(request.get("teacher_job_id"), "job_id")
+        require(teacher_job == "54496291", "Adapted student requires accepted teacher job 54496291")
+        require(
+            request.get("prerequisites_path") is None and request.get("prerequisites_sha256") is None,
+            "Adapted student rejects caller-generated prerequisites",
+        )
+        preflight_job = None
+        if STUDENT_TASKS[task] == "calibration":
+            preflight_job = identifier(request.get("preflight_job_id"), "job_id")
+            require(
+                preflight_job not in {teacher_job, "54494742", "54345604"},
+                "Adapted calibration requires a fresh matching preflight",
+            )
+        else:
+            require(request.get("preflight_job_id") is None, "Adapted preflight rejects prior preflight ID")
     if teacher_qualify:
         teacher_job = identifier(request.get("teacher_job_id"), "job_id")
         preflight_job = None
@@ -1274,6 +1514,17 @@ def submit(request):
         required_files.update(contract.KERNEL_PATHS)
     if provenance_task:
         required_files.add("tools/sdsc_provenance.py")
+    if student:
+        required_files.update(
+            {
+                "tools/sdsc_student_contract.py",
+                "tools/sdsc_adapted_training_preflight.py",
+                "tools/sdsc_adapted_calibration.py",
+                "tools/sdsc_teacher_qualify_contract.py",
+                "src/posttrain_circuits/artifacts/adapted_student_protocol.py",
+                "src/posttrain_circuits/artifacts/adapted_teacher_sft.py",
+            }
+        )
     if teacher_qualify:
         required_files.update(
             {
@@ -1332,6 +1583,8 @@ def submit(request):
         prerequisites = teacher_fit_prerequisites(root, release, manifest, request)
     if teacher_qualify:
         prerequisites = teacher_qualification_prerequisites(root, release, request, provenance)
+    if student:
+        prerequisites = student_prerequisites(root, release, request, provenance)
     script = safe_path(release / "source/tools" / TASK_SCRIPTS[task])
     require(script.is_file(), "Snapshot lacks the reviewed worker script")
     submissions = safe_path(root / "submissions")
@@ -1356,7 +1609,7 @@ def submit(request):
         "container": request.get("container"),
         **provenance,
     }
-    if calibration or teacher_fit or teacher_qualify:
+    if calibration or teacher_fit or teacher_qualify or student:
         prerequisites_path = safe_path(directory / "prerequisites.json")
         atomic_json(prerequisites_path, prerequisites)
         prerequisites_bytes = read_bytes(prerequisites_path, MAX_FILE)
@@ -1399,6 +1652,8 @@ def submit(request):
             claims_path=str(claims_path),
             claims_sha256=digest(read_bytes(claims_path, MAX_FILE)),
         )
+    if student:
+        intent.update(student_bindings(prerequisites))
     atomic_json(directory / "intent.json", intent)
     argv = build_sbatch_argv(intent, release)
     atomic_json(directory / "submission.json", {"state": "submitting", "argv": argv, "at": now()})
@@ -1747,7 +2002,8 @@ def verify_result(receipt):
         probe = task in DIAGNOSTIC_TASKS
         calibration = task == "qwen3-v2-g0-calibration"
         qualification = task == TEACHER_QUALIFY_TASK
-        model_task = preflight or teacher or calibration or probe or qualification
+        student = task in STUDENT_TASKS
+        model_task = preflight or teacher or calibration or probe or qualification or student
         result_name = TASK_RESULTS[task]
         result_bytes = read_bytes(root / result_name)
         result = json.loads(result_bytes)
@@ -1891,6 +2147,8 @@ def verify_result(receipt):
                 ),
                 "Calibration proof identity mismatch",
             )
+        if student:
+            verify_student_result(receipt, result, published)
         files = published.get("files", [])
         matches = [entry for entry in files if entry.get("path") == result_name]
         require(
@@ -1955,6 +2213,7 @@ def status(request):
         **{key: receipt[key] for key in PREREQUISITE_BINDINGS if key in receipt},
         **{key: receipt[key] for key in TEACHER_FIT_BINDINGS if key in receipt},
         **{key: receipt[key] for key in TEACHER_QUALIFY_BINDINGS if key in receipt},
+        **{key: receipt[key] for key in STUDENT_BINDINGS if key in receipt},
         "queue": queue,
         "accounting": accounting,
         "result": result,

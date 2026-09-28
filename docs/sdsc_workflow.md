@@ -39,9 +39,13 @@ SDSC 不安装 Codex、VS Code Server 或常驻工作流服务，也不申请用
 提交、签发或发布这些已完成任务。
 
 验收适用于已独立审核的 **teacher 专用 256-token 协议**，八项数值阈值
-未降低；不声称原 128-token 协议通过。尚未启动 student 训练；后续需把
-真实适配权重身份一致地接入下游，并完成匹配的新预检，不能直接重启旧
-v3 流程。最终证据位置与完整数据见下方链接的验收记录。
+未降低；不声称原 128-token 协议通过。新的 student 入口为
+`qwen3-v2-adapted-preflight` → `qwen3-v2-adapted-calibration`，使用已验收
+权重的真实哈希和原始九文件示例证据，保留全部 student 训练参数。
+两阶段均为 2 H100 / 24 CPU / 192 GiB，分别最多 1 小时和 2 小时。
+必须先完成独立协议接受，再以实际新预检的成功报告允许校准；不能重启旧
+v3 流程，也不能把校准当作完整 G0。实际提交状态读取本地回执及 current
+handoff；操作说明见 [适配 teacher 的 student 校准](refactor/sdsc_adapted_student_calibration_20260928.md)。
 
 固定训练为 8,192 条独立训练数据、512 次优化更新，在四个预定检查点
 上完整评估独立的 512 条开发数据。后续 `qwen3-v2-teacher-qualify` 只接受

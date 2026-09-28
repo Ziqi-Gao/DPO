@@ -227,6 +227,11 @@ def _require_qwen3_store_binding(
     config: dict[str, Any],
     expected_behavior_policy: str,
 ) -> None:
+    if "adapted_teacher" in config:
+        from posttrain_circuits.artifacts.adapted_teacher_sft import validate_adapted_sft_manifest
+
+        validate_adapted_sft_manifest(manifest, config)
+        return
     if not str(config.get("protocol_track", "")).startswith("qwen3_"):
         return
     expected = {
@@ -284,6 +289,12 @@ def main(argv: list[str] | None = None) -> None:
         output=output,
     ):
         return
+    if "adapted_teacher" in config:
+        from posttrain_circuits.artifacts.adapted_student_protocol import validate_student_protocol
+
+        # Resolve the independently reviewed consumer before loading any model.
+        # Teacher acceptance alone cannot authorize changed student semantics.
+        validate_student_protocol(config)
     method = get_method_spec(cell)
     if method.training_backend != FACTORIAL_TRAINING_BACKEND or not (
         method.role == "factorial_cell" or method is CANONICAL_SFT_METHOD
@@ -392,10 +403,15 @@ def main(argv: list[str] | None = None) -> None:
     current_generator = None
     if state_source_name == "teacher_demo":
         store_path = Path(str(config["state_source"]["store_path"]))
-        teacher_demos, loaded_manifest = read_teacher_demo_store(
-            store_path,
-            require_formal=production_scale,
-        )
+        if "adapted_teacher" in config:
+            from posttrain_circuits.artifacts.adapted_teacher_sft import read_accepted_teacher_sft
+
+            teacher_demos, loaded_manifest = read_accepted_teacher_sft(store_path, config=config)
+        else:
+            teacher_demos, loaded_manifest = read_teacher_demo_store(
+                store_path,
+                require_formal=production_scale,
+            )
         teacher_demo_manifest = dict(loaded_manifest)
         _require_qwen3_store_binding(
             teacher_demo_manifest,

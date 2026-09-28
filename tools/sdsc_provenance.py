@@ -34,7 +34,9 @@ SCIENCE_FILES = ("pyproject.toml", "environment.yml", "requirements-cpu.lock")
 SCHEMA = "quest-sdsc-git-provenance-v1"
 MAX_FILE = 4 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
-MAX_LOCAL_COMMITS = 16
+# Bound genuine local history without moving public refs or dropping earlier
+# review commits. Every exported tree and the bundle retain their byte limits.
+MAX_LOCAL_COMMITS = 32
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 PRIVATE_DIRS = {".git", ".opd-git", ".codex", ".ssh", ".sdsc", ".aws", ".azure", "credentials", "secrets"}

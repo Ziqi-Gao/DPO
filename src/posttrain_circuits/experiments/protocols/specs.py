@@ -657,6 +657,19 @@ def build_experiment_binding(
     teacher_requested = str(
         teacher.get("model_revision", teacher.get("teacher_revision", ""))
     )
+    if "adapted_teacher" in config:
+        from posttrain_circuits.artifacts.adapted_teacher_sft import (
+            ADAPTED_MODEL_ID,
+            validate_adapted_sft_manifest,
+        )
+
+        if teacher_demo_manifest is None or method.method_id != "canonical_sft":
+            raise ValueError("adapted-teacher calibration requires its accepted canonical-SFT view")
+        identity = validate_adapted_sft_manifest(dict(teacher_demo_manifest), config)
+        teacher_id = ADAPTED_MODEL_ID
+        teacher_requested = str(identity.teacher_checkpoint_sha256)
+        if teacher_resolved_revision != teacher_requested:
+            raise ValueError("adapted teacher runtime revision differs from its learned dense weights")
     soft = method.soft_teacher_objective
     offline_manifest_hash = None
     offline_content_hash = None

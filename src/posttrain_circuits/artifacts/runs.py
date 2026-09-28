@@ -151,6 +151,10 @@ def resolve_protocol_amendment(
     raw_path = str(config.get("protocol_amendment_path", "")).strip()
     if not raw_path:
         return None
+    if raw_path == "prereg/amendments/qwen3_adapted_student_calibration_v1.json":
+        from posttrain_circuits.artifacts.adapted_student_protocol import resolve_adapted_student_protocol
+
+        return resolve_adapted_student_protocol(Path.cwd(), expected_head=expected_head)
     resolver = {
         str(AMENDMENT_RELATIVE_PATH): resolve_accepted_protocol_amendment,
         str(SUCCESSOR_AMENDMENT_RELATIVE_PATH): (
@@ -227,6 +231,16 @@ def formal_artifact_binding(config: dict[str, Any]) -> dict[str, Any]:
                 "reviewed_implementation_commit": amendment.reviewed_implementation_commit,
             }
         )
+    if "adapted_teacher" in config:
+        from posttrain_circuits.artifacts.adapted_teacher_sft import configured_identity
+        from posttrain_circuits.artifacts.teacher_identity import teacher_science_bindings
+
+        # The legacy teacher_revision field records the real Hub ancestry.
+        # Learned weights have their own mandatory content identity; never
+        # manufacture a Hub revision for them or erase the producer origin.
+        binding.update(teacher_science_bindings(configured_identity(config)))
+        binding["teacher_acceptance_sha256"] = config["adapted_teacher"]["acceptance_sha256"]
+        binding["teacher_producer_science_head"] = config["adapted_teacher"]["producer_science_head"]
     return binding
 
 

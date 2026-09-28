@@ -119,6 +119,8 @@ TASK_SCRIPTS = {
     "qwen3-v2-teacher-fit-preflight": "sdsc_teacher_fit_job.sh",
     "qwen3-v2-teacher-fit": "sdsc_teacher_fit_job.sh",
     "qwen3-v2-teacher-qualify": "sdsc_teacher_qualify_job.sh",
+    "qwen3-v2-adapted-preflight": "sdsc_student_job.sh",
+    "qwen3-v2-adapted-calibration": "sdsc_student_job.sh",
     "qwen3-v2-g0-calibration": "sdsc_calibration_job.sh",
 }
 TASK_RESULTS = {
@@ -131,6 +133,8 @@ TASK_RESULTS = {
     "qwen3-v2-teacher-fit-preflight": "teacher-fit.json",
     "qwen3-v2-teacher-fit": "teacher-fit.json",
     "qwen3-v2-teacher-qualify": "teacher-qualify.json",
+    "qwen3-v2-adapted-preflight": "adapted-preflight.json",
+    "qwen3-v2-adapted-calibration": "adapted-calibration.json",
     "qwen3-v2-g0-calibration": "g0-calibration.json",
 }
 
@@ -143,6 +147,19 @@ DIAGNOSTIC_TASKS = {
 }
 TEACHER_FIT_TASKS = {"qwen3-v2-teacher-fit-preflight": "preflight", "qwen3-v2-teacher-fit": "full-fit"}
 TEACHER_QUALIFY_TASK = "qwen3-v2-teacher-qualify"
+STUDENT_TASKS = {"qwen3-v2-adapted-preflight": "preflight", "qwen3-v2-adapted-calibration": "calibration"}
+STUDENT_BINDINGS = (
+    "student_protocol_sha256",
+    "student_protocol_artifact_sha256",
+    "adapted_teacher_sha256",
+    "teacher_acceptance_sha256",
+    "teacher_acceptance_inventory_sha256",
+)
+STUDENT_FIXED_BINDINGS = {
+    "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",
+    "teacher_acceptance_sha256": "5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337",
+    "teacher_acceptance_inventory_sha256": "8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed",
+}
 TEACHER_QUALIFY_SMALL_RESULTS = {
     "qualification-manifest.json",
     "progress.json",
@@ -415,7 +432,7 @@ def remote(payload, data=b"", control_python=None):
     timeout = (
         300
         if payload.get("action") == "submit"
-        and payload.get("task") in {"qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK}
+        and payload.get("task") in {"qwen3-v2-g0-calibration", TEACHER_QUALIFY_TASK, *STUDENT_TASKS}
         else 150
     )
     result = ssh_call([control_python, "-c", source, canonical(payload).decode()], data, timeout=timeout)
@@ -581,14 +598,15 @@ def resources(args):
     teacher = args.task == "qwen3-v2-teacher-prepare"
     probe = args.task in DIAGNOSTIC_TASKS
     calibration = args.task == "qwen3-v2-g0-calibration"
+    student = args.task in STUDENT_TASKS
     expected = {
         "account": "nwu181",
         "partition": "nairr-gpu-shared",
         "qos": "nairr-gpu-shared-normal",
         "gpu_type": "h100",
-        "gpus": 2 if preflight or calibration else 1,
-        "cpus": 24 if preflight or teacher or calibration or probe else 4,
-        "mem_gib": 192 if preflight or teacher or calibration or probe else 16,
+        "gpus": 2 if preflight or calibration or student else 1,
+        "cpus": 24 if preflight or teacher or calibration or probe or student else 4,
+        "mem_gib": 192 if preflight or teacher or calibration or probe or student else 16,
     }
     if args.task in TEACHER_FIT_TASKS or args.task == TEACHER_QUALIFY_TASK:
         expected.update(partition="nairr-gpu", qos="nairr-gpu-normal", gpus=4, cpus=24, mem_gib=192)
@@ -609,6 +627,8 @@ def resources(args):
         limit = 3600 if TEACHER_FIT_TASKS[args.task] == "preflight" else 86400
     if args.task == TEACHER_QUALIFY_TASK:
         limit = 7200
+    if args.task in STUDENT_TASKS:
+        limit = 3600 if STUDENT_TASKS[args.task] == "preflight" else 7200
     if (
         not match
         or int(match[2]) >= 60
@@ -626,7 +646,8 @@ def submit_command(args):
     calibration = args.task == "qwen3-v2-g0-calibration"
     teacher_fit = args.task in TEACHER_FIT_TASKS
     teacher_qualify = args.task == TEACHER_QUALIFY_TASK
-    provenance_task = teacher or calibration or teacher_qualify
+    student = args.task in STUDENT_TASKS
+    provenance_task = teacher or calibration or teacher_qualify or student
     model_task = preflight or provenance_task or args.task in DIAGNOSTIC_TASKS
     if model_task and container is not None:
         raise UserError(f"{args.task} requires a host runtime; container flags are forbidden")
@@ -664,6 +685,18 @@ def submit_command(args):
             raise UserError(
                 "Qualification requires a completed full-fit --teacher-job-id and no preflight ID"
             )
+    elif student:
+        if args.teacher_job_id != "54496291":
+            raise UserError("Adapted student requires --teacher-job-id 54496291")
+        if STUDENT_TASKS[args.task] == "preflight":
+            if args.preflight_job_id is not None:
+                raise UserError("Adapted preflight does not accept another preflight job")
+        elif not re.fullmatch(r"[1-9][0-9]*", args.preflight_job_id or "") or args.preflight_job_id in {
+            "54496291",
+            "54494742",
+            "54345604",
+        }:
+            raise UserError("Adapted calibration requires a fresh matching --preflight-job-id")
     elif args.teacher_job_id is not None or args.preflight_job_id is not None:
         raise UserError("Upstream job arguments are only supported for calibration")
     record = run_record(args.run_id)
@@ -688,7 +721,7 @@ def submit_command(args):
         payload.update(
             provenance_dir=args.provenance_dir, provenance_manifest_sha256=args.provenance_manifest_sha256
         )
-    if calibration or teacher_fit or teacher_qualify:
+    if calibration or teacher_fit or teacher_qualify or student:
         payload.update(teacher_job_id=args.teacher_job_id, preflight_job_id=args.preflight_job_id)
     if teacher_fit:
         contract_path = TOOL_DIR / "sdsc_teacher_fit_contract.py"
@@ -752,7 +785,7 @@ def submit_command(args):
         )
         if model_task:
             intent["hf_home"] = args.hf_home or "/<UNCONFIRMED_MODEL_CACHE>"
-        if calibration or teacher_fit or teacher_qualify:
+        if calibration or teacher_fit or teacher_qualify or student:
             intent["prerequisites_path"] = intent["submission_dir"] + "/prerequisites.json"
             # No SSH in dry-run: show the argument slot without claiming completed validation.
             intent["prerequisites_sha256"] = "0" * 64
@@ -802,6 +835,8 @@ def submit_command(args):
             validate_teacher_fit_receipt(reply, payload)
         if teacher_qualify:
             validate_teacher_qualify_receipt(reply, payload)
+        if student:
+            validate_student_receipt(reply, payload)
         intent.update(state="submitted", receipt=reply)
     except (UserError, subprocess.TimeoutExpired, OSError, KeyboardInterrupt) as exc:
         intent.update(state="unknown", error=str(exc))
@@ -840,6 +875,8 @@ def reconcile_command(args):
             validate_teacher_fit_receipt(result, intent["request"])
         if intent["request"].get("task") == TEACHER_QUALIFY_TASK:
             validate_teacher_qualify_receipt(result, intent["request"])
+        if intent["request"].get("task") in STUDENT_TASKS:
+            validate_student_receipt(result, intent["request"])
         intent.update(state="submitted", receipt=result)
     else:
         intent.update(state="unknown", reconciliation=result)
@@ -882,6 +919,25 @@ def validate_teacher_qualify_receipt(receipt, request):
         )
     ):
         raise UserError("Qualification receipt lacks its immutable checkpoint/protocol/claims")
+
+
+def validate_student_receipt(receipt, request):
+    validate_calibration_receipt(receipt, request)
+    if any(not re.fullmatch(r"[a-f0-9]{64}", str(receipt.get(key, ""))) for key in STUDENT_BINDINGS):
+        raise UserError("Adapted student receipt lacks immutable scientific identities")
+    if any(receipt.get(key) != value for key, value in STUDENT_FIXED_BINDINGS.items()):
+        raise UserError("Adapted student receipt changed the accepted teacher")
+    manifest = run_record(request["run_id"])["manifest"]
+    expected = next(
+        (
+            row["sha256"]
+            for row in manifest["files"]
+            if row["path"] == "prereg/amendments/qwen3_adapted_student_calibration_v1.json"
+        ),
+        None,
+    )
+    if expected is None or receipt["student_protocol_artifact_sha256"] != expected:
+        raise UserError("Adapted student receipt protocol differs from deployed snapshot")
 
 
 def job_binding(job_id):
