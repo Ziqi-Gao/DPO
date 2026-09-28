@@ -28,18 +28,28 @@ from posttrain_circuits.artifacts.teacher_adaptation_protocol import (
     resolve_teacher_adaptation_protocol,
 )
 
-PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v2.json"
-PROTOCOL_ID = "qwen3-adapted-student-calibration-v2"
-ADAPTED_TEACHER_CONFIG_PATH = "configs/adapted_teacher/qwen3_accepted_student_v2.yaml"
+PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v3.json"
+PROTOCOL_ID = "qwen3-adapted-student-calibration-v3"
+ADAPTED_TEACHER_CONFIG_PATH = "configs/adapted_teacher/qwen3_accepted_student_v3.yaml"
 ACCELERATE_CONFIG_PATH = "configs/accelerate/fsdp_2gpu_adapted_student_v2.yaml"
 PREDECESSOR = {
-    "protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v1.json",
-    "protocol_id": "qwen3-adapted-student-calibration-v1",
-    "implementation_commit": "9129f32ad2f53b8fa9073b417fd615560278a2db",
-    "acceptance_commit": "77603c14802c21e0dce09fe7617705d33425ce94",
-    "protocol_sha256": "1c29f633e542ba4de72d25314f68d6508fc0919a6c7335d65bfef72513c62618",
-    "artifact_sha256": "677d49599e434b060eebed5a58b2130afbe014be06363e73dffc1ab31f0b07d6",
+    "protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v2.json",
+    "protocol_id": "qwen3-adapted-student-calibration-v2",
+    "implementation_commit": "3c1f6f1e9bdc798ecb65399165dd1be313014b42",
+    "acceptance_commit": "28c1026cece772a9e3d167d9cc64a64aaa0fd1b3",
+    "protocol_sha256": "9277960e4ff3599c325ac0115888280ad32647891fd3841d045822bf7db2a320",
+    "artifact_sha256": "2c15821442d3ae51da5d86917a5fbf160aac9a1bb1b6ef5e8944dab8f8c69274",
 }
+PRESERVED_PROTOCOLS = (
+    {
+        "protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v1.json",
+        "protocol_id": "qwen3-adapted-student-calibration-v1",
+        "implementation_commit": "9129f32ad2f53b8fa9073b417fd615560278a2db",
+        "acceptance_commit": "77603c14802c21e0dce09fe7617705d33425ce94",
+        "protocol_sha256": "1c29f633e542ba4de72d25314f68d6508fc0919a6c7335d65bfef72513c62618",
+        "artifact_sha256": "677d49599e434b060eebed5a58b2130afbe014be06363e73dffc1ab31f0b07d6",
+    },
+)
 PRODUCER_HEAD = "929fb14834852a7c91e6656c76fd1834e1b5007d"
 PRODUCER_IMPLEMENTATION = "d1ab8dacd834101b88d806bb6d75a44ae1949cb3"
 PRODUCER_PROTOCOL_SHA256 = "dcd5fca7c87bda603f930e1e053d34073ca12aa079fa884c0e4e87e32ec099f4"
@@ -76,7 +86,9 @@ SCIENCE_PATHS = (
     "src/posttrain_circuits/datasets/proofgraph/metrics.py",
     "src/posttrain_circuits/datasets/teacher_demos/store.py",
     "src/posttrain_circuits/datasets/trajectories/contracts.py",
+    "src/posttrain_circuits/datasets/trajectories/identities.py",
     "src/posttrain_circuits/learning/contracts.py",
+    "src/posttrain_circuits/learning/collation.py",
     "src/posttrain_circuits/learning/primitives.py",
     "src/posttrain_circuits/learning/supervision/base.py",
     "src/posttrain_circuits/learning/supervision/verified_replay.py",
@@ -105,7 +117,7 @@ _MAX_BYTES = 2 * 1024 * 1024
 
 
 class AdaptedStudentProtocolError(ValueError):
-    """The proposed consumer or its actual source authority differs from v2."""
+    """The proposed consumer or its actual source authority differs from v3."""
 
 
 def _canonical(value: Any) -> bytes:
@@ -144,8 +156,9 @@ def proposed_adapted_student_protocol() -> dict[str, Any]:
         "kind": "opd_adapted_teacher_student_calibration_protocol",
         "protocol_id": PROTOCOL_ID,
         "predecessor": copy.deepcopy(PREDECESSOR),
+        "preserved_protocols": copy.deepcopy(list(PRESERVED_PROTOCOLS)),
         "repair": {
-            "kind": "explicit_accelerate_fsdp_use_orig_params_false",
+            "kind": "canonical_sft_supervision_matches_actual_logits_device",
             "scientific_settings_and_teacher_evidence_unchanged": True,
             "reuse_predecessor_gpu_preflight": False,
         },
@@ -214,6 +227,8 @@ def proposed_adapted_student_protocol() -> dict[str, Any]:
             "fsdp_effective": "FULL_SHARD",
             "fsdp_use_orig_params": False,
             "accelerate_config": ACCELERATE_CONFIG_PATH,
+            "supervision_tensor_device": "actual_model_logits_device",
+            "canonical_sft_supervisor_device_preflight_required": True,
             "fresh_matching_real_gpu_preflight_required": True,
             "actual_node_local_workspace_required": True,
             "verify_node_input_and_persistent_output_mounts": True,
@@ -360,35 +375,36 @@ def resolve_adapted_student_protocol(
         raise AdaptedStudentProtocolError("student review requires complete ungrafted history")
     raw = read(PROTOCOL_PATH)
     payload = load_adapted_student_protocol(raw, require_accepted=require_accepted)
-    # A successor names an actual historical acceptance, not a relabelled v1.
-    # Changed v2 source is checked against its own implementation below; v1's
-    # immutable artifact remains bound to the original accepted Git ancestry.
-    predecessor_path = PREDECESSOR["protocol_path"]
-    predecessor_implementation = PREDECESSOR["implementation_commit"]
-    predecessor_acceptance = PREDECESSOR["acceptance_commit"]
-    if (
-        text("merge-base", predecessor_acceptance, head) != predecessor_acceptance
-        or text("rev-list", "--parents", "-n", "1", predecessor_acceptance).split()
-        != [predecessor_acceptance, predecessor_implementation]
-    ):
-        raise AdaptedStudentProtocolError("student predecessor needs its genuine accepted ancestry")
-    predecessor_raw = read(predecessor_path)
-    if (
-        hashlib.sha256(predecessor_raw).hexdigest() != PREDECESSOR["artifact_sha256"]
-        or git("show", f"{predecessor_acceptance}:{predecessor_path}") != predecessor_raw
-        or git("show", f"{head}:{predecessor_path}") != predecessor_raw
-        or git("diff", "--cached", "--name-only", "-z", "--", predecessor_path)
-    ):
-        raise AdaptedStudentProtocolError("student predecessor accepted artifact changed")
-    predecessor_payload = json.loads(predecessor_raw)
-    predecessor_review = predecessor_payload.pop("review", {})
-    if (
-        predecessor_payload.get("protocol_id") != PREDECESSOR["protocol_id"]
-        or hashlib.sha256(_canonical(predecessor_payload)).hexdigest() != PREDECESSOR["protocol_sha256"]
-        or predecessor_review.get("status") != "accepted"
-        or predecessor_review.get("reviewed_implementation_commit") != predecessor_implementation
-    ):
-        raise AdaptedStudentProtocolError("student predecessor protocol identity differs")
+    # Resolve both historical acceptances through actual immutable Git ancestry.
+    # V3's changed execution is separately reviewed; old scientific artifacts
+    # remain byte-identical and are never reinterpreted as v3 evidence.
+    historical_bytes = {}
+    for historical in (*PRESERVED_PROTOCOLS, PREDECESSOR):
+        predecessor_path = historical["protocol_path"]
+        predecessor_implementation = historical["implementation_commit"]
+        predecessor_acceptance = historical["acceptance_commit"]
+        if text("merge-base", predecessor_acceptance, head) != predecessor_acceptance or text(
+            "rev-list", "--parents", "-n", "1", predecessor_acceptance
+        ).split() != [predecessor_acceptance, predecessor_implementation]:
+            raise AdaptedStudentProtocolError("student predecessor needs its genuine accepted ancestry")
+        predecessor_raw = read(predecessor_path)
+        if (
+            hashlib.sha256(predecessor_raw).hexdigest() != historical["artifact_sha256"]
+            or git("show", f"{predecessor_acceptance}:{predecessor_path}") != predecessor_raw
+            or git("show", f"{head}:{predecessor_path}") != predecessor_raw
+            or git("diff", "--cached", "--name-only", "-z", "--", predecessor_path)
+        ):
+            raise AdaptedStudentProtocolError("student predecessor accepted artifact changed")
+        predecessor_payload = json.loads(predecessor_raw)
+        predecessor_review = predecessor_payload.pop("review", {})
+        if (
+            predecessor_payload.get("protocol_id") != historical["protocol_id"]
+            or hashlib.sha256(_canonical(predecessor_payload)).hexdigest() != historical["protocol_sha256"]
+            or predecessor_review.get("status") != "accepted"
+            or predecessor_review.get("reviewed_implementation_commit") != predecessor_implementation
+        ):
+            raise AdaptedStudentProtocolError("student predecessor protocol identity differs")
+        historical_bytes[predecessor_path] = predecessor_raw
     producer = resolve_teacher_adaptation_protocol(root, git_dir=metadata, expected_head=head)
     if (
         producer.acceptance_commit != PRODUCER_HEAD
@@ -443,7 +459,7 @@ def resolve_adapted_student_protocol(
     if (
         text("rev-parse", "--verify", "HEAD^{commit}") != head
         or read(PROTOCOL_PATH) != raw
-        or read(predecessor_path) != predecessor_raw
+        or any(read(path) != raw_bytes for path, raw_bytes in historical_bytes.items())
     ):
         raise AdaptedStudentProtocolError("student HEAD or protocol changed during verification")
     for path, expected_sha in source_hashes.items():

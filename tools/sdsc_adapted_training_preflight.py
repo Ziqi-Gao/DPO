@@ -23,11 +23,13 @@ import sys
 import time
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 TASK = "qwen3-v2-adapted-preflight"
 KIND = "sdsc_h100_adapted_training_preflight_v1"
 RESULT = "adapted-preflight.json"
 WORLD_SIZE = 2
+DEVICE_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v3.json"
 
 
 def sibling(name):
@@ -205,6 +207,8 @@ def validate_completed_report(report, expected):
         "student_protocol_sha256",
         "science_git_head",
     }
+    if "student_protocol_path" in expected:
+        binding_keys.add("student_protocol_path")
     require(binding_keys <= set(expected), "preflight expected scientific bindings are incomplete")
     require(
         all(report.get(key) == value for key, value in expected.items()),
@@ -313,6 +317,11 @@ def validate_completed_report(report, expected):
             and item.get("reserved_global_nonpadding_tokens") == 64 * 1536,
             "preflight batch/token/window semantics differ",
         )
+        if expected.get("student_protocol_path") == DEVICE_PROTOCOL_PATH:
+            require(
+                item.get("supervision_boundary") == supervision_boundary_evidence(f"cuda:{rank}"),
+                "v3 preflight did not exercise CPU collation and canonical supervision on this rank",
+            )
         fsdp = item["fsdp"]
         require(
             fsdp.get("requested_fsdp_sharding_strategy") == "FULL_SHARD"
@@ -355,6 +364,105 @@ def validate_completed_report(report, expected):
     return {"job_id": report["job_id"], "run_id": report["run_id"], "world_size": 2, "report_validated": True}
 
 
+def supervision_boundary_evidence(device):
+    return {
+        "scope": "synthetic_production_shape_only",
+        "collator": "collate_trajectories",
+        "supervisor": "CanonicalSFTSupervisor",
+        "original_batch_device": "cpu",
+        "loss_operands_device": device,
+        "loss_logits_dtype": "float32",
+        "loss_normalization": "sequence",
+        "response_tokens_per_sequence": 256,
+        "microsteps": 8,
+        "original_batch_preserved": True,
+    }
+
+
+def canonical_canary_batch(rows, slots, pad_token_id):
+    """Retain the original synthetic tokens while exercising production collation."""
+    import torch
+
+    from posttrain_circuits.datasets.trajectories.contracts import TrajectoryRecord
+    from posttrain_circuits.learning.contracts import TrajectoryBatch
+    from posttrain_circuits.learning.training.canonical_sft import CanonicalSFTSupervisor
+
+    require(len(rows) == len(slots) == 4 and all(len(row) == 1536 for row in rows), "canary shape differs")
+    records = []
+    for row, slot in zip(rows, slots, strict=True):
+        record = TrajectoryRecord(
+            trajectory_id="",
+            prompt_id=f"synthetic-canary-slot-{slot}",
+            split="train",
+            prompt_text="synthetic execution canary, not teacher-quality evidence",
+            input_ids=list(row[:-256]),
+            response_ids=list(row[-256:]),
+            response_text="synthetic",
+            response_token_mask=[True] * 256,
+            behavior_policy_id="synthetic-canary",
+            behavior_policy_revision="unchanged-global64-canary-v1",
+            policy_version=0,
+            sampling_request_seed=42,
+            actual_sampling_seed=42 + slot,
+            sampling_cursor_id=f"synthetic-canary-slot-{slot}",
+            sampling_protocol_id="synthetic-no-sampling-v1",
+            sampling_temperature=1.0,
+            top_p=1.0,
+            behavior_logprobs=[0.0] * 256,
+            verifier_reward=1.0,
+        )
+        record.trajectory_id = record.expected_trajectory_id
+        records.append(record)
+    supervisor = CanonicalSFTSupervisor(pad_token_id, normalization="sequence")
+    batch = supervisor.prepare_targets(TrajectoryBatch(records, 0), None, None)
+    require(
+        all(
+            getattr(batch, key).device.type == "cpu"
+            for key in ("input_ids", "attention_mask", "response_mask", "rewards")
+        )
+        and batch.input_ids.tolist() == rows
+        and bool(batch.attention_mask.all())
+        and not bool(batch.response_mask[:, :-256].any())
+        and bool(batch.response_mask[:, -256:].all())
+        and torch.equal(batch.rewards, torch.ones(4)),
+        "CPU collator changed the fixed canary tokens, masks or rewards",
+    )
+    return supervisor, batch
+
+
+def canonical_canary_loss(student, supervisor, batch):
+    """Keep the original FP32 loss policy around the real supervisor boundary."""
+    import torch
+
+    observed = []
+    original = {
+        key: getattr(batch, key).clone()
+        for key in ("input_ids", "attention_mask", "response_mask", "rewards")
+    }
+
+    def forward(**kwargs):
+        require(
+            all(value.device.type == "cpu" for value in kwargs.values()), "canary must enter forward on CPU"
+        )
+        logits = student(**kwargs).logits
+        require(bool(torch.isfinite(logits).all()), "student forward is not finite")
+        observed.append(str(logits.device))
+        return SimpleNamespace(logits=logits.float())
+
+    output = supervisor.compute_loss(forward, batch)
+    require(len(observed) == 1, "canonical supervisor must forward exactly once")
+    require(
+        all(
+            getattr(batch, key).device.type == "cpu"
+            and getattr(batch, key).dtype == value.dtype
+            and torch.equal(getattr(batch, key), value)
+            for key, value in original.items()
+        ),
+        "canonical supervisor mutated the original CPU batch",
+    )
+    return output.loss, observed[0]
+
+
 def run_canary(args, identity, evidence):
     activate_scientific_source(args.science_root)
     import torch
@@ -370,6 +478,7 @@ def run_canary(args, identity, evidence):
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
     from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 
+    from posttrain_circuits.artifacts.adapted_student_protocol import resolve_adapted_student_protocol
     from posttrain_circuits.learning.supervision.losses import verified_replay_loss
     from posttrain_circuits.learning.training.execution_safety_kernel import batch_token_contract
     from posttrain_circuits.learning.training.fsdp_contract import (
@@ -380,6 +489,24 @@ def run_canary(args, identity, evidence):
     from posttrain_circuits.models.loading import assert_tokenizer_compatible, load_model_and_tokenizer
     from posttrain_circuits.models.prompt_protocol import format_model_prompt
 
+    protocol = resolve_adapted_student_protocol(args.science_root, expected_head=args.science_git_head)
+    require(protocol.protocol_sha256 == args.student_protocol_sha256, "accepted student protocol differs")
+    require(
+        protocol.amendment_id
+        in {
+            "qwen3-adapted-student-calibration-v1",
+            "qwen3-adapted-student-calibration-v2",
+            "qwen3-adapted-student-calibration-v3",
+        },
+        "unrecognized student canary protocol",
+    )
+    device_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v3"
+    if device_boundary:
+        require(
+            protocol.path.relative_to(args.science_root).as_posix() == DEVICE_PROTOCOL_PATH,
+            "wrong v3 protocol path",
+        )
+        evidence["student_protocol_path"] = DEVICE_PROTOCOL_PATH
     rank, world = identity["rank"], identity["world_size"]
     log_phase(rank, "gpu_and_distributed_checks")
     require(
@@ -497,23 +624,39 @@ def run_canary(args, identity, evidence):
     losses = []
     log_phase(rank, "global64_optimizer_window")
     for microstep in range(8):
-        input_ids = torch.tensor(rows[microstep * 4 : (microstep + 1) * 4], device=device)
-        response_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-        response_mask[:, -256:] = True
-        with contextlib.nullcontext() if microstep == 7 else student.no_sync():
-            logits = student(input_ids=input_ids, attention_mask=torch.ones_like(input_ids)).logits
-            require(bool(torch.isfinite(logits).all()), "student forward is not finite")
-            loss = verified_replay_loss(
-                logits.float(),
-                input_ids,
-                response_mask,
-                torch.ones(4, device=device),
-                normalization="sequence",
+        if device_boundary:
+            supervisor, supervision = canonical_canary_batch(
+                rows[microstep * 4 : (microstep + 1) * 4],
+                slots[microstep * 4 : (microstep + 1) * 4],
+                tokenizer.pad_token_id,
             )
+        else:
+            input_ids = torch.tensor(rows[microstep * 4 : (microstep + 1) * 4], device=device)
+            response_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+            response_mask[:, -256:] = True
+        with contextlib.nullcontext() if microstep == 7 else student.no_sync():
+            if device_boundary:
+                loss, output_device = canonical_canary_loss(student, supervisor, supervision)
+                require(output_device == str(device), "canonical loss used another rank's device")
+            else:
+                logits = student(input_ids=input_ids, attention_mask=torch.ones_like(input_ids)).logits
+                require(bool(torch.isfinite(logits).all()), "student forward is not finite")
+                loss = verified_replay_loss(
+                    logits.float(),
+                    input_ids,
+                    response_mask,
+                    torch.ones(4, device=device),
+                    normalization="sequence",
+                )
             require(bool(torch.isfinite(loss)), "response-masked loss is not finite")
             losses.append(float(loss.detach()))
             (loss * (world * 4 / 64)).backward()
-        del logits, loss, input_ids, response_mask
+        if device_boundary:
+            del loss, supervision, supervisor
+        else:
+            del logits, loss, input_ids, response_mask
+    if device_boundary:
+        evidence["supervision_boundary"] = supervision_boundary_evidence(str(device))
     gradients = [parameter.grad for parameter in student.parameters() if parameter.grad is not None]
     require(
         gradients and all(bool(torch.isfinite(gradient).all()) for gradient in gradients),
@@ -725,6 +868,8 @@ def main(argv=None):
     old_handlers = {signum: signal.signal(signum, interrupted) for signum in (signal.SIGTERM, signal.SIGINT)}
     try:
         distributed = run_canary(args, identity, evidence)
+        if "student_protocol_path" in evidence:
+            bindings["student_protocol_path"] = evidence["student_protocol_path"]
         evidence["passed"] = True
         evidence["elapsed_seconds"] = time.monotonic() - started
         publish_json(rank_path, evidence)

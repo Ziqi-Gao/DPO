@@ -5,7 +5,8 @@ CPU audit `54497294` now has a separate student consumer. The original stopped
 v3 flows remain historical; do not restart them or substitute this teacher into
 their original prerequisites.
 
-`prereg/amendments/qwen3_adapted_student_calibration_v2.json` requires a genuine
+The current successor candidate,
+`prereg/amendments/qwen3_adapted_student_calibration_v3.json`, requires a genuine
 implementation commit and a distinct subsequent review-only acceptance commit.
 It preserves all 47 accepted producer files and binds the named student
 implementation. Acceptance of this protocol is not acceptance of GPU results.
@@ -32,7 +33,8 @@ unchanged. Its 256-token teacher acceptance does not assert historical
 3. Submit `qwen3-v2-adapted-preflight` with `--teacher-job-id 54496291` and
    explicit resources below. It restores reviewed science, verifies node-local
    and persistent mounts, stages the real selected teacher, and exercises a
-   synthetic global-64 FSDP update, full-state restore and adapted teacher
+   synthetic global-64 FSDP update through the actual CPU collation and canonical
+   supervision boundary, full-state restore and adapted teacher
    forward. It produces `adapted-preflight.json` and durable checkpoint evidence.
 4. Only after accounting shows every related step COMPLETED/0:0 and published
    results validate, create a fresh release for
@@ -130,3 +132,39 @@ The failed calibration's full 7,209-byte training log has publication-verified
 SHA `8e89ae1970096a1a1583a2628347e2f2280831c65032de9a5eca4d87a041dcb2`;
 its bounded logs, original report and final accounting are retained under
 `.sdsc/diagnostics/adapted-student-v1/calibration-54505782-*`.
+
+## Student target-device correction
+
+V2 preflight `54506703` completed and passed independent result review in 13m48s.
+The finite Quest supervisor then automatically submitted calibration `54506821`.
+Its initial checkpoint export succeeded, but both ranks failed at the first
+replay-loss cross-entropy: predictions were on cuda:0/cuda:1 while targets stayed
+on CPU. Slurm recorded FAILED / 1:0 after 8m31s. The separate read-only observer
+retrieved bounded logs and the failure report under
+`.sdsc/fetched/54506821/fetch-we8da5a6/`; both control flows are now stopped.
+Fetched log tails normalize line endings and are not raw-file hash evidence.
+
+The real CPU collator constructs a `SupervisionBatch`; FSDP transfers the model's
+forward arguments to its GPU without moving the original batch retained by the
+supervisor. The proposed v3 correction aligns only loss token IDs, response mask
+and rewards with the actual output-logits device. It preserves tensor dtypes,
+values, sample order, masking, sequence/token normalization and gradients, and
+does not mutate the CPU source batch. `CanonicalSFTSupervisor` inherits this
+implementation. The shared `losses.py` and all 47 accepted teacher files remain
+unchanged.
+
+The earlier preflight built all inputs directly on GPU and called the loss
+function, bypassing the failing collation/supervision boundary. V3 instead keeps
+the same canary tokens, global window, FSDP/checkpoint checks and numerical loss,
+but constructs CPU trajectories with the production collator and executes the
+real canonical supervisor. Per-rank evidence must establish this route; missing
+or changed evidence fails v3 validation. Historical v1/v2 report validation stays
+bound to each original protocol.
+
+The new v3 protocol/config preserves both historical accepted student protocols,
+the explicit-false v2 Accelerate YAML, teacher evidence and every scientific
+threshold. It requires independent implementation/review-only acceptance,
+followed by a new matching real GPU preflight and a separate fresh calibration.
+No failed job is retried with its previous intent and no v2 GPU report accepts
+the changed v3 implementation. The current handoff records actual acceptance,
+deployment and job state; source existence alone is not operational readiness.

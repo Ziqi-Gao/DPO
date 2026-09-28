@@ -172,6 +172,7 @@ def resolved_protocol(root, expected_head):
     return dict(
         head=expected_head,
         review_status="accepted",
+        protocol_path=resolved.path.relative_to(root).as_posix(),
         protocol_sha256=resolved.protocol_sha256,
         artifact_sha256=resolved.sha256,
         implementation_commit=resolved.reviewed_implementation_commit,
@@ -315,6 +316,8 @@ def validate_report(report, proof):
         "student report teacher identity differs",
     )
     if TASKS[task] == "preflight":
+        if "protocol_path" in proof["protocol"]:
+            expected["student_protocol_path"] = proof["protocol"]["protocol_path"]
         helper("sdsc_adapted_training_preflight").validate_completed_report(report, expected)
     else:
         require(

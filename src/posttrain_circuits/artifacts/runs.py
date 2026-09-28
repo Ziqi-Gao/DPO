@@ -151,7 +151,7 @@ def resolve_protocol_amendment(
     raw_path = str(config.get("protocol_amendment_path", "")).strip()
     if not raw_path:
         return None
-    if raw_path == "prereg/amendments/qwen3_adapted_student_calibration_v2.json":
+    if raw_path == "prereg/amendments/qwen3_adapted_student_calibration_v3.json":
         from posttrain_circuits.artifacts.adapted_student_protocol import resolve_adapted_student_protocol
 
         return resolve_adapted_student_protocol(Path.cwd(), expected_head=expected_head)

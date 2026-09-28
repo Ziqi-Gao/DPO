@@ -87,6 +87,9 @@ STUDENT_BINDINGS = (
     "teacher_acceptance_sha256",
     "teacher_acceptance_inventory_sha256",
 )
+STUDENT_PROTOCOL_PATHS = tuple(
+    "prereg/amendments/qwen3_adapted_student_calibration_v" + str(version) + ".json" for version in (1, 2, 3)
+)
 STUDENT_FIXED_BINDINGS = {
     "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",
     "teacher_acceptance_sha256": "5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337",
@@ -951,10 +954,14 @@ def student_prerequisites(root, release, request, provenance):
         ),
         "Student release differs from reviewed named science",
     )
+    protocol_paths = [
+        name
+        for name in STUDENT_PROTOCOL_PATHS
+        if release_files.get(name, {}).get("sha256") == protocol["artifact_sha256"]
+    ]
     require(
-        release_files.get("prereg/amendments/qwen3_adapted_student_calibration_v2.json", {}).get("sha256")
-        == protocol["artifact_sha256"],
-        "Student protocol artifact differs from release",
+        len(protocol_paths) == 1 and protocol.get("protocol_path", protocol_paths[0]) == protocol_paths[0],
+        "Student protocol artifact path or bytes differ from release",
     )
     qualification = upstream_evidence(
         root, contract.QUALIFICATION_JOB_ID, TEACHER_QUALIFY_TASK, "accepted_teacher_qualification"

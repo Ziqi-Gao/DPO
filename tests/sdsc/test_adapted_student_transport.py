@@ -60,6 +60,7 @@ def protocol_fixture():
         implementation_commit="1" * 40,
         acceptance_commit="2" * 40,
         review_status="accepted",
+        protocol_path="prereg/amendments/qwen3_adapted_student_calibration_v3.json",
         science_file_sha256={"src/science.py": "3" * 64},
     )
 
@@ -89,7 +90,7 @@ def client(monkeypatch):
     fixture.setUp()
     manifest = fixture.record()
     manifest["files"] = [
-        {"path": "prereg/amendments/qwen3_adapted_student_calibration_v2.json", "sha256": "f" * 64}
+        {"path": "prereg/amendments/qwen3_adapted_student_calibration_v3.json", "sha256": "f" * 64}
     ]
     cli.write_json(cli.state_root() / "runs/run-test.json", {"state": "deployed", "manifest": manifest})
     args = fixture.submit_args(dry_run=True)
@@ -168,8 +169,15 @@ def test_cli_calibration_requires_new_matching_preflight_id(client):
             cli.submit_command(args)
 
 
-def test_cli_receipt_binds_deployed_protocol_and_fixed_accepted_teacher(client):
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_cli_receipt_binds_deployed_protocol_and_fixed_accepted_teacher(client, version):
     _, args = client
+    path = cli.state_root() / "runs/run-test.json"
+    record = cli.read_json(path)
+    record["manifest"]["files"][0]["path"] = (
+        f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+    )
+    cli.write_json(path, record)
     request = dict(run_id=args.run_id, intent_id="a" * 32, teacher_job_id="54496291", preflight_job_id=None)
     receipt = dict(
         request,
@@ -187,6 +195,10 @@ def test_cli_receipt_binds_deployed_protocol_and_fixed_accepted_teacher(client):
         changed[key] = "invalid" if key == "student_protocol_sha256" else "0" * 64
         with pytest.raises(cli.UserError):
             cli.validate_student_receipt(changed, request)
+    record["manifest"]["files"].append(dict(record["manifest"]["files"][0]))
+    cli.write_json(path, record)
+    with pytest.raises(cli.UserError, match="protocol differs"):
+        cli.validate_student_receipt(receipt, request)
 
 
 @pytest.fixture
@@ -299,7 +311,7 @@ def prerequisite_boundary(tmp_path, monkeypatch):
     files = [{"path": name, "sha256": value} for name, value in protocol["science_file_sha256"].items()]
     files.append(
         {
-            "path": "prereg/amendments/qwen3_adapted_student_calibration_v2.json",
+            "path": "prereg/amendments/qwen3_adapted_student_calibration_v3.json",
             "sha256": protocol["artifact_sha256"],
         }
     )
@@ -379,6 +391,30 @@ def test_actual_prerequisite_builder_requires_both_producers_and_verified_accept
     assert proof["protocol"] == f.protocol
     f.contract.verify_teacher_acceptance.assert_called_once()
     f.contract.input_plans.assert_called_once()
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_prerequisite_protocol_selection_uses_verified_artifact_not_newest_filename(
+    prerequisite_boundary, version
+):
+    f = prerequisite_boundary
+    manifest_path = f.release / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    artifact_path = f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+    manifest["files"][-1]["path"] = artifact_path
+    if version < 3:
+        # Older immutable release contracts did not emit the optional path.
+        f.protocol.pop("protocol_path")
+    else:
+        f.protocol["protocol_path"] = artifact_path
+    manifest_path.write_text(json.dumps(manifest))
+    assert (
+        remote.student_prerequisites(remote.ROOT, f.release, f.request, f.provenance)["protocol"]
+        == f.protocol
+    )
+    f.protocol["protocol_path"] = "prereg/amendments/unknown.json"
+    with pytest.raises(ValueError, match="artifact path or bytes"):
+        remote.student_prerequisites(remote.ROOT, f.release, f.request, f.provenance)
 
 
 @pytest.mark.parametrize(

@@ -13,10 +13,11 @@ source and genuine provenance verified after SSH recovery; new matching v2
 preflight 54506703 completed and independently accepted on exp-19-01;
 the user authorized finite Quest monitoring and automatic submission of one
 fresh matching student calibration; the reviewed Quest supervisor automatically
-submitted calibration 54506821, now observed RUNNING on exp-19-15. Its initial
-observer stopped on the unrecognized-state guard; submission is fully
-reconciled and the separate read-only recovery has passed tests and plan review
-but has not yet launched).
+submitted calibration 54506821. It failed on exp-19-15 because replay-loss
+targets remained on CPU while logits were on GPU. The independently reviewed
+read-only observer fetched the terminal evidence and stopped. The v3 device
+correction and production-supervision preflight are implemented and pass CPU
+checks; independent acceptance and a new matching GPU preflight remain required).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -918,10 +919,9 @@ preflight and automatically submitted exactly one calibration **54506821** at
 and resource/science bindings are in
 `.sdsc/submissions/bffa12a0cfa5429baa44050fcdc2833f.json`; result path is
 `control-results/20260928T204012Z-b542b2e7e7fa-41669358/bffa12a0cfa5429baa44050fcdc2833f/`.
-Initial accounting and queue now agree **RUNNING** on **exp-19-15**. Logs show
+Initial accounting and queue agreed **RUNNING** on **exp-19-15**. Logs show
 source/history, teacher inputs, dataset and node-local model staging completed,
-followed by the calibration phase. This is not yet an optimizer-step or success
-claim.
+followed by the calibration phase; the terminal failure is recorded below.
 
 The original supervisor stopped at **20:47:20Z** when its first calibration
 query triggered the unrecognized-state guard; it has exited. The submission receipt is
@@ -949,7 +949,54 @@ Ruff/whitespace checks passed. The original unknown-state stop and scientific re
 remain unchanged. The prepared plan is
 `.sdsc/supervision/student54506821-readonly-v1/plan.json`, SHA
 `06e8955b475558cd2c110ef478b9e5190590293e8eef4714fa22a75899892535`.
-The observer has not yet launched at this implementation checkpoint.
+Observer implementation `0577527b5885a5541da270ebed39b6d345d23ca6` received
+independent ACCEPT at **2026-09-28T20:55:58Z**. It launched on Quest quser32
+at **20:56:40Z**, PID **3056553**, then correctly detected terminal failure,
+fetched eight small files / **52,966 bytes**, and stopped at **20:56:44Z**.
+Both Quest processes have exited; their original claims and records remain.
+The observer's real terminal state is in its flow directory and its fetched
+evidence is `.sdsc/fetched/54506821/fetch-we8da5a6/`.
+
+Calibration **54506821** ended **FAILED / 1:0**, elapsed **8m31s**, with the
+batch step failed and extern completed. Both GPU ranks reached
+`FactorialTrainer._training_micro_step` -> `VerifiedReplaySupervisor.compute_loss`
+-> `verified_replay_loss`, then cross-entropy rejected CPU target labels paired
+with CUDA logits (cuda:0 / cuda:1). This is a real training device-placement
+failure, distinct from the earlier FSDP configuration failure and the first
+observer's accounting issue. Initial checkpoint export succeeded; no successful
+student optimizer step, calibrated artifact or G0 result is established.
+Preserve the failed v2 job, accepted v2 protocol/config and teacher artifacts.
+A minimal device-placement correction, CPU regression at the actual supervision
+call boundary, independent science review and a fresh matching GPU preflight are
+required before the next calibration; do not reuse the passed v2 preflight for
+changed science or relax its acceptance gates.
+
+The proposed v3 successor changes only the three external loss operands in
+`VerifiedReplaySupervisor.compute_loss` to the actual logits device. It retains
+their dtypes and the CPU source batch; loss mathematics, gradients, RNG, sample
+ordering, teacher evidence and all budgets/thresholds are unchanged. Its GPU
+preflight now takes the unchanged 64-by-1536 synthetic canary through actual CPU
+`TrajectoryRecord`/collation -> canonical supervision -> GPU forward/loss,
+preserving FP32 loss, eight four-sample microsteps per rank and the original
+optimizer/checkpoint/restore gates. V3 requires exact per-rank evidence for this
+route; v1/v2 report paths remain historical. The new protocol/config preserves
+v1/v2 artifacts and the explicit-false v2 Accelerate YAML; its 48 named student
+files add only the two newly exercised collation/trajectory dependencies.
+All 47 teacher files, including the shared loss implementation, remain unchanged.
+V3 core SHA is `c727957ed2fa059481772ebbdef68982a0280436d41cb6be4acd5eff1fd70ec9`.
+
+The parent combined suite passed **189 tests** and independent scientific review
+passed **146**; additional trainer/scientific-repair regressions passed **79**.
+Ruff has no new findings: `artifacts/runs.py` retains the same pre-existing
+I001/F401 import findings reproduced from the previous HEAD; other affected
+files and whitespace checks pass. These CPU checks are not a v3 GPU PASS.
+The new isolated `tools/sdsc_student_supervise_v3.py` reuses the original finite
+supervisor under a hashed, accepted-v3 profile and a new actual preflight receipt.
+It preserves the old supervisor source and every original claim, waits one
+five-minute interval after persisting a known calibration receipt before the
+first calibration query, and saves raw status before classification. Unknown
+state still stops; no submission is retried and no G0/pilot is activated.
+No v3 preflight, calibration or supervision plan exists at this checkpoint.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters

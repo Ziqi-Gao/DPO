@@ -100,7 +100,7 @@ print(module.TASK)
         self.assertIsNone(before["train_argv"])
         self.assertFalse(before["execution_enabled"])
         self.args.output_dir = self.root / "literal ; $(touch NEVER)"
-        overrides = ["adapted_teacher=qwen3_accepted_student_v2", *worker.storage_overrides(self.args)]
+        overrides = ["adapted_teacher=qwen3_accepted_student_v3", *worker.storage_overrides(self.args)]
         plan = worker.build_plan(self.args, overrides, initial_checkpoint_sha256="f" * 64)
         command = plan["train_argv"]
         self.assertIn("posttrain_circuits.cli.train", command)
@@ -167,6 +167,11 @@ print(module.TASK)
 
         save(document)
         self.assertTrue(worker.validate_prerequisites(self.args, acceptance)[1]["preflight"]["verified"])
+        document["protocol"]["protocol_path"] = worker.PROTOCOL
+        save(document)
+        with patch.object(worker, "validate_preflight_upstream", return_value={"verified": True}) as verify:
+            worker.validate_prerequisites(self.args, acceptance)
+        self.assertEqual(verify.call_args.args[1]["student_protocol_path"], worker.PROTOCOL)
         bad = copy.deepcopy(document)
         bad["target"]["run_id"] = "another-release"
         save(bad)

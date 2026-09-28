@@ -65,11 +65,13 @@ class VerifiedReplaySupervisor:
     def compute_loss(self, model: Any, batch: SupervisionBatch) -> LossOutput:
         assert batch.rewards is not None
         logits = model(input_ids=batch.input_ids, attention_mask=batch.attention_mask).logits
+        # FSDP moves forward kwargs without mutating the original CPU batch.
+        # Keep every loss operand on the actual output device, preserving dtype.
         loss = verified_replay_loss(
             logits,
-            batch.input_ids,
-            batch.response_mask,
-            batch.rewards,
+            batch.input_ids.to(device=logits.device),
+            batch.response_mask.to(device=logits.device),
+            batch.rewards.to(device=logits.device),
             normalization=self.normalization,
         )
         return LossOutput(loss, {"verified_replay_loss": float(loss.detach()), **batch.metadata})

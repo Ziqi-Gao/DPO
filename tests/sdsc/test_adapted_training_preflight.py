@@ -202,6 +202,70 @@ print(module.TASK)
         self.assertEqual(result["student_protocol_sha256"], "0" * 64)
         self.assertEqual(result["science_git_head"], "1" * 40)
 
+    def test_v3_completion_requires_actual_cpu_canonical_boundary_on_both_ranks(self):
+        report, expected = preflight_fixture()
+        expected["student_protocol_path"] = worker.DEVICE_PROTOCOL_PATH
+        report["student_protocol_path"] = worker.DEVICE_PROTOCOL_PATH
+        for rank, item in enumerate(report["ranks"]):
+            item["student_protocol_path"] = worker.DEVICE_PROTOCOL_PATH
+            item["supervision_boundary"] = worker.supervision_boundary_evidence(f"cuda:{rank}")
+        worker.validate_completed_report(report, expected)
+        for key, wrong in (
+            ("original_batch_device", "cuda:0"),
+            ("loss_operands_device", "cuda:0"),
+            ("loss_logits_dtype", "bfloat16"),
+            ("collator", "direct_gpu_tensors"),
+            ("microsteps", 1),
+            ("original_batch_preserved", False),
+        ):
+            changed = copy.deepcopy(report)
+            changed["ranks"][1]["supervision_boundary"][key] = wrong
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "CPU collation"):
+                worker.validate_completed_report(changed, expected)
+        del report["ranks"][0]["supervision_boundary"]
+        with self.assertRaisesRegex(ValueError, "CPU collation"):
+            worker.validate_completed_report(report, expected)
+
+    def test_v3_real_collator_and_supervisor_preserve_canary_loss_gradient_and_rng(self):
+        import torch
+
+        from posttrain_circuits.learning.supervision.losses import verified_replay_loss
+
+        rows = [[(slot + token) % 7 for token in range(1536)] for slot in (0, 2, 4, 6)]
+        rng = torch.get_rng_state().clone()
+        supervisor, batch = worker.canonical_canary_batch(rows, [0, 2, 4, 6], 0)
+        self.assertEqual(batch.input_ids.tolist(), rows)
+        self.assertEqual(batch.input_ids.device.type, "cpu")
+        self.assertEqual(batch.response_mask.sum().item(), 4 * 256)
+        self.assertEqual(batch.metadata["effective_supervised_tokens"], 4 * 256)
+        source = torch.linspace(-1, 1, 7, dtype=torch.bfloat16).expand(4, 1536, 7).clone().requires_grad_()
+        reference = source.detach().clone().requires_grad_()
+        calls = []
+
+        def student(**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(logits=source)
+
+        actual, device = worker.canonical_canary_loss(student, supervisor, batch)
+        expected = verified_replay_loss(
+            reference.float(),
+            torch.tensor(rows),
+            batch.response_mask,
+            torch.ones(4),
+            normalization="sequence",
+        )
+        actual.backward()
+        expected.backward()
+        self.assertEqual(device, "cpu")  # CPU fixture does not certify a GPU report.
+        self.assertEqual(actual.dtype, torch.float32)
+        self.assertTrue(torch.equal(actual, expected))
+        self.assertTrue(torch.equal(source.grad, reference.grad))
+        self.assertTrue(torch.equal(torch.get_rng_state(), rng))
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0]["input_ids"], batch.input_ids)
+        self.assertIs(calls[0]["attention_mask"], batch.attention_mask)
+        self.assertEqual(batch.input_ids.tolist(), rows)
+
     def test_wrong_inventory_checkpoint_or_acceptance_is_rejected(self):
         changes = [
             ("inventory_sha256", "9" * 64),
@@ -276,9 +340,20 @@ print(module.TASK)
         self.assertNotIn("resolved_model_commit", result)
 
     def test_physical_student_update_and_full_state_restore_are_unchanged(self):
-        """Review seam: compare actual numerical AST after the teacher forward."""
+        """The historical branch and common optimizer/restore AST stay exact."""
         old_tree = ast.parse((ROOT / "tools/sdsc_training_preflight.py").read_text())
         new_tree = ast.parse(SCRIPT.read_text())
+
+        class LegacyBranch(ast.NodeTransformer):
+            def visit_If(self, node):
+                self.generic_visit(node)
+                if isinstance(node.test, ast.Name) and node.test.id == "device_boundary":
+                    return node.orelse
+                return node
+
+        # Only the explicitly selected v3 supervision branch differs. Its actual
+        # collator/forward/loss and report gates have direct behavioral coverage.
+        new_tree = LegacyBranch().visit(new_tree)
 
         def numerical_tail(tree):
             function = next(

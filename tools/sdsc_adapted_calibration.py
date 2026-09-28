@@ -28,7 +28,7 @@ from types import SimpleNamespace
 TASK = "qwen3-v2-adapted-calibration"
 KIND = "sdsc_adapted_canonical_sft_calibration_v1"
 RESULT = "adapted-calibration.json"
-PROTOCOL = "prereg/amendments/qwen3_adapted_student_calibration_v2.json"
+PROTOCOL = "prereg/amendments/qwen3_adapted_student_calibration_v3.json"
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 ACCEPTANCE_INVENTORY_SHA256 = "8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed"
 
@@ -340,7 +340,7 @@ def compose_base(args, api):
     )
     overrides = [
         *helper("sdsc_teacher_prepare").OVERRIDES,
-        "adapted_teacher=qwen3_accepted_student_v2",
+        "adapted_teacher=qwen3_accepted_student_v3",
         "protocol_amendment_path=" + PROTOCOL,
         *storage_overrides(args),
     ]
@@ -464,6 +464,8 @@ def validate_prerequisites(args, acceptance):
         "accepted_teacher_sha256": acceptance["accepted_teacher_sha256"],
         "teacher_acceptance_inventory_sha256": acceptance["inventory_sha256"],
     }
+    if "protocol_path" in protocol:
+        expected["student_protocol_path"] = protocol["protocol_path"]
     upstream = document["preflight"]
     require(isinstance(upstream, dict), "real matched adapted preflight is required before calibration")
     require(upstream["report"]["run_id"] != args.run_id, "calibration requires a fresh release")

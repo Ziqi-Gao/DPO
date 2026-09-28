@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[2]
@@ -82,6 +83,44 @@ class StudentJobTests(unittest.TestCase):
 
     def report(self, passed):
         return dict(self.job.identity, passed=passed, exit_code=0 if passed else 1)
+
+    def test_preflight_contract_preserves_optional_historical_path_and_passes_v3_device_gate(self):
+        for version in (None, 1, 2, 3):
+            protocol = dict(head="a" * 40, protocol_sha256="b" * 64)
+            if version is not None:
+                protocol["protocol_path"] = (
+                    f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+                )
+            proof = dict(
+                task="qwen3-v2-adapted-preflight",
+                protocol=protocol,
+                acceptance={"teacher_identity": {"fixture": True}},
+            )
+            report = dict(
+                task=proof["task"],
+                passed=True,
+                exit_code=0,
+                world_size=2,
+                g0_passed=False,
+                pilot_passed=False,
+                factorial_ready=False,
+                execution_class_certified=False,
+                student_protocol_sha256=protocol["protocol_sha256"],
+                science_git_head=protocol["head"],
+                teacher_identity=proof["acceptance"]["teacher_identity"],
+                accepted_teacher_sha256=self.contract.ACCEPTED_SHA256,
+                teacher_acceptance_inventory_sha256=self.contract.INVENTORY_SHA256,
+            )
+            calls = []
+            validator = SimpleNamespace(
+                validate_completed_report=lambda report, expected, target=calls: target.append(expected)
+            )
+            with patch.object(self.contract, "helper", return_value=validator):
+                self.contract.validate_report(report, proof)
+            if version is None:
+                self.assertNotIn("student_protocol_path", calls[0])
+            else:
+                self.assertEqual(calls[0]["student_protocol_path"], protocol["protocol_path"])
 
     def output(self):
         root = self.root / "node-output"

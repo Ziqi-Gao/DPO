@@ -155,6 +155,9 @@ STUDENT_BINDINGS = (
     "teacher_acceptance_sha256",
     "teacher_acceptance_inventory_sha256",
 )
+STUDENT_PROTOCOL_PATHS = tuple(
+    "prereg/amendments/qwen3_adapted_student_calibration_v" + str(version) + ".json" for version in (1, 2, 3)
+)
 STUDENT_FIXED_BINDINGS = {
     "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",
     "teacher_acceptance_sha256": "5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337",
@@ -928,15 +931,13 @@ def validate_student_receipt(receipt, request):
     if any(receipt.get(key) != value for key, value in STUDENT_FIXED_BINDINGS.items()):
         raise UserError("Adapted student receipt changed the accepted teacher")
     manifest = run_record(request["run_id"])["manifest"]
-    expected = next(
-        (
-            row["sha256"]
-            for row in manifest["files"]
-            if row["path"] == "prereg/amendments/qwen3_adapted_student_calibration_v2.json"
-        ),
-        None,
-    )
-    if expected is None or receipt["student_protocol_artifact_sha256"] != expected:
+    matches = [
+        row
+        for row in manifest["files"]
+        if row["path"] in STUDENT_PROTOCOL_PATHS
+        and row["sha256"] == receipt["student_protocol_artifact_sha256"]
+    ]
+    if len(matches) != 1:
         raise UserError("Adapted student receipt protocol differs from deployed snapshot")
 
 
