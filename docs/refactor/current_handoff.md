@@ -12,9 +12,11 @@ Accelerate FSDP default; separate v2 execution correction independently accepted
 source and genuine provenance verified after SSH recovery; new matching v2
 preflight 54506703 completed and independently accepted on exp-19-01;
 the user authorized finite Quest monitoring and automatic submission of one
-fresh matching student calibration; its deployment, immutable supervision plan,
-independent control review and submission dry-run passed; no new calibration
-has yet been submitted).
+fresh matching student calibration; the reviewed Quest supervisor automatically
+submitted calibration 54506821, now observed RUNNING on exp-19-15. Its initial
+observer stopped on the unrecognized-state guard; submission is fully
+reconciled and the separate read-only recovery has passed tests and plan review
+but has not yet launched).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -889,8 +891,7 @@ source bytes; its immutable preparation is under
 `.sdsc/replays/replay-1e7986506c3f44dc92c08b0f908e856f/`. Source and provenance
 uploads were verified; new provenance SHA is
 `eef4035f32d96f0ada77d48257358712c06d215d7a4a244cfa26ad24f0b5fbad`, with the
-unchanged original genuine history bundle. No new calibration has been
-submitted and no new supervisor has been launched at this preparation checkpoint.
+unchanged original genuine history bundle.
 The new finite `tools/sdsc_student_supervise` is restricted to verified preflight
 54506703 -> one matching canonical-SFT calibration -> terminal verification and
 bounded fetch, with 2 H100 / 24 CPU / 192 GiB / 2 hours, 300-second polling and a
@@ -907,6 +908,48 @@ The combined control/provenance/student-transport suite passed 114 tests;
 Ruff, shell parsing and whitespace checks passed.
 The matching submit dry-run passed; it did not submit a job. Instructions are
 in `docs/sdsc_student_automation.md`.
+
+Control implementation `93f8f8968776fa5ef3d27201e3fbd12b21e29c3b` received
+independent ACCEPT at **2026-09-28T20:45:59Z**; its review is in the flow's
+`independent-review.json`. The Quest **quser32** process launched at
+**20:46:48Z**, PID **2994231**, independently rechecked/fetched the successful
+preflight and automatically submitted exactly one calibration **54506821** at
+**20:47:19Z**, intent `bffa12a0cfa5429baa44050fcdc2833f`. Its verified receipt
+and resource/science bindings are in
+`.sdsc/submissions/bffa12a0cfa5429baa44050fcdc2833f.json`; result path is
+`control-results/20260928T204012Z-b542b2e7e7fa-41669358/bffa12a0cfa5429baa44050fcdc2833f/`.
+Initial accounting and queue now agree **RUNNING** on **exp-19-15**. Logs show
+source/history, teacher inputs, dataset and node-local model staging completed,
+followed by the calibration phase. This is not yet an optimizer-step or success
+claim.
+
+The original supervisor stopped at **20:47:20Z** when its first calibration
+query triggered the unrecognized-state guard; it has exited. The submission receipt is
+complete, `submission_outcome_unknown=false`, and no submission was repeated.
+The first raw status was not retained because classification raised before
+recording; the later real status is
+`.sdsc/diagnostics/adapted-student-v2/calibration-54506821-initial-status.json`.
+Preserve the original stopped state, plan, launch record and permanent claim;
+never re-arm that submitting flow. CPU reproduction through the original remote
+status composer and classifier matches this error when the queue is active but
+the main accounting row is absent. A roughly one-second post-submit observation
+and the later RUNNING result support initial accounting latency as the likely
+cause; without the original response it is not direct proof of empty accounting.
+Independent evidence is `calibration-54506821-independent-control-diagnosis.json`
+in the v2 diagnostic directory.
+
+The separate finite `tools/sdsc_student_observe.py` now binds only this reconciled
+job, retains raw status before classification, and permits only status/fetch.
+It preserves the original frozen control files, stopped state and permanent
+submission claim, shares the existing process lock, adds a distinct permanent
+observation claim, and cannot extend the old deadline or submit/cancel anything.
+Its eleven new tests and independent review passed, including the actual CLI
+subprocess boundary; the combined observer/supervisor suite passed 33 tests and
+Ruff/whitespace checks passed. The original unknown-state stop and scientific result gates
+remain unchanged. The prepared plan is
+`.sdsc/supervision/student54506821-readonly-v1/plan.json`, SHA
+`06e8955b475558cd2c110ef478b9e5190590293e8eef4714fa22a75899892535`.
+The observer has not yet launched at this implementation checkpoint.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
