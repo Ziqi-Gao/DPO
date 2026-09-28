@@ -1,5 +1,6 @@
 """Adapted-student CLI/remote trust boundaries; no SSH, models or actual jobs."""
 
+import base64
 import copy
 import importlib.util
 import io
@@ -26,6 +27,29 @@ remote_fixture = module("adapted_remote_fixture", Path(__file__).with_name("test
 cli, remote = client_fixture.cli, remote_fixture.remote
 TASK = "qwen3-v2-adapted-preflight"
 CALIBRATION = "qwen3-v2-adapted-calibration"
+
+
+def test_failed_calibration_fetch_includes_bounded_scientific_log_tails(tmp_path, monkeypatch):
+    result = tmp_path / "result"
+    artifacts = result / "artifacts"
+    artifacts.mkdir(parents=True)
+    (artifacts / "train.log").write_bytes(b"old training output\n" * 100000 + b"FSDP contract failed\n")
+    (artifacts / "export.log").write_text("initial checkpoint exported\n")
+    (artifacts / "initial_checkpoint.pt").write_bytes(b"not a fetch input")
+    receipt = dict(
+        task=CALIBRATION, job_id="54505782", run_id="failed", code_sha256="a" * 64, result_dir=str(result)
+    )
+    monkeypatch.setattr(remote, "bound_receipt", lambda request: (receipt, tmp_path / "submission"))
+    monkeypatch.setattr(remote, "verify_result", lambda receipt: {"verified": False})
+    logs = remote.logs({"lines": 2})["logs"]
+    assert logs["train.log"].endswith("FSDP contract failed\n")
+    assert len(logs["train.log"].splitlines()) == 2
+    fetched = remote.fetch({})
+    assert {entry["path"] for entry in fetched["files"]} == {"train.log", "export.log"}
+    assert all(entry["tail_only"] and entry["size"] <= 65537 for entry in fetched["files"])
+    training = next(entry for entry in fetched["files"] if entry["path"] == "train.log")
+    assert base64.b64decode(training["data_b64"]).endswith(b"FSDP contract failed\n")
+    assert fetched["result"]["verified"] is False
 
 
 def protocol_fixture():
@@ -65,7 +89,7 @@ def client(monkeypatch):
     fixture.setUp()
     manifest = fixture.record()
     manifest["files"] = [
-        {"path": "prereg/amendments/qwen3_adapted_student_calibration_v1.json", "sha256": "f" * 64}
+        {"path": "prereg/amendments/qwen3_adapted_student_calibration_v2.json", "sha256": "f" * 64}
     ]
     cli.write_json(cli.state_root() / "runs/run-test.json", {"state": "deployed", "manifest": manifest})
     args = fixture.submit_args(dry_run=True)
@@ -275,7 +299,7 @@ def prerequisite_boundary(tmp_path, monkeypatch):
     files = [{"path": name, "sha256": value} for name, value in protocol["science_file_sha256"].items()]
     files.append(
         {
-            "path": "prereg/amendments/qwen3_adapted_student_calibration_v1.json",
+            "path": "prereg/amendments/qwen3_adapted_student_calibration_v2.json",
             "sha256": protocol["artifact_sha256"],
         }
     )

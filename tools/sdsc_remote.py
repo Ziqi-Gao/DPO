@@ -952,7 +952,7 @@ def student_prerequisites(root, release, request, provenance):
         "Student release differs from reviewed named science",
     )
     require(
-        release_files.get("prereg/amendments/qwen3_adapted_student_calibration_v1.json", {}).get("sha256")
+        release_files.get("prereg/amendments/qwen3_adapted_student_calibration_v2.json", {}).get("sha256")
         == protocol["artifact_sha256"],
         "Student protocol artifact differs from release",
     )
@@ -2256,6 +2256,10 @@ def selected_files(receipt, directory, lines):
     if receipt.get("task") == TEACHER_QUALIFY_TASK:
         files.extend(
             (name, result_dir / "artifacts" / name, False) for name in sorted(TEACHER_QUALIFY_SMALL_RESULTS)
+        )
+    if receipt.get("task") == "qwen3-v2-adapted-calibration":
+        files.extend(
+            (name, result_dir / "artifacts" / name, True) for name in ("train.log", "export.log")
         )
     return files
 

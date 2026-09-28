@@ -932,7 +932,7 @@ def validate_student_receipt(receipt, request):
         (
             row["sha256"]
             for row in manifest["files"]
-            if row["path"] == "prereg/amendments/qwen3_adapted_student_calibration_v1.json"
+            if row["path"] == "prereg/amendments/qwen3_adapted_student_calibration_v2.json"
         ),
         None,
     )
@@ -980,6 +980,8 @@ def job_command(args):
         }
         if _intent["request"].get("task") == "qwen3-v2-teacher-adapt":
             allowed.update(TEACHER_ADAPT_SMALL_RESULTS)
+        if _intent["request"].get("task") == "qwen3-v2-adapted-calibration":
+            allowed.update({"train.log", "export.log"})
         if _intent["request"].get("task") in TEACHER_FIT_TASKS:
             allowed.update(TEACHER_FIT_SMALL_RESULTS)
         if _intent["request"].get("task") == TEACHER_QUALIFY_TASK:

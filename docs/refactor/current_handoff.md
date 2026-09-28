@@ -4,8 +4,11 @@ Last updated: 2026-09-28 (teacher fit 54494742, qualification 54496291 and
 independent CPU audit 54497294 completed; adapted teacher independently accepted
 under the reviewed teacher-only 256-token protocol; acceptance published and
 hash-verified on persistent SDSC storage; a separate adapted-teacher student
-preflight/calibration implementation independently reviewed and accepted; first
-new preflight 54504816 failed before Python startup due to Slurm script relocation).
+preflight/calibration implementation independently reviewed and accepted; startup
+failure 54504816 fixed by an independently reviewed transport successor;
+new preflight 54504895 completed with verified GPU and persistent-output evidence;
+student calibration 54505782 failed closed before its first update due to an
+Accelerate FSDP default; separate v2 execution correction being reviewed).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -748,8 +751,72 @@ scientific files remain byte-identical to their original accepted commits.
 This review-only handoff commit accepts the locator correction, not new science
 or GPU results; the original scientific implementation/acceptance remains
 9129f32/77603c1. Genuine provenance may export the descendant transport pair.
-New execution needs a fresh release and job ID.
-There has been no student optimizer update or new GPU preflight success.
+The separate transport acceptance commit is
+`97093f5f3bd9c05511739c38324e94c4e1c6adf8`.
+Fresh preflight **54504895**, intent `db2ff743d58a4762ae371073239db939`,
+uses release `20260928T174604Z-0e406f026b38-67bb45b3`, source SHA
+`0e406f026b388f81f5f81bb94aacb3a27d9454ad6ba5a1313c47f16013db8d6f`
+and genuine provenance SHA
+`e03c3f54684b8ab646b72e0949675fce50b1cca46690b2506207715fcccb05be`.
+The 18:06 UTC query confirms job/batch/extern COMPLETED / 0:0 in **14m04s**
+on exp-19-07. Both ranks pass the global-64 full-parameter optimizer window,
+NCCL, full model/optimizer/scheduler/RNG restore, and actual learned teacher
+forward. The complete published inventory contains **10,946,233,935 bytes**,
+including the top-level report, verified on persistent storage;
+the final status independently validates the report and publication inventory.
+Report SHA is `87db798b5d80fd003614a5ceb4962885e21095b480d0b487f4c787c13a555777`.
+Five small reports/logs (62,050 bytes) were fetched to
+`.sdsc/fetched/54504895/fetch-w7t20yxp/`; final accounting is
+`.sdsc/diagnostics/adapted-student-v1/preflight-54504895-final-status.json`.
+Resources were two H100 / 24 CPU / 192 GiB / one hour. Preserve this accepted
+preflight. Independent review by `/root/student_migration_audit` at 18:10:47Z
+accepted the actual report, teacher identity, checkpoint inventory and calibration
+upstream gate. Host peak/headroom were 104.538/87.462 GiB; reserved GPU peaks
+were 44.887/29.787 GiB. Fetched log tails are diagnostic excerpts, not the
+byte-identical full persistent logs.
+
+Student calibration **54505782**, intent `f2f1d5c7614a46d7b1aedbef33c066d4`,
+was submitted once at **18:11:44 UTC**, binding accepted teacher `54496291`
+and verified preflight `54504895`. It uses **2 H100 / 24 CPU / 192 GiB / two
+hours**, `nwu181`, `nairr-gpu-shared` / `nairr-gpu-shared-normal`, no requeue.
+Fresh release `20260928T180733Z-4392a35b7151-7657d18c` contains 573 files /
+6,443,492 source bytes, SHA
+`4392a35b71518df85c5669bd1164878f2c2f3cb7d3e7dc0910c97abafa0480a4`.
+Genuine provenance SHA is
+`4301ea0a6d46fd88a60b983642b99e0faba7a726ecfb4bec65aeb9398ef88af0`;
+science HEAD remains `97093f5f3bd9c05511739c38324e94c4e1c6adf8`.
+The actual receipt binds prerequisite SHA
+`1b6eddf8cfc0dd77a996feea796b901f8ffa7c838f0f9a8017667d61dc277e57`.
+Final accounting reports **FAILED / 1:0 in 5m13s** on exp-19-07. Source/science,
+all inputs and initial checkpoint export passed. Both training ranks then failed
+before their first optimizer update: Accelerate 1.10.1 defaults
+`fsdp_use_orig_params=true`, while the unchanged FSDP validator requires false.
+The old shared YAML omitted the field, and launcher environment construction
+overrides an external variable. This is an execution configuration failure, not
+teacher-quality or training-result acceptance. Preserve this run and intent.
+Its persistent output is under
+`control-results/20260928T180733Z-4392a35b7151-7657d18c/f2f1d5c7614a46d7b1aedbef33c066d4/`.
+Dry-run, deployment, provenance, exact command and actual submission/status
+evidence are under `.sdsc/diagnostics/adapted-student-v1/calibration-*`.
+The published 7,209-byte full `artifacts/train.log` has independently verified
+SHA `8e89ae1970096a1a1583a2628347e2f2280831c65032de9a5eca4d87a041dcb2`.
+No new detached Quest supervisor was launched. A separate proposed student-v2
+execution correction preserves the original v1 protocol, teacher configuration
+and all 47 producer science files; it uses a new two-H100 Accelerate YAML with
+explicit `fsdp_use_orig_params=false` and a matching student protocol/config
+group. All scientific thresholds, teacher data, training budgets and validators
+remain unchanged. Independent implementation review and a new matching real GPU
+preflight are required before a fresh calibration; no old preflight guard is
+waived and no failed job is retried under its original identity.
+The real pinned Accelerate parser/environment/plugin regression reproduces
+the original guard failure and confirms false through the corrected actual
+worker argv; all other generated environment values are equal. The combined
+protocol/consumer/calibration/CLI/remote suite passes **242 tests**, and the
+separate unchanged-validator/wrapper suite passes **68**. Independent review
+additionally passes 122 cases. Python parsing, Ruff and whitespace checks pass.
+Completed calibration `logs`/`fetch` now include bounded training/export log
+tails; neither downloads checkpoints. These are CPU/transport checks, not a
+new v2 GPU PASS.
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
 still need separately reviewed migration. Details and next commands are in
@@ -800,16 +867,17 @@ raw-evidence audit and separate teacher-result acceptance now all pass.
 Protocol and acceptance conditions: `docs/refactor/sdsc_teacher_adaptation_20260928.md`.
 
 The protocol implementation and separate review-only acceptance are complete.
-Teacher-result acceptance and persistent publication are complete. Student
-continuation still requires coherent downstream adapter migration and a matching
-new preflight. Any teacher model/generation-policy change needs its
+Teacher-result acceptance and persistent publication are complete. The student
+calibration adapter is independently accepted; its matching new GPU preflight
+is recorded above. Full G0/pilot adapters still need coherent migration.
+Any teacher model/generation-policy change needs its
 own reviewed scientific proposal; never rewrite generated outputs or relax
-thresholds. Provenance permits up to 16 audited linear unpublished commits
-ending in an explicit reviewed pair; 40 tests and independent review passed
-without public-ref/history mutation. The already deployed qualification bundle
-uses all 16 slots and remains valid; exporting a later documentation HEAD must
-first resolve the reviewed history bound, without rewriting history or pretending
-that public refs advanced. Old preflight 54345604 does not match new
+thresholds. The independently reviewed student implementation raises the bounded
+provenance history limit from 16 to 32 audited linear unpublished commits,
+retaining the genuine final implementation/review pair and all other export
+checks. Boundary tests accept 32 and reject 33; no public ref or history moved.
+The deployed 16-commit qualification bundle remains valid.
+Old preflight 54345604 does not match new
 scientific inventory: calibration needs a matching new preflight or separately
 reviewed compatibility change. Old v3-pinned adapters/plans must migrate
 coherently before any full successor is armed.

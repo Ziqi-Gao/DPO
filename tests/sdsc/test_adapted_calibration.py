@@ -100,7 +100,7 @@ print(module.TASK)
         self.assertIsNone(before["train_argv"])
         self.assertFalse(before["execution_enabled"])
         self.args.output_dir = self.root / "literal ; $(touch NEVER)"
-        overrides = ["adapted_teacher=qwen3_accepted_v1", *worker.storage_overrides(self.args)]
+        overrides = ["adapted_teacher=qwen3_accepted_student_v2", *worker.storage_overrides(self.args)]
         plan = worker.build_plan(self.args, overrides, initial_checkpoint_sha256="f" * 64)
         command = plan["train_argv"]
         self.assertIn("posttrain_circuits.cli.train", command)
@@ -108,7 +108,7 @@ print(module.TASK)
         self.assertEqual(command[command.index("--num_processes") + 1], "2")
         self.assertEqual(command[command.index("--num_cpu_threads_per_process") + 1], "12")
         self.assertIn(
-            str(self.args.science_root / "configs/accelerate/fsdp_2gpu_server_scheduler.yaml"), command
+            str(self.args.science_root / "configs/accelerate/fsdp_2gpu_adapted_student_v2.yaml"), command
         )
         self.assertNotIn("CUDA_VISIBLE_DEVICES", plan["environment_updates"])
         self.assertFalse((self.root / "NEVER").exists())

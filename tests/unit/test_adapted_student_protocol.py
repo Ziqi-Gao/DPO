@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -27,7 +28,7 @@ def config():
         [
             "g0=qwen3_v2_eap_separation",
             "experiment=canonical_sft",
-            "adapted_teacher=qwen3_accepted_v1",
+            "adapted_teacher=qwen3_accepted_student_v2",
             f"protocol_amendment_path={protocol.PROTOCOL_PATH}",
         ],
         config_root=ROOT / "configs",
@@ -57,10 +58,80 @@ def test_declared_protocol_and_config_match_actual_accepted_teacher():
     assert value["student"]["max_completion_length"] == 128
     assert value["producer"]["readiness_max_new_tokens"] == 256
     assert (
-        yaml.safe_load((ROOT / "configs/adapted_teacher/qwen3_accepted_v1.yaml").read_text())
+        yaml.safe_load((ROOT / protocol.ADAPTED_TEACHER_CONFIG_PATH).read_text())
         == protocol.adapted_teacher_config()
     )
     protocol.validate_student_config(config())
+
+
+def test_successor_preserves_original_protocol_science_and_teacher_configuration():
+    predecessor_raw = (ROOT / protocol.PREDECESSOR["protocol_path"]).read_bytes()
+    assert hashlib.sha256(predecessor_raw).hexdigest() == protocol.PREDECESSOR["artifact_sha256"]
+    expected = json.loads(predecessor_raw)
+    expected["protocol_id"] = protocol.PROTOCOL_ID
+    expected["accepted_teacher"]["student_protocol_path"] = protocol.PROTOCOL_PATH
+    expected["execution"].update(
+        fsdp_use_orig_params=False,
+        accelerate_config=protocol.ACCELERATE_CONFIG_PATH,
+    )
+    replacements = {
+        "configs/adapted_teacher/qwen3_accepted_v1.yaml": protocol.ADAPTED_TEACHER_CONFIG_PATH,
+        "configs/accelerate/fsdp_2gpu_server_scheduler.yaml": protocol.ACCELERATE_CONFIG_PATH,
+    }
+    expected["science_files"] = [replacements.get(path, path) for path in expected["science_files"]]
+    assert list(protocol.SCIENCE_PATHS) == expected["science_files"]
+    expected["review_contract"]["acceptance_allowed_changed_paths"][0] = protocol.PROTOCOL_PATH
+    expected["review"] = copy.deepcopy(protocol.REVIEW_PROPOSED)
+    successor = protocol.proposed_adapted_student_protocol()
+    assert successor.pop("predecessor") == protocol.PREDECESSOR
+    assert successor.pop("repair") == {
+        "kind": "explicit_accelerate_fsdp_use_orig_params_false",
+        "scientific_settings_and_teacher_evidence_unchanged": True,
+        "reuse_predecessor_gpu_preflight": False,
+    }
+    assert successor == expected
+    teacher_config = yaml.safe_load((ROOT / "configs/adapted_teacher/qwen3_accepted_v1.yaml").read_text())
+    teacher_config["student_protocol_path"] = protocol.PROTOCOL_PATH
+    assert teacher_config == protocol.adapted_teacher_config()
+
+
+def test_successor_accelerate_config_only_makes_false_use_orig_params_explicit():
+    previous = yaml.safe_load((ROOT / "configs/accelerate/fsdp_2gpu_server_scheduler.yaml").read_text())
+    previous["fsdp_config"]["fsdp_use_orig_params"] = False
+    assert yaml.safe_load((ROOT / protocol.ACCELERATE_CONFIG_PATH).read_text()) == previous
+
+
+def test_run_amendment_dispatches_composed_v2_to_actual_student_resolver(monkeypatch, tmp_path):
+    from posttrain_circuits.artifacts.runs import resolve_protocol_amendment
+
+    sentinel = object()
+    calls = []
+
+    def resolve(root, *, expected_head):
+        calls.append((root, expected_head))
+        return sentinel
+
+    monkeypatch.setattr(protocol, "resolve_adapted_student_protocol", resolve)
+    monkeypatch.chdir(tmp_path)
+    assert resolve_protocol_amendment(config(), expected_head="a" * 40) is sentinel
+    assert calls == [(tmp_path, "a" * 40)]
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["prereg/amendments/qwen3_adapted_student_calibration_v1.json", "prereg/amendments/unknown.json"],
+)
+def test_run_amendment_dispatch_rejects_previous_or_unknown_path(path, monkeypatch):
+    from posttrain_circuits.artifacts.runs import resolve_protocol_amendment
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("unreviewed amendment must not reach the active student resolver")
+
+    monkeypatch.setattr(protocol, "resolve_adapted_student_protocol", unexpected)
+    value = config()
+    value["protocol_amendment_path"] = path
+    with pytest.raises(ValueError, match="not reviewed"):
+        resolve_protocol_amendment(value, expected_head="a" * 40)
 
 
 @pytest.mark.parametrize(
@@ -75,6 +146,11 @@ def test_declared_protocol_and_config_match_actual_accepted_teacher():
         (("student", "max_steps"), 1000),
         (("execution", "gpu_count"), 4),
         (("execution", "host_memory_gib"), 96),
+        (("execution", "fsdp_use_orig_params"), True),
+        (("execution", "accelerate_config"), "configs/accelerate/fsdp_2gpu_server_scheduler.yaml"),
+        (("predecessor", "acceptance_commit"), "a" * 40),
+        (("predecessor", "artifact_sha256"), "a" * 64),
+        (("repair", "reuse_predecessor_gpu_preflight"), True),
         (("producer", "accepted_candidates"), 2047),
         (("accepted_teacher", "teacher_identity", "teacher_checkpoint_sha256"), "f" * 64),
         (("producer", "acceptance_commit"), "a" * 40),
@@ -127,6 +203,7 @@ def test_proposed_does_not_allow_execution_and_review_only_hash_is_stable():
     [
         (("seed",), 43),
         (("seed",), 42.0),
+        (("protocol_amendment_path",), "prereg/amendments/qwen3_adapted_student_calibration_v1.json"),
         (("trainer", "max_steps"), 119),
         (("trainer", "global_batch_size"), 32),
         (("trainer", "max_microbatch_size"), 8),
@@ -207,6 +284,17 @@ def history(tmp_path, monkeypatch):
         return git("rev-parse", "HEAD")
 
     git("init", "-q", "--template=")
+    predecessor = copy.deepcopy(protocol.PREDECESSOR)
+    predecessor_payload = json.loads((ROOT / predecessor["protocol_path"]).read_bytes())
+    predecessor_payload["review"] = copy.deepcopy(protocol.REVIEW_PROPOSED)
+    write(predecessor["protocol_path"], raw(predecessor_payload))
+    predecessor["implementation_commit"] = commit("Fixture predecessor proposed implementation")
+    predecessor_payload["review"] = accepted(predecessor["implementation_commit"])["review"]
+    predecessor_raw = raw(predecessor_payload)
+    write(predecessor["protocol_path"], predecessor_raw)
+    predecessor["acceptance_commit"] = commit("Fixture predecessor independent acceptance")
+    predecessor["artifact_sha256"] = hashlib.sha256(predecessor_raw).hexdigest()
+    monkeypatch.setattr(protocol, "PREDECESSOR", predecessor)
     for path in protocol.SCIENCE_PATHS:
         write(path, b"fixture source\n")
     write(protocol.PROTOCOL_PATH, raw(protocol.proposed_adapted_student_protocol()))
@@ -234,6 +322,7 @@ def history(tmp_path, monkeypatch):
         implementation=implementation,
         producer=producer,
         upstream_calls=calls,
+        predecessor=predecessor,
     )
 
 
@@ -302,6 +391,27 @@ def test_real_git_relabelled_implementation_and_reedited_protocol_rejected(histo
     history.commit("Fixture second acceptance change")
     with pytest.raises(protocol.AdaptedStudentProtocolError, match="exactly one"):
         protocol.resolve_adapted_student_protocol(history.root)
+
+
+@pytest.mark.parametrize("mode", ["dirty", "staged", "committed"])
+def test_real_git_predecessor_artifact_cannot_be_rewritten(history, mode):
+    accept_history(history)
+    path = history.predecessor["protocol_path"]
+    history.write(path, raw({"rewritten": True}))
+    if mode == "staged":
+        history.git("add", path)
+    elif mode == "committed":
+        history.commit("Fixture unreviewed predecessor rewrite")
+    with pytest.raises(protocol.AdaptedStudentProtocolError, match="predecessor accepted artifact"):
+        protocol.resolve_adapted_student_protocol(history.root)
+
+
+def test_real_git_predecessor_must_be_actual_adjacent_review_pair(history, monkeypatch):
+    changed = {**history.predecessor, "implementation_commit": history.implementation}
+    monkeypatch.setattr(protocol, "PREDECESSOR", changed)
+    history.write(protocol.PROTOCOL_PATH, raw(protocol.proposed_adapted_student_protocol()))
+    with pytest.raises(protocol.AdaptedStudentProtocolError, match="predecessor.*ancestry"):
+        protocol.resolve_adapted_student_protocol(history.root, require_accepted=False)
 
 
 @pytest.mark.parametrize(

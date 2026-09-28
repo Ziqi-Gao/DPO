@@ -5,7 +5,7 @@ CPU audit `54497294` now has a separate student consumer. The original stopped
 v3 flows remain historical; do not restart them or substitute this teacher into
 their original prerequisites.
 
-`prereg/amendments/qwen3_adapted_student_calibration_v1.json` requires a genuine
+`prereg/amendments/qwen3_adapted_student_calibration_v2.json` requires a genuine
 implementation commit and a distinct subsequent review-only acceptance commit.
 It preserves all 47 accepted producer files and binds the named student
 implementation. Acceptance of this protocol is not acceptance of GPU results.
@@ -98,3 +98,35 @@ byte-identical. The independent transport review and actual new deployment
 identity bind this locator correction; they do not create scientific acceptance
 or permit reuse of failed-job evidence. Real regression fixtures execute the
 launcher from a separate fake Slurm spool with literal metacharacter arguments.
+
+## Accelerate FSDP correction
+
+Preflight `54504895` passed both ranks and persistent publication in 14m04s.
+Its matching calibration `54505782` then failed (FAILED / 1:0 in 5m13s), before
+the first optimizer update. The original initial checkpoint export succeeded;
+both training ranks rejected their prepared FSDP tree because
+`_use_orig_params` was true instead of the reviewed false value.
+
+The pinned Accelerate 1.10.1 launcher defaults `--fsdp_use_orig_params` to true
+and writes that value into the child environment. The old shared YAML omitted
+the setting. An external environment value cannot repair this because the
+launcher overwrites it. The synthetic preflight directly constructed FSDP with
+`use_orig_params=False`, so that PASS did not exercise this launcher seam.
+
+The separate v2 protocol and
+`configs/accelerate/fsdp_2gpu_adapted_student_v2.yaml` explicitly restore the
+already required false setting. Original shared configuration, accepted v1
+protocol and teacher configuration remain preserved. The new
+`qwen3_accepted_student_v2` group binds the same accepted teacher to the new
+student protocol. No model, teacher evidence, scientific threshold, optimizer,
+batch/token budget or validator is relaxed. The real parser → launch environment
+→ FSDP plugin regression covers the legacy true setting and new false setting.
+
+Execution must wait for a new implementation commit and independent review-only
+acceptance of v2, then a fresh matching GPU preflight and calibration. Preserve
+54504895 as valid evidence for its original version; the existing strict HEAD,
+protocol and named-file guards prevent borrowing it for changed execution.
+The failed calibration's full 7,209-byte training log has publication-verified
+SHA `8e89ae1970096a1a1583a2628347e2f2280831c65032de9a5eca4d87a041dcb2`;
+its bounded logs, original report and final accounting are retained under
+`.sdsc/diagnostics/adapted-student-v1/calibration-54505782-*`.
