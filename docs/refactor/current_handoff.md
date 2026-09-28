@@ -738,10 +738,17 @@ Accounting reports FAILED / 2:0 after two seconds, before Python/model execution
 Slurm copied the shell launcher into its spool directory; its `dirname($0)`
 lookup therefore searched for the Python worker in Slurm spool instead of the
 immutable release. Preserve this job/receipt and bounded fetched startup logs.
-The proposed transport correction resolves the unchanged accepted Python worker
-through the already bound absolute release argument and requires separate review. All 46 named student
-and 47 teacher scientific files remain unchanged; the scientific protocol is
-not reaccepted or weakened. New execution needs a fresh release and job ID.
+Transport implementation `cba65bfecbba26fafffc1c63e2b5a7f0237beba0` adds
+`tools/sdsc_student_launch.sh`, which resolves the unchanged accepted Python
+worker through the bound absolute release argument. Independent reviewer
+`/root/student_migration_audit` accepted this seven-file transport delta at
+2026-09-28T17:44:34Z after 47 passing spool/transport/wrapper tests and a real
+old-failure/new-success Bash reproduction. All 46 named student and 47 teacher
+scientific files remain byte-identical to their original accepted commits.
+This review-only handoff commit accepts the locator correction, not new science
+or GPU results; the original scientific implementation/acceptance remains
+9129f32/77603c1. Genuine provenance may export the descendant transport pair.
+New execution needs a fresh release and job ID.
 There has been no student optimizer update or new GPU preflight success.
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
