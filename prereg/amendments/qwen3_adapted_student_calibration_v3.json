@@ -193,10 +193,10 @@
     "later_unrelated_commits_invalidate_review": false
   },
   "review": {
-    "status": "proposed",
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "reviewed_at_utc": null,
-    "rationale": null
+    "rationale": "Independent review accepts the narrow actual-logits-device transfer for canonical-SFT supervision and the real CPU-collation/supervisor two-rank preflight. Loss values, gradients, masks, dtypes, RNG, global64/token budgets, FSDP/full-state gates, student128, all teacher thresholds and all 47 accepted teacher source blobs remain unchanged. The 48 named student sources and genuine v1/v2 predecessor lineage are bound to this implementation. A fresh matched v3 GPU preflight is mandatory before one canonical-SFT calibration; this review grants no GPU, calibration, G0 or pilot success claim.",
+    "reviewed_at_utc": "2026-09-28T21:13:16.995421Z",
+    "reviewed_implementation_commit": "6ae57f0ef0a4cd594f1692ed1550c826dc9b37ee",
+    "reviewer": "independent Codex agent /root/student_migration_audit",
+    "status": "accepted"
   }
 }

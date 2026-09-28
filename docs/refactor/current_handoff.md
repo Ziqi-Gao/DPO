@@ -16,8 +16,9 @@ fresh matching student calibration; the reviewed Quest supervisor automatically
 submitted calibration 54506821. It failed on exp-19-15 because replay-loss
 targets remained on CPU while logits were on GPU. The independently reviewed
 read-only observer fetched the terminal evidence and stopped. The v3 device
-correction and production-supervision preflight are implemented and pass CPU
-checks; independent acceptance and a new matching GPU preflight remain required).
+correction and production-supervision preflight passed CPU checks and independent
+review; this review-only acceptance still requires a new matching GPU preflight
+before another calibration).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -971,7 +972,7 @@ call boundary, independent science review and a fresh matching GPU preflight are
 required before the next calibration; do not reuse the passed v2 preflight for
 changed science or relax its acceptance gates.
 
-The proposed v3 successor changes only the three external loss operands in
+The independently accepted v3 successor changes only the three external loss operands in
 `VerifiedReplaySupervisor.compute_loss` to the actual logits device. It retains
 their dtypes and the CPU source batch; loss mathematics, gradients, RNG, sample
 ordering, teacher evidence and all budgets/thresholds are unchanged. Its GPU
@@ -996,7 +997,16 @@ It preserves the old supervisor source and every original claim, waits one
 five-minute interval after persisting a known calibration receipt before the
 first calibration query, and saves raw status before classification. Unknown
 state still stops; no submission is retried and no G0/pilot is activated.
-No v3 preflight, calibration or supervision plan exists at this checkpoint.
+Implementation `6ae57f0ef0a4cd594f1692ed1550c826dc9b37ee` received overall
+independent ACCEPT from `/root/student_migration_audit` at
+**2026-09-28T21:13:16.995421Z**, incorporating the separately reviewed control
+adapter and its 29 passing tests. The exact review is preserved under
+`.sdsc/diagnostics/adapted-student-v3/implementation-independent-review.json`.
+This distinct acceptance changes only the v3 protocol review block and this
+handoff. SSH/account/partition/QoS/path checks passed at **21:11:03Z**; a fresh
+metadata-only runtime check also confirmed the original Python binary SHA and
+five package pins without importing GPU libraries. No v3 preflight, calibration
+or supervision plan exists at this acceptance checkpoint.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
