@@ -9,9 +9,9 @@ failure 54504816 fixed by an independently reviewed transport successor;
 new preflight 54504895 completed with verified GPU and persistent-output evidence;
 student calibration 54505782 failed closed before its first update due to an
 Accelerate FSDP default; separate v2 execution correction independently accepted,
-source release uploaded, but provenance upload unconfirmed; the latest recovery
-check found the quser32 SSH socket absent; no v2 GPU job submitted, awaiting connection recovery
-and upload reconciliation before its new matching GPU preflight).
+source and genuine provenance verified after SSH recovery; new matching v2
+preflight 54506703 submitted once and observed RUNNING on exp-19-01;
+its scientific result and subsequent calibration remain pending).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -160,33 +160,21 @@ GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
 science, SSH loss, changed control hashes or unresolved submissions; no blind
 retry, auto-cancellation, full factorial or Gemma.
 
-The last successful connection check ran from Quest **quser32** at
-2026-09-28T18:29Z using the runtime-computed existing master
-`$HOME/.ssh/cm/sdsc-quser32`. SSH confirmed zgao12@login02; Slurm commands,
-source paths and persistent project result paths passed. Account nwu181 and the
-shared partition jointly permit `nairr-gpu-shared-normal`. Runtime metadata now
-completed successfully: Python 3.12.13, Torch 2.8.0+cu128, NumPy 1.26.4,
-Transformers 4.56.2 and Accelerate 1.10.1. No authentication or environment
-modification was attempted. GPU-node mounts remain checked per job. Evidence:
-`.sdsc/diagnostics/adapted-student-v2/connection-check.json`. Both old formal
-flows remain stopped.
-At **2026-09-28T18:41:51Z**, the shared master still passed `ssh -O check`,
-but a remote `/usr/bin/true` command timed out after 15 seconds. Provenance
-upload and one read-only reconciliation had already timed out; further remote
-operations stopped without authentication fallback or submission retry. Evidence:
-`.sdsc/diagnostics/adapted-student-v2/ssh-response-check.json`. This establishes
-an unresponsive command channel, not a proven authentication expiry or storage
-failure. The user must restore the shared connection in an ordinary terminal on
-**quser32**; compute its path as `$HOME/.ssh/cm/sdsc-$(hostname -s)` at runtime.
-After the user reported recovery and explicitly requested submission, the
-**20:10:18Z** check could not complete remote control discovery. A single
-diagnostic at **20:10:51Z** found the shared socket absent (`No such file or
-directory`) at `/home/del6500/.ssh/cm/sdsc-quser32`; its required master check
-failed before any remote diagnostic ran. No authentication retry, provenance
-upload or Slurm submission followed. Evidence:
-`.sdsc/diagnostics/adapted-student-v2/recovered-command-channel-check.json` and
-the failed `.sdsc/check.json`. Manual recovery must occur on this same Quest
-host; a connection on another host is insufficient.
+The latest successful connection check ran from Quest **quser32** at
+**2026-09-28T20:13:38Z**, after the user restored the shared master and requested
+another attempt. Its runtime-computed path is `$HOME/.ssh/cm/sdsc-$(hostname -s)`.
+SSH confirmed zgao12@login02; Slurm commands, source paths and project result
+paths passed. Account nwu181 and the shared partition jointly permit
+`nairr-gpu-shared-normal`. The check's optional 15-second runtime probe timed
+out; a separate bounded check at **20:15:46Z** verified Python 3.12.13 and its
+original executable SHA, Torch 2.8.0+cu128, NumPy 1.26.4, Transformers 4.56.2,
+Accelerate 1.10.1 and tokenizers 0.22.0 without importing GPU libraries or
+changing the environment. Evidence is in the v2 diagnostic directory's
+`connection-retry-check.json` and `runtime-recovered-check.json`. Every GPU job
+still verifies its own mounts. The earlier command-channel timeout and absent
+socket evidence remain preserved; neither was treated as authorization to
+retry authentication or repeat an uncertain submission. Both old formal flows
+remain stopped.
 
 Earlier teacher prompt diagnostics are complete; none establishes formal readiness.
 All used one H100 / 24 CPU / 192 GiB / at most 30 minutes, retained exact raw
@@ -851,23 +839,35 @@ genuine source HEAD `28c1026cece772a9e3d167d9cc64a64aaa0fd1b3`.
 Its local genuine provenance artifact is
 `.sdsc/provenance/provenance-ec86aaf33c9040c68676d453af6e8b3e`, manifest SHA
 `e2a32137229f1711aa32610d42690afedcd83afad018f0fda74586ed7821bc81`.
-Local verification and upload dry-run passed, but upload timed out at 180 seconds
-and its exact-destination read-only reconciliation also timed out. The empty
-`preflight-provenance-upload.json` is not a successful receipt. No v2 submission
-intent or GPU job exists. Evidence is under `.sdsc/diagnostics/adapted-student-v2/`.
-After manual SSH recovery, first reconcile the exact remote provenance directory
-`/home/zgao12/quest-runs/OPD/provenance/e2a32137229f1711aa32610d42690afedcd83afad018f0fda74586ed7821bc81`
-against all three locally verified files and the existing release. Preserve any
-partial upload; do not overwrite it or blindly repeat the upload. Only verified
-complete provenance permits authorized two-H100 preflight submission. The exact
-argv and local-only submission dry-run are now saved as `preflight-command.json`
-and `preflight-submit-local-dry-run.json` in the v2 diagnostic directory:
-2 H100 / 24 CPUs / 192 GiB / one hour. Local validation passed, but explicitly
-did not check remote prerequisites or submit. Independent local review confirms
-19 submitted historical intents, no unknown/sending intent or intent for this
-new run, all 12 supervisors stopped/finished, and unchanged deployed control
-hashes. Current remote queue and upload state remain unverified. This is an
-uncertain file upload, not an uncertain Slurm submission.
+The first upload timed out; its empty `preflight-provenance-upload.json` remains
+failure evidence. Following manual SSH recovery, read-only reconciliation
+verified all 577 deployed source files and found no provenance destination,
+active matching uploader, temporary upload directory, run claim or queued job.
+The same bounded artifact was then uploaded and verified remotely, with genuine
+history, all three files, matching wrapper and read-only permissions. Its actual
+receipt is `preflight-provenance-upload-recovered.json`; all evidence is under
+`.sdsc/diagnostics/adapted-student-v2/`. No existing release was overwritten.
+
+New v2 preflight **54506703**, intent `2b6229dd119b489d8029724d90c6d3b8`, was
+submitted exactly once at **2026-09-28T20:18:24Z**, after matching dry-run and
+remote prerequisite verification. Resources are **2 H100 / 24 CPUs / 192 GiB /
+one hour**, account `nwu181`, partition `nairr-gpu-shared`, QoS
+`nairr-gpu-shared-normal`, no requeue. The receipt binds accepted teacher
+`54496291`, science HEAD `28c1026`, the v2 protocol and prerequisite SHA
+`8f3b98aa9cad3a02e4524289f157b810b745879bb0309558d96e3cb85b638bb6`.
+Job, batch and extern were observed **RUNNING** on **exp-19-01**; this is not
+scientific PASS. Initial logs show completed source staging, genuine history
+restore and teacher-input staging, then selected-checkpoint staging. There is
+no completed v2 preflight report or new calibration job yet. Persistent outputs
+use `control-results/20260928T183316Z-b542b2e7e7fa-1cd4c8d9/2b6229dd119b489d8029724d90c6d3b8/`.
+The actual local receipt is
+`.sdsc/submissions/2b6229dd119b489d8029724d90c6d3b8.json`; command, dry-run,
+status and bounded logs are in the v2 diagnostic directory. Continue with
+`tools/sdsc status 54506703` and `tools/sdsc logs 54506703 --lines 60`, then
+bounded fetch and actual-result validation after terminal accounting. Never
+submit this run/intent again. No new detached supervisor was started; all 12
+historical supervisor states remain stopped/finished.
+
 Later documentation commits do not change that release's genuine source HEAD or
 invalidate its existing provenance. A fresh calibration still needs its own
 release and matching reviewed science: the current exporter requires its actual
