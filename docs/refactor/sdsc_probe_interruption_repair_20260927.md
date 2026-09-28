@@ -38,9 +38,12 @@ Real child-process tests reproduced two independent evidence-loss defects:
 
 The worker now saves atomic, flushed stage/timing snapshots before expensive
 operations, and fsyncs each completed candidate before updating its counter.
-SIGTERM/SIGINT trigger a C-level faulthandler trace and controlled Python cleanup
-when the interpreter can execute it. A periodic stack dump also covers native
-calls. Interruption reports stay failed; partial counts are not quality estimates
+SIGTERM/SIGINT trigger controlled Python cleanup when the interpreter can execute
+it. The first deployment also installed asynchronous native stack collection;
+job 54485969 exposed a crash in that observer, which is removed by the
+[subsequent repair](sdsc_probe_stack_repair_20260928.md). Exception tracebacks
+are now written synchronously by the Python exception handler. Interruption
+reports stay failed; partial counts are not quality estimates
 and never substitute for a complete baseline/candidate reduction. Temporary
 progress files are removed on interrupted replacement so failure reporting does
 not mask the original signal.
@@ -52,6 +55,8 @@ the full ledger, timeline and stacks remain on persistent storage under the
 job's hashed artifact publication. Bounded fetch still excludes raw ledgers and
 large artifacts. SIGKILL cannot run Python cleanup: only already written evidence
 is guaranteed recoverable, and no successful completion is inferred from it.
+A native call that prevents Python signal handling can therefore leave only the
+last durable stage/counter and ledger, without a traceback or final worker report.
 
 ## Fresh run and continuation boundary
 

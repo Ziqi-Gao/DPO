@@ -477,7 +477,6 @@ spec.loader.exec_module(module)
 import pytest
 patch = pytest.MonkeyPatch()
 fixture = module.invocation.__wrapped__(work, patch)
-module.worker.STACK_INTERVAL_SECONDS = 1  # Only this CPU interruption fixture.
 def pause():
     (work / "ready").write_text("signal-ready")
     time.sleep(90)
@@ -518,7 +517,7 @@ module.worker.main(fixture.argv)
         ("after_two_candidates", signal.SIGKILL, 2, "candidate_generation"),
     ],
 )
-def test_real_subprocess_interruption_retains_stage_stack_and_committed_evidence(
+def test_real_subprocess_interruption_retains_stage_and_committed_evidence(
     tmp_path, mode, signum, completed, failure_stage,
 ):
     # Run the actual worker.main in an independent OS process with the existing
@@ -551,13 +550,6 @@ def test_real_subprocess_interruption_retains_stage_stack_and_committed_evidence
                 assert before["stage"] == failure_stage
             assert before["completed_attempt_counts"] == {"baseline": completed, "candidate": 0}
             assert before["passed"] is False and before["not_a_completion_report"] is True
-            if signum == signal.SIGKILL:
-                # An uncatchable kill cannot publish a final report. Periodic
-                # faulthandler evidence and already fsynced progress must remain.
-                deadline = time.monotonic() + 5
-                while not (output / "worker-stacks.log").stat().st_size:
-                    assert time.monotonic() < deadline, "No periodic native faulthandler snapshot"
-                    time.sleep(0.05)
             child.send_signal(signum)
             child.wait(timeout=15)
         finally:
@@ -568,14 +560,17 @@ def test_real_subprocess_interruption_retains_stage_stack_and_committed_evidence
     rows = [json.loads(line) for line in ledger.read_text().splitlines()] if ledger.exists() else []
     assert len(rows) == completed
     assert all(row["variant"] == "baseline" for row in rows)
-    assert "pause" in (output / "worker-stacks.log").read_text()
     progress = json.loads((output / "progress.json").read_text())
     if signum == signal.SIGKILL:
+        # An uncatchable kill cannot publish a final report or traceback. Only
+        # the already fsynced progress and committed ledger are guaranteed.
         assert child.returncode == -signal.SIGKILL
         assert not (output / "teacher-prompt-probe.json").exists()
         assert progress["stage"] == failure_stage
+        assert (output / "worker-stacks.log").read_bytes() == b""
     else:
         assert child.returncode == 128 + signal.SIGTERM
+        assert "pause" in (output / "worker-stacks.log").read_text()
         report = json.loads((output / "teacher-prompt-probe.json").read_text())
         assert report["passed"] is False
         assert report["exit_code"] == 128 + signal.SIGTERM
@@ -636,3 +631,71 @@ def test_progress_cleanup_error_does_not_mask_original_interruption(tmp_path, mo
         worker.progress_json(tmp_path / "progress.json", {"stage": "observed"})
     assert error.value.signum == signal.SIGTERM
     assert not (tmp_path / "progress.json").exists()
+
+
+SAFE_OBSERVATION_CHILD = r'''
+import faulthandler
+import importlib.util
+import json
+import os
+import random
+import sys
+import time
+from pathlib import Path
+root, output = Path(sys.argv[1]), Path(sys.argv[2])
+assert os.environ["CUDA_VISIBLE_DEVICES"] == ""
+def forbidden(*args, **kwargs):
+    raise AssertionError("Asynchronous faulthandler traversal is forbidden")
+for name in ("dump_traceback_later", "cancel_dump_traceback_later", "register", "unregister"):
+    setattr(faulthandler, name, forbidden)
+spec = importlib.util.spec_from_file_location("safe_probe_observation", root / "tools/sdsc_teacher_probe.py")
+worker = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(worker)
+import torch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+torch.manual_seed(42)
+model = torch.nn.Sequential(torch.nn.Linear(64, 64), torch.nn.GELU(), torch.nn.Linear(64, 64)).eval()
+inputs = torch.randn(4, 64, device="cpu")
+torch_rng, python_rng = torch.get_rng_state().clone(), random.getstate()
+identity = {"task": worker.TASK, "job_id": "12345", "run_id": "cpu-observation-fixture",
+            "code_sha256": "a" * 64}
+output.mkdir()
+observation = worker.ProbeObservation(output, identity)
+try:
+    observation.phase("cpu_forward")
+    started, iterations = time.monotonic(), 0
+    with torch.inference_mode():
+        while time.monotonic() - started < 1:
+            result = model(inputs)
+            iterations += 1
+    assert bool(torch.isfinite(result).all())
+    assert iterations > 100
+    assert torch.equal(torch_rng, torch.get_rng_state()) and python_rng == random.getstate()
+    observation.phase("cpu_forward_finished")
+finally:
+    observation.close()
+print(json.dumps({"cpu_forward_passed": True, "iterations": iterations,
+                  "torch_rng_unchanged": True, "python_rng_unchanged": True}), flush=True)
+'''
+
+
+def test_production_observer_supports_real_cpu_forward_without_asynchronous_native_traversal(tmp_path):
+    # The retained diagnostic A/B reproduces a native SIGSEGV with an enabled
+    # timer. This safe regression never enables that known crashing stress path:
+    # forbid its APIs, then exercise the actual observer around real CPU Torch.
+    environment = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+                       OPENBLAS_NUM_THREADS="1", NUMEXPR_NUM_THREADS="1")
+    output = tmp_path / "observation"
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", SAFE_OBSERVATION_CHILD, str(ROOT), str(output)],
+        env=environment, capture_output=True, text=True, timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    final = json.loads(result.stdout.splitlines()[-1])
+    assert final["cpu_forward_passed"] is True and final["iterations"] > 100
+    assert final["torch_rng_unchanged"] is True and final["python_rng_unchanged"] is True
+    progress = json.loads((output / "progress.json").read_text())
+    assert progress["stage"] == "cpu_forward_finished"
+    assert progress["passed"] is False and progress["not_a_completion_report"] is True
+    assert (output / "worker-stacks.log").read_bytes() == b""

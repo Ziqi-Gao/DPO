@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import faulthandler
 import hashlib
 import importlib.util
 import json
@@ -44,7 +43,6 @@ BASELINE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v5"
 CANDIDATE_PROTOCOL = "qwen3-v2-g0-candidate-e-seed-42-prompt-v7"
 POPULATION = 256
 PROBE_PROMPTS = 32
-STACK_INTERVAL_SECONDS = 300
 
 
 def require(condition, message):
@@ -102,11 +100,10 @@ class ProbeObservation:
         for signum in (signal.SIGTERM, signal.SIGINT):
             self.previous_handlers[signum] = signal.getsignal(signum)
             signal.signal(signum, self.interrupt)
-            # The C handler dumps even while Python is blocked in a native
-            # import/call; chaining requests normal Python cleanup when it can
-            # run. SIGKILL is uncatchable: already fsynced progress still remains.
-            faulthandler.register(signum, file=self.stacks, all_threads=True, chain=True)
-        faulthandler.dump_traceback_later(STACK_INTERVAL_SECONDS, repeat=True, file=self.stacks)
+        # Python cleanup runs only when the interpreter regains control. Do not
+        # walk native frames asynchronously: the periodic faulthandler timer
+        # reproduced a SIGSEGV during CPU Torch forward. A native hang followed
+        # by SIGKILL leaves only already fsynced progress and ledger evidence.
         self.phase("worker_start")
 
     def interrupt(self, signum, _frame):
@@ -158,9 +155,7 @@ class ProbeObservation:
                    failure_stage=failure_stage, error=type(error).__name__ + ": " + str(error))
 
     def close(self):
-        faulthandler.cancel_dump_traceback_later()
         for signum, handler in self.previous_handlers.items():
-            faulthandler.unregister(signum)
             signal.signal(signum, handler)
         self.stacks.flush()
         os.fsync(self.stacks.fileno())

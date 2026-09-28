@@ -6,7 +6,7 @@
 
 ## 两层成功条件
 
-对当前 v7 作业 **54485969**，自动接续重新核验观察器的计划、真实提交
+对当前 v7 作业 **54489646**，自动接续重新核验观察器的计划、真实提交
 回执、Slurm accounting、发布清单和报告哈希。只有执行/持久化成功，且
 256 个候选覆盖全部 **32/32** 训练提示，才会触发一次后续 Codex 会话。
 作业 `COMPLETED / 0:0` 或诊断报告 `passed=true` 单独不能触发训练。
@@ -46,18 +46,21 @@ calibration → 完整 G0 → 四卡预检 → seed-42 pilot。全部门槛保�
 ## 状态与恢复
 
 旧作业 54472139 因中断失败，其观察器已结束、自动接续已停止且未启动训练。
-用户随后授权修复和重提；当前绑定的是新作业 54485969。保留旧 flow 的
-计划、状态和失败证据，不能重启旧 flow。修复及资源边界见
-[中断修复记录](refactor/sdsc_probe_interruption_repair_20260927.md)。
+恢复作业 54485969 又在异步堆栈采集时发生 SIGSEGV，完成 28 条 baseline，
+尚未生成 v7 候选；其观察器已结束，接续已停止。用户授权持续监控并自动
+推进，当前绑定修复后的新作业 54489646。保留两组旧 flow 的计划、状态和
+失败证据，不能重启。修复及资源边界见
+[中断修复记录](refactor/sdsc_probe_interruption_repair_20260927.md)和
+[堆栈采集崩溃修复](refactor/sdsc_probe_stack_repair_20260928.md)。
 
-当前计划使用 `.sdsc/supervision/probe54485969-auto-v1/`，原观察器是
-`.sdsc/supervision/probe54485969-readonly-v1/`。以当前 handoff 和目录里的
+当前计划使用 `.sdsc/supervision/probe54489646-auto-v1/`，原观察器是
+`.sdsc/supervision/probe54489646-readonly-v1/`。以当前 handoff 和目录里的
 实际 `launch.json`、`state.json` 为准，目录存在本身不代表进程运行。
 
 ```bash
 cd /gpfs/projects/p32737/del6500_home/OPD
-cat .sdsc/supervision/probe54485969-auto-v1/state.json
-cat .sdsc/supervision/probe54485969-auto-v1/notice.md
+cat .sdsc/supervision/probe54489646-auto-v1/state.json
+cat .sdsc/supervision/probe54489646-auto-v1/notice.md
 ```
 
 `notice.md` 在出现停止/完成等有意义的变化后生成。成功触发后还会保留
@@ -69,15 +72,15 @@ cat .sdsc/supervision/probe54485969-auto-v1/notice.md
 
 ```bash
 tools/sdsc_auto_continue prepare \
-  --job-id 54485969 \
-  --watch-plan /absolute/path/to/probe54485969-readonly-v1/plan.json \
-  --flow probe54485969-auto-v1 \
+  --job-id 54489646 \
+  --watch-plan /absolute/path/to/probe54489646-readonly-v1/plan.json \
+  --flow probe54489646-auto-v1 \
   --codex-bin /absolute/path/to/verified/codex \
   --authorize
-tools/sdsc_auto_continue run --plan /absolute/path/to/probe54485969-auto-v1/plan.json
+tools/sdsc_auto_continue run --plan /absolute/path/to/probe54489646-auto-v1/plan.json
 ```
 
-当前入口和固定接续任务只支持 v7 作业 54485969，不能直接拿这个任务文档
+当前入口和固定接续任务只支持 v7 作业 54489646，不能直接拿这个任务文档
 为不同科学版本授权；新版本需要自己的具体审查、任务和新计划。不要复制旧状态
 文件、删 claim 或通过换目录重复触发。
 
