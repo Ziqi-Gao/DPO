@@ -1,9 +1,9 @@
 # OPD current handoff
 
-Last updated: 2026-09-28 (teacher-adaptation preflight 54493015 passed execution;
-four-H100 repaired preflight 54494477 passed; full teacher fit 54494742 completed
-with all four development checkpoints passing;
-teacher acceptance pending).
+Last updated: 2026-09-28 (teacher fit 54494742, qualification 54496291 and
+independent CPU audit 54497294 completed; adapted teacher independently accepted
+under the reviewed teacher-only 256-token protocol; acceptance published and
+hash-verified on persistent SDSC storage).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -424,8 +424,9 @@ Read [automatic continuation instructions](../sdsc_auto_continuation.md) and its
 actual state before any competing work. The old quser42 master was foreground
 on `pts/105`; the new flow uses the existing quser33 master. Do not assume
 terminal disconnection preserves an SSH master. SSH loss,
-stale state, changed controls or unknown submissions stop progression. The current
-blocker is measured teacher-proof quality, not SSH or the previous runtime crash.
+stale state, changed controls or unknown submissions stop progression. At that
+stage, the blocker was measured teacher-proof quality, not SSH or the previous
+runtime crash; the accepted adaptation below subsequently resolves this gate.
 The user then requested continued diagnosis. The 2,462,548-byte raw ledger was
 fetched once and verified against publication SHA
 `ca97a4cef49e2884dea31a2332b6e6aaa310b3174f898966d65772188ca09fc6`.
@@ -474,7 +475,7 @@ probe construction and all eight thresholds are unchanged. Historical v5 has
 its old values are not corrected evidence. The v7 generation failure is unchanged.
 See `docs/refactor/qwen3_teacher_prefix_scoring_repair_20260928.md`.
 
-The proposed separate teacher-adaptation path keeps the Qwen3-8B base,
+The separate teacher-adaptation path keeps the Qwen3-8B base,
 non-thinking template, v7 rendering and strict proof gates. It trains LoRA
 rank 32 on all seven attention/MLP projection families and exports/reloads a
 new dense checkpoint. The original production adapter prohibition remains.
@@ -490,8 +491,8 @@ results. Run `20260928T032541Z-1ce8c1707b61-4096a87c` contains 525 files /
 5,444,453 source bytes; code SHA is
 `1ce8c1707b611a4a23e9b0c88c6608a7e370e08c1c91ee312886c431ce3a7f17`.
 Its real receipt is `.sdsc/submissions/f17b8a53cf8a4d3b85e9d7c8d27c89c9.json`.
-The real eight-step execution preflight passed; **formal teacher readiness has
-not passed**. Loss declined from 0.452631 to 0.016239; 227,814 input tokens were
+The real eight-step execution preflight passed; **that preflight checkpoint did
+not pass teacher quality**. Loss declined from 0.452631 to 0.016239; 227,814 input tokens were
 consumed, with nonzero adapter update, unchanged frozen base before merge and
 zero dense-save/reload logit error. Steady 32-sample updates took about eight
 seconds. Peak reserved GPU memory was 24.62 GiB; cgroup peak was 67.60 GiB,
@@ -583,13 +584,14 @@ checkpoints have exact-proof accuracy 1.0 but must not replace the selected one.
 Exact development summaries were separately fetched with publication/hash
 checks into `.sdsc/fetched/54494742/development-verified/`; summary SHA is
 `200911f2afc6f4f805dfa2abe07225f134624f8da548bd559ebeebd3d83c7747`.
-This is development selection, not holdout or teacher-store acceptance. Raw
-scientific replay and all fixed qualification stages remain required.
+Development selection alone does not establish holdout or teacher-store
+acceptance. The required qualification, raw replay and independent acceptance
+have subsequently completed as recorded below.
 Preserve all receipts/releases and reconcile unknown intents; never reuse
 failed 54493777 or start a competing GPU flow.
 No new detached observer or continuation process is active.
 
-The candidate `qwen3-v2-teacher-qualify` transport, four-rank worker and independent
+The `qwen3-v2-teacher-qualify` transport, four-rank worker and independent
 CPU auditor are implemented and cross-reviewed. They bind the actual fit origin
 to 37 explicitly named scientific files (all match the completed full-fit release),
 replay all four complete development evaluations and enforce the fixed first-PASS
@@ -611,14 +613,95 @@ for qualification at **2026-09-28T06:09:44Z**, after checking all 47 named scien
 blobs, the 37 fit-origin files and actual full-fit/development evidence.
 Independent review record canonical SHA is
 `c4c5948fdb565a25d67ad5a73bacf7025af69b902007acf68b94f813e8bf429e`.
-The separate review-only acceptance commit changes only the YAML review and this
-handoff; resolve its genuine identity from Git before deployment. This accepts
-the protocol only. Preserve the frozen selection and all remaining measurement
-and independent teacher-result acceptance gates. The Quest checkout retains
+The separate review-only acceptance commit is
+**929fb14834852a7c91e6656c76fd1834e1b5007d** and changes only the YAML review and
+this handoff. That commit accepts the protocol only; actual teacher-result
+acceptance is separately recorded below. Preserve the frozen selection and all
+measurement and independent teacher-result acceptance gates. The Quest checkout retains
 unrelated `.gitignore`/`AGENTS.md` modifications; the genuine restored scientific
 checkout must be clean and match every accepted named blob.
-No qualification job, supplemental exposure or independent teacher acceptance
-has occurred. Preserve the remaining unrelated dirty files and all old flows.
+The genuine provenance bundle was restored locally and passed accepted-lineage,
+all-named-blob and clean-checkout verification. Fresh independent release
+`20260928T061138Z-d30d5264771a-e6664e24` contains 555 files / 6,131,408 bytes,
+code SHA `d30d5264771a6c316aa5f21405973f8bc503c880f85803478950cdc4cfef952d`;
+matching preview, upload and verified provenance SHA
+`5cd7ceb54364af622ec19315b316cd0884f75bd25d5ea4fa87cd364bb00105c3`
+are retained under `.sdsc/diagnostics/teacher-adaptation-v1/qualification-*`.
+SSH identity, the exact Python binary/seven runtime pins and persistent login
+paths were freshly rechecked before submission; every GPU-node mount remains
+independently checked by the job.
+
+Qualification **54496291**, intent `9d7f9e3394c84b6c901aa98713e0dbda`, was
+submitted once at **2026-09-28T06:16:23Z** after actual remote prerequisite,
+protocol, source-origin, selection and permanent-claim checks. Resources are
+**4 H100 / 24 CPU / 192 GiB / two hours**, `nwu181`,
+`nairr-gpu` / `nairr-gpu-normal`, no requeue, TERM 300 seconds early.
+The 07:39 UTC accounting query confirms job/batch/extern **COMPLETED / 0:0**,
+elapsed **1h15m14s**, on exp-19-01, with verified persistent results. All four
+ordered stages pass: train_probe covers 32/32 prompts; supplemental and formal
+readiness pass all eight gates; formal_store completes 2,048 candidates and
+covers 256/256 prompts. Both readiness cohorts have answer/exact-proof,
+first/intermediate-rule, target-coverage and recovery accuracy 1.0. Formal
+minimum causal shift is +5.877720 and minimum top-k mass 0.999999762.
+The publication contains 154 files / 179,368,485 bytes. Its receipt SHA is
+`0c8bfc0b31bd965244a9d61a158d62d1b8edd26c1f09373083f756d66ee1162e`;
+report SHA is `2b067e9e33e7a50ce0697f8defde697e714f49ddc2caed9769bbcc3c0d82b7ba`.
+The 759,825-byte bounded fetch is `.sdsc/fetched/54496291/fetch-7j1keu8s/`.
+Immutable final accounting is
+`.sdsc/diagnostics/teacher-adaptation-v1/qualification-final-status.json`.
+Claims SHA is
+`2b82e4d91d4be939a436eb7d2d49b58897fd2cecbe462efbfb889cd2def263f1`,
+prerequisite SHA `7cdc344e26f5b01d9f9409504193702a3f8efc3a44ee72ca0fa39c93c87022cf`.
+Never retry this completed job or its permanent experiment reservation.
+Formal exposure progress must be read from its actual stage claims/outcomes.
+The teacher has now passed independent result acceptance. Preserve unrelated
+dirty files, producer reports and all old stopped flows. No new observer or
+student training was launched; never repeat these completed submissions.
+
+Independent CPU audit **54497294**, intent
+`b04f8e93a2cc7f3e2961de65ecdac7ca`, was submitted once at **07:45:08 UTC** and
+completed **COMPLETED / 0:0 in 41m18s** on exp-19-05. The frozen tokenizer
+replay uses about 33m49s child CPU and 1.2 GiB peak memory, with no model
+inference. It runs on verified node-local scratch and reads/publishes through
+actual Lustre mounts. Account/QoS inspection rejects zero GPU (`QOSMinGRES`),
+so the smallest discovered allocation was **1 H100 / 1 CPU / 16 GiB / 90 min**,
+`nairr-gpu-shared` / `nairr-gpu-shared-normal`, with CUDA hidden. Do not run
+this expensive replay on a login node or infer a hang from its quiet phase.
+Its plan, real receipt, accounting, fetched audit and fetch evidence are under
+`.sdsc/fetched/54496291/batch-audit-b04f8e93a2cc7f3e2961de65ecdac7ca/`.
+The **558,712-byte** actual audit independently replays all raw scientific
+outcomes and permanent claims; its canonical SHA is
+`161e86554396f43193d50e103a1a42b7bfcb82242edb79230e0cb6102b2a90f8`.
+The recomputed acceptance evidence exactly matches the producer evidence.
+
+Two control-only repairs preserve the deployed scientific bytes and intent:
+local preview checks remote path spelling without resolving Quest's different
+`/home`; the separate `batch_audit_observe.py` handles SDSC's empty archived
+`sacct Comment` only with the pinned actual live `scontrol` submission binding.
+It preserves raw accounting and rejects conflicting nonempty comments. Both
+12-case regression suites and independent reviews pass. Use this observer's
+read-only `status` for this audit; never resubmit, overwrite fetched evidence,
+or use the original strict-Comment status helper. All 47 accepted scientific
+files remain unchanged.
+
+Independent reviewer **/root/teacher_result_review** verified the actual raw
+replay, all named science, original job/publication records, permanent claim
+chain, exposure history and selected dense-checkpoint provenance. The distinct
+attestation permits the accepted domain finalizer to produce
+**formal_teacher_accepted=true**; neither producer nor CPU audit self-accepts.
+The accepted teacher canonical SHA is
+`5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337`.
+Local acceptance and review files are under
+`.sdsc/diagnostics/teacher-adaptation-v1/accepted-teacher-54496291-4641d1f2c54e627e/`.
+All four files (**8,267 bytes**) were published once to:
+`/expanse/lustre/projects/nwu181/zgao12/OPD/teacher-acceptance/54496291/4641d1f2c54e627e41d0b2f0e1363c48cada91643fb5c18e946eb19a62a16964/`.
+Publication and subsequent read-only check both report complete with identical
+hashes and no missing files; the reviewer independently checked both. Keep the
+actual publication receipt and `teacher-acceptance-publication-check.json`.
+The acceptance is specific to the reviewed teacher-only **256-token** protocol;
+all eight thresholds are unchanged, and **original_128_token_readiness_pass_claim
+is false**. Detailed evidence and safe recheck commands are in
+`docs/refactor/sdsc_teacher_adaptation_20260928.md` and `docs/sdsc_workflow.md`.
 
 The new PEFT 0.17.1 runtime is
 `/expanse/lustre/projects/nwu181/zgao12/OPD/envs/qwen3-v2-teacher-adapt-peft0171-v1`,
@@ -647,7 +730,7 @@ all four identity dimensions and exact original file hashes, preserving all
 Its canonical dataset-manifest SHA is
 `742b62a1ee328c8d8f660106265e4a342458fe5145243ecb08368eaa745f502d`.
 
-The proposed successor explicitly gives only the adapted teacher a 256-token
+The accepted teacher-adaptation protocol gives only the adapted teacher a 256-token
 development/confirmation/readiness budget. All eight numeric thresholds and
 all rows remain; student rollout/evaluation stays at 128. This is a declared
 scientific budget intervention, not a correction to the historical 128-token
@@ -659,17 +742,22 @@ preflight must verify global-64 updates, same-world checkpoint reload, export,
 development measurement and persistence. Repaired real preflight 54494477
 passed these execution gates; full fit 54494742 subsequently completed and
 selected its first development-PASS checkpoint as recorded above.
-Execution evidence does not constitute teacher scientific acceptance. No supplemental model
-evaluation has occurred.
+Execution evidence alone does not constitute teacher scientific acceptance.
+The fixed supplemental/formal cohorts, complete teacher store, independent
+raw-evidence audit and separate teacher-result acceptance now all pass.
 Protocol and acceptance conditions: `docs/refactor/sdsc_teacher_adaptation_20260928.md`.
 
-Formal continuation still requires independently reviewed implementation,
-separate review-only acceptance, a complete fresh 256×8 teacher store and the
-readiness gates under the explicitly accepted teacher protocol. Any teacher model/generation-policy change needs its
+The protocol implementation and separate review-only acceptance are complete.
+Teacher-result acceptance and persistent publication are complete. Student
+continuation still requires coherent downstream adapter migration and a matching
+new preflight. Any teacher model/generation-policy change needs its
 own reviewed scientific proposal; never rewrite generated outputs or relax
 thresholds. Provenance permits up to 16 audited linear unpublished commits
 ending in an explicit reviewed pair; 40 tests and independent review passed
-without public-ref/history mutation. Old preflight 54345604 does not match new
+without public-ref/history mutation. The already deployed qualification bundle
+uses all 16 slots and remains valid; exporting a later documentation HEAD must
+first resolve the reviewed history bound, without rewriting history or pretending
+that public refs advanced. Old preflight 54345604 does not match new
 scientific inventory: calibration needs a matching new preflight or separately
 reviewed compatibility change. Old v3-pinned adapters/plans must migrate
 coherently before any full successor is armed.

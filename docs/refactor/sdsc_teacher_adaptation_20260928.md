@@ -9,11 +9,104 @@ training task satisfies its standards. This covers the bounded adaptation work
 below. It does not turn an execution PASS into scientific acceptance, waive
 independent review, or authorize false checkpoint identities or relaxed gates.
 
-The independently reviewed scientific decision below proposes a **teacher-only
-256-token readiness generation budget for the later adapted-teacher candidate**.
-It is a declared new protocol whose formal use requires its distinct implementation
-and independent review-only acceptance commits. The eight-step preflight and
-all historical 128-token evidence retain their original definitions.
+The independently reviewed scientific decision below uses a **teacher-only
+256-token readiness generation budget for the adapted-teacher candidate**.
+It is a declared new protocol, implemented at
+`d1ab8dacd834101b88d806bb6d75a44ae1949cb3` and independently accepted by the
+distinct review-only commit `929fb14834852a7c91e6656c76fd1834e1b5007d`.
+The eight-step preflight and all historical 128-token evidence retain their
+original definitions. Protocol acceptance is separate from result acceptance.
+
+## Accepted result: 2026-09-28
+
+**Teacher training and independent acceptance are complete.** The actual accepted
+artifact sets `formal_teacher_accepted=true`; this is a separate result decision
+after protocol acceptance, raw-evidence replay and an independent reviewer.
+
+| Actual SDSC job | Outcome | Elapsed |
+| --- | --- | --- |
+| 54494742 — full teacher fit, 4 H100 | COMPLETED / 0:0; all 512 updates and four epochs | 1h19m36s |
+| 54496291 — qualification, 4 H100 | COMPLETED / 0:0; all four ordered stages pass | 1h15m14s |
+| 54497294 — independent CPU replay | COMPLETED / 0:0; raw evidence and claims pass | 41m18s |
+
+The unchanged first-development-PASS rule selects **step 128**. All four complete
+512-row development evaluations pass, but no later checkpoint replaces this one.
+Selected dense checkpoint identity:
+`6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7`.
+The full fit consumed 32,768 sequences / 29,909,768 nonpadding input tokens;
+its 13 execution checks pass. Actual peak host memory was 108.24 GiB against
+the 192-GiB workload budget, and maximum reserved GPU memory was 43.75 GiB.
+
+Qualification measured, in the fixed order:
+
+- Training probe: **256/256** candidates accepted, **32/32** prompts covered.
+- Supplemental validation rows [128:256]: all eight gates pass; answer and
+  exact-proof accuracy **100%**, minimum causal shift **+10.250116** and
+  minimum retained mass **0.999999821**.
+- Formal validation rows [0:128]: all eight gates pass; answer and exact-proof
+  accuracy **100%**, minimum causal shift **+5.877720** and minimum retained
+  mass **0.999999762**.
+- Fresh teacher store: **2,048/2,048** candidates accepted, **256/256** prompts
+  covered. Store identity:
+  `f2e9e8171e3289bfd8bb356c79df67e56612f2ad067c63a4583b017c79025a88`.
+
+Both validation cohorts also score 1.0 on first-rule, intermediate-conclusion,
+whole-target coverage and corrupted-prefix recovery. No gate was lowered;
+there was no checkpoint reselection, output rewriting or extra sampling.
+This acceptance uses the independently accepted **teacher-only 256-token**
+protocol. `original_128_token_readiness_pass_claim=false`; the original first
+128 rows' prior exposure remains disclosed. Student rollout/evaluation remains
+128 tokens, and **student training has not started**. Its continuation needs
+coherent adapted-teacher bindings and a matching new preflight; do not re-arm
+old v3 plans or treat the 256-prompt store as the pilot's required 4,096 prompts.
+
+The fit published 71,277,357,278 bytes and qualification published 179,368,485
+bytes to verified persistent SDSC storage. The selected 23-file dense checkpoint
+(16,746,687,223 bytes) matched the fit publication during qualification staging;
+every rank verified its manifest before inference. Independent review binds
+these actual origin/load proofs; it does not claim to download or hash those
+large weights a second time. Future consumers must verify the weights they load.
+Quest fetched only bounded reports, logs and audit records.
+
+The independent CPU replay read and hashed all raw scientific evidence and
+permanent claim/outcome files. Its recomputed evidence exactly equals the
+producer object. Independent reviewer `/root/teacher_result_review` then checked
+this replay, all 47 scientific blobs, genuine Git lineage, all three jobs'
+accounting, publication and weight provenance, and actual remote permanent
+claims. The finalizer uses that real reviewer identity; the former reviewer's
+protocol acceptance remains historical and was not reused as a result signature.
+The identity-only control change and publisher pin were independently reviewed,
+with five rejection cases and six transport tests passing.
+
+| Evidence | Canonical SHA-256 |
+| --- | --- |
+| Actual independent audit | `161e86554396f43193d50e103a1a42b7bfcb82242edb79230e0cb6102b2a90f8` |
+| Recomputed acceptance evidence | `c7b65df10069ab139179012c5590906783553f487de5bc581e80f40bbcf4801a` |
+| Independent result attestation | `4641d1f2c54e627e41d0b2f0e1363c48cada91643fb5c18e946eb19a62a16964` |
+| Accepted teacher | `5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337` |
+
+Actual audit evidence is under
+`.sdsc/fetched/54496291/batch-audit-b04f8e93a2cc7f3e2961de65ecdac7ca/`.
+The local acceptance directory is
+`.sdsc/diagnostics/teacher-adaptation-v1/accepted-teacher-54496291-4641d1f2c54e627e/`.
+Its four files total **8,267 bytes**, with inventory SHA
+`8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed`.
+They were exclusively published to:
+
+```text
+/expanse/lustre/projects/nwu181/zgao12/OPD/teacher-acceptance/54496291/4641d1f2c54e627e41d0b2f0e1363c48cada91643fb5c18e946eb19a62a16964/
+```
+
+The publication receipt's physical SHA is
+`f006ed152753565611052d2d7255c39b4bba89f67a4aa1f45b8466b0750d7f7f`.
+Publication and a subsequent read-only check both returned `complete=true`,
+identical file hashes and no missing files; the independent reviewer rechecked
+both. The producer and audit reports remain immutable and do not self-accept.
+Do not repeat these completed submissions, finalization or publication. See
+[workflow recheck commands](../sdsc_workflow.md#当前-teacher-适配与验收).
+
+The remaining sections preserve the experiment design, its historical rationale
+and execution contract. They are not instructions to repeat completed stages.
 
 The completed v7 diagnostic, job 54489646, accepted 42/256 candidates and covered
 7/32 training prompts. Its necessary 32/32 gate failed; formal v7 readiness was
@@ -31,7 +124,7 @@ the correct rule/premises and expressing a serial proof with valid references.
 Paired positive/negative graphs require the output to follow the active facts,
 which also targets the reasoning measured by the prefix gates. This is a new
 teacher-training experiment, not a transparent fix to the original frozen
-weights. Its efficacy remains an empirical question.
+weights. Its measured efficacy is recorded in the accepted result above.
 
 The alternatives rank below this candidate for the current acceptance target:
 
@@ -209,7 +302,7 @@ certificate does not certify an 8B LoRA or DDP trainer.
 The later fit is a separate task version/release/intent with the frozen
 8,192-example/four-epoch/global-64 envelope above. Evaluate only merged dense
 checkpoints at **steps 128, 256, 384 and 512**, using all **512 development
-examples** and the proposed 256-token teacher-only generation budget. Select
+examples** and the accepted 256-token teacher-only generation budget. Select
 the **first scheduled checkpoint passing all eight metrics** on that full
 development population. Preserve every scheduled report and its exact checkpoint
 identity; do not pick a later checkpoint from formal or supplemental outcomes.
@@ -226,7 +319,7 @@ thresholds without a separate readiness generation cap; that does not make the
 accepted 128-token runtime setting freely mutable. The teacher store separately
 uses 256 new tokens.
 
-The proposed adapted-teacher budget is **256 new tokens for full development,
+The accepted adapted-teacher budget is **256 new tokens for full development,
 supplemental confirmation and formal teacher readiness**, while student
 rollout/evaluation settings remain unchanged at 128. Introduce a separately
 bound teacher-readiness setting; do not globally alter the trainer setting.
@@ -287,7 +380,7 @@ validation rows **[128:256]**. Its ordered-example hash remains
 `532b11ac85fad0b35be1e253c2d30a8ca838ea8849adf77503a43b6433236073`; the
 validation-file hash remains
 `8d9f710b8242a53f37a5714240e2ffd64769aca5828ef1d8e180c81c277f4ed3`.
-Under the proposed adapted-teacher amendment, use greedy generation with the
+Under the accepted adapted-teacher amendment, use greedy generation with the
 explicit **256-token** completion budget, seed 42 plus row index, original
 prefix construction/scoring and all eight thresholds. Do not
 expose this cohort during fitting or checkpoint selection. If it fails, preserve
@@ -295,14 +388,14 @@ the failure; its outcomes are then exposed and cannot be reused as an independen
 confirmation of an adaptively changed teacher.
 
 The original **first 128 validation examples** remain the mandatory formal
-readiness population, with their exposure history disclosed. The proposed
+readiness population, with their exposure history disclosed. The accepted
 adapted-teacher formal evaluator uses those same rows, greedy generation and
 all original thresholds, with its explicitly amended **256-token** budget.
 Do not replace these rows with the supplemental cohort or relabel this as a
 pass of the historical 128-token-budget protocol. Formal adapted-teacher
-readiness, a fresh complete **256×8 teacher store**
-with coverage of every prompt, and the downstream matching preflight are all
-still required. The later pilot requires its own full 4,096-prompt store.
+readiness and a fresh complete **256×8 teacher store** with coverage of every
+prompt have now passed independent acceptance. The downstream matching
+preflight remains required. The later pilot requires its own full 4,096-prompt store.
 
 ## Checkpoint identity, independent review and continuation
 
@@ -364,10 +457,11 @@ by all four fit checkpoints; all copies are actually hashed. No evidence is
 truncated or omitted to fit the bound. These are transport/audit bounds, not
 scientific threshold changes.
 
-After accounting reports COMPLETED/0:0 and publication is verified, restore the
-same bound genuine Git bundle into a fresh temporary checkout. Through the
-checked existing SSH master, invoke the verified runtime with CUDA hidden and
-OMP/MKL/OpenBLAS/NumExpr threads fixed to one:
+After accounting reports COMPLETED/0:0 and publication is verified, submit a
+separate bounded audit allocation through the checked existing SSH master.
+On its compute node, restore the same bound genuine Git bundle into a fresh,
+verified node-local checkout and invoke the verified runtime with CUDA hidden
+and OMP/MKL/OpenBLAS/NumExpr threads fixed to one:
 
 ```text
 VERIFIED_PYTHON -I -B RESTORED_SCIENCE/tools/sdsc_teacher_qualification_audit.py
@@ -387,3 +481,47 @@ reviewer must inspect this replay, original accounting/publication and exposure
 history before issuing an attestation bound to the actual implementation and
 acceptance commits and evidence hash. Only the independently attested artifact
 may set `formal_teacher_accepted=true`; the producer and audit report cannot.
+
+The audit is computationally substantial despite requiring no GPU inference:
+the frozen implementation repeatedly reconstructs the full tokenizer
+fingerprint, approximately 2,590 times across its two complete evidence replays.
+Two measurements with the actual tokenizer on Quest took 0.766 and 0.888
+seconds per fingerprint. This suggests roughly 33–39 minutes of that CPU work
+alone on Quest; it is not a measured SDSC runtime. Do not run this audit on a
+login node. The [Expanse user guide](https://www.sdsc.edu/systems/expanse/user_guide.html)
+requires computationally intensive work to use batch nodes.
+
+At 2026-09-28T06:42Z, account `nwu181` exposed only the three NAIRR GPU QoS
+associations; `nairr-gpu-shared-normal` had `MinTRES=cpu=1,gres/gpu=1`.
+A zero-GPU, one-CPU audit test was rejected with `QOSMinGRES`. A subsequent
+`sbatch --test-only` accepted **1 H100 / 1 CPU / 16 GiB / 90 minutes** on
+`nairr-gpu-shared` / `nairr-gpu-shared-normal`. Its displayed test-only number
+is not a submitted job. This is the smallest discovered allocation for this
+account; the GPU remains hidden during the CPU-only audit. Wait for the
+four-GPU qualification job to finish before submitting it, and recheck actual
+node-local workspace, input/output mounts, runtime and memory use. Keep its
+fresh submission intent, real job ID, terminal accounting and published audit
+hash separate from the scientific qualification job it audits. Never retry an
+unknown submission or overwrite an earlier audit attempt.
+
+The actual independent audit 54497294 completed in **41m18s**, with about
+**33m49s child CPU** and **1.2 GiB** peak memory. All job/batch/extern records
+are COMPLETED/0:0. Its 558,712-byte result was hash-verified before local use;
+physical SHA is
+`bd558d9aaac3669f4185ebaca6ebc67b69a14b75f24f795c7d52baed9fdd9dde`.
+The long quiet intervals were progressing CPU work, not a deadlock.
+
+The audit exposed two operational defects, repaired without changing the
+47 accepted scientific files or retrying a submission. Local submission preview
+had resolved SDSC `/home` paths against Quest's different filesystem; it now
+checks their remote spelling while retaining remote filesystem validation.
+SDSC also returned an empty archived `sacct Comment`. A separate read-only
+observer validates this case against the actual pinned live `scontrol` proof
+(SHA `eda6de17c291b85b8d7e30becc31b6b624528fae9b6d4bd2d7bf00f27f4907d0`),
+original plan and real submission receipt. It preserves the raw empty value,
+rejects conflicting nonempty comments, and still requires exact job/resources,
+terminal accounting and publication hashes. Both 12-case regression suites and
+independent reviews pass. For this completed audit use `batch_audit_observe.py`
+for read-only status; do not use the original strict-Comment helper or overwrite
+already fetched evidence. These one-shot helpers and their independent review
+records remain under `.sdsc/diagnostics/teacher-adaptation-v1/`.

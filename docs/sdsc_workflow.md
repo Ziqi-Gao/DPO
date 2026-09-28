@@ -30,9 +30,18 @@ SDSC 不安装 Codex、VS Code Server 或常驻工作流服务，也不申请用
 使用 4 H100、24 请求 CPU、192 GiB 工作负载预算、最长四小时。
 四个开发检查点都通过八项门槛，按固定规则选择第 128 步；其答案正确率
 100%、严格证明正确率 511/512。产物已持久化并回传小型报告，不重复提交。
-开发集通过仍需独立验收。当前还没有正式
-teacher 验收成功，也没有启动 student 训练；实时状态以 Slurm 和
-`docs/refactor/current_handoff.md` 为准。
+资格作业 **54496291** 也已 COMPLETED / 0:0，实际用时 1 小时 15 分 14 秒。
+两个 128 例评估均通过八项门槛，2,048/2,048 个候选验证通过并覆盖全部
+256 个提示。独立 CPU 复核作业 **54497294** 已 COMPLETED / 0:0，用时
+41 分 18 秒，全部原始证据重放与永久阶段记录检查通过。独立审查者随后
+签发正式验收，最终产物为 **`formal_teacher_accepted=true`**。四个验收
+文件已在 SDSC 独立持久目录保存，并经只读回查确认哈希一致。不要重复
+提交、签发或发布这些已完成任务。
+
+验收适用于已独立审核的 **teacher 专用 256-token 协议**，八项数值阈值
+未降低；不声称原 128-token 协议通过。尚未启动 student 训练；后续需把
+真实适配权重身份一致地接入下游，并完成匹配的新预检，不能直接重启旧
+v3 流程。最终证据位置与完整数据见下方链接的验收记录。
 
 固定训练为 8,192 条独立训练数据、512 次优化更新，在四个预定检查点
 上完整评估独立的 512 条开发数据。后续 `qwen3-v2-teacher-qualify` 只接受
@@ -43,9 +52,28 @@ teacher 验收成功，也没有启动 student 训练；实时状态以 Slurm �
 完整规则见 [teacher 适配协议与验收](refactor/sdsc_teacher_adaptation_20260928.md)。
 
 执行成功与独立科学验收分开记录。默认 `fetch` 仍只取有限报告和日志，
-不取回权重。独立 CPU 审计在 SDSC 上通过相同 SSH master 按需执行，
-检查真实原始文件、永久阶段记录与全部指标；它不提交 Slurm、不运行
-推理，也不自行签发 teacher 接受结论。
+不取回权重。独立 CPU 审计通过相同 SSH master 提交一个有界批处理作业，
+在计算节点的本地源码副本上检查真实原始文件、永久阶段记录与全部指标。
+审计程序本身不提交 Slurm、不运行推理，也不自行签发 teacher 接受结论。
+不要在登录节点执行完整审计：当前冻结实现有数十分钟的重复 CPU 校验。
+实查 `nwu181` 没有 CPU 分区权限，shared QoS 最少要求一张 GPU；已通过
+预检的最低资源为 **1 H100 / 1 CPU / 16 GiB / 90 分钟**，计算时隐藏 GPU。
+本次审计已在四卡资格作业结束后唯一提交并完成，真实回执与验收证据
+均已保留。以下命令仅供后续按需只读复查，不需重新运行审计或下载权重：
+
+```bash
+cd /gpfs/projects/p32737/del6500_home/OPD
+/usr/bin/python3.12 -I -B .sdsc/diagnostics/teacher-adaptation-v1/batch_audit_observe.py status \
+  --intent-dir /gpfs/projects/p32737/del6500_home/OPD/.sdsc/fetched/54496291/batch-audit-b04f8e93a2cc7f3e2961de65ecdac7ca
+/usr/bin/python3.12 -I -B .sdsc/diagnostics/teacher-adaptation-v1/publish_independent_teacher_acceptance.py check \
+  --accepted-dir /gpfs/projects/p32737/del6500_home/OPD/.sdsc/diagnostics/teacher-adaptation-v1/accepted-teacher-54496291-4641d1f2c54e627e \
+  --inventory-sha256 8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed
+```
+
+两者仍先检查当前 Quest 主机的共享 SSH master；认证失效即停止，不尝试
+密码登录。审计 observer 保留原始 accounting，并用实际已保存的 live
+`scontrol` 绑定处理 SDSC 不保留 `sacct Comment` 的情况；不要再用旧审计
+提交工具的 strict-Comment 查询入口。
 
 ## 历史教师失败修复与诊断
 
