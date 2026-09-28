@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-28 02:18 UTC (diagnostic 54489646 COMPLETED / 0:0;
-v7 coverage 7/32 failed the scientific gate; automatic continuation stopped).
+Last updated: 2026-09-28 (v7 quality diagnosis independently replayed;
+prompt transport/verifier checks pass, teacher proof competence remains blocked).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -363,15 +363,16 @@ All eight v7 candidates yielded **42/256 accepted**, covering only **7/32**
 prompts; **25 prompts have no valid candidate**. This fails the preregistered
 32/32 advancement gate. The report's `passed=true` means diagnostic execution
 and publication only, not scientific readiness. Errors were unknown_citation
-96, antecedent_mismatch 61, step_syntax 36 and response_syntax 21. These are
-verifier categories, not yet an independently replayed causal diagnosis.
+96, antecedent_mismatch 61, step_syntax 36 and response_syntax 21. The subsequent
+independent CPU diagnosis below reproduces every recorded rejection.
 No parsed positive conclusion used TRUE (0/655); no raw TRUE step line was
 observed. This is rendering evidence, not permission to alter outputs or gates.
 Verified report SHA is
 `db2e2c0ff4da20694196a1308f65b75dee8c3f47b777413e922e6bca1c29b3ea`;
 the 143,055-byte bounded fetch is `.sdsc/fetched/54489646/fetch-0ol5j72o/`.
-The runtime repair now has real complete GPU diagnostic evidence, but v7 formal
-readiness failed. No student training, supplemental validation, full teacher
+The runtime repair now has real complete GPU diagnostic evidence, but v7 failed
+the necessary training-probe gate. Its formal readiness evaluator has not run.
+No student training, supplemental validation, full teacher
 store, calibration, G0 or pilot was started by this recovery.
 
 Two new finite processes launched on **Quest quser33 at 01:05:21Z**:
@@ -396,8 +397,8 @@ one Quest continuation. Failure, stale evidence, changed controls or SSH loss
 stop progression without retry/cancellation or automatic prompt adaptation.
 Verification passed **31 worker + 21 wrapper/boundary + 50 observation/continuation**
 tests, plus ruff/compilation/diff checks and independent science-invariance review.
-All 52 execution-safety hashes remain unchanged. This task's Git commit contains
-the worker/test repair, retargeted continuation and these docs; existing dirty
+All 52 execution-safety hashes remain unchanged. Commit `a05a67b` contains
+the worker/test repair, retargeted continuation and launch handoff; existing dirty
 `.gitignore`, `AGENTS.md` and earlier untracked SDSC files remain preserved.
 
 The untriggered continuation task is designed to handle the fixed supplemental cohort,
@@ -415,12 +416,41 @@ on `pts/105`; the new flow uses the existing quser33 master. Do not assume
 terminal disconnection preserves an SSH master. SSH loss,
 stale state, changed controls or unknown submissions stop progression. The current
 blocker is measured teacher-proof quality, not SSH or the previous runtime crash.
-Any next investigation should begin with the preserved raw responses and verifier
-traces; no blind GPU rerun, automatic prompt/model adaptation or relaxed gate is
-authorized by this terminal result. This status session changes only the handoff;
-remote accounting/report verification and local hash checks passed, with no new
-submission, cancellation or scientific code change. Existing uncommitted files
-remain untouched.
+The user then requested continued diagnosis. The 2,462,548-byte raw ledger was
+fetched once and verified against publication SHA
+`ca97a4cef49e2884dea31a2332b6e6aaa310b3174f898966d65772188ca09fc6`.
+All **288** original traces replay exactly. Independent audits verify all 256
+graphs, labels and canonical proofs, actual saved prompt/response token
+round-trips, unique candidate seeds, and exact historical v5 baseline replay.
+Canonical targets need only **54–163 tokens including EOS**, within the bound.
+No examined prompt-transport or verifier defect explains the failure.
+
+The 96 citation failures include 83 self/forward references, eight rule-ID
+references and five undefined earlier steps. All 61 premise mismatches have
+the right citation count but wrong literals. Of 235 complete outputs, **73
+answer tags are wrong**; another **120 answer-correct outputs have invalid
+proofs**. Missing TRUE is not a rejection cause because the parser accepts bare
+positive atoms, though the canonical prefix-target mismatch remains. Distinct
+seeds produce just 83 distinct within-prompt responses; the 224 generations
+after candidate zero add only one newly covered prompt.
+
+Offline attribution only: retaining all original dependencies and reordering
+steps yields 56/256 valid traces across 9/32 prompts; ignoring citation names
+while retaining the original grounded rule sequence yields 74/256 across 11/32.
+Neither alters the official **42/256, 7/32** result or qualifies teacher data.
+The measured blocker is reliable serial proof generation under this exact
+frozen Qwen3-8B non-thinking configuration; it is not general model incapacity.
+Next work needs a reviewed teacher reasoning/generation or adaptation proposal,
+not another blind prompt retry, larger sampling budget or relaxed validator.
+No supplemental validation examples were exposed by this diagnosis.
+
+Full hypotheses, examples, limitations and CPU reproduction commands:
+`docs/refactor/sdsc_v7_quality_diagnosis_20260928.md`; scripts/JSON are retained
+under `.sdsc/diagnostics/v7-quality/`, with raw evidence under
+`.sdsc/fetched/54489646/raw-verified/`. Independent tokenization, verifier,
+diversity and counterfactual reviews pass. This diagnosis changes only that
+report and the handoff in Git; no production science, weights, thresholds,
+submission or cancellation changed. Original uncommitted files remain untouched.
 
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the
