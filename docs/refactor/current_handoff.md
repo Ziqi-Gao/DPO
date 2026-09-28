@@ -17,8 +17,9 @@ submitted calibration 54506821. It failed on exp-19-15 because replay-loss
 targets remained on CPU while logits were on GPU. The independently reviewed
 read-only observer fetched the terminal evidence and stopped. The v3 device
 correction and production-supervision preflight passed CPU checks and independent
-review; this review-only acceptance still requires a new matching GPU preflight
-before another calibration).
+review. New matching preflight 54507345 is running on exp-19-08; the independently
+reviewed v3 Quest supervisor is active and will submit one matching calibration
+only after verified preflight success).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -1002,11 +1003,46 @@ independent ACCEPT from `/root/student_migration_audit` at
 **2026-09-28T21:13:16.995421Z**, incorporating the separately reviewed control
 adapter and its 29 passing tests. The exact review is preserved under
 `.sdsc/diagnostics/adapted-student-v3/implementation-independent-review.json`.
-This distinct acceptance changes only the v3 protocol review block and this
-handoff. SSH/account/partition/QoS/path checks passed at **21:11:03Z**; a fresh
+Distinct acceptance commit `df05bd2a96363829a4bc587c04a2dd116e2a6242` changes only
+the v3 protocol review block and this handoff; the actual accepted resolver passed.
+SSH/account/partition/QoS/path checks passed at **21:11:03Z**; a fresh
 metadata-only runtime check also confirmed the original Python binary SHA and
-five package pins without importing GPU libraries. No v3 preflight, calibration
-or supervision plan exists at this acceptance checkpoint.
+five package pins without importing GPU libraries.
+
+Fresh v3 preflight **54507345**, intent `b11f4fc0c8d9458c836b3d618d102696`, was
+submitted once at **2026-09-28T21:23:04Z** with **2 H100 / 24 CPU / 192 GiB /
+one hour**, account `nwu181`, shared partition and shared-normal QoS. Release
+`20260928T211432Z-9f932bc1929e-1f1a5883` contains 590 files / 6,676,419 bytes,
+code SHA `9f932bc1929e7a549cea64271a089786894b94c7c381c288904ac9fe46090d5b`.
+Genuine provenance SHA is
+`9c16ed8cd034ff2c1c0313f8043fe409bcd6aa3812b3858ef2fca696467cd6e9`, binding
+accepted HEAD `df05bd2`; source and provenance uploads were verified. Its real
+receipt binds teacher `54496291` and prerequisite SHA
+`ebfa796845102f785485ce56f53b2a638160212eef7abf7036fecd3c0d7e0086`.
+At **21:27:14Z**, queue and job/batch/extern accounting agree **RUNNING** on
+**exp-19-08**; no terminal scientific PASS is established.
+
+The distinct calibration release `20260928T212233Z-9f932bc1929e-028c319b`
+replays exactly the same 590 source files and original genuine history bundle.
+Its source and new provenance upload are verified; provenance SHA is
+`0497c4e0dcc7ca8ae55c1f8cb51cad3cdf5119fa505ed9d3b46eeb44aa3bc287`.
+Preparation/deployment evidence is under
+`.sdsc/replays/replay-3095a0c5b6b94b66bc0288b261561948/`.
+The actual finite flow is
+`.sdsc/supervision/student54507345-to-calibration-v3/`, plan SHA
+`4d5cfc581ff3a3051b829f49feeb0e1eab081ba5283a04e9663a98fbf5f1bd03`.
+It received independent operational ACCEPT from `/root/student_provenance_update`
+at **21:26:37Z**, including full genuine-provenance plan reconstruction, all
+source hashes and the exact **2 H100 / 24 CPU / 192 GiB / two-hour** calibration
+dry-run. It launched on **quser32**, PID **3159562**, at **21:27:14Z**; process
+and state were verified. Current phase is **waiting_preflight**, with
+`submission_attempted=false`. Preserve its profile, plan, pinned control/evidence
+files and permanent preflight claim. Do not run `tools/sdsc check` while active,
+start a competing flow, or manually submit its calibration release.
+The process polls every five minutes, expires after fourteen days, submits only
+once after actual accounting/artifact acceptance, and then verifies/fetches the
+calibration. SSH loss or scientific/control failure stops it without retries.
+This is an active finite Quest process, not an automatic Codex/chat notification.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters

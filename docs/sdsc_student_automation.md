@@ -1,5 +1,14 @@
 # 已验收 teacher 的 student 预检与自动接续
 
+当前活跃的是 v3 流程：预检 **54507345** → 一次匹配的 canonical-SFT
+训练校准。2026-09-28 21:27 UTC 已在 Quest **quser32** 启动，PID **3159562**，
+首次状态为 `waiting_preflight`，预检在 `exp-19-08` 运行。
+计划、独立审查、启动证据、实时状态位于
+`.sdsc/supervision/student54507345-to-calibration-v3/`。
+它使用已独立接受的 `df05bd2a96363829a4bc587c04a2dd116e2a6242` 科学源码；
+校准独立 release 为 `20260928T212233Z-9f932bc1929e-028c319b`。
+先检查该目录，避免手动重提或启动另一个监控。下述 v2 记录是保留的历史。
+
 已执行的 v2 自动接续只负责预检 `54506703` → 一次
 `qwen3-v2-adapted-calibration` → 校准终态核验与小结果回传。
 使用已独立接受的 v2 科学源码 `28c1026cece772a9e3d167d9cc64a64aaa0fd1b3`
