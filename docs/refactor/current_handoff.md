@@ -1,7 +1,7 @@
 # OPD current handoff
 
-Last updated: 2026-09-28 01:05 UTC (observer crash repaired; fresh diagnostic
-54489646 RUNNING with verified Quest monitoring and conditional continuation).
+Last updated: 2026-09-28 02:18 UTC (diagnostic 54489646 COMPLETED / 0:0;
+v7 coverage 7/32 failed the scientific gate; automatic continuation stopped).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -349,16 +349,30 @@ monitoring and automatic formal progression after success.
 
 Following the minimal repair and independent review, fresh diagnostic
 **54489646** was submitted once at **2026-09-28T00:59:35Z**, intent
-`523ada1d862c428986a4b3dfb671de73`. At **01:05Z** accounting and queue both
-report **RUNNING** on **exp-19-08**, elapsed 5m48s. Resources remain **one H100 /
+`523ada1d862c428986a4b3dfb671de73`. Fresh remote verification at **02:18Z**
+confirms job, batch and extern **COMPLETED / 0:0**, elapsed **29m03s**, with
+verified persistent results. It ran on **exp-19-08**. Resources were **one H100 /
 24 CPU / 192 GiB / 60 minutes**, nwu181, nairr-gpu-shared/shared-normal.
 Run `20260928T005810Z-15cffdded272-cf5d74b8`, code SHA
 `15cffdded27232359c518ed4672d3062535f3606126054e60bc97f22b1058260`,
 contains 516 files / 5,275,758 source bytes with matching preview/upload.
 Its actual receipt is `.sdsc/submissions/523ada1d862c428986a4b3dfb671de73.json`.
-Initial logs confirm source/model staging, node-local ext4 workspace, GPU-node
-Lustre input/persistent storage checks and metadata validation. No completed
-candidate quality result or student training is claimed.
+The full **32 baseline + 256 candidate** loop completed without SIGSEGV or
+interruption. Baseline accepted 3/32; paired v7 candidate-zero accepted 6/32.
+All eight v7 candidates yielded **42/256 accepted**, covering only **7/32**
+prompts; **25 prompts have no valid candidate**. This fails the preregistered
+32/32 advancement gate. The report's `passed=true` means diagnostic execution
+and publication only, not scientific readiness. Errors were unknown_citation
+96, antecedent_mismatch 61, step_syntax 36 and response_syntax 21. These are
+verifier categories, not yet an independently replayed causal diagnosis.
+No parsed positive conclusion used TRUE (0/655); no raw TRUE step line was
+observed. This is rendering evidence, not permission to alter outputs or gates.
+Verified report SHA is
+`db2e2c0ff4da20694196a1308f65b75dee8c3f47b777413e922e6bca1c29b3ea`;
+the 143,055-byte bounded fetch is `.sdsc/fetched/54489646/fetch-0ol5j72o/`.
+The runtime repair now has real complete GPU diagnostic evidence, but v7 formal
+readiness failed. No student training, supplemental validation, full teacher
+store, calibration, G0 or pilot was started by this recovery.
 
 Two new finite processes launched on **Quest quser33 at 01:05:21Z**:
 
@@ -367,8 +381,12 @@ Two new finite processes launched on **Quest quser33 at 01:05:21Z**:
 - `.sdsc/supervision/probe54489646-auto-v1/`, PID **1849367**,
   canonical plan SHA `fb22e016b9e2b4b8f7908e4ee8721b47fd628a257471a3e5d155c4453b899388`.
 
-Actual host inspection confirmed both alive, PPID 1 and independent sessions.
-Both states are `waiting`; the automatic gate has `child_started=false`.
+Launch-time host inspection confirmed both alive, PPID 1 and independent
+sessions. The observer is now **finished at 01:30:29Z**, and the automatic gate
+**stopped at 01:35:27Z**, reason `diagnostic_gate_failed`,
+`child_started=false`. Its notice explicitly reports 7/32 versus required 32/32.
+No later submission receipt or continuation child exists. Preserve this third
+terminal diagnostic flow too; never re-arm it or report it as actively monitoring.
 Independent admission review verified the actual receipt, deployed worker,
 plan/control/task hashes and absence of earlier start/claim. Preserve all
 plan/review/launch/state records and do not edit their pinned controls or task
@@ -382,7 +400,7 @@ All 52 execution-safety hashes remain unchanged. This task's Git commit contains
 the worker/test repair, retargeted continuation and these docs; existing dirty
 `.gitignore`, `AGENTS.md` and earlier untracked SDSC files remain preserved.
 
-The continuation task automatically handles the fixed supplemental cohort,
+The untriggered continuation task is designed to handle the fixed supplemental cohort,
 original readiness, coherent adapter migration, actual independent acceptance,
 fresh complete teacher store/matching preflight and the authorized student
 chain. It does not equate diagnostic success with formal acceptance. Codex runs
@@ -395,7 +413,14 @@ Read [automatic continuation instructions](../sdsc_auto_continuation.md) and its
 actual state before any competing work. The old quser42 master was foreground
 on `pts/105`; the new flow uses the existing quser33 master. Do not assume
 terminal disconnection preserves an SSH master. SSH loss,
-stale state, changed controls or unknown submissions stop progression.
+stale state, changed controls or unknown submissions stop progression. The current
+blocker is measured teacher-proof quality, not SSH or the previous runtime crash.
+Any next investigation should begin with the preserved raw responses and verifier
+traces; no blind GPU rerun, automatic prompt/model adaptation or relaxed gate is
+authorized by this terminal result. This status session changes only the handoff;
+remote accounting/report verification and local hash checks passed, with no new
+submission, cancellation or scientific code change. Existing uncommitted files
+remain untouched.
 
 Formal continuation still requires independently reviewed implementation,
 separate review-only acceptance, a complete fresh 256×8 teacher store and the
