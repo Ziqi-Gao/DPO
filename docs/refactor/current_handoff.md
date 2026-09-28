@@ -9,7 +9,9 @@ failure 54504816 fixed by an independently reviewed transport successor;
 new preflight 54504895 completed with verified GPU and persistent-output evidence;
 student calibration 54505782 failed closed before its first update due to an
 Accelerate FSDP default; separate v2 execution correction independently accepted,
-awaiting its new matching GPU preflight).
+source release uploaded, but provenance upload unconfirmed after SSH commands
+stopped responding; no v2 GPU job submitted, awaiting manual connection recovery
+and upload reconciliation before its new matching GPU preflight).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -158,7 +160,7 @@ GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
 science, SSH loss, changed control hashes or unresolved submissions; no blind
 retry, auto-cancellation, full factorial or Gemma.
 
-The latest connection check ran from Quest **quser32** at
+The last successful connection check ran from Quest **quser32** at
 2026-09-28T18:29Z using the runtime-computed existing master
 `$HOME/.ssh/cm/sdsc-quser32`. SSH confirmed zgao12@login02; Slurm commands,
 source paths and persistent project result paths passed. Account nwu181 and the
@@ -168,6 +170,14 @@ Transformers 4.56.2 and Accelerate 1.10.1. No authentication or environment
 modification was attempted. GPU-node mounts remain checked per job. Evidence:
 `.sdsc/diagnostics/adapted-student-v2/connection-check.json`. Both old formal
 flows remain stopped.
+At **2026-09-28T18:41:51Z**, the shared master still passed `ssh -O check`,
+but a remote `/usr/bin/true` command timed out after 15 seconds. Provenance
+upload and one read-only reconciliation had already timed out; further remote
+operations stopped without authentication fallback or submission retry. Evidence:
+`.sdsc/diagnostics/adapted-student-v2/ssh-response-check.json`. This establishes
+an unresponsive command channel, not a proven authentication expiry or storage
+failure. The user must restore the shared connection in an ordinary terminal on
+**quser32**; compute its path as `$HOME/.ssh/cm/sdsc-$(hostname -s)` at runtime.
 
 Earlier teacher prompt diagnostics are complete; none establishes formal readiness.
 All used one H100 / 24 CPU / 192 GiB / at most 30 minutes, retained exact raw
@@ -820,9 +830,36 @@ new v2 GPU PASS. Implementation commit
 `/root/student_migration_audit` at **2026-09-28T18:31:41Z**, with 123 independent
 checks including the bounded-log regression. The v2 review-neutral core SHA is
 `9277960e4ff3599c325ac0115888280ad32647891fd3841d045822bf7db2a320`.
-This distinct review-only commit changes only the v2 review block and handoff.
+Distinct review-only acceptance commit
+`28c1026cece772a9e3d167d9cc64a64aaa0fd1b3` changes only the v2 review block and handoff.
 It grants no new GPU-result acceptance; execute a fresh matching v2 preflight
 and only then a fresh calibration at the same reviewed source HEAD.
+
+V2 release `20260928T183316Z-b542b2e7e7fa-1cd4c8d9` was dry-run reviewed and
+uploaded successfully: 577 files / 6,478,953 source bytes, code SHA
+`b542b2e7e7fa49f4593aab7f361bb5df1b68c04890eb4cdedd6a51553f58a5cf`,
+genuine source HEAD `28c1026cece772a9e3d167d9cc64a64aaa0fd1b3`.
+Its local genuine provenance artifact is
+`.sdsc/provenance/provenance-ec86aaf33c9040c68676d453af6e8b3e`, manifest SHA
+`e2a32137229f1711aa32610d42690afedcd83afad018f0fda74586ed7821bc81`.
+Local verification and upload dry-run passed, but upload timed out at 180 seconds
+and its exact-destination read-only reconciliation also timed out. The empty
+`preflight-provenance-upload.json` is not a successful receipt. No v2 submission
+intent or GPU job exists. Evidence is under `.sdsc/diagnostics/adapted-student-v2/`.
+After manual SSH recovery, first reconcile the exact remote provenance directory
+`/home/zgao12/quest-runs/OPD/provenance/e2a32137229f1711aa32610d42690afedcd83afad018f0fda74586ed7821bc81`
+against all three locally verified files and the existing release. Preserve any
+partial upload; do not overwrite it or blindly repeat the upload. Only verified
+complete provenance permits the existing release's submit dry-run and authorized
+two-H100 preflight submission. This is an uncertain file upload, not an uncertain
+Slurm submission.
+Later documentation commits do not change that release's genuine source HEAD or
+invalidate its existing provenance. A fresh calibration still needs its own
+release and matching reviewed science: the current exporter requires its actual
+HEAD to equal the explicit acceptance commit. Do not reset the workspace, move
+public refs or relabel history to bypass that guard; any needed export extension
+must preserve genuine ancestry and receive bounded verification/review.
+
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
 still need separately reviewed migration. Details and next commands are in
