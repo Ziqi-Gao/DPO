@@ -5,9 +5,10 @@ CPU audit `54497294` now has a separate student consumer. The original stopped
 v3 flows remain historical; do not restart them or substitute this teacher into
 their original prerequisites.
 
-The current successor candidate,
-`prereg/amendments/qwen3_adapted_student_calibration_v4.json`, requires a genuine
-implementation commit and a distinct subsequent review-only acceptance commit.
+The current accepted successor,
+`prereg/amendments/qwen3_adapted_student_calibration_v4.json`, binds genuine
+implementation commit `89a8ffd598d9377ebcbef556bee0057699d9eb35` and distinct
+review-only acceptance `cfac02db4cf67c7d1a8c1b09697fcc25de76474b`.
 It preserves all 47 accepted producer files and binds the named student
 implementation. Acceptance of this protocol is not acceptance of GPU results.
 
@@ -29,16 +30,16 @@ unchanged. Its 256-token teacher acceptance does not assert historical
    matching `sync --dry-run` and immutable `sync`. Export genuine provenance
    using `tools/sdsc_provenance.py create` with the actual implementation and
    acceptance commits and upload it after the upload dry-run. The bounded local
-   history limit is 32 commits; public refs are never moved to bypass the bound.
+   history limit is 64 commits; public refs are never moved to bypass the bound.
 3. Submit `qwen3-v2-adapted-preflight` with `--teacher-job-id 54496291` and
    explicit resources below. It restores reviewed science, verifies node-local
    and persistent mounts, stages the real selected teacher, and exercises a
    synthetic global-64 FSDP update through the actual CPU collation and canonical
    supervision boundary, full-state restore and adapted teacher
    forward. It produces `adapted-preflight.json` and durable checkpoint evidence.
-4. Only after accounting shows every related step COMPLETED/0:0 and published
-   results validate, create a fresh release for
-   `qwen3-v2-adapted-calibration`, passing that actual `--preflight-job-id` and
+4. Prepare a fresh release for `qwen3-v2-adapted-calibration`; submit it only
+   after accounting shows every related step COMPLETED/0:0 and published results
+   validate. Pass that actual `--preflight-job-id` and
    `--teacher-job-id 54496291`. The upstream must match the same protocol,
    scientific source, teacher, runtime and cache. No automatic retry is allowed.
 5. Calibration executes the original full-parameter canonical-SFT entrypoint:

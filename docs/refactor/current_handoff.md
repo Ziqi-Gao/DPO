@@ -19,8 +19,11 @@ read-only observer fetched the terminal evidence and stopped. The v3 device
 correction and production-supervision preflight passed CPU checks and independent
 review. Matching preflight 54507345 completed successfully; the v3 Quest supervisor
 automatically submitted calibration 54507464. That job failed the AdamW-state
-cadence check after 5m10s. The supervisor fetched failure evidence and stopped;
-there is no accepted calibration or active continuation).
+cadence check after 5m10s. The supervisor fetched failure evidence and stopped.
+The v4 optimizer-binding repair is independently accepted; fresh preflight
+54509682 is RUNNING on exp-19-15. A new reviewed finite Quest supervisor is
+active and will submit one matching calibration only after verified preflight
+success. There is no accepted calibration yet).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -1081,8 +1084,8 @@ Historical v1/v2/v3 and all 47 teacher scientific files remain unchanged.
 The separate v4 finite supervisor retains the reviewed single-submit/stop guards.
 Genuine provenance's fixed unpublished-history capacity becomes 64, retaining
 every original byte/path/lineage check; real Git boundary and hidden historical
-path tests pass. No v4 job or active v4 flow exists at this acceptance checkpoint;
-fresh deployment and a matching GPU preflight remain required.
+path tests pass. Fresh v4 deployment and execution are recorded below; the
+earlier v3 result cannot satisfy the changed implementation's prerequisite.
 The combined affected suite passed **289 tests**; the actual CPU FSDP suite
 includes 13 cases and the original trainer suite 70, covering raw optimizer /
 scheduler identity, parameter ownership, nonzero update, RNG and full-state
@@ -1098,8 +1101,40 @@ ACCEPT from `/root/student_migration_audit` at **2026-09-29T01:05:11.976586Z**,
 with **235 independent scientific tests**, all 48 student blobs / 47 frozen
 teacher blobs verified, and the separate 63-test control review. The evidence is
 `.sdsc/diagnostics/adapted-student-v4/implementation-independent-review.json`.
-This separate review-only acceptance changes only the v4 review block and this
-handoff; it grants no GPU-result or training-success claim.
+Distinct acceptance commit `cfac02db4cf67c7d1a8c1b09697fcc25de76474b` changes
+only the v4 review block and this handoff; the actual accepted resolver passed.
+
+V4 preflight **54509682**, intent `7f33e6c018224108a41100a496879017`, was
+submitted once at **2026-09-29T01:13:07Z** with **2 H100 / 24 CPU / 192 GiB /
+one hour**, account `nwu181`, `nairr-gpu-shared` / `nairr-gpu-shared-normal`.
+Release `20260929T010618Z-f8208cbe6d74-644c0f92` contains **595 files /
+6,739,611 bytes**, code SHA
+`f8208cbe6d74e6c54d728417a7ba930e4fbb94b0d6796d9b0f35c4d3d1a3a6d2`.
+Its verified genuine provenance is
+`332c96ea0624040d57f6ad0f77166b37fe8c1a5ea1cfb1d71ce2b0c5ff997746`;
+the actual receipt binds accepted HEAD `cfac02d`, teacher `54496291` and
+prerequisite SHA `22f816676fcce32b1c5b15e68823182d53f6f3a3c2c5725e7275d38be064e210`.
+Initial accounting and the supervisor's **01:16:37Z** observation both show
+**RUNNING** on **exp-19-15**. Startup logs confirm genuine science restoration
+and teacher checkpoint staging; no GPU PASS has yet been observed.
+
+The separate calibration release `20260929T011138Z-f8208cbe6d74-172ab29a`
+replays those exact bytes and unchanged genuine Git bundle. Its new verified
+provenance SHA is
+`21df6ab7d3d0a9e0c71ccf06c23214600b67ce50f55409d4bdd94f541365394a`;
+evidence is under `.sdsc/replays/replay-de754faa64734356b8a9cf60d8af7ce1/`.
+The new flow is `.sdsc/supervision/student54509682-to-calibration-v4/`, plan SHA
+`c5eb887c717ee8b61fdb5cb04313cf427db127afb12ee5944994f7229f0de494`.
+Independent operational ACCEPT from `/root/student_provenance_update` at
+**01:15:48Z** verified actual receipts, all 595 source files, genuine provenance,
+the complete rebuilt plan and an empty-blocker **2 H100 / 24 CPU / 192 GiB /
+two-hour** calibration dry-run. The finite supervisor launched on **quser32**
+at **01:16:36Z**, PID **3739259**; actual process and `waiting_preflight` state
+were verified. It has not yet attempted calibration submission. It polls every
+300 seconds and preserves the one-submit, terminal-artifact and stop guards.
+Do not change pinned controls or `.sdsc/check.json`, start a competing flow,
+or re-arm an existing claim. This process neither repairs future bugs nor
+automatically notifies the chat; SSH loss stops it for manual authentication.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
