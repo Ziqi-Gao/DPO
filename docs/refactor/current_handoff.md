@@ -21,9 +21,9 @@ review. Matching preflight 54507345 completed successfully; the v3 Quest supervi
 automatically submitted calibration 54507464. That job failed the AdamW-state
 cadence check after 5m10s. The supervisor fetched failure evidence and stopped.
 The v4 optimizer-binding repair is independently accepted; fresh preflight
-54509682 is RUNNING on exp-19-15. A new reviewed finite Quest supervisor is
-active and will submit one matching calibration only after verified preflight
-success. There is no accepted calibration yet).
+54509682 completed successfully on exp-19-15. Its reviewed finite Quest
+supervisor automatically submitted calibration 54509809, now RUNNING on
+exp-19-15. There is no accepted calibration yet).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -1114,9 +1114,25 @@ Its verified genuine provenance is
 `332c96ea0624040d57f6ad0f77166b37fe8c1a5ea1cfb1d71ce2b0c5ff997746`;
 the actual receipt binds accepted HEAD `cfac02d`, teacher `54496291` and
 prerequisite SHA `22f816676fcce32b1c5b15e68823182d53f6f3a3c2c5725e7275d38be064e210`.
-Initial accounting and the supervisor's **01:16:37Z** observation both show
-**RUNNING** on **exp-19-15**. Startup logs confirm genuine science restoration
-and teacher checkpoint staging; no GPU PASS has yet been observed.
+It completed on **exp-19-15** in **16m44s**. Final accounting shows main,
+batch and extern **COMPLETED / 0:0**, an empty queue and verified report SHA
+`cbc7fe0b3a59d97130e6ddc1ec1aca3368a25d2c876073d72b140468fe9600d1`.
+Both ranks passed the actual Accelerator preparation, prepared-parameter
+ownership, nonempty FP32 AdamW state, unchanged step/scheduler cadence,
+nonzero global64 update and complete model/optimizer/scheduler/RNG restore.
+Publication read-back verified **21,892,025,091 bytes** across ten files on persistent storage;
+only five small reports/logs (**65,179 bytes**) were fetched to
+`.sdsc/fetched/54509682/fetch-rcogualm/` (the supervisor independently fetched
+the same small set to `fetch-4zf_mnf5/`). Final accounting is in
+`.sdsc/diagnostics/adapted-student-v4/preflight-54509682-final-status.json`.
+Independent actual-result ACCEPT from `/root/student_migration_audit` at
+**01:36:11Z** re-ran the strict v4 report/upstream/accounting/fetch validators,
+verified the 48 deployed science files and cross-linked all four checkpoint
+file sizes/hashes to the persistent publication inventory. Evidence is
+`.sdsc/diagnostics/adapted-student-v4/preflight-54509682-independent-review.json`.
+Host memory peaked at **131.248 GiB**, leaving **60.752 GiB** under the
+192-GiB cgroup limit; GPU reserved peaks were **41.902 / 30.229 GiB**.
+This proves the shared preparation and synthetic window, not full calibration.
 
 The separate calibration release `20260929T011138Z-f8208cbe6d74-172ab29a`
 replays those exact bytes and unchanged genuine Git bundle. Its new verified
@@ -1129,9 +1145,18 @@ Independent operational ACCEPT from `/root/student_provenance_update` at
 **01:15:48Z** verified actual receipts, all 595 source files, genuine provenance,
 the complete rebuilt plan and an empty-blocker **2 H100 / 24 CPU / 192 GiB /
 two-hour** calibration dry-run. The finite supervisor launched on **quser32**
-at **01:16:36Z**, PID **3739259**; actual process and `waiting_preflight` state
-were verified. It has not yet attempted calibration submission. It polls every
-300 seconds and preserves the one-submit, terminal-artifact and stop guards.
+at **01:16:36Z**, PID **3739259**. It verified preflight success and automatically
+submitted exactly one calibration **54509809** at **01:32:18Z**, intent
+`ceafe10f2b974e8d986688d56b114079`, prerequisite SHA
+`7227a7bf5871b0e4346e037a1cb7e3dbaea92673cf1ecdcd6435a8fe649ea2dd`.
+Actual state is `waiting_calibration`, `submission_attempted=true`, with a
+durable real receipt and no error. Fresh SSH/accounting confirms **RUNNING**
+on **exp-19-15**; initial status is
+`.sdsc/diagnostics/adapted-student-v4/calibration-54509809-initial-status.json`.
+Results belong to `/expanse/lustre/projects/nwu181/zgao12/OPD/control-results/20260929T011138Z-f8208cbe6d74-172ab29a/ceafe10f2b974e8d986688d56b114079`.
+The supervisor's first calibration query waits the reviewed five-minute interval after the
+receipt. Monitoring then continues every 300 seconds with the same terminal
+artifact and stop guards. No calibrated artifact or G0 success is established.
 Do not change pinned controls or `.sdsc/check.json`, start a competing flow,
 or re-arm an existing claim. This process neither repairs future bugs nor
 automatically notifies the chat; SSH loss stops it for manual authentication.
