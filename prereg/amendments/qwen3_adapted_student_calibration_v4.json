@@ -203,10 +203,10 @@
     "later_unrelated_commits_invalidate_review": false
   },
   "review": {
-    "status": "proposed",
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "reviewed_at_utc": null,
-    "rationale": null
+    "rationale": "Independent review accepts the shared production FSDP1 preparation repair: prepare the model, rebind only fresh single-group AdamW to the actual prepared parameters, then prepare the optimizer while preserving the original LambdaLR object, options and cadence. Real CPU FSDP and AcceleratedOptimizer regression verifies a nonzero global64 update and full-state restoration with the next update reproduced. The v4 two-H100 preflight now exercises that same helper through the actual pinned launcher YAML/environment and preserves CPU canonical supervision, global64/1536-token shape, finite-gradient, nonzero-update, optimizer-cadence, memory and full-state gates. All 48 named student blobs bind this implementation; all 47 accepted teacher blobs, genuine v1/v2/v3 authority and scientific thresholds remain intact. The finite v4 controller and bounded 64-commit provenance increase are separately independently reviewed. A distinct review-only acceptance and a fresh matching real v4 GPU preflight remain mandatory before one canonical-SFT calibration; this review makes no GPU, calibration, G0 or pilot success claim.",
+    "reviewed_at_utc": "2026-09-29T01:05:11.976586Z",
+    "reviewed_implementation_commit": "89a8ffd598d9377ebcbef556bee0057699d9eb35",
+    "reviewer": "independent Codex agent /root/student_migration_audit",
+    "status": "accepted"
   }
 }

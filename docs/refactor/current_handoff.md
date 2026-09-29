@@ -1065,7 +1065,7 @@ automatic transition and failure capture, not automatic code repair or chat
 notification. A reviewed repair and fresh matching prerequisites are required
 before any new calibration; neither G0 nor pilot has passed.
 
-The proposed v4 correction preserves the same fresh single-group AdamW and raw
+The independently reviewed v4 correction preserves the same fresh single-group AdamW and raw
 LambdaLR while preparing FSDP before binding optimizer parameters. It rejects
 stateful/ambiguous inputs and leaves non-FSDP preparation unchanged. The actual
 trainer CPU regression reproduced the old empty-state failure and now reaches a
@@ -1075,14 +1075,14 @@ calls the same shared helper through the real Accelerator on Qwen3-1.7B,
 retaining the synthetic global64 window, device-boundary test, unchanged cadence
 validator and full-state restore. A separate Gloo control group preserves CPU
 reductions and monitored barriers alongside production NCCL FSDP.
-The v4 protocol/config is proposed, with core SHA
+The v4 protocol/config has core SHA
 `822b5640da8e47232ce09795e364c73fae16512f1123d2a0b4dfa56c1769f93c`.
 Historical v1/v2/v3 and all 47 teacher scientific files remain unchanged.
 The separate v4 finite supervisor retains the reviewed single-submit/stop guards.
 Genuine provenance's fixed unpublished-history capacity becomes 64, retaining
 every original byte/path/lineage check; real Git boundary and hidden historical
-path tests pass. No v4 job or active v4 flow exists yet; independent acceptance,
-fresh deployment and matching GPU preflight remain required.
+path tests pass. No v4 job or active v4 flow exists at this acceptance checkpoint;
+fresh deployment and a matching GPU preflight remain required.
 The combined affected suite passed **289 tests**; the actual CPU FSDP suite
 includes 13 cases and the original trainer suite 70, covering raw optimizer /
 scheduler identity, parameter ownership, nonzero update, RNG and full-state
@@ -1093,6 +1093,13 @@ No new Ruff or whitespace findings were introduced. Existing unrelated source
 lint findings and the user's dirty files are preserved. Shared SSH and remote
 account/QoS/path checks passed at **2026-09-29T00:58:16Z**, and the fixed Python
 SHA and five package versions were rechecked without importing GPU libraries.
+Implementation `89a8ffd598d9377ebcbef556bee0057699d9eb35` received independent
+ACCEPT from `/root/student_migration_audit` at **2026-09-29T01:05:11.976586Z**,
+with **235 independent scientific tests**, all 48 student blobs / 47 frozen
+teacher blobs verified, and the separate 63-test control review. The evidence is
+`.sdsc/diagnostics/adapted-student-v4/implementation-independent-review.json`.
+This separate review-only acceptance changes only the v4 review block and this
+handoff; it grants no GPU-result or training-success claim.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
