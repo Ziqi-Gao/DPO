@@ -1,0 +1,17 @@
+teacher_identity:
+  format_version: 1
+  kind: learned_dense_checkpoint
+  base_model_id: Qwen/Qwen3-8B
+  base_revision: b968826d9c46dd6066d109eabc6255188de91218
+  tokenizer_id: Qwen/Qwen3-8B
+  tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+  tokenizer_fingerprint: 03ed1280ac090810a530b8ca225c5cb9398ca3d0f22465f67caf56146f75a13d
+  chat_template_sha256: a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8
+  prompt_protocol: qwen3_non_thinking_v1
+  enable_thinking: false
+  teacher_checkpoint_sha256: 6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7
+acceptance_sha256: 5d6952823441bde567cdf7f5fad8b4625c58ee7e82425aad76c10433d0ec5337
+acceptance_inventory_sha256: 8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed
+producer_science_head: 929fb14834852a7c91e6656c76fd1834e1b5007d
+qualification_job_id: '54496291'
+student_protocol_path: prereg/amendments/qwen3_adapted_student_calibration_v4.json

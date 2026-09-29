@@ -30,6 +30,7 @@ KIND = "sdsc_h100_adapted_training_preflight_v1"
 RESULT = "adapted-preflight.json"
 WORLD_SIZE = 2
 DEVICE_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v3.json"
+OPTIMIZER_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v4.json"
 
 
 def sibling(name):
@@ -317,10 +318,15 @@ def validate_completed_report(report, expected):
             and item.get("reserved_global_nonpadding_tokens") == 64 * 1536,
             "preflight batch/token/window semantics differ",
         )
-        if expected.get("student_protocol_path") == DEVICE_PROTOCOL_PATH:
+        if expected.get("student_protocol_path") in {DEVICE_PROTOCOL_PATH, OPTIMIZER_PROTOCOL_PATH}:
             require(
                 item.get("supervision_boundary") == supervision_boundary_evidence(f"cuda:{rank}"),
                 "v3 preflight did not exercise CPU collation and canonical supervision on this rank",
+            )
+        if expected.get("student_protocol_path") == OPTIMIZER_PROTOCOL_PATH:
+            require(
+                item.get("optimizer_preparation") == optimizer_preparation_evidence(),
+                "v4 preflight did not validate production FSDP optimizer preparation",
             )
         fsdp = item["fsdp"]
         require(
@@ -463,6 +469,102 @@ def canonical_canary_loss(student, supervisor, batch):
     return output.loss, observed[0]
 
 
+class GlooControlPlane:
+    """Keep CPU/error/publication collectives on Gloo with production NCCL FSDP."""
+
+    def __init__(self, distributed, group):
+        self.distributed = distributed
+        self.group = group
+
+    def __getattr__(self, name):
+        return getattr(self.distributed, name)
+
+    def all_reduce(self, tensor, **kwargs):
+        return self.distributed.all_reduce(tensor, **{"group": self.group, **kwargs})
+
+    def all_gather_object(self, output, value, **kwargs):
+        if kwargs.get("group") is None:
+            kwargs["group"] = self.group
+        return self.distributed.all_gather_object(output, value, **kwargs)
+
+    def broadcast_object_list(self, values, **kwargs):
+        return self.distributed.broadcast_object_list(values, **{"group": self.group, **kwargs})
+
+    def monitored_barrier(self, **kwargs):
+        return self.distributed.monitored_barrier(**{"group": self.group, **kwargs})
+
+
+def production_accelerator(science_root):
+    """Resolve the real training launcher YAML/defaults without launching a process."""
+    from accelerate import Accelerator
+    from accelerate.commands.launch import _validate_launch_command, launch_command_parser
+    from accelerate.utils import FullyShardedDataParallelPlugin
+    from accelerate.utils.launch import prepare_multi_gpu_env
+
+    path = science_root / "configs/accelerate/fsdp_2gpu_adapted_student_v2.yaml"
+    arguments = launch_command_parser().parse_args(
+        ["--config_file", str(path), "--num_cpu_threads_per_process", "12",
+         "--main_process_port", "0", "-m", "posttrain_circuits.cli.train"]
+    )
+    arguments, _, _ = _validate_launch_command(arguments)
+    generated = prepare_multi_gpu_env(arguments)
+    require(arguments.use_fsdp and arguments.num_processes == 2, "production launcher topology differs")
+    require(
+        generated.get("FSDP_VERSION") == "1"
+        and generated.get("FSDP_USE_ORIG_PARAMS") == "false"
+        and generated.get("FSDP_SHARDING_STRATEGY") == "FULL_SHARD"
+        and generated.get("FSDP_AUTO_WRAP_POLICY") == "TRANSFORMER_BASED_WRAP"
+        and generated.get("FSDP_SYNC_MODULE_STATES") == "true"
+        and generated.get("FSDP_CPU_RAM_EFFICIENT_LOADING") == "true"
+        and generated.get("ACCELERATE_MIXED_PRECISION") == "bf16",
+        "production FSDP launcher defaults differ",
+    )
+    # These are the same generated framework options used by the training child.
+    # Do not replace CUDA visibility, rendezvous or any scheduler allocation.
+    os.environ.update({k: v for k, v in generated.items() if k.startswith(("FSDP_", "ACCELERATE_"))})
+    return Accelerator(
+        fsdp_plugin=FullyShardedDataParallelPlugin(),
+        gradient_accumulation_steps=8,
+        step_scheduler_with_optimizer=False,
+    )
+
+
+def optimizer_preparation_evidence():
+    return {
+        "helper": "prepare_accelerate_model_optimizer_scheduler",
+        "framework": "Accelerate_FSDP1",
+        "use_orig_params": False,
+        "prepared_parameter_ownership_verified": True,
+        "raw_scheduler_optimizer_binding_verified": True,
+        "optimizer_state_nonempty": True,
+        "optimizer_master_dtype": "float32",
+        "global_step": 1,
+        "scheduler_last_epoch": 1,
+        "scheduler_step_count": 2,
+        "scope": "shared_production_preparation_then_one_synthetic_global64_window",
+    }
+
+
+def verify_optimizer_preparation(student, optimizer, scheduler):
+    import torch
+
+    from posttrain_circuits.learning.training.factorial_trainer import (
+        _validate_optimizer_scheduler_cadence,
+        validate_prepared_optimizer_binding,
+    )
+
+    validate_prepared_optimizer_binding(student, optimizer, scheduler)
+    _validate_optimizer_scheduler_cadence(
+        optimizer_state=optimizer.state_dict(), scheduler_state=scheduler.state_dict(), global_step=1
+    )
+    require(
+        all(p.dtype == torch.float32 for p in student.parameters())
+        and all(p in optimizer.state for p in student.parameters() if p.requires_grad),
+        "production prepared parameters lack FP32 AdamW state",
+    )
+    return optimizer_preparation_evidence()
+
+
 def run_canary(args, identity, evidence):
     activate_scientific_source(args.science_root)
     import torch
@@ -497,16 +599,19 @@ def run_canary(args, identity, evidence):
             "qwen3-adapted-student-calibration-v1",
             "qwen3-adapted-student-calibration-v2",
             "qwen3-adapted-student-calibration-v3",
+            "qwen3-adapted-student-calibration-v4",
         },
         "unrecognized student canary protocol",
     )
-    device_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v3"
+    optimizer_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v4"
+    device_boundary = optimizer_boundary or protocol.amendment_id == "qwen3-adapted-student-calibration-v3"
     if device_boundary:
+        expected_path = OPTIMIZER_PROTOCOL_PATH if optimizer_boundary else DEVICE_PROTOCOL_PATH
         require(
-            protocol.path.relative_to(args.science_root).as_posix() == DEVICE_PROTOCOL_PATH,
-            "wrong v3 protocol path",
+            protocol.path.relative_to(args.science_root).as_posix() == expected_path,
+            "wrong student preflight protocol path",
         )
-        evidence["student_protocol_path"] = DEVICE_PROTOCOL_PATH
+        evidence["student_protocol_path"] = expected_path
     rank, world = identity["rank"], identity["world_size"]
     log_phase(rank, "gpu_and_distributed_checks")
     require(
@@ -528,8 +633,14 @@ def run_canary(args, identity, evidence):
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     torch.cuda.reset_peak_memory_stats(device)
-    dist.init_process_group("gloo", timeout=timedelta(seconds=600))
-    data_group = dist.new_group(backend="nccl", timeout=timedelta(seconds=120))
+    if optimizer_boundary:
+        dist.init_process_group("nccl", timeout=timedelta(seconds=120))
+        data_group = dist.group.WORLD
+        control_group = dist.new_group(backend="gloo", timeout=timedelta(seconds=600))
+        dist = GlooControlPlane(dist, control_group)
+    else:
+        dist.init_process_group("gloo", timeout=timedelta(seconds=600))
+        data_group = dist.new_group(backend="nccl", timeout=timedelta(seconds=120))
     value = torch.tensor(float(rank + 1), device=device)
     work = dist.all_reduce(value, group=data_group, async_op=True)
     work.wait(timeout=timedelta(seconds=120))
@@ -563,18 +674,33 @@ def run_canary(args, identity, evidence):
     require(student_bundle.resolved_model_commit == MODELS["Qwen/Qwen3-1.7B"], "student revision mismatch")
     layer_types = {type(module) for module in model.modules() if type(module).__name__ == "Qwen3DecoderLayer"}
     require(len(layer_types) == 1, "student decoder layer type differs")
-    student = FSDP(
-        model,
-        process_group=data_group,
-        device_id=device,
-        use_orig_params=False,
-        auto_wrap_policy=functools.partial(transformer_auto_wrap_policy, transformer_layer_cls=layer_types),
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
-        sync_module_states=True,
-        mixed_precision=MixedPrecision(
-            param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.bfloat16
-        ),
-    )
+    if optimizer_boundary:
+        from posttrain_circuits.learning.training.factorial_trainer import (
+            prepare_accelerate_model_optimizer_scheduler,
+        )
+
+        accelerator = production_accelerator(args.science_root)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0005, weight_decay=0.0, betas=(0.9, 0.95))
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _step: 1.0)
+        student, prepared_optimizer, scheduler = prepare_accelerate_model_optimizer_scheduler(
+            accelerator, model, optimizer, scheduler
+        )
+        optimizer = prepared_optimizer.optimizer
+    else:
+        student = FSDP(
+            model,
+            process_group=data_group,
+            device_id=device,
+            use_orig_params=False,
+            auto_wrap_policy=functools.partial(
+                transformer_auto_wrap_policy, transformer_layer_cls=layer_types
+            ),
+            sharding_strategy=ShardingStrategy.FULL_SHARD,
+            sync_module_states=True,
+            mixed_precision=MixedPrecision(
+                param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16, buffer_dtype=torch.bfloat16
+            ),
+        )
     evidence["fsdp"] = validate_model_fsdp_sharding(student, world_size=world, fsdp_type=FSDP)
     require(evidence["fsdp"]["fsdp_wrapper_count"] == 29, "student must contain 28 wrapped decoder layers")
     teacher = None
@@ -618,8 +744,9 @@ def run_canary(args, identity, evidence):
     dist.all_reduce(local_tokens)
     require(local_tokens.item() == 64 * 1536 <= contract["token_budget"], "global token reservation differs")
     evidence["reserved_global_nonpadding_tokens"] = local_tokens.item()
-    optimizer = torch.optim.AdamW(student.parameters(), lr=0.0005, weight_decay=0.0, betas=(0.9, 0.95))
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _step: 1.0)
+    if not optimizer_boundary:
+        optimizer = torch.optim.AdamW(student.parameters(), lr=0.0005, weight_decay=0.0, betas=(0.9, 0.95))
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _step: 1.0)
     before = tensor_digest(torch, student.named_parameters())
     losses = []
     log_phase(rank, "global64_optimizer_window")
@@ -662,8 +789,14 @@ def run_canary(args, identity, evidence):
         gradients and all(bool(torch.isfinite(gradient).all()) for gradient in gradients),
         "nonfinite/empty gradients",
     )
-    optimizer.step()
+    if optimizer_boundary:
+        prepared_optimizer.step()
+        require(not prepared_optimizer.step_was_skipped, "production optimizer step was skipped")
+    else:
+        optimizer.step()
     scheduler.step()
+    if optimizer_boundary:
+        evidence["optimizer_preparation"] = verify_optimizer_preparation(student, optimizer, scheduler)
     after = tensor_digest(torch, student.named_parameters())
     require(before != after, "full-parameter AdamW update was zero")
     evidence.update(

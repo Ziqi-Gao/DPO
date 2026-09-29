@@ -4,13 +4,14 @@ import ast
 import copy
 import importlib.util
 import math
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/sdsc_adapted_training_preflight.py"
@@ -226,6 +227,83 @@ print(module.TASK)
         with self.assertRaisesRegex(ValueError, "CPU collation"):
             worker.validate_completed_report(report, expected)
 
+    def test_v4_requires_optimizer_evidence_on_both_ranks_and_keeps_v3_boundary(self):
+        report, expected = preflight_fixture()
+        expected["student_protocol_path"] = worker.OPTIMIZER_PROTOCOL_PATH
+        report["student_protocol_path"] = worker.OPTIMIZER_PROTOCOL_PATH
+        for rank, item in enumerate(report["ranks"]):
+            item["student_protocol_path"] = worker.OPTIMIZER_PROTOCOL_PATH
+            item["supervision_boundary"] = worker.supervision_boundary_evidence(f"cuda:{rank}")
+            item["optimizer_preparation"] = worker.optimizer_preparation_evidence()
+        worker.validate_completed_report(report, expected)
+        for key in worker.optimizer_preparation_evidence():
+            changed = copy.deepcopy(report)
+            del changed["ranks"][1]["optimizer_preparation"][key]
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "optimizer preparation"):
+                worker.validate_completed_report(changed, expected)
+        del report["ranks"][0]["supervision_boundary"]
+        with self.assertRaisesRegex(ValueError, "CPU collation"):
+            worker.validate_completed_report(report, expected)
+
+    def test_v4_optimizer_evidence_requires_real_state_and_live_parameter_ownership(self):
+        import torch
+
+        model = torch.nn.Linear(2, 1)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
+        with self.assertRaises(ValueError):
+            worker.verify_optimizer_preparation(model, optimizer, scheduler)
+        model(torch.ones(1, 2)).sum().backward()
+        optimizer.step()
+        scheduler.step()
+        self.assertEqual(worker.verify_optimizer_preparation(model, optimizer, scheduler),
+                         worker.optimizer_preparation_evidence())
+        # Actual stale parameter references, rather than a mocked report flag.
+        model.weight = torch.nn.Parameter(model.weight.detach().clone())
+        with self.assertRaises(ValueError):
+            worker.verify_optimizer_preparation(model, optimizer, scheduler)
+
+    def test_v4_control_plane_keeps_cpu_collectives_and_barrier_on_gloo(self):
+        distributed = Mock()
+        control = worker.GlooControlPlane(distributed, "gloo")
+        control.all_reduce("cpu")
+        distributed.all_reduce.assert_called_with("cpu", group="gloo")
+        control.all_reduce("cuda", group="nccl", async_op=True)
+        distributed.all_reduce.assert_called_with("cuda", group="nccl", async_op=True)
+        control.all_gather_object([], "error", group=None)
+        distributed.all_gather_object.assert_called_with([], "error", group="gloo")
+        control.broadcast_object_list([], src=0)
+        distributed.broadcast_object_list.assert_called_with([], src=0, group="gloo")
+        control.monitored_barrier(wait_all_ranks=True)
+        distributed.monitored_barrier.assert_called_with(wait_all_ranks=True, group="gloo")
+
+    def test_v4_uses_real_training_yaml_launcher_defaults_without_gpu_or_submission(self):
+        import accelerate
+        import torch
+
+        environment = {k: v for k, v in os.environ.items()
+                       if not k.startswith(("ACCELERATE_", "FSDP_"))}
+        environment["CUDA_VISIBLE_DEVICES"] = ""
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch("accelerate.utils.launch.get_free_port", return_value=29599),
+            patch("accelerate.utils.launch.is_port_in_use", return_value=False),
+            patch.object(torch.cuda, "_lazy_init", side_effect=AssertionError("no GPU")),
+            patch.object(
+                torch.distributed, "init_process_group", side_effect=AssertionError("no allocation")
+            ),
+            patch("accelerate.utils.FullyShardedDataParallelPlugin") as plugin,
+            patch.object(accelerate, "Accelerator") as accelerator,
+        ):
+            worker.production_accelerator(ROOT)
+            self.assertEqual(os.environ["FSDP_USE_ORIG_PARAMS"], "false")
+            self.assertEqual(os.environ["FSDP_SYNC_MODULE_STATES"], "true")
+            self.assertEqual(os.environ["FSDP_CPU_RAM_EFFICIENT_LOADING"], "true")
+            self.assertEqual(os.environ["CUDA_VISIBLE_DEVICES"], "")
+            accelerator.assert_called_once_with(fsdp_plugin=plugin.return_value,
+                                               gradient_accumulation_steps=8,
+                                               step_scheduler_with_optimizer=False)
+
     def test_v3_real_collator_and_supervisor_preserve_canary_loss_gradient_and_rng(self):
         import torch
 
@@ -349,6 +427,12 @@ print(module.TASK)
                 self.generic_visit(node)
                 if isinstance(node.test, ast.Name) and node.test.id == "device_boundary":
                     return node.orelse
+                if isinstance(node.test, ast.Name) and node.test.id == "optimizer_boundary":
+                    return node.orelse
+                if (isinstance(node.test, ast.UnaryOp) and isinstance(node.test.op, ast.Not)
+                    and isinstance(node.test.operand, ast.Name)
+                    and node.test.operand.id == "optimizer_boundary"):
+                    return node.body
                 return node
 
         # Only the explicitly selected v3 supervision branch differs. Its actual

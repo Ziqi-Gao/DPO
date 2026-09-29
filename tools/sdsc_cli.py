@@ -156,7 +156,8 @@ STUDENT_BINDINGS = (
     "teacher_acceptance_inventory_sha256",
 )
 STUDENT_PROTOCOL_PATHS = tuple(
-    "prereg/amendments/qwen3_adapted_student_calibration_v" + str(version) + ".json" for version in (1, 2, 3)
+    "prereg/amendments/qwen3_adapted_student_calibration_v" + str(version) + ".json"
+    for version in (1, 2, 3, 4)
 )
 STUDENT_FIXED_BINDINGS = {
     "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",

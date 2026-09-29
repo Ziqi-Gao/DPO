@@ -6,7 +6,7 @@ v3 flows remain historical; do not restart them or substitute this teacher into
 their original prerequisites.
 
 The current successor candidate,
-`prereg/amendments/qwen3_adapted_student_calibration_v3.json`, requires a genuine
+`prereg/amendments/qwen3_adapted_student_calibration_v4.json`, requires a genuine
 implementation commit and a distinct subsequent review-only acceptance commit.
 It preserves all 47 accepted producer files and binds the named student
 implementation. Acceptance of this protocol is not acceptance of GPU results.
@@ -146,7 +146,7 @@ Fetched log tails normalize line endings and are not raw-file hash evidence.
 
 The real CPU collator constructs a `SupervisionBatch`; FSDP transfers the model's
 forward arguments to its GPU without moving the original batch retained by the
-supervisor. The proposed v3 correction aligns only loss token IDs, response mask
+supervisor. The accepted v3 correction aligns only loss token IDs, response mask
 and rewards with the actual output-logits device. It preserves tensor dtypes,
 values, sample order, masking, sequence/token normalization and gradients, and
 does not mutate the CPU source batch. `CanonicalSFTSupervisor` inherits this
@@ -168,3 +168,45 @@ followed by a new matching real GPU preflight and a separate fresh calibration.
 No failed job is retried with its previous intent and no v2 GPU report accepts
 the changed v3 implementation. The current handoff records actual acceptance,
 deployment and job state; source existence alone is not operational readiness.
+
+## V4 optimizer binding correction
+
+V3 preflight `54507345` passed; its automatically submitted calibration `54507464`
+failed after 5m10s at the unchanged AdamW cadence validator. The actual training
+metrics file is empty. Neither a called `optimizer.step()` nor a global-step
+counter establishes a successful parameter update.
+
+The pinned Accelerate 1.10.1 FSDP1 preparation replaces model parameters when
+`use_orig_params=false`, but does not remap an existing optimizer. A deterministic
+CPU regression uses real Accelerate, real PyTorch FSDP flattening and AdamW,
+with a single-rank FakeProcessGroup for communication only. It reproduces the
+same error through `FactorialTrainer`: new model parameters have gradients,
+the optimizer owns the old objects, and its state remains empty after stepping.
+This is a CPU reproduction, not multi-rank/GPU evidence.
+
+The shared `prepare_accelerate_model_optimizer_scheduler` prepares the model
+first, binds the same fresh single-group AdamW to its prepared trainable
+parameters, and then prepares the optimizer. The original raw LambdaLR and
+optimizer objects, options and step hooks remain intact. Existing state,
+gradients, multiple groups, incorrect scheduler binding or incomplete ownership
+are rejected before FSDP preparation. Non-FSDP paths retain their existing order.
+The original cadence, batch, loss, RNG, teacher and scientific thresholds remain.
+
+V4's two-H100 canary uses this same helper on the actual Qwen3-1.7B model through
+the pinned Accelerator, with settings resolved by the real training launcher
+from the unchanged v2 YAML. Framework environment is applied after model loading.
+FSDP uses the production NCCL default group; CPU/error/publication collectives
+and monitored barriers use a separate Gloo group. The known global64 synthetic
+window then requires exact prepared-parameter ownership, nonempty FP32 AdamW
+state, raw scheduler binding, unchanged cadence, nonzero update and full-state
+save/restore. This covers shared production preparation and one synthetic
+window; it does not claim the complete production trainer loop was exercised.
+Only a new matching GPU result may open the next fresh calibration.
+
+The separate `tools/sdsc_student_supervise_v4.py` binds a fresh accepted-v4
+profile; v1/v2/v3 protocols and stopped flow records remain historical.
+Source/provenance uploads, review-only acceptance, single-submit claims and
+terminal result checks remain mandatory. The bounded genuine-history export
+capacity is 64 unpublished commits; every historical tree is still inspected,
+with the original per-file, tree/bundle byte limits and exact genuine lineage.
+No Git ref is moved and no history is dropped to fit the export.

@@ -60,7 +60,7 @@ def protocol_fixture():
         implementation_commit="1" * 40,
         acceptance_commit="2" * 40,
         review_status="accepted",
-        protocol_path="prereg/amendments/qwen3_adapted_student_calibration_v3.json",
+        protocol_path="prereg/amendments/qwen3_adapted_student_calibration_v4.json",
         science_file_sha256={"src/science.py": "3" * 64},
     )
 
@@ -90,7 +90,7 @@ def client(monkeypatch):
     fixture.setUp()
     manifest = fixture.record()
     manifest["files"] = [
-        {"path": "prereg/amendments/qwen3_adapted_student_calibration_v3.json", "sha256": "f" * 64}
+        {"path": "prereg/amendments/qwen3_adapted_student_calibration_v4.json", "sha256": "f" * 64}
     ]
     cli.write_json(cli.state_root() / "runs/run-test.json", {"state": "deployed", "manifest": manifest})
     args = fixture.submit_args(dry_run=True)
@@ -169,7 +169,7 @@ def test_cli_calibration_requires_new_matching_preflight_id(client):
             cli.submit_command(args)
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_cli_receipt_binds_deployed_protocol_and_fixed_accepted_teacher(client, version):
     _, args = client
     path = cli.state_root() / "runs/run-test.json"
@@ -311,7 +311,7 @@ def prerequisite_boundary(tmp_path, monkeypatch):
     files = [{"path": name, "sha256": value} for name, value in protocol["science_file_sha256"].items()]
     files.append(
         {
-            "path": "prereg/amendments/qwen3_adapted_student_calibration_v3.json",
+            "path": "prereg/amendments/qwen3_adapted_student_calibration_v4.json",
             "sha256": protocol["artifact_sha256"],
         }
     )
@@ -393,7 +393,7 @@ def test_actual_prerequisite_builder_requires_both_producers_and_verified_accept
     f.contract.input_plans.assert_called_once()
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_prerequisite_protocol_selection_uses_verified_artifact_not_newest_filename(
     prerequisite_boundary, version
 ):

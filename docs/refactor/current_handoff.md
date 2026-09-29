@@ -1051,8 +1051,9 @@ batch failed and extern completed. Both ranks reached backward and optimizer
 boundary finalization, then raised `checkpoint AdamW state is empty after an
 optimizer update`. This is distinct from the repaired CPU/CUDA-label failure.
 The published training metrics file is empty and there is no accepted training
-checkpoint or successful parameter-update evidence. The empty optimizer state's
-underlying cause still needs a focused reproduction; do not weaken the validator.
+checkpoint or successful parameter-update evidence. Real pinned Accelerate/FSDP
+CPU reproduction now establishes stale optimizer parameter references after
+FSDP1 flattening; do not weaken the validator.
 
 The finite supervisor stopped at **2026-09-28T21:53:09Z**, fetched eight files /
 **55,050 bytes** to `.sdsc/fetched/54507464/fetch-t2d4w129/`, and exited. Its
@@ -1063,6 +1064,35 @@ failed output; never re-arm this submitting flow. It performed the authorized
 automatic transition and failure capture, not automatic code repair or chat
 notification. A reviewed repair and fresh matching prerequisites are required
 before any new calibration; neither G0 nor pilot has passed.
+
+The proposed v4 correction preserves the same fresh single-group AdamW and raw
+LambdaLR while preparing FSDP before binding optimizer parameters. It rejects
+stateful/ambiguous inputs and leaves non-FSDP preparation unchanged. The actual
+trainer CPU regression reproduced the old empty-state failure and now reaches a
+nonzero global64 update with real AdamW state. Its communication fixture uses a
+single-rank FakeProcessGroup; this is not GPU acceptance. V4's GPU preflight now
+calls the same shared helper through the real Accelerator on Qwen3-1.7B,
+retaining the synthetic global64 window, device-boundary test, unchanged cadence
+validator and full-state restore. A separate Gloo control group preserves CPU
+reductions and monitored barriers alongside production NCCL FSDP.
+The v4 protocol/config is proposed, with core SHA
+`822b5640da8e47232ce09795e364c73fae16512f1123d2a0b4dfa56c1769f93c`.
+Historical v1/v2/v3 and all 47 teacher scientific files remain unchanged.
+The separate v4 finite supervisor retains the reviewed single-submit/stop guards.
+Genuine provenance's fixed unpublished-history capacity becomes 64, retaining
+every original byte/path/lineage check; real Git boundary and hidden historical
+path tests pass. No v4 job or active v4 flow exists yet; independent acceptance,
+fresh deployment and matching GPU preflight remain required.
+The combined affected suite passed **289 tests**; the actual CPU FSDP suite
+includes 13 cases and the original trainer suite 70, covering raw optimizer /
+scheduler identity, parameter ownership, nonzero update, RNG and full-state
+save/restore followed by an identical next window. Independent control review
+passed **63 tests**, including real 64-commit export/restore, 65-commit rejection
+and rejection of unsafe historical paths after the old 32-commit boundary.
+No new Ruff or whitespace findings were introduced. Existing unrelated source
+lint findings and the user's dirty files are preserved. Shared SSH and remote
+account/QoS/path checks passed at **2026-09-29T00:58:16Z**, and the fixed Python
+SHA and five package versions were rechecked without importing GPU libraries.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters

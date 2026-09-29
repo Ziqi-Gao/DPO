@@ -372,6 +372,91 @@ def _validate_optimizer_scheduler_cadence(
             raise ValueError("AdamW parameter step differs from global optimizer step")
 
 
+def validate_prepared_optimizer_binding(
+    model: torch.nn.Module,
+    optimizer: Any,
+    scheduler: Any,
+) -> dict[str, object]:
+    """Require AdamW and its raw scheduler to own the prepared trainable parameters."""
+
+    raw_optimizer = getattr(optimizer, "optimizer", optimizer)
+    if type(raw_optimizer) is not torch.optim.AdamW:
+        raise ValueError("FSDP parameter binding requires raw AdamW")
+    if len(raw_optimizer.param_groups) != 1:
+        raise ValueError("FSDP parameter binding requires exactly one AdamW group")
+    if type(scheduler) is not torch.optim.lr_scheduler.LambdaLR:
+        raise ValueError("FSDP parameter binding requires raw LambdaLR")
+    if scheduler.optimizer is not raw_optimizer:
+        raise ValueError("raw LambdaLR is not bound to the prepared AdamW")
+    model_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    optimizer_parameters = raw_optimizer.param_groups[0]["params"]
+    model_ids = {id(parameter) for parameter in model_parameters}
+    optimizer_ids = {id(parameter) for parameter in optimizer_parameters}
+    if (
+        not model_ids
+        or len(optimizer_ids) != len(optimizer_parameters)
+        or model_ids != optimizer_ids
+    ):
+        raise ValueError("AdamW parameters do not exactly match the prepared trainable model")
+    return {
+        "optimizer_parameter_binding": "prepared_model_parameters",
+        "exact_parameter_identity_match": True,
+        "raw_scheduler_optimizer_identity_match": True,
+        "model_trainable_parameter_tensors": len(model_parameters),
+        "optimizer_parameter_tensors": len(optimizer_parameters),
+        "optimizer_class": "torch.optim.AdamW",
+        "scheduler_class": "torch.optim.lr_scheduler.LambdaLR",
+    }
+
+
+def prepare_accelerate_model_optimizer_scheduler(
+    accelerator: Any,
+    model: torch.nn.Module,
+    optimizer: Any,
+    scheduler: Any,
+) -> tuple[Any, Any, Any]:
+    """Bind fresh AdamW after FSDP1 flattening, preserving raw LambdaLR cadence.
+
+    Accelerate 1.10.1 does not remap an existing optimizer when FSDP1 replaces
+    Parameters with ``use_orig_params=False``. Rebind the single fresh group on
+    the same AdamW object after model preparation, then prepare that optimizer.
+    Keeping both raw objects preserves all options and LambdaLR's step hook.
+    Checkpoint state is loaded only after this fresh preparation boundary.
+    """
+
+    plugin = getattr(getattr(accelerator, "state", None), "fsdp_plugin", None)
+    flat_fsdp1 = (
+        getattr(accelerator, "distributed_type", None) == "FSDP"
+        and getattr(plugin, "fsdp_version", None) == 1
+        and getattr(plugin, "use_orig_params", None) is False
+    )
+    if not flat_fsdp1:
+        model, optimizer = accelerator.prepare(model, optimizer)
+        return model, optimizer, scheduler
+
+    # Unsupported/stateful inputs must fail before wrapping or changing them;
+    # flattening several differently configured groups cannot preserve semantics.
+    if type(optimizer) is not torch.optim.AdamW:
+        raise ValueError("FSDP preparation requires an unprepared raw AdamW")
+    validate_prepared_optimizer_binding(model, optimizer, scheduler)
+    if "param_names" in optimizer.param_groups[0]:
+        raise ValueError("FSDP preparation cannot preserve named AdamW parameters")
+    if any(parameter.grad is not None for parameter in model.parameters()):
+        raise ValueError("FSDP preparation requires parameters without existing gradients")
+    _validate_optimizer_scheduler_cadence(
+        optimizer_state=optimizer.state_dict(),
+        scheduler_state=scheduler.state_dict(),
+        global_step=0,
+    )
+    model = accelerator.prepare(model)
+    optimizer.param_groups[0]["params"] = [
+        parameter for parameter in model.parameters() if parameter.requires_grad
+    ]
+    optimizer = accelerator.prepare(optimizer)
+    validate_prepared_optimizer_binding(model, optimizer, scheduler)
+    return model, optimizer, scheduler
+
+
 def _parameter_update_squared_norm(
     before: list[torch.Tensor],
     parameters: Any,
@@ -824,9 +909,11 @@ class FactorialTrainer:
                 gradient_accumulation_steps=self._gradient_accumulation_steps,
                 step_scheduler_with_optimizer=False,
             )
-            self.model, self.optimizer = self._accelerator.prepare(
+            self.model, self.optimizer, self.scheduler = prepare_accelerate_model_optimizer_scheduler(
+                self._accelerator,
                 self.model,
                 self.optimizer,
+                self.scheduler,
             )
             # The trainer owns a scientific optimizer-step cadence rather than
             # a prepared-dataloader cadence.  Register the raw scheduler for
