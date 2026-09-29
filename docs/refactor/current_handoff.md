@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-09-28 (teacher fit 54494742, qualification 54496291 and
+Last updated: 2026-09-29 UTC (teacher fit 54494742, qualification 54496291 and
 independent CPU audit 54497294 completed; adapted teacher independently accepted
 under the reviewed teacher-only 256-token protocol; acceptance published and
 hash-verified on persistent SDSC storage; a separate adapted-teacher student
@@ -17,9 +17,10 @@ submitted calibration 54506821. It failed on exp-19-15 because replay-loss
 targets remained on CPU while logits were on GPU. The independently reviewed
 read-only observer fetched the terminal evidence and stopped. The v3 device
 correction and production-supervision preflight passed CPU checks and independent
-review. New matching preflight 54507345 is running on exp-19-08; the independently
-reviewed v3 Quest supervisor is active and will submit one matching calibration
-only after verified preflight success).
+review. Matching preflight 54507345 completed successfully; the v3 Quest supervisor
+automatically submitted calibration 54507464. That job failed the AdamW-state
+cadence check after 5m10s. The supervisor fetched failure evidence and stopped;
+there is no accepted calibration or active continuation).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -1019,8 +1020,15 @@ Genuine provenance SHA is
 accepted HEAD `df05bd2`; source and provenance uploads were verified. Its real
 receipt binds teacher `54496291` and prerequisite SHA
 `ebfa796845102f785485ce56f53b2a638160212eef7abf7036fecd3c0d7e0086`.
-At **21:27:14Z**, queue and job/batch/extern accounting agree **RUNNING** on
-**exp-19-08**; no terminal scientific PASS is established.
+It completed on **exp-19-08** in **14m09s**; job/batch/extern accounting is
+**COMPLETED / 0:0**, the queue is empty and persistent report validation passes.
+Fresh SSH/accounting on **2026-09-29 at 00:47 UTC** confirms this result. Report
+SHA is `aaad02a748df41c76c6c41b6e06a83ecb0bc1cefa4d69c3f25d1e1eed5fe53d2`;
+bounded artifacts are in `.sdsc/fetched/54507345/fetch-pcjfwi24/`, final status in
+`.sdsc/diagnostics/adapted-student-v3/preflight-54507345-final-status.json`.
+Both ranks passed the actual CPU collator/canonical-supervision boundary with
+CUDA loss operands, finite gradients, a nonzero update and full-state restore.
+This validates the device correction's synthetic preflight, not complete training.
 
 The distinct calibration release `20260928T212233Z-9f932bc1929e-028c319b`
 replays exactly the same 590 source files and original genuine history bundle.
@@ -1034,15 +1042,27 @@ The actual finite flow is
 It received independent operational ACCEPT from `/root/student_provenance_update`
 at **21:26:37Z**, including full genuine-provenance plan reconstruction, all
 source hashes and the exact **2 H100 / 24 CPU / 192 GiB / two-hour** calibration
-dry-run. It launched on **quser32**, PID **3159562**, at **21:27:14Z**; process
-and state were verified. Current phase is **waiting_preflight**, with
-`submission_attempted=false`. Preserve its profile, plan, pinned control/evidence
-files and permanent preflight claim. Do not run `tools/sdsc check` while active,
-start a competing flow, or manually submit its calibration release.
-The process polls every five minutes, expires after fourteen days, submits only
-once after actual accounting/artifact acceptance, and then verifies/fetches the
-calibration. SSH loss or scientific/control failure stops it without retries.
-This is an active finite Quest process, not an automatic Codex/chat notification.
+dry-run. It launched on **quser32**, PID **3159562**, at **21:27:14Z** and
+automatically submitted exactly one calibration **54507464** at **21:43:06Z**,
+intent `0c9f816146a2426f836e0320ae1f2986`, prerequisite SHA
+`a35bee52559e858117883a4bb921e5a0cc93e0e5da988e34722a3ec0d9f486fe`.
+Fresh accounting confirms **FAILED / 1:0**, elapsed **5m10s** on exp-19-08;
+batch failed and extern completed. Both ranks reached backward and optimizer
+boundary finalization, then raised `checkpoint AdamW state is empty after an
+optimizer update`. This is distinct from the repaired CPU/CUDA-label failure.
+The published training metrics file is empty and there is no accepted training
+checkpoint or successful parameter-update evidence. The empty optimizer state's
+underlying cause still needs a focused reproduction; do not weaken the validator.
+
+The finite supervisor stopped at **2026-09-28T21:53:09Z**, fetched eight files /
+**55,050 bytes** to `.sdsc/fetched/54507464/fetch-t2d4w129/`, and exited. Its
+actual state is `stopped`, `submission_attempted=true`,
+`submission_outcome_unknown=false`, `no_retry=true`. No job was cancelled or
+repeated. Preserve the plan/profile, receipts, permanent preflight claim and
+failed output; never re-arm this submitting flow. It performed the authorized
+automatic transition and failure capture, not automatic code repair or chat
+notification. A reviewed repair and fresh matching prerequisites are required
+before any new calibration; neither G0 nor pilot has passed.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
