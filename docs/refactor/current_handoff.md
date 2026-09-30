@@ -17,11 +17,13 @@ calibration is not accepted. Its results are persisted and bounded evidence
 has been fetched. The supervisor stopped at **2026-09-30T06:02:21Z** without
 retry or cancellation. The current quser43 shared master and both terminal job
 states were freshly verified. The user explicitly authorized a repair and a
-fresh submission with larger memory/GPU resources. The proposed v6 successor
+fresh submission with larger memory/GPU resources. The independently reviewed v6 successor
 uses **2 H100 / 24 CPU / 384 GiB**, preserves scientific settings and the
 32-GiB/20% headroom gate, and records measured memory before rejecting a stage.
-Independent acceptance and a fresh matching GPU preflight are required before
-one calibration; no v6 job has been submitted yet. Central ServerScheduler
+Implementation `9a196677a269c2e5f1c925da4e43b6145c1cdd7a` passed independent
+review at 2026-09-30T17:53:49Z; this review-only transition accepts its v6
+protocol. A fresh matching GPU preflight remains required before one
+calibration; no v6 job has been submitted yet. Central ServerScheduler
 observations below remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -1291,7 +1293,7 @@ the reviewed memory envelope, retry this intent or treat checkpoints as an
 accepted resume contract. Inspect stopped state and receipts before any
 continuation. Existing stopped flows and unknown-intent protections remain.
 
-The v6 repair is a separately proposed successor, not a reinterpretation of
+The v6 repair is a separately accepted successor, not a reinterpretation of
 54533934. A real cgroup fixture reproduced the information loss: 160-GiB and
 191-GiB peaks under the old 192-GiB limit both raised the same error without
 recording the peak. The actual failed job's node-local mount was ext4 on
@@ -1316,9 +1318,12 @@ Fresh quser43 SSH inspection confirmed an empty account queue, partition
 capacity and QoS maxima of 762 GiB / three GPUs / 54 CPUs per shared job. The
 existing pinned runtime was checked without importing Torch or installing
 packages. Discovery/reproduction evidence is under
-`.sdsc/diagnostics/adapted-student-memory-v6/`. The proposed v6 protocol requires
-its own implementation commit, distinct independent acceptance, new releases
-and matching preflight; `tools/sdsc_student_supervise_v6.py` is a finite
+`.sdsc/diagnostics/adapted-student-memory-v6/`. Independent acceptance binds
+implementation `9a196677a269c2e5f1c925da4e43b6145c1cdd7a`; core protocol SHA is
+`17a8c3729f60df2f56219d5e8a35427e068c335e22609161830a2630d85654ba`.
+The independent review artifact SHA is
+`cd1b7f1afee808c16a607bdf8010baa40d762ca4db7607713f2ec47bf5a16f5c`.
+The accepted v6 protocol still requires new releases and matching preflight; `tools/sdsc_student_supervise_v6.py` is a finite
 one-calibration adapter with 300-second polling and the existing no-retry,
 unknown-intent and SSH-loss stops. Tool existence does not mean it is active.
 The integrated CPU suite passed **447 tests** (24 expected PyTorch FSDP warnings),

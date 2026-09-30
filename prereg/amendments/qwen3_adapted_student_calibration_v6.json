@@ -236,10 +236,10 @@
     "later_unrelated_commits_invalidate_review": false
   },
   "review": {
-    "status": "proposed",
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "reviewed_at_utc": null,
-    "rationale": null
+    "rationale": "Independent review accepts the separately versioned v6 student execution repair at this immutable implementation. The resource change is exactly two H100 GPUs, 24 CPUs and 384 GiB host memory, while the max(32 GiB,20 percent) aggregate-peak headroom rule remains strict. Remote admission binds resources to genuine independently accepted protocol provenance before any claim or sbatch, the GPU wrapper cross-checks actual allocation, and calibration requires a fresh matching real v6 preflight. Raw cgroup v1/v2 hierarchy, peak, current usage and memory.stat/events are retained before failure; four ordered calibration stages and their published files are independently validated. Stage identity follows unchanged finite ancestor boundaries rather than a changing maximum-peak child/parent selection; the reproduced equal-peak false rejection is fixed. Bounded CLI/remote/supervisor fetch permits only the v6 diagnostic names under the existing 1 MiB/file and 8 MiB total limits. All v3 device, v4 optimizer and v5 precision/full-state gates remain; 49 named student files match this commit, all 47 frozen teacher files and v1-v5 authority are preserved, and student scientific settings, budgets and thresholds are unchanged. The finite supervisor remains one verified-preflight-to-calibration submission, with no retry, cancellation, G0 or pilot progression. This review claims no new real-GPU pass, calibration success, student-quality acceptance or identification of the historical peak memory composition.",
+    "reviewed_at_utc": "2026-09-30T17:53:49.876875Z",
+    "reviewed_implementation_commit": "9a196677a269c2e5f1c925da4e43b6145c1cdd7a",
+    "reviewer": "independent Codex agent /root/memory_v6_review",
+    "status": "accepted"
   }
 }
