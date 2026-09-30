@@ -30,190 +30,124 @@ reviewed adapter migration and actual scientific evidence. Central
 ServerScheduler observations below remain dated 2026-09-10 and were not
 reverified from Quest.
 
-The user now explicitly authorizes continued debugging and necessary fresh runs
-until model acceptance, without lowering scientific thresholds. The first
-student-quality diagnosis preserves 54548846 and compares its initial/step20/
-step33 checkpoints by inference only. CPU replay shows the old strict evaluator
-accepts canonical proofs and rejects truncated/tag-only responses correctly;
-loss/mask alignment including EOS is correct. Step-20 zero scores do not isolate
-binary-answer quality, because invalid proofs also force strict answer failure.
-Training uses a fixed 5e-4 learning rate and shows large early loss/update
-excursions; causation remains unproven without raw responses. That value is an
-explicit inherited protocol setting, not a demonstrated teacher-migration bug.
-A CPU W=1 FSDP generate boundary failure is reproduced, explicitly not
-established as the W=2 run's cause. Both bounded W=2 CPU attempts are
-inconclusive (device setup rejection, then native crash); do not infer a
-production generation defect from them.
-
-New independent tools `sdsc_student_quality.py`, `sdsc_student_quality_job.py`
-and `sdsc_student_quality_probe.py` implement a separate **1-H100 / 24-CPU /
-192-GiB / two-hour** diagnostic. Its cohorts are the already exposed validation
-first128 and training first32, with separate 128/256-token arms and raw
-prompt/response/verification evidence; no optimizer or acceptance is performed.
-The combined CPU suite passed **50 tests**, including real tiny-Qwen FP32/BF16
-NLL, original evaluator parity, publication/fetch hashes and unknown-submission
-guards. Ruff and whitespace checks pass. CPU fixtures are not GPU evidence.
-Implementation **d76daee** passed independent control/node, worker and actual
-deployment reviews. After matching 614-file / 7,027,787-byte dry-run and sync,
-job **54557365** was submitted exactly once at **2026-09-30T21:22:47Z** and
-terminated **FAILED / 1:0** after **26m05s**, confirmed at **21:50:50Z**.
-Its run is `20260930T211723Z-49907235ba25-c8e1e004`, intent
-`d47f1122872cad16aeb8e772f2e37ea2`; retain its claim/receipt and never resubmit it.
-The finite read-only Quest observer fetched **2,393,085 bytes** and exited.
-Five published file hashes were independently checked against receipt SHA
-`c18b0f1f2ce7b5685e644b743f7ec6b87cad2b457826f7626c544c54fcf51c37`.
-Files are in that intent's `fetch-186dm58f/`; terminal status, fetch and observer
-exit evidence are in `.sdsc/diagnostics/student-quality-v1/`.
-
-The diagnostic completed only the initial model's **320 responses / four arms**:
-strict accuracy is **0/128 validation and 0/32 training** at both token caps;
-256-token validation format validity is **13/128**. All actual caps were full
-128/256. This is partial diagnostic evidence, not a completed formal G0 run.
-Step20 loading failed because the diagnostic changed `torch_dtype` to FP32,
-which the real Qwen3 config validator rejects. It is a diagnostic implementation
-bug, not memory failure: peak **70.63 GiB**, headroom **121.37 GiB**, no OOM kill.
-No trained-checkpoint inference completed. Repair keeps the validated BF16
-config, promotes the CPU model before exact FP32 checkpoint loading, then uses
-the unchanged BF16 forward policy. Its next submission requires a fresh worker
-hash, run, intent and job. Repair implementation **4c6bdb6** passed independent
-worker, node/replay, controller and actual-deployment reviews. New diagnostic
-**54558773** was submitted once at **2026-09-30T22:13:37Z** with 1 H100, 24 CPU,
-192 GiB and a two-hour limit. Run `20260930T220721Z-0a50670bd73e-43958896`
-contains 618 files / 7,100,384 bytes; new intent
-`728de9ca98016805cf6474adb1ad57b8` binds plan SHA
-`ca54bab66edc0c8a5cc36adfd65f1b48abdcb4021b93666283b8a263c76efa12`.
-Do not resubmit this intent. The finite foreground Quest observer in
-`.sdsc/diagnostics/student-quality-v2/observe.py` queries every five minutes for
-at most four hours, stops on SSH/control/unknown-state failure without retry,
-and only fetches bounded terminal evidence. It submits nothing. Accounting at
-22:18:59Z showed **RUNNING**; bounded logs at22:20:26Z confirmed node-local
-model staging and worker start with empty Slurm stderr. Inspect its actual
-status/exit records before restarting observation. The complete
-repair suite passes **114 CPU tests**, including the real loader guard, exact
-FP32 loading, failed-publication integrity, preserved partial progress, bounded
-Slurm progress and actual job-ID binding in independent replay. Worker,
-node/replay and controller changes have separate independent ACCEPT reviews
-recorded under `.sdsc/diagnostics/student-quality-v2/`. The controller review
-binds its final fetch-directory repair; 37 transport tests and Ruff were rerun
-after that last edit and passed.
+The user explicitly authorizes continued debugging and necessary fresh runs
+until model acceptance, without lowering scientific thresholds. Both current
+inference diagnostics are now **COMPLETED / 0:0 and fully independently audited**;
+**the student remains unaccepted**. Their finite read-only Quest observers have
+fetched small results and exited. Do not restart them or resubmit their intents.
 All 49 accepted student science files and the nested 47-file teacher contract
-still match their accepted identities.
+remain unchanged. Preserve all original checkpoints and unsuccessful evidence.
 
-An independent partial-results audit also matches all 160 prompt and 320
-response token sequences using the actual pinned tokenizer, the exact rendered
-prompts and complete original verifier traces. Both 256-token cohorts remain
-strictly zero after an explanatory colon-only correction; wrong antecedents,
-invalid references and incorrect conclusions remain. **318/320** already begin
-with `<proof>`, so adding that prefix has little evidentiary support. Initial
-canonical NLL was lost by the first failure-report path and remains unknown.
-See `.sdsc/diagnostics/student-quality-v1/partial-initial-audit.json` (SHA
-`d233e378db405a852e91018b93c7e0d515b264e6ba6a3cccd393cf6679ecec7f`).
-Runtime metadata and the quser43 shared master were reverified without changing
-the remote environment. Review, deployment and submission evidence are under
-`.sdsc/diagnostics/student-quality-v1/`; see
-`docs/refactor/sdsc_student_quality_diagnosis_20260930.md`. Keep original teacher
-and student protocols/checkpoints immutable; scientific changes require their
-own independent implementation/acceptance review, not renewed user permission.
+Quality diagnosis **54558773** completed in **55m47s**, confirmed at
+**2026-09-30T23:14:15Z**; job, batch and extern all exited zero. It used one H100,
+24 CPU and 192 GiB. Peak cgroup memory was **74.5391 GiB**, headroom **117.4609
+GiB**, with no OOM/failcnt event. Its run is
+`20260930T220721Z-0a50670bd73e-43958896`, intent
+`728de9ca98016805cf6474adb1ad57b8`, plan SHA
+`ca54bab66edc0c8a5cc36adfd65f1b48abdcb4021b93666283b8a263c76efa12`.
+Actual results: `.sdsc/fetched/54558773/fetch-nlvs9wo6/`; receipt SHA
+`7d0a32ae0be1cb4bd1252d31dcc06c39204ea82bd83330d0cafdf3835990e4d8`.
+The independent full-token audit is
+`.sdsc/diagnostics/student-quality-v2/full-token-audit.json`, SHA
+`27f5f9820a028cbe8959006f754fdd0f9f63ebeb246a3e82bb9fd5d1f8e79935`.
+It verified 160 prompt encodings, all 960 response decodings and original
+verifier traces, all 12 arm summaries, prefix pairing and publication hashes.
+The auditor binds the actual deployed scientific source before imports; its
+source-binding addition and original logic received separate independent review.
+NLL values are producer-report-bound; only token denominators were independently
+recomputed, not model logits or GPU arithmetic.
 
-The separate local `tools/sdsc_student_quality_replay.py` verifies the externally
-anchored plan/publication, all 160 prompts / 960 responses / 12 arms, and
-recomputes the original parser/verifier traces and generation summaries. Its
-28 CPU tests and Ruff checks pass; actual job ID is now a required external
-input, checked against receipt, worker and node identities. Actual pinned tokenizer metadata was fetched
-read-only for EOS and length checks. Saved text remains receipt-hash-bound:
-token-ID decoding, unavailable teacher-forced logits and original full dataset
-membership are not independently replayed. This is diagnostic verification of
-already exposed validation, never a new holdout or model/G0 acceptance.
+At both 128/256 caps, initial, step20 and step33 have **zero strict answer/proof
+successes** in validation128 and training32. At 256, initial format validity is
+13/128 and 2/32. Every step20 response repeats `<proof>`/digits and terminates at
+the cap; every step33 response repeats `R01:`. Neither trained checkpoint emits
+any valid closing proof/answer structure. Step33 has 55/160 EOS terminations,
+but those are malformed too. All 160 canonical targets including EOS fit256.
+Validation canonical NLL/token accuracy is **1.10855/89.02% → 2.20222/31.58% →
+1.05338/67.58%**; training is **1.00384/89.13% → 2.19470/31.88% →
+1.04485/67.47%**. Training has caused repeated-output collapse; longer generation
+or recovered teacher-forced NLL does not establish sequence quality.
 
-Training-time monitoring uses 128 generated tokens, whereas the existing G0
-probe scorer and initial-checkpoint anti-shortcut evaluation use **256**. Thus
-the diagnostic's 256-token arm is not itself G0 acceptance, but that length is
-already the G0 generation budget, not a newly relaxed G0 threshold. Complete G0
-still needs an independently accepted adapter for the genuine teacher/student
-producer identities, two real step20-to-step33 resumes, adapted-teacher scoring,
-the original initial-checkpoint capability/anti-shortcut/circuit checks and all
-26 scientific gates. Do not replace initial with a trained checkpoint to pass.
-Independent source review confirms task validation is exactly the unscreened
-first 128 validation examples: initial needs at least 13 strict successes.
-`base_capable`/`challenge` use separate circuit splits and cannot change this
-denominator. Diagnostic BF16 autocast differs from the formal scorer's lack of
-an explicit autocast context; no bitwise formal-G0 replay is claimed.
+The preceding diagnosis **54557365** failed after26m05s because its FP32 config
+violated the actual Qwen3 BF16 loader contract, before trained-checkpoint
+inference. Preserve its intent `d47f1122872cad16aeb8e772f2e37ea2`, run
+`20260930T211723Z-49907235ba25-c8e1e004`, and partial320-response results under
+that intent's `fetch-186dm58f/`. Its receipt SHA is
+`c18b0f1f2ce7b5685e644b743f7ec6b87cad2b457826f7626c544c54fcf51c37`;
+missing old NLL remains unknown. Implementation **4c6bdb6** repaired the loader,
+partial evidence retention and bounded fetch; **114 CPU tests** plus independent
+worker/node/controller/deployment reviews preceded54558773. The old failure was
+not OOM and is not the reason for the newly observed model degeneration.
+See `docs/refactor/sdsc_student_quality_diagnosis_20260930.md`.
 
-Source/provenance audit found no initial-weight mutation bug: a separate pinned
-HF/BF16 export process synchronously saves the initial state before distributed
-training starts, and its file identity is rechecked unchanged afterwards. No
-pristine-HF-vs-initial tensor comparison has yet been recorded; that is a missing
-direct check, not evidence of corruption. A single uniform zero-shot instruction
-clarification is implemented as a separate training-only diagnostic in
-`tools/sdsc_student_instruction.py`, its node wrapper and worker; scientific scope
-is frozen in `docs/refactor/sdsc_student_instruction_screen_20260930.md`. It
-keeps original initial/graph/verifier/budgets, uses only first32 training examples,
-changes no production protocol and has not yet run. Original thresholds remain
-immutable; no multiple-candidate validation search. Independent scope, worker
-and control/node reviews passed; the combined CPU suite passed **101 tests**,
-including real tiny-Qwen loading/inference, data isolation, failure publication,
-unknown receipts and actual parent provenance restoration. These are diagnostic
-implementation reviews, not scientific acceptance.
+The sole training-only instruction screen **54559253** completed in **5m28s**,
+confirmed at **2026-09-30T23:10:48Z**, with all accounting exits zero. It used one
+H100,8 CPU,64 GiB; run `20260930T225419Z-8c5ed83b5110-73116a7c`, intent
+`e8573086e7b073ec71e46541ff453c2a`, plan SHA
+`8936a66bfc2e27de820ab8e4053f12aaac0dc6ab58ac8acc2de6a5cec9155415`.
+Results are `.sdsc/fetched/54559253/fetch-empc2123/`, receipt SHA
+`3e5595d9c4cdba9aa82d0c0a302441283ff89d7af781f7a9a3f9901ec02d5f01`.
+The pre-load check found every one of311 original HF/BF16 state tensors exactly
+equal to the initial checkpoint; embedding tying and before/after parameter
+hashes remain unchanged. This excludes the hypothesized initial-export mutation
+in the pinned runtime; it is not an independent new Hub download comparison.
+Both original and candidate instructions score **0/32 strict answer and proof**.
+Format validity improves **1/32→14/32**, but the candidate has18 syntax failures,
+9 wrong-antecedent proofs,3 invalid-citation proofs and2 incorrect conclusions.
+Its predeclared4/32 futility screen is **false**. **Stop promotion of this
+candidate**: no new teacher/prompt successor or validation-wording search.
 
-The new screen requests **1 H100 / 8 CPU / 64 GiB / 30 minutes**, with its own
-measured 32-GiB/20% memory headroom, node-local staging and persistent read-back.
-It may run independently alongside 54558773 only after an actual deployment
-review; together they use at most two GPUs and remain under the global four-GPU
-cap. The frozen candidate SHA is
-`8c44dc8a1bc86167e3787cdcd84e20537db69585e3d7ee30b920447072f03c1e`.
-Fresh baseline/candidate arms use native BF16 without autocast. The provisional
-training-side screen requires both strict answer and full-proof scores at least
-4/32 and strictly above its paired baseline; failure stops that candidate, while
-passing still grants no student/teacher/G0 acceptance or automatic training.
-Combine both complete independently audited diagnostics before subsequent
-scientific decisions. Implementation **59ca370** was deployed as release
-`20260930T224226Z-441365399546-4153923a`, but its first remote dry-run exposed a
-GPU inventory bug: `squeue %b` returned `N/A` for running one-H100 job54558773,
-which the controller incorrectly counted as zero. **No screen was submitted**.
-Preserve superseded draft intent `6b36e12f9a946f983581e4302282744b`, plan SHA
-`35523e156f3e8b11bdfd2d2107138630f3cf9c9f014d3db7fbb9b1f2fb5f637f`,
-its source and faulty dry-run as evidence; never submit that plan.
+The independent screen audit,
+`.sdsc/diagnostics/student-quality-v2/instruction54559253-independent-audit.json`
+(SHA `7b43945f01f39351db710269bb20c328dc950b3c39276404993980679a663a9d`),
+replayed all32 training prompts/64 responses, complete parser/verifier traces and
+both arm metrics. It binds the old first32 training population, genuine parent
+49-file science map and31 imported scientific files. The auditor was reviewed
+before reading real results;33 fixtures and a separate real-worker compatibility
+fixture passed. All scientific acceptance flags remain false. The screen used
+native BF16 without explicit autocast, whereas54558773 uses BF16 autocast; the
+paired baseline prevents interpreting that context difference as prompt effect.
+Frozen design: `docs/refactor/sdsc_student_instruction_screen_20260930.md`.
 
-The repair now enumerates live IDs with squeue and reads each job's authoritative
-`scontrol` ReqTRES/AllocTRES, cross-checking user/job identity and per-job/node/task
-GPU fields. Missing or inconsistent facts stop submission. Actual field replay
-correctly counts 54558773 as one H100. Fresh execution identities bind all control
-pins, while an independent immutable scientific claim plus an atomic reservation
-of the legacy claim prevents duplicate submission across control revisions.
-Unknown claims remain fail-closed and are never deleted or automatically retried.
-The repair passes **118 CPU tests**; independent review reran **92 transport/node
-tests** and accepted controller SHA `e217b5657bb8dde40dd50a0da778f032760cbacc7771731712a5c487d27ec726`.
-Review evidence is `instruction-control-node-independent-review-v2.json` under
-`.sdsc/diagnostics/student-quality-v2/`; it does not grant scientific acceptance.
-Repair commit **addb2a3** was deployed as
-`20260930T225419Z-8c5ed83b5110-73116a7c`, 625 files / 7,264,653 source bytes.
-The actual new dry-run correctly counts existing job54558773 as one GPU plus
-one new GPU. Independent actual-deployment review SHA
-`6042dd009b7cdd6ca4ff04ae5ab1a1df936443f1539f70ec56b1719652ff4073`
-binds the source and plan. Screen **54559253** was submitted exactly once at
-**2026-09-30T22:59:35Z**, intent `e8573086e7b073ec71e46541ff453c2a`,
-plan SHA `8936a66bfc2e27de820ab8e4053f12aaac0dc6ab58ac8acc2de6a5cec9155415`.
-At **23:00:19Z** it is PENDING. Preserve the permanent scientific and legacy
-reservation claims; no resubmission or automatic progression. Its finite
-read-only Quest observer `.sdsc/diagnostics/student-instruction-v1/observe.py`
-is pinned to this plan/controller, queries every five minutes for at most two
-hours and fetches bounded terminal results only. Inspect its status and exit
-records before restarting. Do not edit either active diagnostic's control pins.
+Preserve the superseded **unsubmitted** instruction draft
+`6b36e12f9a946f983581e4302282744b` and its faulty dry-run: `squeue %b=N/A`
+incorrectly counted a known1-GPU job aszero. Repair **addb2a3** now cross-checks
+real `scontrol` ReqTRES/AllocTRES and per-unit GPU fields, failing closed on
+unknown facts.118 CPU tests and actual deployment review passed before54559253.
+Execution identities bind controls; an independent permanent scientific claim
+plus atomic legacy reservation prevents duplicates across control revisions.
+Never delete these claims or blindly retry. Both observer exit records and all
+reviews/submission evidence remain under `.sdsc/diagnostics/student-quality-v2/`
+and `.sdsc/diagnostics/student-instruction-v1/`.
 
-54558773 logs at **22:40:34Z** confirm all four initial arms completed: both caps
-still give zero strict scores in validation128 and training32, matching the old
-partial diagnostic. Canonical-target NLL/token accuracy are **1.10855/0.89019**
-(validation) and **1.00384/0.89135** (training). These teacher-forced diagnostics
-are not the teacher-demo training loss or proof acceptance. At **22:56:32Z**,
-all four step20 arms also completed: every training/validation response at both
-caps terminates at the length bound, with zero strict, format and answer-tag
-scores. Canonical NLL/token accuracy deteriorates to **2.20222/0.31575** for
-validation and **2.19470/0.31880** for training. The repaired loader now reaches
-trained-model inference; these partial results suggest training degradation,
-not merely the old 128-token monitor cap. Full raw audit and step33 are still
-outstanding; do not infer the optimizer cause or model acceptance. The complete local token audit is prepared at
-`.sdsc/diagnostics/student-quality-v2/independent_full_audit.py`, fixed to this
-job/plan; it has not run on the new job's incomplete results.
+Independent code/metrics review has not established a loss shift, repeated
+optimizer step or W2 gradient-scaling bug. The accepted configuration really is
+full-parameter AdamW **5e-4**, betas(.9,.95),eps1e-8,weight_decay0,constant
+LambdaLR1.0, without warmup/clipping. With1,720,574,976 unique parameters,
+lr*sqrt(N)=20.7399; the actual first-update L2=18.7528 is plausible, not by itself
+a double-counting error. Logged KL7.82295 is current||initial over one fixed
+training prompt's prefix, not a validation or generated-response KL. Different
+step losses consume different64-sample windows. Optimization overshoot remains
+a testable hypothesis, not a demonstrated implementation fix.
+
+Next authorized diagnosis: independently verify the actual first64 accepted
+teacher records through the real state-source/collator/labels path, including
+EOS, masked positions and sequence-mean (not batch-token-mean) CE. Then prepare
+one separately reviewed, train-only four-update pair at5e-4/5e-5, retaining the
+same original initial/v7/teacher store/W2 semantics and empty initial optimizer.
+This is a new diagnostic scientific choice, not acceptance of changed formal
+training parameters. No such GPU job has yet been submitted. Preserve original
+protocols and obtain independent implementation/deployment reviews; no renewed
+user authorization is needed for this bounded repair work.
+
+Complete G0 still needs migrated adapters, two real step20→33 resumes,
+adapted-teacher scoring and all26 original gates. The initial checkpoint must
+score at least13 strict successes on the unscreened first128 validation examples;
+`base_capable`/`challenge` use separate circuit populations and cannot change that
+denominator. Initial anti-shortcut and circuit gates remain mandatory. Improving
+trained weights cannot repair the fixed initial-capability gate; never substitute
+a trained checkpoint for initial or relax thresholds to force PASS. The old
+G0/pilot adapters are not automatically valid for the new producer identities.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
