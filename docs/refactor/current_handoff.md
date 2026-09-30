@@ -30,6 +30,33 @@ reviewed adapter migration and actual scientific evidence. Central
 ServerScheduler observations below remain dated 2026-09-10 and were not
 reverified from Quest.
 
+The user now explicitly authorizes continued debugging and necessary fresh runs
+until model acceptance, without lowering scientific thresholds. The first
+student-quality diagnosis preserves 54548846 and compares its initial/step20/
+step33 checkpoints by inference only. CPU replay shows the old strict evaluator
+accepts canonical proofs and rejects truncated/tag-only responses correctly;
+loss/mask alignment including EOS is correct. Step-20 zero scores do not isolate
+binary-answer quality, because invalid proofs also force strict answer failure.
+Training uses a fixed 5e-4 learning rate and shows large early loss/update
+excursions; causation remains unproven without raw responses. A CPU FSDP generate boundary
+failure is also reproduced, explicitly not established as the W=2 run's cause.
+
+New independent tools `sdsc_student_quality.py`, `sdsc_student_quality_job.py`
+and `sdsc_student_quality_probe.py` prepare a separate **1-H100 / 24-CPU /
+192-GiB / two-hour** diagnostic. Its cohorts are the already exposed validation
+first128 and training first32, with separate 128/256-token arms and raw
+prompt/response/verification evidence; no optimizer or acceptance is performed.
+The combined CPU suite passed **50 tests**, including real tiny-Qwen FP32/BF16
+NLL, original evaluator parity, publication/fetch hashes and unknown-submission
+guards. Ruff and whitespace checks pass. CPU fixtures are not GPU evidence.
+At this preparation point no new diagnostic job has been submitted. Runtime
+metadata and the quser43 shared master were reverified, without changing the
+remote environment. Plan and evidence are under
+`.sdsc/diagnostics/student-quality-v1/`; see
+`docs/refactor/sdsc_student_quality_diagnosis_20260930.md`. Keep original teacher
+and student protocols/checkpoints immutable; scientific changes require their
+own independent implementation/acceptance review, not renewed user permission.
+
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
 approval rules. Source, Git, scientific artifacts, and central scheduler state
