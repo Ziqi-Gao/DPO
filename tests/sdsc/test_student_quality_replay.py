@@ -13,6 +13,7 @@ import pytest
 from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
 
 ROOT = Path(__file__).resolve().parents[2]
+JOB = "54557365"
 
 
 def module(name):
@@ -120,7 +121,7 @@ def case(tmp_path, monkeypatch):
         "schema": "quest-sdsc-student-quality-probe-v1",
         "passed": True,
         "diagnostic_complete": True,
-        "job_id": api.JOB,
+        "job_id": JOB,
         "parent_job_id": api.PARENT,
         "run_id": plan["run_id"],
         "source_code_sha256": plan["code_sha256"],
@@ -149,7 +150,7 @@ def case(tmp_path, monkeypatch):
         **flags,
     }
     node = dict(
-        job_id=api.JOB,
+        job_id=JOB,
         parent_job_id=api.PARENT,
         run_id=plan["run_id"],
         source_code_sha256=plan["code_sha256"],
@@ -209,7 +210,7 @@ def case(tmp_path, monkeypatch):
         )
         receipt = dict(
             task=api.TASK,
-            job_id=api.JOB,
+            job_id=JOB,
             run_id=plan["run_id"],
             intent_id=plan["intent_id"],
             plan_sha256=plan_sha,
@@ -234,6 +235,7 @@ def case(tmp_path, monkeypatch):
         ).items():
             (tmp_path / name).write_bytes(raw)
         return dict(
+            expected_job_id=JOB,
             plan_sha256=plan_sha,
             receipt_sha256=api.sha(receipt_raw),
             tokenizer_metadata=tmp_path / "tokenizer-metadata.json",
@@ -339,3 +341,11 @@ def test_pinned_eos_metadata_cannot_be_replaced(case):
     case.metadata["items"][0]["text"] = '{"eos_token_id":0,"max_position_embeddings":40960}'
     with pytest.raises(ValueError, match="tokenizer metadata bytes"):
         case.replay()
+
+
+@pytest.mark.parametrize("job_id", ["54557366", "0", 54557365, True, "54557365;false"])
+def test_wrong_or_malformed_external_job_id_is_rejected(case, job_id):
+    kwargs = case.seal()
+    kwargs["expected_job_id"] = job_id
+    with pytest.raises(ValueError, match="job ID|publication identity"):
+        case.api.replay(case.root, case.root / "plan.json", **kwargs)

@@ -137,7 +137,7 @@ flow is restarted. The saved submission receipt makes resubmission invalid.
 ## Independent local replay
 
 After the controller's terminal fetch, run `tools/sdsc_student_quality_replay.py`
-with `--fetch-dir`, `--plan`, the externally reviewed `--plan-sha256`, the
+with `--fetch-dir`, `--plan`, the actual `--job-id`, the externally reviewed `--plan-sha256`, the
 verified publication's `--receipt-sha256`, `--tokenizer-metadata` and a new
 `--output` path. The actual small metadata snapshot is
 `.sdsc/diagnostics/student-quality-v1/pinned-tokenizer-metadata.json`; it binds
@@ -145,7 +145,7 @@ the model/tokenizer revision, EOS 151645 and maximum position 40960.
 
 Replay checks complete artifact hashes, all ordered cohorts/checkpoints/arms,
 raw responses, original parser/verifier step traces, strict and answer-tag
-summaries, EOS/length stops and paired prefixes. Twenty-three CPU tests cover
+summaries, EOS/length stops and paired prefixes. Twenty-eight CPU tests cover
 producer-shaped records, altered traces/counts/hashes, duplicate IDs, ordering,
 metric type confusion, missing records, nonfinite values and acceptance
 overclaims. CPU fixtures are not actual diagnostic or model acceptance.
@@ -157,3 +157,50 @@ controller's verified publication remains the trust anchor for those inputs.
 No result turns exposed validation into an independent holdout. A fixed
 initial checkpoint failing its original base-capability gate cannot be repaired
 by relabeling a trained checkpoint or borrowing the teacher's PASS.
+
+## First GPU failure and repair
+
+Job 54557365 terminated FAILED/1:0 after 26m05s. The original initial model's
+four arms produced 320 retained responses; both validation (128 examples) and
+training (32) have zero strict successes at both caps. All 256-token arms used
+the full requested cap, and validation format validity rises only to 13/128.
+These are partial diagnostic observations, not a complete G0 decision.
+
+The next checkpoint load failed before inference: passing a FP32 model config
+into the real loader violates its BF16/SDPA contract. The earlier CPU tests did
+not exercise that production-loader boundary. The repair must leave that guard
+intact, construct with the original BF16 configuration, promote the CPU model
+to the saved dtype before strict checkpoint loading, compare every loaded
+tensor exactly and only then convert to BF16 for the original diagnostic
+forward policy. New regression tests exercise the real configuration guard
+and actual tiny-Qwen FP32 values that BF16 loading would round.
+
+The final cgroup peak is 70.628 GiB with 121.372 GiB headroom and zero OOM kills.
+All five published file hashes were independently verified after fetching;
+the original failure path had not required this verification automatically.
+The controller repair requires receipt-bound hashes for failed publications as
+well as successful ones. Completed-arm progress should remain in a failed
+report and small Slurm summaries, preserving NLL evidence if a later arm fails.
+None of these repairs changes the existing teacher/student science or turns the
+failed job into success. A new worker hash gives a fresh permanent submission
+intent; the old release, claim, receipt and outputs remain immutable.
+
+The repaired six-file CPU suite passes **114 tests**. Separate independent
+reviews bind the worker/loading tests and the node/progress/replay changes;
+review records are under `.sdsc/diagnostics/student-quality-v2/`. Progress
+observes the same child under one fixed deadline and never restarts it. New
+fetches are confined to `.sdsc/fetched/<actual-job-id>/fetch-*`. The original
+failed fetch remains at its historical path. All 49 accepted student science
+files and the nested 47-file teacher contract remain unchanged.
+
+Independent replay of the partial initial results verifies the actual pinned
+tokenizer's full prompt encoding and response decoding as well as every
+original verifier trace. Canonical targets all fit 256 tokens; 318/320 generated
+responses already start with `<proof>`. A colon-only explanatory transformation
+still gives zero strict successes in both 256-token cohorts: invalid citations,
+wrong antecedents and incorrect conclusions persist. This does not modify the
+original responses or scoring. The report is
+`.sdsc/diagnostics/student-quality-v1/partial-initial-audit.json`, SHA
+`d233e378db405a852e91018b93c7e0d515b264e6ba6a3cccd393cf6679ecec7f`.
+Initial canonical NLL was lost on the original exception path and remains
+unknown; neither trained checkpoint has yet been measured.

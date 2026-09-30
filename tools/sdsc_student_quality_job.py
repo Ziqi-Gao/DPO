@@ -130,6 +130,44 @@ def persist(plan, control, artifacts, log, result, memory):
     control.require(control.read(destination / "receipt.json") == raw, "publication receipt readback differs")
 
 
+def wait_worker(process, *, timeout, artifacts, control):
+    """Wait once on the same child, exposing only completed-arm summaries."""
+    deadline = time.monotonic() + timeout
+    observed_arms = 0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, timeout)
+        try:
+            process.wait(timeout=min(30, remaining))
+            return
+        except subprocess.TimeoutExpired:
+            progress_path = artifacts / "progress.json"
+            if not progress_path.exists():
+                continue
+            progress = control.document(progress_path)
+            arms = progress.get("arms", [])
+            control.require(isinstance(arms, list) and len(arms) <= 12, "invalid diagnostic progress")
+            if len(arms) > observed_arms:
+                arm = arms[-1]
+                print(
+                    json.dumps(
+                        dict(
+                            phase="quality_progress",
+                            completed_arms=len(arms),
+                            checkpoint=arm["checkpoint"],
+                            cohort=arm["cohort"],
+                            cap=arm["cap"],
+                            metrics=arm["metrics"],
+                            teacher_forced=arm["teacher_forced"],
+                        ),
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+                observed_arms = len(arms)
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 2:
@@ -307,7 +345,13 @@ def main(argv=None):
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-            process.wait(timeout=max(1, 6600 - int(time.monotonic() - started)))
+            print(json.dumps(dict(phase="quality_worker_started", job_id=identity["job_id"])), flush=True)
+            wait_worker(
+                process,
+                timeout=max(1, 6600 - int(time.monotonic() - started)),
+                artifacts=artifacts,
+                control=control,
+            )
         control.require(
             process.returncode == 0, "inference worker failed; preserve outputs, never retry automatically"
         )

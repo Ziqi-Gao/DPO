@@ -257,11 +257,11 @@ def test_node_checks_actual_alloc_and_preserves_cuda(c, plan, monkeypatch):
         node.allocation(plan, c)
 
 
-def download(c, plan):
+def download(c, plan, *, success=True):
     raw = {name: b"{}" for name in c.NAMES}
     report = dict(
-        passed=True,
-        diagnostic_complete=True,
+        passed=success,
+        diagnostic_complete=success,
         student_accepted=False,
         g0_passed=False,
         pilot_passed=False,
@@ -276,11 +276,33 @@ def download(c, plan):
         ],
     )
     raw["quality-probe.json"] = c.canonical(report)
-    publication = dict(files=[dict(path=n, size=len(data), sha256=c.sha(data)) for n, data in raw.items()])
+    publication = dict(
+        task=c.TASK,
+        job_id="123",
+        run_id=plan["run_id"],
+        intent_id=plan["intent_id"],
+        plan_sha256=c.sha(c.canonical(plan)),
+        code_sha256=plan["code_sha256"],
+        passed=success,
+        diagnostic_complete=success,
+        student_accepted=False,
+        g0_passed=False,
+        pilot_passed=False,
+        factorial_ready=False,
+        persistent_read_back_verified=True,
+        files=[dict(path=n, size=len(data), sha256=c.sha(data)) for n, data in raw.items()],
+    )
     raw["receipt.json"] = c.canonical(publication)
     return dict(
         receipt=c.make_receipt(plan, "123"),
-        status=dict(success=True, publication=publication),
+        status=dict(
+            success=success,
+            publication=publication,
+            publication_sha256=c.sha(raw["receipt.json"]),
+            publication_verified=True,
+            artifact_hashes_verified=True,
+            evidence_state="verified_publication",
+        ),
         files={n: base64.b64encode(data).decode() for n, data in raw.items()},
         bytes=sum(map(len, raw.values())),
     )
@@ -304,6 +326,150 @@ def test_download_rejects_missing_prompts_and_escape(c, plan):
     value["files"]["../source"] = ""
     with pytest.raises(ValueError, match="unexpected fetched"):
         c.validate_download(value, plan)
+
+
+def test_failed_download_requires_the_same_complete_receipt_hash_chain(c, plan):
+    value = download(c, plan, success=False)
+    assert set(c.NAMES) <= set(c.validate_download(value, plan))
+    assert value["status"]["success"] is False
+    value["files"]["quality-records.jsonl"] = base64.b64encode(b"[]").decode()
+    with pytest.raises(ValueError, match="downloaded scientific bytes"):
+        c.validate_download(value, plan)
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("task", "different-task"),
+        ("job_id", "456"),
+        ("run_id", "different-run"),
+        ("intent_id", "f" * 32),
+        ("plan_sha256", "f" * 64),
+        ("code_sha256", "f" * 64),
+        ("factorial_ready", True),
+        ("g0_passed", True),
+    ],
+)
+def test_failed_foreign_receipt_rejected_even_with_resealed_transport(c, plan, key, value):
+    result = download(c, plan, success=False)
+    publication = result["status"]["publication"]
+    publication[key] = value
+    old = base64.b64decode(result["files"]["receipt.json"])
+    raw = c.canonical(publication)
+    result["files"]["receipt.json"] = base64.b64encode(raw).decode()
+    result["bytes"] += len(raw) - len(old)
+    result["status"]["publication_sha256"] = c.sha(raw)
+    with pytest.raises(ValueError, match="unbound persistent"):
+        c.validate_download(result, plan)
+
+
+def test_failed_missing_receipt_allows_only_explicitly_unverified_bounded_logs(c, plan):
+    result = download(c, plan, success=False)
+    result["status"] = dict(
+        success=False,
+        publication_verified=False,
+        artifact_hashes_verified=False,
+        evidence_state="unpublished_logs_only",
+    )
+    result["files"] = {"worker.log": base64.b64encode(b"failed before publication\n").decode()}
+    result["bytes"] = len(b"failed before publication\n")
+    assert set(c.validate_download(result, plan)) == {"worker.log"}
+    result["files"]["quality-records.jsonl"] = base64.b64encode(b"{}").decode()
+    result["bytes"] += 2
+    with pytest.raises(ValueError, match="only bounded logs"):
+        c.validate_download(result, plan)
+    del result["files"]["quality-records.jsonl"]
+    raw = b"x" * (64 * 1024 + 1)
+    result["files"]["worker.log"] = base64.b64encode(raw).decode()
+    result["bytes"] = len(raw)
+    with pytest.raises(ValueError, match="tail bound"):
+        c.validate_download(result, plan)
+
+
+def stage_failed_publication(c, plan, monkeypatch, *, receipt=True):
+    value = download(c, plan, success=False)
+    destination = Path(plan["result_dir"])
+    destination.mkdir(parents=True)
+    for name, encoded in value["files"].items():
+        if name != "receipt.json" or receipt:
+            (destination / name).write_bytes(base64.b64decode(encoded))
+    (destination / "worker.log").write_bytes(b"failed before the second checkpoint\n")
+    directory = Path(plan["submission_dir"])
+    directory.mkdir(parents=True)
+    c.write_once(directory / "plan.json", c.canonical(plan))
+    c.write_once(directory / "receipt.json", c.canonical(c.make_receipt(plan, "123")))
+    Path(plan["claim"]).parent.mkdir(parents=True)
+    c.write_once(Path(plan["claim"]), c.canonical(dict(plan_sha256=c.sha(c.canonical(plan)))))
+    queue, account = accounting(plan)
+    account["stdout"] = account["stdout"].replace("COMPLETED|0:0", "FAILED|1:0")
+    monkeypatch.setattr(c, "run", lambda args: queue if args[0] == "squeue" else account)
+    monkeypatch.setattr(c, "verify_source", lambda plan: None)
+    return destination
+
+
+def test_failed_remote_status_and_fetch_verify_publication_before_return(c, plan, monkeypatch):
+    destination = stage_failed_publication(c, plan, monkeypatch)
+    observed = c.inspect_job(plan, c.make_receipt(plan, "123"))
+    assert observed["state"] == "FAILED" and observed["success"] is False
+    assert observed["publication_verified"] and observed["artifact_hashes_verified"]
+    result = c.remote_action(dict(action="fetch", plan=plan))
+    assert set(c.NAMES) <= set(c.validate_download(result, plan))
+    (destination / "quality-records.jsonl").write_bytes(b"[]")
+    with pytest.raises(ValueError, match="persistent diagnostic hash"):
+        c.inspect_job(plan, c.make_receipt(plan, "123"))
+
+
+def test_failed_data_change_after_status_is_rejected_by_remote_fetch(c, plan, monkeypatch):
+    destination = stage_failed_publication(c, plan, monkeypatch)
+    original = c.inspect_job
+
+    def changed(plan, receipt):
+        result = original(plan, receipt)
+        (destination / "quality-records.jsonl").write_bytes(b"[]")
+        return result
+
+    monkeypatch.setattr(c, "inspect_job", changed)
+    with pytest.raises(ValueError, match="data changed during fetch"):
+        c.remote_action(dict(action="fetch", plan=plan))
+
+
+def test_no_receipt_remote_fetch_omits_orphan_scientific_files(c, plan, monkeypatch):
+    stage_failed_publication(c, plan, monkeypatch, receipt=False)
+    result = c.remote_action(dict(action="fetch", plan=plan))
+    assert result["status"]["evidence_state"] == "unpublished_logs_only"
+    assert result["status"]["artifact_hashes_verified"] is False
+    assert set(c.validate_download(result, plan)) == {"worker.log"}
+
+
+def test_failed_inventory_missing_extra_and_duplicate_files_fail_closed(c, plan):
+    original = download(c, plan, success=False)
+    missing = copy.deepcopy(original)
+    del missing["files"]["quality-prompts.jsonl"]
+    missing["bytes"] -= 2
+    with pytest.raises(ValueError, match="scientific inventory"):
+        c.validate_download(missing, plan)
+    for bad in (
+        original["status"]["publication"]["files"] * 2,
+        [dict(path="other.json", size=0, sha256=c.sha(b""))],
+    ):
+        publication = {**original["status"]["publication"], "files": bad}
+        with pytest.raises(ValueError, match="publication inventory"):
+            c.publication_records(publication, plan, "123")
+
+
+def test_real_failed_54557365_publication_and_raw_hashes(c):
+    directory = ROOT / ".sdsc/student-quality/d47f1122872cad16aeb8e772f2e37ea2"
+    fetch = directory / "fetch-186dm58f"
+    if not fetch.exists():
+        pytest.skip("private actual failed-run evidence absent")
+    plan = c.document(directory / "plan.json")
+    publication = c.document(fetch / "receipt.json")
+    records = c.publication_records(publication, plan, "54557365")
+    assert publication["passed"] is publication["diagnostic_complete"] is False
+    for name, record in records.items():
+        raw = c.read(fetch / name)
+        assert len(raw) == record["size"] and c.sha(raw) == record["sha256"]
+    assert len(c.read(fetch / "quality-records.jsonl").splitlines()) == 320
 
 
 def test_real_parent_checkpoint_envelope(c):

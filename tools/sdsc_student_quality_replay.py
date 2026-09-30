@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded, local text/verifier replay of diagnostic 54557365, never acceptance.
+"""Bounded, local text/verifier replay of a pinned diagnostic, never acceptance.
 
 Input receipt and plan SHA-256 values are external trust anchors from the verified
 fetch/operational review. No SSH, tokenizer download, model, GPU, or scheduler.
@@ -23,7 +23,6 @@ from dataclasses import asdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-JOB = "54557365"
 PARENT = "54548846"
 TASK = "qwen3-v2-student-quality-diagnostic-v1"
 REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
@@ -358,7 +357,11 @@ def replay_rows(report, prompts, records, *, eos, positions):
     return rebuilt
 
 
-def replay(fetch_dir, plan_path, *, plan_sha256, receipt_sha256, tokenizer_metadata):
+def replay(fetch_dir, plan_path, *, expected_job_id, plan_sha256, receipt_sha256, tokenizer_metadata):
+    require(
+        isinstance(expected_job_id, str) and re.fullmatch(r"[1-9][0-9]*", expected_job_id),
+        "expected real Slurm job ID required",
+    )
     plan_raw = read(plan_path)
     require(sha(plan_raw) == plan_sha256, "plan SHA differs from external anchor")
     plan = document(plan_raw)
@@ -384,7 +387,7 @@ def replay(fetch_dir, plan_path, *, plan_sha256, receipt_sha256, tokenizer_metad
     )
     for key, expected in {
         "task": TASK,
-        "job_id": JOB,
+        "job_id": expected_job_id,
         "run_id": plan["run_id"],
         "intent_id": plan["intent_id"],
         "plan_sha256": plan_sha256,
@@ -415,7 +418,7 @@ def replay(fetch_dir, plan_path, *, plan_sha256, receipt_sha256, tokenizer_metad
         no_acceptance(value)
         require(value.get("diagnostic_complete") is True, "incomplete node/worker")
         for key, expected in {
-            "job_id": JOB,
+            "job_id": expected_job_id,
             "parent_job_id": PARENT,
             "run_id": plan["run_id"],
             "source_code_sha256": plan["code_sha256"],
@@ -456,7 +459,7 @@ def replay(fetch_dir, plan_path, *, plan_sha256, receipt_sha256, tokenizer_metad
         parser_sources[path] = sha(read(ROOT / path))
     return {
         "schema": "quest-sdsc-student-quality-local-replay-v1",
-        "job_id": JOB,
+        "job_id": expected_job_id,
         "parent_job_id": PARENT,
         "passed": True,
         "diagnostic_replay_complete": True,
@@ -505,6 +508,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fetch-dir", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--job-id", required=True, help="Actual acknowledged job ID, never a guessed ID")
     parser.add_argument("--plan-sha256", required=True)
     parser.add_argument("--receipt-sha256", required=True)
     parser.add_argument("--tokenizer-metadata", type=Path, required=True)
@@ -514,6 +518,7 @@ def main(argv=None):
     result = replay(
         args.fetch_dir,
         args.plan,
+        expected_job_id=args.job_id,
         plan_sha256=args.plan_sha256,
         receipt_sha256=args.receipt_sha256,
         tokenizer_metadata=args.tokenizer_metadata,
@@ -525,7 +530,7 @@ def main(argv=None):
             {
                 "passed": True,
                 "output": str(args.output.absolute()),
-                "job_id": JOB,
+                "job_id": args.job_id,
                 "prompts": 160,
                 "responses": 960,
                 "student_accepted": False,

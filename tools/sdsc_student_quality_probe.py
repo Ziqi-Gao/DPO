@@ -188,15 +188,51 @@ def teacher_forced_metrics(model, tokenizer, examples, model_config):
     }
 
 
+def load_checkpoint_for_diagnosis(model_config, checkpoint_path, *, label):
+    """Load preserved state exactly before the separate BF16 inference copy."""
+    import torch
+
+    from posttrain_circuits.artifacts.checkpoints import load_checkpoint_model_state
+    from posttrain_circuits.models.loading import load_model_and_tokenizer
+
+    if label not in {"initial", "step20", "step33"}:
+        raise ValueError("unsupported diagnostic checkpoint label")
+    state = load_checkpoint_model_state(checkpoint_path)
+    expected = torch.bfloat16 if label == "initial" else torch.float32
+    for name, tensor in state.items():
+        if not isinstance(name, str) or not isinstance(tensor, torch.Tensor) or tensor.is_complex():
+            raise ValueError("checkpoint contains an unsupported state entry")
+        if tensor.is_floating_point() and not torch.isfinite(tensor).all():
+            raise ValueError("checkpoint contains nonfinite state: " + name)
+    dtypes = {tensor.dtype for tensor in state.values() if tensor.is_floating_point()}
+    if dtypes != {expected}:
+        raise ValueError("saved checkpoint precision differs")
+
+    # Preserve the controlled BF16/SDPA configuration through the real loader.
+    # Training checkpoints contain FP32 master weights: promote on CPU before
+    # copying them, so load_state_dict cannot silently round them through BF16.
+    loaded = load_model_and_tokenizer(model_config, for_training=False)
+    loaded.model.to(device="cpu", dtype=expected)
+    model_state = loaded.model.state_dict()
+    if model_state.keys() != state.keys():
+        raise ValueError("checkpoint state keys differ from the pinned model")
+    for name, tensor in model_state.items():
+        if tensor.shape != state[name].shape or tensor.dtype != state[name].dtype:
+            raise ValueError("checkpoint state shape/dtype differs: " + name)
+    loaded.model.load_state_dict(state, strict=True)
+    for name, tensor in loaded.model.state_dict().items():
+        if tensor.dtype != state[name].dtype or not torch.equal(tensor.cpu(), state[name]):
+            raise ValueError("checkpoint did not load exactly: " + name)
+    return loaded
+
+
 def execute(inputs, output):
     import torch
     import yaml
 
-    from posttrain_circuits.artifacts.checkpoints import load_checkpoint_model_state
     from posttrain_circuits.datasets.proofgraph.family import load_dataset_family
     from posttrain_circuits.datasets.proofgraph.generation import ProofGraphTask
     from posttrain_circuits.datasets.proofgraph.rendering import render_target
-    from posttrain_circuits.models.loading import load_model_and_tokenizer
     from posttrain_circuits.models.prompt_protocol import format_model_prompt
 
     if inputs.get("schema") != "quest-sdsc-student-quality-inputs-v1":
@@ -274,20 +310,8 @@ def execute(inputs, output):
         if path.stat().st_size != spec["size"] or file_sha(path) != spec["sha256"]:
             raise ValueError("checkpoint does not match actual parent publication")
         print(json.dumps({"stage": "load_checkpoint", "label": spec["label"]}), flush=True)
-        state = load_checkpoint_model_state(path)
-        dtypes = {str(t.dtype) for t in state.values() if t.is_floating_point()}
         expected = "torch.bfloat16" if spec["label"] == "initial" else "torch.float32"
-        if dtypes != {expected}:
-            raise ValueError("saved checkpoint precision differs")
-        load_config = dict(
-            config["model"], torch_dtype="bfloat16" if spec["label"] == "initial" else "float32"
-        )
-        loaded = load_model_and_tokenizer(load_config, for_training=False)
-        loaded.model.load_state_dict(state, strict=True)
-        for name, tensor in loaded.model.state_dict().items():
-            if tensor.dtype != state[name].dtype or not torch.equal(tensor.cpu(), state[name]):
-                raise ValueError("checkpoint did not load exactly: " + name)
-        del state
+        loaded = load_checkpoint_for_diagnosis(config["model"], path, label=spec["label"])
         gc.collect()
         model = loaded.model.to(device="cuda:0", dtype=torch.bfloat16)
         if spec["label"] == "initial":
@@ -391,15 +415,23 @@ def main(argv=None):
         import traceback
 
         traceback.print_exc()
-        report = {
-            "schema": "quest-sdsc-student-quality-probe-v1",
-            "passed": False,
-            "diagnostic_complete": False,
-            "student_accepted": False,
-            "g0_passed": False,
-            "pilot_passed": False,
-            "error": str(exc),
-        }
+        report = {}
+        try:
+            partial = json.loads((args.output_dir / "progress.json").read_text())
+            if isinstance(partial, dict) and partial.get("schema") == "quest-sdsc-student-quality-probe-v1":
+                report = partial
+        except (OSError, ValueError):
+            pass
+        report.update(
+            schema="quest-sdsc-student-quality-probe-v1",
+            passed=False,
+            diagnostic_complete=False,
+            student_accepted=False,
+            g0_passed=False,
+            pilot_passed=False,
+            factorial_ready=False,
+            error=str(exc),
+        )
         code = 1
     report.update(elapsed_seconds=time.time() - started)
     atomic_json(args.output_dir / "quality-probe.json", report)

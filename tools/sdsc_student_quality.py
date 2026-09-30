@@ -495,6 +495,48 @@ def validate_worker_report(report, plan, job, records):
     )
 
 
+def publication_records(published, plan, job):
+    """Bind any sealed publication, including failed/partial worker evidence."""
+    expected = dict(
+        task=TASK,
+        job_id=job,
+        run_id=plan["run_id"],
+        intent_id=plan["intent_id"],
+        plan_sha256=sha(canonical(plan)),
+        code_sha256=plan["code_sha256"],
+    )
+    require(
+        all(published.get(key) == value for key, value in expected.items())
+        and published.get("persistent_read_back_verified") is True
+        and type(published.get("passed")) is bool
+        and type(published.get("diagnostic_complete")) is bool
+        and published["passed"] is published["diagnostic_complete"]
+        and all(
+            published.get(key) is False
+            for key in ("student_accepted", "g0_passed", "pilot_passed", "factorial_ready")
+        ),
+        "unbound persistent diagnostic publication",
+    )
+    rows = published.get("files")
+    require(isinstance(rows, list), "publication inventory missing")
+    records, total = {}, 0
+    for row in rows:
+        require(
+            isinstance(row, dict)
+            and set(row) == {"path", "size", "sha256"}
+            and row["path"] in NAMES
+            and row["path"] not in records
+            and type(row["size"]) is int
+            and 0 <= row["size"] <= MAX_FILE
+            and re.fullmatch("[a-f0-9]{64}", str(row["sha256"])),
+            "invalid/duplicate publication inventory",
+        )
+        total += row["size"]
+        records[row["path"]] = row
+    require(total <= MAX_FETCH, "publication exceeds bounded size")
+    return records
+
+
 def inspect_job(plan, receipt):
     job = receipt["job_id"]
     queue = run(["squeue", "--noheader", "--jobs=" + job, "--format=%i|%T"])
@@ -518,36 +560,44 @@ def inspect_job(plan, receipt):
         g0_passed=False,
         pilot_passed=False,
         factorial_ready=False,
+        publication_verified=False,
+        artifact_hashes_verified=False,
+        evidence_state="unpublished_logs_only",
         checked_at=now(),
     )
-    if result["accounting_complete"]:
-        published = document(safe(plan["result_dir"]) / "receipt.json")
+    result_root = safe(plan["result_dir"])
+    publication_path = result_root / "receipt.json"
+    records = {}
+    if publication_path.exists():
+        publication_raw = read(publication_path)
+        published = json.loads(publication_raw)
+        records = publication_records(published, plan, job)
         require(
-            published["job_id"] == job
-            and published["plan_sha256"] == sha(canonical(plan))
-            and published["persistent_read_back_verified"] is True
-            and all(
-                published.get(k) is False
-                for k in ("student_accepted", "g0_passed", "pilot_passed", "factorial_ready")
-            ),
-            "unbound persistent diagnostic result",
+            {name for name in NAMES if (result_root / name).exists()} == set(records),
+            "persistent scientific files differ from publication inventory",
         )
-        total = 0
-        seen = set()
-        records = {}
-        for row in published["files"]:
-            require(row["path"] in NAMES and row["path"] not in seen, "unexpected published diagnostic file")
-            raw = read(safe(plan["result_dir"]) / row["path"])
+        for name, row in records.items():
+            raw = read(result_root / name)
             require(
                 len(raw) == row["size"] and sha(raw) == row["sha256"], "persistent diagnostic hash differs"
             )
-            total += len(raw)
-            seen.add(row["path"])
-            records[row["path"]] = row
-        require(total <= MAX_FETCH and set(NAMES) <= seen, "incomplete/oversized diagnostic publication")
-        report = document(safe(plan["result_dir"]) / "quality-probe.json")
+        result.update(
+            publication_verified=True,
+            artifact_hashes_verified=True,
+            evidence_state="verified_publication",
+            publication=published,
+            publication_sha256=sha(publication_raw),
+        )
+    if result["accounting_complete"]:
+        require(result["publication_verified"], "completed diagnostic has no verified publication")
+        require(set(NAMES) <= set(records), "incomplete successful diagnostic publication")
+        require(
+            result["publication"]["passed"] is True and result["publication"]["diagnostic_complete"] is True,
+            "completed allocation has a failed diagnostic publication",
+        )
+        report = document(result_root / "quality-probe.json")
         validate_worker_report(report, plan, job, records)
-        node = document(safe(plan["result_dir"]) / "node-result.json")
+        node = document(result_root / "node-result.json")
         require(
             node.get("diagnostic_complete") is True
             and node.get("exit_code") == 0
@@ -562,8 +612,7 @@ def inspect_job(plan, receipt):
         result.update(
             success=True,
             diagnostic_complete=True,
-            publication=published,
-            result_sha256=sha(read(safe(plan["result_dir"]) / "quality-probe.json")),
+            result_sha256=sha(read(result_root / "quality-probe.json")),
         )
     return result
 
@@ -677,19 +726,17 @@ def remote_action(request):
     files = {}
     total = 0
     # Full diagnostic data are never tailed. Only transport/worker logs are tails.
-    for name in (*NAMES, "receipt.json"):
-        path = safe(plan["result_dir"]) / name
-        if path.exists():
+    if status.get("publication_verified"):
+        records = publication_records(status["publication"], plan, receipt["job_id"])
+        for name in (*(name for name in NAMES if name in records), "receipt.json"):
+            path = safe(plan["result_dir"]) / name
             raw = read(path)
             total += len(raw)
-            if status.get("success"):
-                if name == "receipt.json":
-                    require(json.loads(raw) == status["publication"], "publication changed during fetch")
-                else:
-                    row = next(x for x in status["publication"]["files"] if x["path"] == name)
-                    require(
-                        len(raw) == row["size"] and sha(raw) == row["sha256"], "data changed during fetch"
-                    )
+            if name == "receipt.json":
+                require(sha(raw) == status["publication_sha256"], "publication changed during fetch")
+            else:
+                row = records[name]
+                require(len(raw) == row["size"] and sha(raw) == row["sha256"], "data changed during fetch")
             files[name] = base64.b64encode(raw).decode()
     for name, path in [
         ("worker.log", safe(plan["result_dir"]) / "worker.log"),
@@ -724,22 +771,44 @@ def validate_download(result, plan):
         raw = base64.b64decode(encoded, validate=True)
         total += len(raw)
         require(len(raw) <= MAX_FILE and total <= MAX_FETCH, "unbounded diagnostic fetch")
+        if name in ("worker.log", "slurm.out", "slurm.err"):
+            require(len(raw) <= 64 * 1024, "downloaded log exceeds tail bound")
         files[name] = raw
     require(total == result["bytes"], "fetched bytes differ")
-    if result["status"].get("success"):
-        require(set(NAMES) | {"receipt.json"} <= set(files), "successful fetch missing complete evidence")
+    status = result["status"]
+    scientific_names = set(files) & set(NAMES)
+    records = {}
+    if "receipt.json" in files:
         publication = json.loads(files["receipt.json"])
+        records = publication_records(publication, plan, result["receipt"]["job_id"])
         require(
-            publication == result["status"]["publication"], "fetched publication differs from verified status"
+            status.get("publication_verified") is True
+            and status.get("artifact_hashes_verified") is True
+            and publication == status.get("publication")
+            and sha(files["receipt.json"]) == status.get("publication_sha256"),
+            "fetched publication differs from verified status",
         )
-        records = {row["path"]: row for row in publication["files"]}
-        require(len(records) == len(publication["files"]), "duplicate publication inventory")
-        for name in NAMES:
-            row = records[name]
+        require(
+            scientific_names == set(records),
+            "fetched scientific inventory differs or missing complete evidence",
+        )
+        for name, row in records.items():
             require(
                 len(files[name]) == row["size"] and sha(files[name]) == row["sha256"],
                 "downloaded scientific bytes differ: " + name,
             )
+    else:
+        require(
+            not scientific_names
+            and status.get("publication_verified") is False
+            and status.get("artifact_hashes_verified") is False
+            and status.get("evidence_state") == "unpublished_logs_only"
+            and status.get("success") is False,
+            "unverified fetch must contain only bounded logs without scientific files",
+        )
+    if status.get("success"):
+        require(set(NAMES) | {"receipt.json"} <= set(files), "successful fetch missing complete evidence")
+        require(publication["passed"] is True, "successful status has failed publication")
         validate_worker_report(
             json.loads(files["quality-probe.json"]), plan, result["receipt"]["job_id"], records
         )
@@ -888,7 +957,11 @@ def main(argv=None):
                 result = ssh_operation(cli, plan, args.action, args.authorize)
                 if args.action == "fetch":
                     files = validate_download(result, plan)
-                    fetched = Path(tempfile.mkdtemp(prefix="fetch-", dir=path.parent))
+                    job_id = result["receipt"]["job_id"]
+                    require(re.fullmatch(r"[1-9][0-9]*", job_id), "invalid fetched job ID")
+                    fetched_parent = safe(ROOT / ".sdsc/fetched" / job_id)
+                    fetched_parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    fetched = Path(tempfile.mkdtemp(prefix="fetch-", dir=fetched_parent))
                     for name, raw in files.items():
                         write_once(fetched / name, raw)
                         require(read(fetched / name) == raw, "local fetched file failed read-back")

@@ -55,17 +55,46 @@ NLL, original evaluator parity, publication/fetch hashes and unknown-submission
 guards. Ruff and whitespace checks pass. CPU fixtures are not GPU evidence.
 Implementation **d76daee** passed independent control/node, worker and actual
 deployment reviews. After matching 614-file / 7,027,787-byte dry-run and sync,
-job **54557365** was submitted exactly once at **2026-09-30T21:22:47Z**; fresh
-SSH accounting at **21:27:11Z** shows **RUNNING**, not completed or accepted.
+job **54557365** was submitted exactly once at **2026-09-30T21:22:47Z** and
+terminated **FAILED / 1:0** after **26m05s**, confirmed at **21:50:50Z**.
 Its run is `20260930T211723Z-49907235ba25-c8e1e004`, intent
-`d47f1122872cad16aeb8e772f2e37ea2`. Use
-`tools/sdsc_student_quality.py status --plan
-.sdsc/student-quality/d47f1122872cad16aeb8e772f2e37ea2/plan.json`, then `fetch`
-after terminal state; never repeat submission or edit its pinned controls.
-The active root session also started one finite, read-only Quest observer with
-five-minute queries and terminal fetch; its start marker and eventual terminal
-records are in `.sdsc/diagnostics/student-quality-v1/`. It never submits,
-cancels or retries a failed query. Check actual records before continuation.
+`d47f1122872cad16aeb8e772f2e37ea2`; retain its claim/receipt and never resubmit it.
+The finite read-only Quest observer fetched **2,393,085 bytes** and exited.
+Five published file hashes were independently checked against receipt SHA
+`c18b0f1f2ce7b5685e644b743f7ec6b87cad2b457826f7626c544c54fcf51c37`.
+Files are in that intent's `fetch-186dm58f/`; terminal status, fetch and observer
+exit evidence are in `.sdsc/diagnostics/student-quality-v1/`.
+
+The diagnostic completed only the initial model's **320 responses / four arms**:
+strict accuracy is **0/128 validation and 0/32 training** at both token caps;
+256-token validation format validity is **13/128**. All actual caps were full
+128/256. This is partial diagnostic evidence, not a completed formal G0 run.
+Step20 loading failed because the diagnostic changed `torch_dtype` to FP32,
+which the real Qwen3 config validator rejects. It is a diagnostic implementation
+bug, not memory failure: peak **70.63 GiB**, headroom **121.37 GiB**, no OOM kill.
+No trained-checkpoint inference completed. Repair keeps the validated BF16
+config, promotes the CPU model before exact FP32 checkpoint loading, then uses
+the unchanged BF16 forward policy. Its next submission requires a fresh worker
+hash, run, intent and job; no repaired job has yet been submitted. The complete
+repair suite passes **114 CPU tests**, including the real loader guard, exact
+FP32 loading, failed-publication integrity, preserved partial progress, bounded
+Slurm progress and actual job-ID binding in independent replay. Worker and
+node/replay and controller changes have separate independent ACCEPT reviews
+recorded under `.sdsc/diagnostics/student-quality-v2/`. The controller review
+binds its final fetch-directory repair; 37 transport tests and Ruff were rerun
+after that last edit and passed.
+All 49 accepted student science files and the nested 47-file teacher contract
+still match their accepted identities.
+
+An independent partial-results audit also matches all 160 prompt and 320
+response token sequences using the actual pinned tokenizer, the exact rendered
+prompts and complete original verifier traces. Both 256-token cohorts remain
+strictly zero after an explanatory colon-only correction; wrong antecedents,
+invalid references and incorrect conclusions remain. **318/320** already begin
+with `<proof>`, so adding that prefix has little evidentiary support. Initial
+canonical NLL was lost by the first failure-report path and remains unknown.
+See `.sdsc/diagnostics/student-quality-v1/partial-initial-audit.json` (SHA
+`d233e378db405a852e91018b93c7e0d515b264e6ba6a3cccd393cf6679ecec7f`).
 Runtime metadata and the quser43 shared master were reverified without changing
 the remote environment. Review, deployment and submission evidence are under
 `.sdsc/diagnostics/student-quality-v1/`; see
@@ -76,7 +105,8 @@ own independent implementation/acceptance review, not renewed user permission.
 The separate local `tools/sdsc_student_quality_replay.py` verifies the externally
 anchored plan/publication, all 160 prompts / 960 responses / 12 arms, and
 recomputes the original parser/verifier traces and generation summaries. Its
-23 CPU tests and Ruff checks pass. Actual pinned tokenizer metadata was fetched
+28 CPU tests and Ruff checks pass; actual job ID is now a required external
+input, checked against receipt, worker and node identities. Actual pinned tokenizer metadata was fetched
 read-only for EOS and length checks. Saved text remains receipt-hash-bound:
 token-ID decoding, unavailable teacher-forced logits and original full dataset
 membership are not independently replayed. This is diagnostic verification of
