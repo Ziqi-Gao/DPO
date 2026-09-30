@@ -11,16 +11,24 @@ The user authorized repair and resubmission with larger resources. V6 uses
 **2 H100 / 24 CPU / 384 GiB**, preserving scientific settings and the strict
 32-GiB/20% headroom rule while retaining actual memory measurements on failure.
 Implementation **9a19667** and distinct independent acceptance **6c04f80** are
-complete; the final CPU suite passed **447 tests**. Fresh matching preflight
-**54547547 is RUNNING on exp-19-07**, submitted once at 17:58:25 UTC. The
-independently reviewed finite Quest supervisor is active on **quser43**, PID
-**1272285**, launched at **18:04:30 UTC**. Its verified `waiting_preflight`
-state has `submission_attempted=false`: only after strict preflight acceptance
-will it submit one matching two-hour calibration. No v6 calibration or new GPU
-PASS is claimed. Do not edit pinned controls, rewrite `.sdsc/check.json` or
-start another flow. Current plan/state are under
-`.sdsc/supervision/student54547547-to-calibration-v6/`. Central ServerScheduler
-observations below remain dated 2026-09-10 and were not reverified from Quest.
+complete; the final CPU suite passed **447 tests**. Matching preflight
+**54547547** and automatically submitted calibration **54548846** both passed:
+fresh SSH accounting confirms **COMPLETED / 0:0**, respectively **16m38s** and
+**29m31s**, with hash-verified results. Calibration completed **33 updates /
+1,961,368 nonpadding tokens**, preserving checkpoints on project storage. Its
+actual cgroup peak was **190.21 GiB**, leaving **193.79 GiB** headroom under the
+384-GiB limit; final validation did not raise the post-training peak. Step-20
+answer/proof/format scores remain **0**; execution/calibration PASS is not
+student-quality acceptance or complete G0/pilot evidence.
+
+The finite Quest supervisor reached **`calibration_complete`** at
+**2026-09-30T18:50:07Z** (13:50 CDT), fetched 13 small files and exited. It
+submitted exactly one calibration and no G0/pilot; preserve its plan/claims and
+do not re-arm it. State is under
+`.sdsc/supervision/student54547547-to-calibration-v6/`. Full G0 still requires
+reviewed adapter migration and actual scientific evidence. Central
+ServerScheduler observations below remain dated 2026-09-10 and were not
+reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -1333,10 +1341,10 @@ physical protocol SHA is
 `c701dde9691210dcdd06f4a1076299941fdb6ad8d609280a13e80d5d7a4333f7`.
 New preflight **54547547**, intent `dfb7a4ac9a654e37a1e8a9e8dacdc283`, was
 submitted exactly once at **2026-09-30T17:58:25Z** with the reviewed one-hour
-profile. Fresh queue/accounting and the supervisor's first observation show
-RUNNING on **exp-19-07** (5m36s at first supervised observation). Startup logs
-confirm source/science/teacher-input and selected-checkpoint staging completed,
-then pinned model staging; these are not preflight completion evidence.
+profile. It completed on **exp-19-07** in **16m38s**; fresh remote accounting
+confirms job/batch/extern **COMPLETED / 0:0**, and strict result verification
+passed with report SHA
+`e978c8d8bfa729f8d8b626e6f478220fdcadc2a60e6e5e46f075826a43d61cb4`.
 
 Preflight release `20260930T175511Z-ea06908ff9b4-91689b38` contains **607 files /
 6,914,260 source bytes**, all from the matching dry-run. Source SHA is
@@ -1357,16 +1365,41 @@ Independent operational review SHA is
 `f865f700e9341d3be055f24045ddb55aee89ebfd79c0fa8aca882c4309ada733`;
 it verified all 607 deployed files, 14 controls, nine evidence pins, the rebuilt
 plan, real receipts and exact launcher. The process launched once on **quser43**
-at **2026-09-30T18:04:30Z**, PID **1272285**, start ticks **24937236**; its real
-process identity and `waiting_preflight` state were verified and stderr was
-empty. It polls every 300 seconds for at most fourteen days, submits at most
-one matched 2-H100/24-CPU/384-GiB/two-hour calibration, and never retries,
-cancels, starts G0/pilot, or sends chat notifications. Keep the quser43 shared
-SSH master available. On failure or SSH loss, inspect state/receipts and
-reconcile; never re-arm this flow blindly. Do not edit its pinned source or
-profile/check evidence while active. Only documentation changed after the
-accepted deployed science HEAD; unrelated existing `.gitignore`, `AGENTS.md`
-and untracked files remain unstaged.
+at **2026-09-30T18:04:30Z**, PID **1272285**, start ticks **24937236**. After
+strict preflight acceptance it submitted exactly one matching
+2-H100/24-CPU/384-GiB/two-hour calibration, **54548846**, at
+**2026-09-30T18:19:57Z**, intent `594d09aee22c4bdabbe29b0501705344`. It reached
+`calibration_complete` at **18:50:07Z** and exited; the original PID is absent.
+No retry, cancellation or G0/pilot submission occurred. Preserve its completed
+plan, claims, receipts and pinned evidence; never blindly re-arm it.
+
+Calibration **54548846** has fresh job/batch/extern **COMPLETED / 0:0** accounting,
+elapsed **29m31s**, and verified report SHA
+`91794e528ec83ff0c7f35bd3734d36022d60db2794c3e41c7686beb97fbff4f1`.
+It performed **33 full-parameter updates**, consuming **1,961,368 / 2,000,000**
+nonpadding model-input tokens and stopping normally before the next global-64
+window would exceed the exact budget. The last update loss is **1.2227404267**.
+Step-20 answer/proof/format scores are all **0**; there is no step-33 quality
+evaluation. Do not infer student-quality acceptance from execution success.
+
+All four memory stages passed. The actual aggregate cgroup peak was
+**204,239,155,200 bytes (190.2125 GiB)** after training and remained identical
+after final artifact validation. Under the **412,316,860,416-byte (384-GiB)**
+limit, headroom was **193.7875 GiB**, above the unchanged **76.8-GiB** minimum.
+These observations establish the successful v6 envelope, not the unrecorded v5
+peak or the exact operation responsible for either peak. Sampled memory.stat
+cache/RSS counters are not the historical peak's composition.
+
+The verified persistent receipt lists **40 files / 91,031,405,690 bytes** under
+`/expanse/lustre/projects/nwu181/zgao12/OPD/control-results/20260930T175809Z-ea06908ff9b4-c0d85d6c/594d09aee22c4bdabbe29b0501705344`.
+The final step-33 checkpoint SHA is
+`d06052e51bbc80ada401110f2fe2e335dbcae5732cf1e0a9cfdee5b637e7f538`.
+The supervisor fetched **13 small files / 442,306 bytes**, without weights,
+into `.sdsc/fetched/54548846/fetch-rhidqpza/`; fresh terminal status records are
+in `.sdsc/diagnostics/adapted-student-memory-v6/terminal-status-54547547.json`
+and `terminal-status-54548846.json`. Only documentation changed in this status
+inspection; no new compute was submitted and unrelated existing `.gitignore`,
+`AGENTS.md` and untracked files remain unstaged.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
