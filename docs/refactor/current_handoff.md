@@ -185,16 +185,33 @@ The repair passes **118 CPU tests**; independent review reran **92 transport/nod
 tests** and accepted controller SHA `e217b5657bb8dde40dd50a0da778f032760cbacc7771731712a5c487d27ec726`.
 Review evidence is `instruction-control-node-independent-review-v2.json` under
 `.sdsc/diagnostics/student-quality-v2/`; it does not grant scientific acceptance.
-A new source deployment, plan, actual remote dry-run and deployment review are
-required before the one authorized screen submission. At **22:49:07Z** the
-existing quality diagnosis54558773 remains RUNNING.
+Repair commit **addb2a3** was deployed as
+`20260930T225419Z-8c5ed83b5110-73116a7c`, 625 files / 7,264,653 source bytes.
+The actual new dry-run correctly counts existing job54558773 as one GPU plus
+one new GPU. Independent actual-deployment review SHA
+`6042dd009b7cdd6ca4ff04ae5ab1a1df936443f1539f70ec56b1719652ff4073`
+binds the source and plan. Screen **54559253** was submitted exactly once at
+**2026-09-30T22:59:35Z**, intent `e8573086e7b073ec71e46541ff453c2a`,
+plan SHA `8936a66bfc2e27de820ab8e4053f12aaac0dc6ab58ac8acc2de6a5cec9155415`.
+At **23:00:19Z** it is PENDING. Preserve the permanent scientific and legacy
+reservation claims; no resubmission or automatic progression. Its finite
+read-only Quest observer `.sdsc/diagnostics/student-instruction-v1/observe.py`
+is pinned to this plan/controller, queries every five minutes for at most two
+hours and fetches bounded terminal results only. Inspect its status and exit
+records before restarting. Do not edit either active diagnostic's control pins.
 
 54558773 logs at **22:40:34Z** confirm all four initial arms completed: both caps
 still give zero strict scores in validation128 and training32, matching the old
 partial diagnostic. Canonical-target NLL/token accuracy are **1.10855/0.89019**
 (validation) and **1.00384/0.89135** (training). These teacher-forced diagnostics
-are not the teacher-demo training loss or proof acceptance. Trained checkpoint
-arms remain outstanding. The complete local token audit is prepared at
+are not the teacher-demo training loss or proof acceptance. At **22:56:32Z**,
+all four step20 arms also completed: every training/validation response at both
+caps terminates at the length bound, with zero strict, format and answer-tag
+scores. Canonical NLL/token accuracy deteriorates to **2.20222/0.31575** for
+validation and **2.19470/0.31880** for training. The repaired loader now reaches
+trained-model inference; these partial results suggest training degradation,
+not merely the old 128-token monitor cap. Full raw audit and step33 are still
+outstanding; do not infer the optimizer cause or model acceptance. The complete local token audit is prepared at
 `.sdsc/diagnostics/student-quality-v2/independent_full_audit.py`, fixed to this
 job/plan; it has not run on the new job's incomplete results.
 
