@@ -43,9 +43,9 @@ SDSC 不安装 Codex、VS Code Server 或常驻工作流服务，也不申请用
 `qwen3-v2-adapted-preflight` → `qwen3-v2-adapted-calibration`，使用已验收
 权重的真实哈希和原始九文件示例证据，保留全部 student 训练参数。
 历史 v1–v5 两阶段均为 2 H100 / 24 CPU / 192 GiB。2026-09-30 用户授权
-内存修复后的重提；v6 提案使用 2 H100 / 24 CPU / 384 GiB，两阶段分别
-最多 1 小时和 2 小时，仍要求32 GiB与20%两项内存余量门槛。新版本须
-独立接受且通过新的匹配预检；不追认旧失败任务，也不改 teacher 历史环境。
+内存修复后的重提；已独立接受的 v6 使用 2 H100 / 24 CPU / 384 GiB，两阶段分别
+最多 1 小时和 2 小时，仍要求32 GiB与20%两项内存余量门槛。新版本的匹配预检 **54547547** 已提交并运行，Quest quser43的有限监控
+会在严格通过后自动提交一次校准；不追认旧失败任务，也不改 teacher 历史环境。
 必须先完成独立协议接受，再以实际新预检的成功报告允许校准；不能重启旧
 v3 流程，也不能把校准当作完整 G0。实际提交状态读取本地回执及 current
 handoff；操作说明见 [适配 teacher 的 student 校准](refactor/sdsc_adapted_student_calibration_20260928.md)。

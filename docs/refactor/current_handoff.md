@@ -2,28 +2,24 @@
 
 Last updated: 2026-09-30 UTC. Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
-teacher-only 256-token protocol. V4 calibration 54509809 failed at its first
-step-20 checkpoint publication after twenty genuine optimizer updates because
-the original BF16 baseline and FP32 FSDP master weights were compared with a
-strict same-dtype contract. The separate v5 implementation `529d46e` and
-independent review-only acceptance `9169a61` preserve the teacher and scientific
-settings. The affected suite passed 346 tests; independent review passed 217.
-Matching two-H100 preflight **54533796 passed** (COMPLETED / 0:0, 20m09s).
-The finite Quest supervisor automatically submitted calibration **54533934**,
-which completed 33 optimizer updates and saved step-20/33 checkpoints, then
-**failed post-training host-memory headroom acceptance** (FAILED / 1:0, 34m42s).
-The previous dtype error did not recur; this is not evidence of an OOM. The
-calibration is not accepted. Its results are persisted and bounded evidence
-has been fetched. The supervisor stopped at **2026-09-30T06:02:21Z** without
-retry or cancellation. The current quser43 shared master and both terminal job
-states were freshly verified. The user explicitly authorized a repair and a
-fresh submission with larger memory/GPU resources. The independently reviewed v6 successor
-uses **2 H100 / 24 CPU / 384 GiB**, preserves scientific settings and the
-32-GiB/20% headroom gate, and records measured memory before rejecting a stage.
-Implementation `9a196677a269c2e5f1c925da4e43b6145c1cdd7a` passed independent
-review at 2026-09-30T17:53:49Z; this review-only transition accepts its v6
-protocol. A fresh matching GPU preflight remains required before one
-calibration; no v6 job has been submitted yet. Central ServerScheduler
+teacher-only 256-token protocol. V5 preflight 54533796 passed; calibration
+54533934 completed 33 updates and saved step-20/33 checkpoints but failed the
+post-training 192-GiB memory-headroom gate. Its exact peak was not recorded;
+there is no demonstrated OOM. Preserve its outputs and stopped flow.
+
+The user authorized repair and resubmission with larger resources. V6 uses
+**2 H100 / 24 CPU / 384 GiB**, preserving scientific settings and the strict
+32-GiB/20% headroom rule while retaining actual memory measurements on failure.
+Implementation **9a19667** and distinct independent acceptance **6c04f80** are
+complete; the final CPU suite passed **447 tests**. Fresh matching preflight
+**54547547 is RUNNING on exp-19-07**, submitted once at 17:58:25 UTC. The
+independently reviewed finite Quest supervisor is active on **quser43**, PID
+**1272285**, launched at **18:04:30 UTC**. Its verified `waiting_preflight`
+state has `submission_attempted=false`: only after strict preflight acceptance
+will it submit one matching two-hour calibration. No v6 calibration or new GPU
+PASS is claimed. Do not edit pinned controls, rewrite `.sdsc/check.json` or
+start another flow. Current plan/state are under
+`.sdsc/supervision/student54547547-to-calibration-v6/`. Central ServerScheduler
 observations below remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
@@ -1287,8 +1283,8 @@ Bounded terminal fetch is `.sdsc/fetched/54533934/fetch-6b5bekn4/`. An additiona
 receipt-size/SHA-verified read fetched only the inner calibration report,
 `metrics.jsonl` and `factorial_update_evidence.json` into
 `.sdsc/fetched/54533934/verified-small-status/`; no weights were downloaded.
-Next preserve these outputs and diagnose the aggregate peak before a reviewed
-repair and fresh charged run. Do not waive the headroom gate, silently change
+Preserve these outputs; the accepted v6 repair below adds the missing stage
+measurements and a larger independently reviewed envelope for a fresh run. Do not waive the headroom gate, silently change
 the reviewed memory envelope, retry this intent or treat checkpoints as an
 accepted resume contract. Inspect stopped state and receipts before any
 continuation. Existing stopped flows and unknown-intent protections remain.
@@ -1325,12 +1321,52 @@ The independent review artifact SHA is
 `cd1b7f1afee808c16a607bdf8010baa40d762ca4db7607713f2ec47bf5a16f5c`.
 The accepted v6 protocol still requires new releases and matching preflight; `tools/sdsc_student_supervise_v6.py` is a finite
 one-calibration adapter with 300-second polling and the existing no-retry,
-unknown-intent and SSH-loss stops. Tool existence does not mean it is active.
+unknown-intent and SSH-loss stops. Its actual launch is recorded below.
 The integrated CPU suite passed **447 tests** (24 expected PyTorch FSDP warnings),
 including genuine tiny-model save/finalization/resume for both v5 and v6,
 cgroup v1/v2 and failed-stage preservation, exact resource/protocol rejection,
 and real remote-fetch selection through CLI disk publication. AST and
 `git diff --check` passed. CPU tests do not establish the new GPU envelope.
+
+V6 review-only acceptance is `6c04f804b302184b8ff95d00fab404e0531ed8d6`;
+physical protocol SHA is
+`c701dde9691210dcdd06f4a1076299941fdb6ad8d609280a13e80d5d7a4333f7`.
+New preflight **54547547**, intent `dfb7a4ac9a654e37a1e8a9e8dacdc283`, was
+submitted exactly once at **2026-09-30T17:58:25Z** with the reviewed one-hour
+profile. Fresh queue/accounting and the supervisor's first observation show
+RUNNING on **exp-19-07** (5m36s at first supervised observation). Startup logs
+confirm source/science/teacher-input and selected-checkpoint staging completed,
+then pinned model staging; these are not preflight completion evidence.
+
+Preflight release `20260930T175511Z-ea06908ff9b4-91689b38` contains **607 files /
+6,914,260 source bytes**, all from the matching dry-run. Source SHA is
+`ea06908ff9b4a74e97b8d668584b02c2e76ee68da4861d9ed7dbe5462eb33855`;
+genuine bundle SHA is
+`4a26fe107997e01d93be9a22d37d1d94a9f7efd4c254b794eb8185328ea8ac10`;
+preflight provenance SHA is
+`eac360dcca0b7096f426fde82226709aee6af1d862d57c6ef51a6f67df017c23`.
+The independent calibration replay `20260930T175809Z-ea06908ff9b4-c0d85d6c`
+is deployed with identical source and bundle and new provenance SHA
+`ce0f4d1c1f4c292e4c3e88492435a3c2a2da68c2109541e2c6ac3b7d6941ccc4`.
+Evidence is `.sdsc/replays/replay-752eafdfccd64070ab1ccc590354b0c4/`.
+
+Actual finite flow: `.sdsc/supervision/student54547547-to-calibration-v6/`.
+Plan SHA is `92376fcd00a3cf3f8c94e1cc04c52b0fb77339320b3239f67860ac65fcdd3b63`;
+profile SHA is `adc1e59926658512c8cc8fc221b220d01e6290d33ca95596ac5c91ab977516b0`.
+Independent operational review SHA is
+`f865f700e9341d3be055f24045ddb55aee89ebfd79c0fa8aca882c4309ada733`;
+it verified all 607 deployed files, 14 controls, nine evidence pins, the rebuilt
+plan, real receipts and exact launcher. The process launched once on **quser43**
+at **2026-09-30T18:04:30Z**, PID **1272285**, start ticks **24937236**; its real
+process identity and `waiting_preflight` state were verified and stderr was
+empty. It polls every 300 seconds for at most fourteen days, submits at most
+one matched 2-H100/24-CPU/384-GiB/two-hour calibration, and never retries,
+cancels, starts G0/pilot, or sends chat notifications. Keep the quser43 shared
+SSH master available. On failure or SSH loss, inspect state/receipts and
+reconcile; never re-arm this flow blindly. Do not edit its pinned source or
+profile/check evidence while active. Only documentation changed after the
+accepted deployed science HEAD; unrelated existing `.gitignore`, `AGENTS.md`
+and untracked files remain unstaged.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
