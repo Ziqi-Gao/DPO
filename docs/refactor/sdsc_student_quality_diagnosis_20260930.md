@@ -43,6 +43,9 @@ has a distinct name and cannot replace the original acceptance metric.
    the first update norm is 18.75 and probe KL is 7.82. These observations make
    optimization instability plausible, not a proven cause or a license to
    change the accepted settings without independent scientific review.
+   Git history traces 5e-4 to the shared smoke default; student v1 through v6
+   explicitly preserve it. It was not accidentally copied from the adapted
+   teacher's distinct LoRA optimizer.
 
 A real CPU tiny-Qwen/Accelerate/FSDP test also reproduces a direct `.generate()`
 boundary failure: the method is bound to the inner HF model and bypasses the
@@ -53,6 +56,11 @@ A bounded two-rank CPU/Gloo attempt stopped at FSDP preparation with
 `cpu vs cpu:0` device inconsistency, before generation; it supplies no W=2
 generation result. The scripts, per-rank observations and original logs remain
 under `.sdsc/diagnostics/student-quality-v1/`.
+A second bounded attempt normalizes only the CPU device and reaches real
+two-rank Gloo/FSDP setup, then exits with a native SIGSEGV without per-rank
+results. It is inconclusive and was not retried. PyTorch's FULL_SHARD root-buffer
+retention differs from the W=1 NO_SHARD path, so the single-rank reproduction
+does not establish the cause of production W=2 zero scores.
 
 The two seed-42 v5/v6 runs diverge numerically from update three. Their logs
 warn about CuBLAS configuration and nondeterministic attention. The memory
@@ -125,3 +133,27 @@ actual runtime, parent artifacts and deployment. Its immutable source run is
 Use the separate controller's `status` and `fetch` commands with that plan;
 the ordinary `tools/sdsc` task registry does not own this diagnostic. No old
 flow is restarted. The saved submission receipt makes resubmission invalid.
+
+## Independent local replay
+
+After the controller's terminal fetch, run `tools/sdsc_student_quality_replay.py`
+with `--fetch-dir`, `--plan`, the externally reviewed `--plan-sha256`, the
+verified publication's `--receipt-sha256`, `--tokenizer-metadata` and a new
+`--output` path. The actual small metadata snapshot is
+`.sdsc/diagnostics/student-quality-v1/pinned-tokenizer-metadata.json`; it binds
+the model/tokenizer revision, EOS 151645 and maximum position 40960.
+
+Replay checks complete artifact hashes, all ordered cohorts/checkpoints/arms,
+raw responses, original parser/verifier step traces, strict and answer-tag
+summaries, EOS/length stops and paired prefixes. Twenty-three CPU tests cover
+producer-shaped records, altered traces/counts/hashes, duplicate IDs, ordering,
+metric type confusion, missing records, nonfinite values and acceptance
+overclaims. CPU fixtures are not actual diagnostic or model acceptance.
+
+The output explicitly discloses what is not replayed: full-tokenizer decoding
+of response IDs, teacher-forced logits/NLL, full source dataset membership,
+accounting, GPU inference and checkpoint/memory measurements. The original
+controller's verified publication remains the trust anchor for those inputs.
+No result turns exposed validation into an independent holdout. A fixed
+initial checkpoint failing its original base-capability gate cannot be repaired
+by relabeling a trained checkpoint or borrowing the teacher's PASS.

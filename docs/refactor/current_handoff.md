@@ -38,8 +38,12 @@ accepts canonical proofs and rejects truncated/tag-only responses correctly;
 loss/mask alignment including EOS is correct. Step-20 zero scores do not isolate
 binary-answer quality, because invalid proofs also force strict answer failure.
 Training uses a fixed 5e-4 learning rate and shows large early loss/update
-excursions; causation remains unproven without raw responses. A CPU FSDP generate boundary
-failure is also reproduced, explicitly not established as the W=2 run's cause.
+excursions; causation remains unproven without raw responses. That value is an
+explicit inherited protocol setting, not a demonstrated teacher-migration bug.
+A CPU W=1 FSDP generate boundary failure is reproduced, explicitly not
+established as the W=2 run's cause. Both bounded W=2 CPU attempts are
+inconclusive (device setup rejection, then native crash); do not infer a
+production generation defect from them.
 
 New independent tools `sdsc_student_quality.py`, `sdsc_student_quality_job.py`
 and `sdsc_student_quality_probe.py` implement a separate **1-H100 / 24-CPU /
@@ -58,12 +62,25 @@ Its run is `20260930T211723Z-49907235ba25-c8e1e004`, intent
 `tools/sdsc_student_quality.py status --plan
 .sdsc/student-quality/d47f1122872cad16aeb8e772f2e37ea2/plan.json`, then `fetch`
 after terminal state; never repeat submission or edit its pinned controls.
+The active root session also started one finite, read-only Quest observer with
+five-minute queries and terminal fetch; its start marker and eventual terminal
+records are in `.sdsc/diagnostics/student-quality-v1/`. It never submits,
+cancels or retries a failed query. Check actual records before continuation.
 Runtime metadata and the quser43 shared master were reverified without changing
 the remote environment. Review, deployment and submission evidence are under
 `.sdsc/diagnostics/student-quality-v1/`; see
 `docs/refactor/sdsc_student_quality_diagnosis_20260930.md`. Keep original teacher
 and student protocols/checkpoints immutable; scientific changes require their
 own independent implementation/acceptance review, not renewed user permission.
+
+The separate local `tools/sdsc_student_quality_replay.py` verifies the externally
+anchored plan/publication, all 160 prompts / 960 responses / 12 arms, and
+recomputes the original parser/verifier traces and generation summaries. Its
+23 CPU tests and Ruff checks pass. Actual pinned tokenizer metadata was fetched
+read-only for EOS and length checks. Saved text remains receipt-hash-bound:
+token-ID decoding, unavailable teacher-forced logits and original full dataset
+membership are not independently replayed. This is diagnostic verification of
+already exposed validation, never a new holdout or model/G0 acceptance.
 
 Training-time monitoring uses 128 generated tokens, whereas the existing G0
 probe scorer and initial-checkpoint anti-shortcut evaluation use **256**. Thus
