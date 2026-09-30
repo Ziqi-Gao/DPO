@@ -78,6 +78,9 @@ files or historical tools. The first diagnostic is fixed before seeing results:
   independent confirmation or a checkpoint-selection set.
 - Generation: greedy, original non-thinking prompt, cache disabled, 1536 input
   envelope; separate 128-token original-budget and 256-token diagnostic arms.
+  The original training monitor uses 128, but the existing G0 probe scorer and
+  initial-checkpoint anti-shortcut evaluator already use 256. The latter arm
+  still remains diagnostic here; it does not replace the full G0 evaluation.
 - Precision: load and compare every saved tensor in its actual BF16 initial /
   FP32 trained dtype, then explicitly convert to BF16 forward parameters.
   CPU hooks confirm BF16 parameters/activations in original FSDP forwards.
@@ -113,3 +116,12 @@ migration to the accepted teacher/student contracts before formal progression.
 
 Current mutable state and actual run/job identities belong in
 `docs/refactor/current_handoff.md` and `.sdsc/diagnostics/student-quality-v1/`.
+
+The first diagnostic has real job ID **54557365**, submitted once at
+2026-09-30T21:22:47Z after independent review of implementation `d76daee`, the
+actual runtime, parent artifacts and deployment. Its immutable source run is
+`20260930T211723Z-49907235ba25-c8e1e004` and its plan is
+`.sdsc/student-quality/d47f1122872cad16aeb8e772f2e37ea2/plan.json`.
+Use the separate controller's `status` and `fetch` commands with that plan;
+the ordinary `tools/sdsc` task registry does not own this diagnostic. No old
+flow is restarted. The saved submission receipt makes resubmission invalid.

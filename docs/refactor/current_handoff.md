@@ -42,20 +42,37 @@ excursions; causation remains unproven without raw responses. A CPU FSDP generat
 failure is also reproduced, explicitly not established as the W=2 run's cause.
 
 New independent tools `sdsc_student_quality.py`, `sdsc_student_quality_job.py`
-and `sdsc_student_quality_probe.py` prepare a separate **1-H100 / 24-CPU /
+and `sdsc_student_quality_probe.py` implement a separate **1-H100 / 24-CPU /
 192-GiB / two-hour** diagnostic. Its cohorts are the already exposed validation
 first128 and training first32, with separate 128/256-token arms and raw
 prompt/response/verification evidence; no optimizer or acceptance is performed.
 The combined CPU suite passed **50 tests**, including real tiny-Qwen FP32/BF16
 NLL, original evaluator parity, publication/fetch hashes and unknown-submission
 guards. Ruff and whitespace checks pass. CPU fixtures are not GPU evidence.
-At this preparation point no new diagnostic job has been submitted. Runtime
-metadata and the quser43 shared master were reverified, without changing the
-remote environment. Plan and evidence are under
+Implementation **d76daee** passed independent control/node, worker and actual
+deployment reviews. After matching 614-file / 7,027,787-byte dry-run and sync,
+job **54557365** was submitted exactly once at **2026-09-30T21:22:47Z**; fresh
+SSH accounting at **21:27:11Z** shows **RUNNING**, not completed or accepted.
+Its run is `20260930T211723Z-49907235ba25-c8e1e004`, intent
+`d47f1122872cad16aeb8e772f2e37ea2`. Use
+`tools/sdsc_student_quality.py status --plan
+.sdsc/student-quality/d47f1122872cad16aeb8e772f2e37ea2/plan.json`, then `fetch`
+after terminal state; never repeat submission or edit its pinned controls.
+Runtime metadata and the quser43 shared master were reverified without changing
+the remote environment. Review, deployment and submission evidence are under
 `.sdsc/diagnostics/student-quality-v1/`; see
 `docs/refactor/sdsc_student_quality_diagnosis_20260930.md`. Keep original teacher
 and student protocols/checkpoints immutable; scientific changes require their
 own independent implementation/acceptance review, not renewed user permission.
+
+Training-time monitoring uses 128 generated tokens, whereas the existing G0
+probe scorer and initial-checkpoint anti-shortcut evaluation use **256**. Thus
+the diagnostic's 256-token arm is not itself G0 acceptance, but that length is
+already the G0 generation budget, not a newly relaxed G0 threshold. Complete G0
+still needs an independently accepted adapter for the genuine teacher/student
+producer identities, two real step20-to-step33 resumes, adapted-teacher scoring,
+the original initial-checkpoint capability/anti-shortcut/circuit checks and all
+26 scientific gates. Do not replace initial with a trained checkpoint to pass.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
