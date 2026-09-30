@@ -75,7 +75,18 @@ bug, not memory failure: peak **70.63 GiB**, headroom **121.37 GiB**, no OOM kil
 No trained-checkpoint inference completed. Repair keeps the validated BF16
 config, promotes the CPU model before exact FP32 checkpoint loading, then uses
 the unchanged BF16 forward policy. Its next submission requires a fresh worker
-hash, run, intent and job; no repaired job has yet been submitted. The complete
+hash, run, intent and job. Repair implementation **4c6bdb6** passed independent
+worker, node/replay, controller and actual-deployment reviews. New diagnostic
+**54558773** was submitted once at **2026-09-30T22:13:37Z** with 1 H100, 24 CPU,
+192 GiB and a two-hour limit. Run `20260930T220721Z-0a50670bd73e-43958896`
+contains 618 files / 7,100,384 bytes; new intent
+`728de9ca98016805cf6474adb1ad57b8` binds plan SHA
+`ca54bab66edc0c8a5cc36adfd65f1b48abdcb4021b93666283b8a263c76efa12`.
+Do not resubmit this intent. The finite foreground Quest observer in
+`.sdsc/diagnostics/student-quality-v2/observe.py` queries every five minutes for
+at most four hours, stops on SSH/control/unknown-state failure without retry,
+and only fetches bounded terminal evidence. It submits nothing. Inspect its
+actual status/exit records before restarting observation. The complete
 repair suite passes **114 CPU tests**, including the real loader guard, exact
 FP32 loading, failed-publication integrity, preserved partial progress, bounded
 Slurm progress and actual job-ID binding in independent replay. Worker and
@@ -120,6 +131,11 @@ still needs an independently accepted adapter for the genuine teacher/student
 producer identities, two real step20-to-step33 resumes, adapted-teacher scoring,
 the original initial-checkpoint capability/anti-shortcut/circuit checks and all
 26 scientific gates. Do not replace initial with a trained checkpoint to pass.
+Independent source review confirms task validation is exactly the unscreened
+first 128 validation examples: initial needs at least 13 strict successes.
+`base_capable`/`challenge` use separate circuit splits and cannot change this
+denominator. Diagnostic BF16 autocast differs from the formal scorer's lack of
+an explicit autocast context; no bitwise formal-G0 replay is claimed.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and

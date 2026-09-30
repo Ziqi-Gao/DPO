@@ -204,3 +204,19 @@ original responses or scoring. The report is
 `d233e378db405a852e91018b93c7e0d515b264e6ba6a3cccd393cf6679ecec7f`.
 Initial canonical NLL was lost on the original exception path and remains
 unknown; neither trained checkpoint has yet been measured.
+
+The repaired implementation **4c6bdb6** passed a separate actual-deployment
+review. New job **54558773** was submitted once at 2026-09-30T22:13:37Z under
+run `20260930T220721Z-0a50670bd73e-43958896`, intent
+`728de9ca98016805cf6474adb1ad57b8`, plan SHA
+`ca54bab66edc0c8a5cc36adfd65f1b48abdcb4021b93666283b8a263c76efa12`.
+The snapshot contains 618 files / 7,100,384 bytes; resources and original
+checkpoint inputs are unchanged. A finite read-only Quest observer polls every
+five minutes and fetches only terminal small evidence, never submits.
+
+Independent source review confirms that the G0 base-task gate uses the same
+unscreened first 128 validation examples (at least 13 strict successes).
+`base_capable` and `challenge` are independently constructed from the two
+circuit splits; they never replace the task-validation denominator. The
+diagnostic's explicit BF16 autocast differs from the formal scorer's lack of
+an explicit autocast context, so it is not a bitwise formal-G0 replay.
