@@ -85,11 +85,13 @@ contains 618 files / 7,100,384 bytes; new intent
 Do not resubmit this intent. The finite foreground Quest observer in
 `.sdsc/diagnostics/student-quality-v2/observe.py` queries every five minutes for
 at most four hours, stops on SSH/control/unknown-state failure without retry,
-and only fetches bounded terminal evidence. It submits nothing. Inspect its
-actual status/exit records before restarting observation. The complete
+and only fetches bounded terminal evidence. It submits nothing. Accounting at
+22:18:59Z showed **RUNNING**; bounded logs at22:20:26Z confirmed node-local
+model staging and worker start with empty Slurm stderr. Inspect its actual
+status/exit records before restarting observation. The complete
 repair suite passes **114 CPU tests**, including the real loader guard, exact
 FP32 loading, failed-publication integrity, preserved partial progress, bounded
-Slurm progress and actual job-ID binding in independent replay. Worker and
+Slurm progress and actual job-ID binding in independent replay. Worker,
 node/replay and controller changes have separate independent ACCEPT reviews
 recorded under `.sdsc/diagnostics/student-quality-v2/`. The controller review
 binds its final fetch-directory repair; 37 transport tests and Ruff were rerun
@@ -136,6 +138,44 @@ first 128 validation examples: initial needs at least 13 strict successes.
 `base_capable`/`challenge` use separate circuit splits and cannot change this
 denominator. Diagnostic BF16 autocast differs from the formal scorer's lack of
 an explicit autocast context; no bitwise formal-G0 replay is claimed.
+
+Source/provenance audit found no initial-weight mutation bug: a separate pinned
+HF/BF16 export process synchronously saves the initial state before distributed
+training starts, and its file identity is rechecked unchanged afterwards. No
+pristine-HF-vs-initial tensor comparison has yet been recorded; that is a missing
+direct check, not evidence of corruption. A single uniform zero-shot instruction
+clarification is implemented as a separate training-only diagnostic in
+`tools/sdsc_student_instruction.py`, its node wrapper and worker; scientific scope
+is frozen in `docs/refactor/sdsc_student_instruction_screen_20260930.md`. It
+keeps original initial/graph/verifier/budgets, uses only first32 training examples,
+changes no production protocol and has not yet run. Original thresholds remain
+immutable; no multiple-candidate validation search. Independent scope, worker
+and control/node reviews passed; the combined CPU suite passed **101 tests**,
+including real tiny-Qwen loading/inference, data isolation, failure publication,
+unknown receipts and actual parent provenance restoration. These are diagnostic
+implementation reviews, not scientific acceptance.
+
+The new screen requests **1 H100 / 8 CPU / 64 GiB / 30 minutes**, with its own
+measured 32-GiB/20% memory headroom, node-local staging and persistent read-back.
+It may run independently alongside 54558773 only after an actual deployment
+review; together they use at most two GPUs and remain under the global four-GPU
+cap. The frozen candidate SHA is
+`8c44dc8a1bc86167e3787cdcd84e20537db69585e3d7ee30b920447072f03c1e`.
+Fresh baseline/candidate arms use native BF16 without autocast. The provisional
+training-side screen requires both strict answer and full-proof scores at least
+4/32 and strictly above its paired baseline; failure stops that candidate, while
+passing still grants no student/teacher/G0 acceptance or automatic training.
+Combine both complete independently audited diagnostics before subsequent
+scientific decisions. Its source/plan/submission do not yet exist remotely.
+
+54558773 logs at **22:40:34Z** confirm all four initial arms completed: both caps
+still give zero strict scores in validation128 and training32, matching the old
+partial diagnostic. Canonical-target NLL/token accuracy are **1.10855/0.89019**
+(validation) and **1.00384/0.89135** (training). These teacher-forced diagnostics
+are not the teacher-demo training loss or proof acceptance. Trained checkpoint
+arms remain outstanding. The complete local token audit is prepared at
+`.sdsc/diagnostics/student-quality-v2/independent_full_audit.py`, fixed to this
+job/plan; it has not run on the new job's incomplete results.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
