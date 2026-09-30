@@ -8,9 +8,11 @@ calibration 54509809 failed at its first step-20 checkpoint publication after
 supervisor is stopped and no student calibration is accepted. The restored
 quser44 shared SSH connection now permits verified remote inspection. All 311
 baseline/final tensors have identical keys/shapes; BF16 initial weights versus
-FP32 FSDP masters explain the strict metadata rejection. The separate proposed
-v5 precision-comparison repair has real CPU save/finalizer/resume regression
-coverage and awaits independent acceptance and a fresh matching GPU preflight.
+FP32 FSDP masters explain the strict metadata rejection. The separate v5 precision-comparison implementation `529d46eceab6fca7bf9bb73fc79e82101fbd0fd1`
+is independently accepted by `/root/checkpoint_contract_audit`; the distinct
+review-only acceptance is being recorded here. The final affected suite passed
+346 tests and independent review passed 217. A fresh matching GPU preflight
+is still required before one calibration.
 No v5 compute job has been submitted yet. Central ServerScheduler observations
 below remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -1178,7 +1180,7 @@ tokens**. Step-20 loss is 2.681661978; answer/proof/format validation are all
 **0.0**. They are disclosed failure-stage measurements, not student quality
 acceptance or authority to change hyperparameters/thresholds.
 
-The separate proposed v5 repair preserves physical initial checkpoint bytes,
+The independently accepted v5 repair preserves physical initial checkpoint bytes,
 all teacher evidence and scientific settings. Its explicit policy compares
 fresh BF16 values with FP32 masters, and resumed FP32 with FP32, using FP64
 deltas and hashes of actual final bytes. Promotion alone remains zero; exact
@@ -1188,8 +1190,9 @@ policy. Real CPU Accelerator/FSDP save, finalizer, resume and next-update
 regressions pass; these are not two-H100 evidence. V5 GPU preflight adds a
 frozen physical BF16 baseline, positive first-update evidence and exact FP32
 full-state restoration. It makes no real-GPU next-update equivalence claim.
-Independent review/acceptance and a fresh matching preflight must precede one
-new calibration. Preserve all old stopped flows and failed staged checkpoints.
+Independent review accepted implementation `529d46eceab6fca7bf9bb73fc79e82101fbd0fd1`
+at 2026-09-30T05:00:02Z. The separate acceptance and fresh matching preflight
+must precede one new calibration. Preserve all old stopped flows and failed staged checkpoints.
 Evidence is under `.sdsc/diagnostics/adapted-student-v5/` and the three verified
 small files in `.sdsc/fetched/54509809/verified-small-v5/`.
 

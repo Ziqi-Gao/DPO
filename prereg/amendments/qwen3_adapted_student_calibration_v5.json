@@ -223,10 +223,10 @@
     "later_unrelated_commits_invalidate_review": false
   },
   "review": {
-    "status": "proposed",
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "reviewed_at_utc": null,
-    "rationale": null
+    "rationale": "Independent review accepts the v5 checkpoint precision correction bound to this implementation: agreeing top-level and nested v5 protocol selectors alone enable fresh BF16-baseline/FP32-master and resumed FP32/FP32 comparisons. Exact tensor inventories/shapes, finite values, nonfloating bytes, valid ancestry, positive numeric displacement and hashes of actual final bytes remain mandatory; the generic historical comparator and original baseline files remain unchanged. Real CPU Accelerator/FSDP trainer save, independent finalizer, same-world resume and the next optimizer update are exercised. The v5 GPU preflight additionally binds a frozen physical BF16 baseline, promotion-only zero displacement, a real full-state first update and exact FP32 restoration; it expressly does not claim real-GPU next-update equivalence. Successful durable publication must match the initial and four checkpoint file identities. All 48 named student blobs bind this commit, all 47 accepted teacher blobs and v1-v4 authority are preserved, and scientific settings and thresholds are unchanged. The finite v5 controller preserves exact resource/provenance pins and one-submission stop guards. Distinct review-only acceptance and a fresh matching real GPU preflight remain required before calibration; this review claims no GPU, calibration, student-quality, G0 or pilot success.",
+    "reviewed_at_utc": "2026-09-30T05:00:02.114046Z",
+    "reviewed_implementation_commit": "529d46eceab6fca7bf9bb73fc79e82101fbd0fd1",
+    "reviewer": "independent Codex agent /root/checkpoint_contract_audit",
+    "status": "accepted"
   }
 }
