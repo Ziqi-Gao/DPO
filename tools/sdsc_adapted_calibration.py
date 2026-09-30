@@ -28,7 +28,7 @@ from types import SimpleNamespace
 TASK = "qwen3-v2-adapted-calibration"
 KIND = "sdsc_adapted_canonical_sft_calibration_v1"
 RESULT = "adapted-calibration.json"
-PROTOCOL = "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+PROTOCOL = "prereg/amendments/qwen3_adapted_student_calibration_v6.json"
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 ACCEPTANCE_INVENTORY_SHA256 = "8d53783b9fb1d386de5a0a291c2b28e225347168cc7cfed4c0c0aceaf01d9bed"
 
@@ -91,8 +91,8 @@ def allocation_identity():
         re.fullmatch(r"[1-9][0-9]*", os.environ.get("SLURM_JOB_ID", "")), "real Slurm allocation required"
     )
     require(
-        os.environ.get("SLURM_CPUS_PER_TASK") == "24" and os.environ.get("SLURM_MEM_PER_NODE") == "196608",
-        "calibration requires 24 CPUs and 192 GiB host memory",
+        os.environ.get("SLURM_CPUS_PER_TASK") == "24" and os.environ.get("SLURM_MEM_PER_NODE") == "393216",
+        "calibration requires 24 CPUs and 384 GiB host memory",
     )
     require(
         os.environ.get("WORLD_SIZE", "1") == "1" and os.environ.get("LOCAL_RANK", "0") == "0",
@@ -107,7 +107,7 @@ def allocation_identity():
     return {
         "job_id": os.environ["SLURM_JOB_ID"],
         "cpus": 24,
-        "memory_mib": 196608,
+        "memory_mib": 393216,
         "world_size": 2,
         "cuda_visible_devices": visible,
     }
@@ -340,7 +340,7 @@ def compose_base(args, api):
     )
     overrides = [
         *helper("sdsc_teacher_prepare").OVERRIDES,
-        "adapted_teacher=qwen3_accepted_student_v5",
+        "adapted_teacher=qwen3_accepted_student_v6",
         "protocol_amendment_path=" + PROTOCOL,
         *storage_overrides(args),
     ]
@@ -547,7 +547,12 @@ def execute_calibration(args, config, overrides, binding, reviewed, api, report)
     require(not args.output_dir.exists(), "calibration output already used; implicit resume is forbidden")
     args.output_dir.mkdir(parents=True)
     publish = helper("sdsc_training_preflight").publish_json
-    guards = helper("sdsc_training_preflight")
+    memory = helper("sdsc_student_memory")
+    memory_bytes = memory.expected_bytes(PROTOCOL)
+
+    def measure(stage):
+        return memory.record_stage(report, stage, args.output_dir, expected_bytes=memory_bytes)
+
     report.update(
         passed=False,
         exit_code=1,
@@ -559,7 +564,7 @@ def execute_calibration(args, config, overrides, binding, reviewed, api, report)
     try:
         report["allocation"] = allocation_identity()
         report["job_id"] = report["allocation"]["job_id"]
-        report["initial_cgroup_memory"] = guards.memory_envelope()
+        report["initial_cgroup_memory"] = measure("initial")
         report["gpu"] = gpu_identity()
         publish(args.output_dir / "adapted-calibration-start.json", report)
         report["teacher_input_staging"] = stage_teacher_inputs(
@@ -578,6 +583,7 @@ def execute_calibration(args, config, overrides, binding, reviewed, api, report)
             environment=environment,
             log=args.output_dir / "export.log",
         )
+        measure("after_export")
         initial = initial_checkpoint_identity(args.output_dir / "initial_checkpoint.pt", config)
         report["initial_checkpoint"] = initial
         plan = build_plan(args, overrides, initial_checkpoint_sha256=initial["sha256"])
@@ -597,6 +603,7 @@ def execute_calibration(args, config, overrides, binding, reviewed, api, report)
             environment=environment,
             log=args.output_dir / "train.log",
         )
+        measure("after_training")
         require(
             initial_checkpoint_identity(args.output_dir / "initial_checkpoint.pt", config) == initial,
             "initial checkpoint changed during training",
@@ -611,7 +618,7 @@ def execute_calibration(args, config, overrides, binding, reviewed, api, report)
         )
         report["training_artifacts"] = artifacts.content_binding()
         report["training_artifact_root"] = str(args.output_dir / "canonical_sft")
-        report["final_cgroup_memory"] = guards.memory_envelope()
+        report["final_cgroup_memory"] = measure("after_validation")
         require(
             api.resolve(args.science_root, expected_head=args.science_git_head) == reviewed,
             "reviewed scientific source changed during execution",
@@ -622,6 +629,10 @@ def execute_calibration(args, config, overrides, binding, reviewed, api, report)
         )
         report.update(passed=True, exit_code=0, elapsed_seconds=time.time() - report["started_at_unix"])
     except BaseException as error:
+        try:
+            measure("failure")
+        except Exception as observation_error:
+            report["exception_memory_error"] = f"{type(observation_error).__name__}: {observation_error}"
         report.update(
             error=f"{type(error).__name__}: {error}", elapsed_seconds=time.time() - report["started_at_unix"]
         )

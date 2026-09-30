@@ -44,6 +44,15 @@ def require(value, message):
         raise ValueError(message)
 
 
+def student_memory_gib(protocol_path):
+    paths = tuple(
+        f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+        for version in range(1, 7)
+    )
+    require(protocol_path in paths, "unknown student resource protocol")
+    return 384 if protocol_path == paths[-1] else 192
+
+
 def canonical(value):
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
@@ -291,6 +300,43 @@ def stage_inputs(rows, destination, *, maximum):
     return dict(files=len(rows), bytes=sum(row["size"] for row in rows), read_back_verified=True)
 
 
+def validate_calibration_memory(report):
+    path = "prereg/amendments/qwen3_adapted_student_calibration_v6.json"
+    allocation = report.get("allocation", {})
+    require(
+        allocation.get("memory_mib") == 393216 and allocation.get("cpus") == 24
+        and allocation.get("world_size") == 2
+        and allocation.get("job_id") == report.get("job_id"),
+        "v6 calibration allocation differs from reviewed resource profile",
+    )
+    stages = report.get("memory_stages", {})
+    ordered = ("initial", "after_export", "after_training", "after_validation")
+    require(isinstance(stages, dict) and set(stages) == set(ordered),
+            "v6 calibration memory stages are incomplete")
+    require(report.get("initial_cgroup_memory") == stages["initial"]
+            and report.get("final_cgroup_memory") == stages["after_validation"],
+            "v6 calibration memory stage bindings differ")
+    validator = helper("sdsc_adapted_training_preflight")
+    previous_peak, previous_time = 0, 0
+    initial_limits = {
+        (item["path"], item["limit_bytes"])
+        for item in stages["initial"].get("ancestors", [])
+        if item.get("limit_bytes") is not None
+    }
+    for stage in ordered:
+        memory = stages[stage]
+        validator.validate_memory(memory, path)
+        limits = {
+            (item["path"], item["limit_bytes"])
+            for item in memory["ancestors"] if item.get("limit_bytes") is not None
+        }
+        require(limits == initial_limits
+                and memory["peak_bytes"] >= previous_peak
+                and memory["observed_at_unix"] >= previous_time,
+                "v6 calibration memory measurements are not one ordered allocation")
+        previous_peak, previous_time = memory["peak_bytes"], memory["observed_at_unix"]
+
+
 def validate_report(report, proof):
     task = proof["task"]
     require(
@@ -326,6 +372,8 @@ def validate_report(report, proof):
             and report["training_artifacts"],
             "missing completed student training artifacts",
         )
+        if proof["protocol"].get("protocol_path") == "prereg/amendments/qwen3_adapted_student_calibration_v6.json":
+            validate_calibration_memory(report)
 
 
 def validate_publication(root, report, publication):
@@ -370,7 +418,10 @@ def validate_publication(root, report, publication):
     if (
         TASKS[report["task"]] == "preflight"
         and report.get("student_protocol_path")
-        == "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+        in {
+            "prereg/amendments/qwen3_adapted_student_calibration_v5.json",
+            "prereg/amendments/qwen3_adapted_student_calibration_v6.json",
+        }
     ):
         ranks = report.get("ranks")
         require(
@@ -404,6 +455,12 @@ def validate_publication(root, report, publication):
                 "v5 published precision checkpoint differs: " + name,
             )
     if TASKS[report["task"]] == "calibration":
+        if report.get("allocation", {}).get("memory_mib") == 393216:
+            validate_calibration_memory(report)
+            for stage, evidence in report["memory_stages"].items():
+                name = "artifacts/memory-" + stage + ".json"
+                require(name in records and document(root / name) == evidence,
+                        "published calibration memory evidence differs")
         binding = report["training_artifacts"]
         require(
             records.get("artifacts/initial_checkpoint.pt", {}).get("sha256")

@@ -27,6 +27,105 @@ remote_fixture = module("adapted_remote_fixture", Path(__file__).with_name("test
 cli, remote = client_fixture.cli, remote_fixture.remote
 TASK = "qwen3-v2-adapted-preflight"
 CALIBRATION = "qwen3-v2-adapted-calibration"
+MEMORY_RESULTS = {
+    "calibration-details.json": "adapted-calibration.json",
+    "memory-initial.json": "memory-initial.json",
+    "memory-after_export.json": "memory-after_export.json",
+    "memory-after_training.json": "memory-after_training.json",
+    "memory-after_validation.json": "memory-after_validation.json",
+    "memory-failure.json": "memory-failure.json",
+    "training-metrics.jsonl": "canonical_sft/metrics.jsonl",
+}
+
+
+def calibration_fetch_fixture(tmp_path, monkeypatch, version):
+    result = tmp_path / "result"
+    artifacts = result / "artifacts"
+    artifacts.mkdir(parents=True)
+    submission = tmp_path / "submission"
+    submission.mkdir()
+    (submission / "prerequisites.json").write_text(
+        json.dumps(
+            {
+                "protocol": {
+                    "protocol_path": f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+                }
+            }
+        )
+    )
+    receipt = dict(
+        task=CALIBRATION,
+        job_id="54509991",
+        run_id="bounded-diagnostics",
+        intent_id="a" * 32,
+        code_sha256="b" * 64,
+        result_dir=str(result),
+    )
+    for name, relative in MEMORY_RESULTS.items():
+        path = artifacts / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(json.dumps({"diagnostic": name}).encode() + b"\n")
+    (result / "adapted-calibration.json").write_text('{"passed": false}\n')
+    (artifacts / "initial-canary.pt").write_bytes(b"never fetch model weights")
+    (artifacts / "canonical_sft/checkpoint_step_33.pt").write_bytes(b"never fetch a checkpoint")
+    monkeypatch.setattr(remote, "bound_receipt", lambda request: (receipt, submission))
+    monkeypatch.setattr(remote, "verify_result", lambda receipt: {"verified": False})
+    return SimpleNamespace(result=result, artifacts=artifacts, submission=submission, receipt=receipt)
+
+
+@pytest.mark.parametrize("version", [5, 6])
+def test_real_fetch_selects_v6_memory_diagnostics_without_expanding_v5(tmp_path, monkeypatch, version):
+    f = calibration_fetch_fixture(tmp_path, monkeypatch, version)
+    selected = {name for name, _, _ in remote.selected_files(f.receipt, f.submission, 200)}
+    assert selected.intersection(MEMORY_RESULTS) == (set(MEMORY_RESULTS) if version == 6 else set())
+    fetched = remote.fetch({})
+    expected = {"adapted-calibration.json"} | (set(MEMORY_RESULTS) if version == 6 else set())
+    assert {entry["path"] for entry in fetched["files"]} == expected
+    assert fetched["skipped"] == []
+    assert fetched["total_bytes"] == sum(entry["size"] for entry in fetched["files"])
+    for entry in fetched["files"]:
+        path = (
+            f.artifacts / MEMORY_RESULTS[entry["path"]]
+            if entry["path"] in MEMORY_RESULTS
+            else f.result / entry["path"]
+        )
+        raw = path.read_bytes()
+        assert base64.b64decode(entry["data_b64"]) == raw
+        assert entry["sha256"] == remote.digest(raw)
+        assert entry["size"] == len(raw)
+        assert entry["tail_only"] is False
+
+
+@pytest.mark.parametrize("limit", ["file", "total"])
+def test_v6_optional_diagnostics_skip_real_file_and_total_limits(tmp_path, monkeypatch, limit):
+    f = calibration_fetch_fixture(tmp_path, monkeypatch, 6)
+    mib = 1024**2
+    if limit == "file":
+        (f.artifacts / "memory-failure.json").write_bytes(b"x" * (mib + 1))
+        expected = [("memory-failure.json", mib + 1, "optional_file_exceeds_1MiB_limit")]
+    else:
+        # Three required files plus five optional files fill the actual 8 MiB
+        # ceiling; the remaining two optional diagnostics must be skipped.
+        for path in (
+            f.result / "adapted-calibration.json",
+            f.result / "receipt.json",
+            f.submission / "control-result.json",
+            *(f.artifacts / relative for relative in MEMORY_RESULTS.values()),
+        ):
+            path.write_bytes(b"x" * mib)
+        expected = [
+            (name, mib, "optional_file_exceeds_total_fetch_limit")
+            for name in ("memory-failure.json", "training-metrics.jsonl")
+        ]
+    fetched = remote.fetch({})
+    assert [(row["path"], row["size"], row["reason"]) for row in fetched["skipped"]] == expected
+    names = {entry["path"] for entry in fetched["files"]}
+    assert not names.intersection(name for name, _, _ in expected)
+    assert all(not name.endswith(".pt") for name in names)
+    assert fetched["total_bytes"] == sum(entry["size"] for entry in fetched["files"])
+    assert all(entry["size"] <= mib for entry in fetched["files"])
+    if limit == "total":
+        assert fetched["total_bytes"] == 8 * mib
 
 
 def test_failed_calibration_fetch_includes_bounded_scientific_log_tails(tmp_path, monkeypatch):
@@ -107,6 +206,86 @@ def client(monkeypatch):
     monkeypatch.setattr(cli, "remote", Mock(side_effect=AssertionError("no remote submission in dry-run")))
     yield fixture, args
     fixture.doCleanups()
+
+
+def cli_calibration_fetch_fixture(client, tmp_path, monkeypatch, version):
+    _, args = client
+    f = calibration_fetch_fixture(tmp_path, monkeypatch, version)
+    f.receipt.update(run_id=args.run_id, student_protocol_artifact_sha256="f" * 64)
+    manifest_path = cli.state_root() / "runs/run-test.json"
+    record = cli.read_json(manifest_path)
+    record["manifest"]["files"][0]["path"] = (
+        f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+    )
+    cli.write_json(manifest_path, record)
+    intent = {
+        "request": {"task": CALIBRATION, "run_id": args.run_id},
+        "receipt": f.receipt,
+    }
+    cli.write_json(cli.state_root() / "submissions" / (f.receipt["intent_id"] + ".json"), intent)
+    # Only replace the network boundary: file selection, encoding, local
+    # receipt lookup, protocol binding and final disk writes all run normally.
+    monkeypatch.setattr(cli, "remote", remote.fetch)
+    return f
+
+
+@pytest.mark.parametrize("version,skip_large", [(5, False), (6, False), (6, True)])
+def test_real_remote_fetch_reaches_cli_disk_with_protocol_bound_diagnostics(
+    client, tmp_path, monkeypatch, version, skip_large
+):
+    f = cli_calibration_fetch_fixture(client, tmp_path, monkeypatch, version)
+    if skip_large:
+        (f.artifacts / "memory-failure.json").write_bytes(b"x" * (1024**2 + 1))
+    output = io.StringIO()
+    with redirect_stdout(output):
+        cli.job_command(SimpleNamespace(command="fetch", job_id=f.receipt["job_id"]))
+    fetched = json.loads(output.getvalue())
+    expected = {"adapted-calibration.json"} | (set(MEMORY_RESULTS) if version == 6 else set())
+    if skip_large:
+        expected.remove("memory-failure.json")
+        assert fetched["skipped"] == [
+            {
+                "path": "memory-failure.json",
+                "size": 1024**2 + 1,
+                "reason": "optional_file_exceeds_1MiB_limit",
+            }
+        ]
+    else:
+        assert fetched["skipped"] == []
+    assert set(fetched["files"]) == expected
+    destination = Path(fetched["destination"])
+    assert destination.parent == cli.state_root() / "fetched" / f.receipt["job_id"]
+    assert {path.name for path in destination.iterdir()} == expected | {"fetch-manifest.json"}
+    assert json.loads((destination / "fetch-manifest.json").read_text()) == fetched
+    assert fetched["bytes"] == sum((destination / name).stat().st_size for name in expected)
+    for name in expected:
+        original = f.artifacts / MEMORY_RESULTS[name] if name in MEMORY_RESULTS else f.result / name
+        assert (destination / name).read_bytes() == original.read_bytes()
+
+
+@pytest.mark.parametrize("change", ["historical_manifest", "artifact_hash", "weights"])
+def test_cli_rejects_unbound_v6_diagnostics_or_extra_weights(client, tmp_path, monkeypatch, change):
+    f = cli_calibration_fetch_fixture(client, tmp_path, monkeypatch, 6)
+    if change == "historical_manifest":
+        path = cli.state_root() / "runs/run-test.json"
+        record = cli.read_json(path)
+        record["manifest"]["files"][0]["path"] = (
+            "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+        )
+        cli.write_json(path, record)
+    elif change == "artifact_hash":
+        path = cli.state_root() / "submissions" / (f.receipt["intent_id"] + ".json")
+        intent = cli.read_json(path)
+        intent["receipt"]["student_protocol_artifact_sha256"] = "0" * 64
+        cli.write_json(path, intent)
+    else:
+        response = remote.fetch({})
+        response["files"].append(
+            {"path": "initial-canary.pt", "data_b64": "", "size": 0, "sha256": remote.digest(b"")}
+        )
+        monkeypatch.setattr(cli, "remote", lambda _: response)
+    with pytest.raises(cli.UserError, match="Unexpected remote fetch"):
+        cli.job_command(SimpleNamespace(command="fetch", job_id=f.receipt["job_id"]))
 
 
 @pytest.mark.parametrize("task,limit", [(TASK, "01:00:00"), (CALIBRATION, "02:00:00")])
@@ -325,6 +504,7 @@ def prerequisite_boundary(tmp_path, monkeypatch):
         preflight_job_id=None,
         python="/runtime/bin/python",
         hf_home="/cache",
+        resources={"mem_gib": 192},
     )
     provenance = dict(
         provenance_dir="/provenance", provenance_manifest_sha256="c" * 64, science_git_head=protocol["head"]
@@ -365,6 +545,7 @@ def prerequisite_boundary(tmp_path, monkeypatch):
         student_protocol_artifact_sha256=protocol["artifact_sha256"],
         python=request["python"],
         hf_home=request["hf_home"],
+        resources={"mem_gib": 192},
         **remote.STUDENT_FIXED_BINDINGS,
     )
     upstream["55500001"] = dict(receipt=preflight_receipt, release_manifest={"files": files})
@@ -475,3 +656,44 @@ def test_result_validates_bound_proof_and_actual_publication(submitted, monkeypa
     Path(receipt["prerequisites_path"]).write_text("{}")
     with pytest.raises(ValueError, match="proof changed"):
         remote.verify_student_result(receipt, result, publication)
+
+
+@pytest.mark.parametrize("version,memory", [(5, 192), (6, 384)])
+def test_memory_profile_is_bound_before_upstream_reads(prerequisite_boundary, version, memory):
+    f = prerequisite_boundary
+    path = f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+    f.protocol["protocol_path"] = path
+    manifest_path = f.release / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"][-1]["path"] = path
+    manifest_path.write_text(json.dumps(manifest))
+    f.request["resources"]["mem_gib"] = memory
+    assert remote.student_prerequisites(remote.ROOT, f.release, f.request, f.provenance)["protocol"] == f.protocol
+    f.contract.verify_teacher_acceptance.reset_mock()
+    for wrong in (192 if memory == 384 else 384, 512, None, True, str(memory)):
+        f.request["resources"]["mem_gib"] = wrong
+        with pytest.raises(ValueError, match="verified protocol resource"):
+            remote.student_prerequisites(remote.ROOT, f.release, f.request, f.provenance)
+        f.contract.verify_teacher_acceptance.assert_not_called()
+
+
+def test_calibration_cannot_reuse_a_different_memory_preflight(prerequisite_boundary):
+    f = prerequisite_boundary
+    f.request.update(task=CALIBRATION, preflight_job_id="55500001")
+    f.upstream["55500001"]["receipt"]["resources"]["mem_gib"] = 384
+    with pytest.raises(ValueError, match="verified protocol resource"):
+        remote.student_prerequisites(remote.ROOT, f.release, f.request, f.provenance)
+
+
+def test_cli_new_memory_has_exact_sbatch_argv(client):
+    _, args = client
+    args.mem_gib = 384
+    output = io.StringIO()
+    with redirect_stdout(output):
+        cli.submit_command(args)
+    plan = json.loads(output.getvalue())
+    assert "--mem=384G" in plan["sbatch_argv"]
+    assert plan["prerequisites_sha256_is_placeholder"] is True
+    args.mem_gib = 512
+    with pytest.raises(cli.UserError):
+        cli.resources(args)

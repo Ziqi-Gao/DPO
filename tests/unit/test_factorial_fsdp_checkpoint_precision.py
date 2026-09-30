@@ -44,6 +44,12 @@ V5_CONFIG = {
 }
 
 
+@pytest.fixture(params=[5, 6])
+def reviewed_config(request):
+    path = f"prereg/amendments/qwen3_adapted_student_calibration_v{request.param}.json"
+    return {"protocol_amendment_path": path, "adapted_teacher": {"student_protocol_path": path}}
+
+
 @pytest.fixture
 def bf16_cpu_fsdp(monkeypatch):
     import torch.testing._internal.distributed.fake_pg
@@ -106,7 +112,7 @@ class CheckpointTeacherSource(TeacherDemoStateSource):
         self.cursor = dict(state["cursor"])
 
 
-def create_checkpoint_trainer(tmp_path):
+def create_checkpoint_trainer(tmp_path, protocol_config):
     model = build_tiny_qwen3(123).to(dtype=torch.bfloat16)
     baseline_path = tmp_path / "initial.pt"
     torch.save({"model": model.state_dict()}, baseline_path)
@@ -143,7 +149,7 @@ def create_checkpoint_trainer(tmp_path):
         ),
         run_dir=tmp_path / "run",
         resolved_config={
-            **copy.deepcopy(V5_CONFIG),
+            **copy.deepcopy(protocol_config),
             "production_safety": {"initial_checkpoint_path": str(baseline_path)},
             "trainer": {
                 "backend": "accelerate",
@@ -181,8 +187,10 @@ def real_global64_update(trainer):
 
 
 @pytest.mark.unit
-def test_real_bf16_baseline_fp32_fsdp_update_publishes_checkpoint(bf16_cpu_fsdp, tmp_path):
-    trainer, baseline_path, baseline_sha, baseline = create_checkpoint_trainer(tmp_path)
+def test_real_bf16_baseline_fp32_fsdp_update_publishes_checkpoint(
+    bf16_cpu_fsdp, tmp_path, reviewed_config
+):
+    trainer, baseline_path, baseline_sha, baseline = create_checkpoint_trainer(tmp_path, reviewed_config)
     real_global64_update(trainer)
     final_state = trainer._full_model_state_for_checkpoint()
     assert set(final_state) == set(baseline)
@@ -291,13 +299,13 @@ def validate_actual_finalizer(trainer, checkpoint_path, payload, initial_sha):
 
 
 @pytest.mark.unit
-def test_v5_promotion_alone_is_zero_and_does_not_modify_or_rehash_final():
+def test_v5_v6_promotion_alone_is_zero_and_does_not_modify_or_rehash_final(reviewed_config):
     baseline = {"weight": torch.tensor([1.0, 2.0], dtype=torch.bfloat16)}
     final = {"weight": baseline["weight"].float()}
     before_hash = torch_state_hash(baseline)
     final_hash = torch_state_hash(final)
     norm, observed_hash = adapted_student_model_update_evidence(
-        baseline, final, resolved_config=V5_CONFIG, resume_ancestry=[]
+        baseline, final, resolved_config=reviewed_config, resume_ancestry=[]
     )
     assert norm == 0.0
     assert observed_hash == final_hash
@@ -305,14 +313,14 @@ def test_v5_promotion_alone_is_zero_and_does_not_modify_or_rehash_final():
     assert torch_state_hash(final) == final_hash
     final["weight"][0] += 1 / 1024
     norm, observed_hash = adapted_student_model_update_evidence(
-        baseline, final, resolved_config=V5_CONFIG, resume_ancestry=[]
+        baseline, final, resolved_config=reviewed_config, resume_ancestry=[]
     )
     assert norm == 1 / 1024  # Would disappear if final values were rounded to BF16.
     assert observed_hash == torch_state_hash(final)
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("version", [None, 1, 2, 3, 4, 6])
+@pytest.mark.parametrize("version", [None, 1, 2, 3, 4, 7])
 def test_historical_and_unknown_protocols_keep_strict_metadata(version):
     baseline = {"weight": torch.tensor([1.0], dtype=torch.bfloat16)}
     final = {"weight": torch.tensor([1.01], dtype=torch.float32)}
@@ -338,9 +346,11 @@ def test_historical_and_unknown_protocols_keep_strict_metadata(version):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("selector", ["protocol_amendment_path", "student_protocol_path"])
-@pytest.mark.parametrize("other", [None, "", "v4", "v6"])
-def test_v5_requires_both_matching_protocol_selectors(selector, other):
-    config = copy.deepcopy(V5_CONFIG)
+@pytest.mark.parametrize("other", [None, "", "v4", "other_reviewed", "v7"])
+def test_v5_v6_requires_both_matching_protocol_selectors(selector, other, reviewed_config):
+    config = copy.deepcopy(reviewed_config)
+    if other == "other_reviewed":
+        other = "v6" if config == V5_CONFIG else "v5"
     changed = config if selector == "protocol_amendment_path" else config["adapted_teacher"]
     if other is None:
         del changed[selector]
@@ -349,7 +359,7 @@ def test_v5_requires_both_matching_protocol_selectors(selector, other):
             f"prereg/amendments/qwen3_adapted_student_calibration_{other}.json" if other else ""
         )
     # Even equal dtypes must fail, rather than silently dropping to the
-    # historical comparator when either selector explicitly requests v5.
+    # historical comparator when either selector explicitly requests v5/v6.
     baseline = {"weight": torch.tensor([1.0], dtype=torch.float32)}
     final = {"weight": torch.tensor([1.01], dtype=torch.float32)}
     with pytest.raises(ValueError, match="contradictory protocol selectors"):
@@ -360,8 +370,8 @@ def test_v5_requires_both_matching_protocol_selectors(selector, other):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("adapted_teacher", [None, {}, "invalid"])
-def test_v5_top_level_without_nested_protocol_fails_closed(adapted_teacher):
-    config = {"protocol_amendment_path": V5_CONFIG["protocol_amendment_path"]}
+def test_v5_v6_top_level_without_nested_protocol_fails_closed(adapted_teacher, reviewed_config):
+    config = {"protocol_amendment_path": reviewed_config["protocol_amendment_path"]}
     if adapted_teacher is not None:
         config["adapted_teacher"] = adapted_teacher
     state = {"weight": torch.tensor([1.0], dtype=torch.float32)}
@@ -395,7 +405,7 @@ def test_v5_top_level_without_nested_protocol_fails_closed(adapted_teacher):
         "bf16_resumed_baseline",
     ],
 )
-def test_v5_rejects_unreviewed_tensor_metadata_and_ancestry(defect):
+def test_v5_v6_rejects_unreviewed_tensor_metadata_and_ancestry(defect, reviewed_config):
     baseline = {"weight": torch.tensor([1.0, 2.0], dtype=torch.bfloat16)}
     final = {"weight": torch.tensor([1.01, 2.01], dtype=torch.float32)}
     ancestry = []
@@ -443,5 +453,5 @@ def test_v5_rejects_unreviewed_tensor_metadata_and_ancestry(defect):
         ancestry = ["sha256:" + "a" * 64]
     with pytest.raises(ValueError):
         adapted_student_model_update_evidence(
-            baseline, final, resolved_config=V5_CONFIG, resume_ancestry=ancestry
+            baseline, final, resolved_config=reviewed_config, resume_ancestry=ancestry
         )

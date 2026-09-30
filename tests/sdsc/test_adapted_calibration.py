@@ -100,7 +100,7 @@ print(module.TASK)
         self.assertIsNone(before["train_argv"])
         self.assertFalse(before["execution_enabled"])
         self.args.output_dir = self.root / "literal ; $(touch NEVER)"
-        overrides = ["adapted_teacher=qwen3_accepted_student_v5", *worker.storage_overrides(self.args)]
+        overrides = ["adapted_teacher=qwen3_accepted_student_v6", *worker.storage_overrides(self.args)]
         plan = worker.build_plan(self.args, overrides, initial_checkpoint_sha256="f" * 64)
         command = plan["train_argv"]
         self.assertIn("posttrain_circuits.cli.train", command)
@@ -333,14 +333,15 @@ print(json.dumps({'pure_config_pass': True, 'actual_model_loaded': False}))
         stack.enter_context(patch.object(worker, "gpu_identity", return_value=["fixture", "fixture"]))
         original_helper = worker.helper
         guard = original_helper("sdsc_training_preflight")
-        guard.memory_envelope = Mock(return_value={"passed": True})
+        memory = original_helper("sdsc_student_memory")
+        memory.memory_envelope = Mock(return_value={"passed": True})
         stack.enter_context(
             patch.object(
                 worker,
                 "helper",
                 side_effect=lambda name: guard
                 if name == "sdsc_training_preflight"
-                else original_helper(name),
+                else memory if name == "sdsc_student_memory" else original_helper(name),
             )
         )
         stack.enter_context(patch.object(worker, "stage_teacher_inputs", return_value={"files": 9}))
@@ -369,6 +370,8 @@ print(json.dumps({'pure_config_pass': True, 'actual_model_loaded': False}))
         self.assertEqual(commands.call_count, 2)
         self.assertTrue(result["passed"])
         self.assertTrue(result["training_executed"])
+        self.assertEqual(list(result["memory_stages"]), ["initial", "after_export", "after_training", "after_validation"])
+        self.assertTrue(all((self.args.output_dir / f"memory-{stage}.json").is_file() for stage in result["memory_stages"]))
         self.assertTrue(
             all(
                 result[key] is False
@@ -382,6 +385,24 @@ print(json.dumps({'pure_config_pass': True, 'actual_model_loaded': False}))
         self.assertEqual(
             kwargs["expected_resolved_config"]["production_safety"]["initial_checkpoint_hash"], "f" * 64
         )
+
+    def test_memory_failure_preserves_counters_and_never_reaches_artifact_acceptance(self):
+        stack, config, binding, reviewed, api, report, validator, commands = self.execution_fixture()
+        with stack:
+            memory = worker.helper("sdsc_student_memory")
+            evidence = {"passed": False, "limit_bytes": 384 * 1024**3,
+                        "peak_bytes": 310 * 1024**3, "memory_stat": {"rss": 123, "cache": 456}}
+            error = memory.MemoryEnvelopeError("insufficient headroom", evidence)
+            memory.memory_envelope.side_effect = [{"passed": True}, {"passed": True}, error, error]
+            with self.assertRaisesRegex(ValueError, "insufficient headroom"):
+                worker.execute_calibration(self.args, config, [], binding, reviewed, api, report)
+        self.assertEqual(commands.call_count, 2)
+        validator.validate_factorial_run_artifacts.assert_not_called()
+        final = json.loads((self.args.output_dir / worker.RESULT).read_text())
+        self.assertFalse(final["passed"])
+        for stage in ("after_training", "failure"):
+            self.assertEqual(final["memory_stages"][stage], evidence)
+            self.assertEqual(json.loads((self.args.output_dir / f"memory-{stage}.json").read_text()), evidence)
 
     def test_zero_exit_with_invalid_artifacts_never_passes(self):
         stack, config, binding, reviewed, api, report, _validator, commands = self.execution_fixture(

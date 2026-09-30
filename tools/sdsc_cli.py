@@ -157,7 +157,7 @@ STUDENT_BINDINGS = (
 )
 STUDENT_PROTOCOL_PATHS = tuple(
     "prereg/amendments/qwen3_adapted_student_calibration_v" + str(version) + ".json"
-    for version in (1, 2, 3, 4, 5)
+    for version in (1, 2, 3, 4, 5, 6)
 )
 STUDENT_FIXED_BINDINGS = {
     "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",
@@ -612,6 +612,10 @@ def resources(args):
         "cpus": 24 if preflight or teacher or calibration or probe or student else 4,
         "mem_gib": 192 if preflight or teacher or calibration or probe or student else 16,
     }
+    # This is an admission allowlist only. Remote admission binds the chosen
+    # memory to the independently accepted protocol before any run claim/sbatch.
+    if student and type(value["mem_gib"]) is int and value["mem_gib"] == 384:
+        expected["mem_gib"] = 384
     if args.task in TEACHER_FIT_TASKS or args.task == TEACHER_QUALIFY_TASK:
         expected.update(partition="nairr-gpu", qos="nairr-gpu-normal", gpus=4, cpus=24, mem_gib=192)
     if any(value[k] != v for k, v in expected.items()):
@@ -955,6 +959,25 @@ def job_binding(job_id):
     return matches[0]
 
 
+STUDENT_MEMORY_SMALL_RESULTS = {
+    "calibration-details.json", "memory-initial.json", "memory-after_export.json",
+    "memory-after_training.json", "memory-after_validation.json", "memory-failure.json",
+    "training-metrics.jsonl",
+}
+
+
+def student_v6_intent(intent):
+    if intent["request"].get("task") != "qwen3-v2-adapted-calibration":
+        return False
+    receipt = intent.get("receipt", {})
+    manifest = run_record(intent["request"]["run_id"])["manifest"]
+    return any(
+        row["path"] == STUDENT_PROTOCOL_PATHS[-1]
+        and row["sha256"] == receipt.get("student_protocol_artifact_sha256")
+        for row in manifest.get("files", [])
+    )
+
+
 def job_command(args):
     if args.command == "cancel" and not args.authorize:
         raise UserError("Cancellation requires explicit user authorization and --authorize")
@@ -972,6 +995,7 @@ def job_command(args):
         destination.mkdir(parents=True, mode=0o700, exist_ok=True)
         destination = Path(tempfile.mkdtemp(prefix="fetch-", dir=destination))
         total, saved = 0, []
+        v6_student = student_v6_intent(_intent)
         allowed = {
             TASK_RESULTS[_intent["request"].get("task", "gpu-smoke")],
             "receipt.json",
@@ -984,6 +1008,8 @@ def job_command(args):
             allowed.update(TEACHER_ADAPT_SMALL_RESULTS)
         if _intent["request"].get("task") == "qwen3-v2-adapted-calibration":
             allowed.update({"train.log", "export.log"})
+            if v6_student:
+                allowed.update(STUDENT_MEMORY_SMALL_RESULTS)
         if _intent["request"].get("task") in TEACHER_FIT_TASKS:
             allowed.update(TEACHER_FIT_SMALL_RESULTS)
         if _intent["request"].get("task") == TEACHER_QUALIFY_TASK:
@@ -998,6 +1024,8 @@ def job_command(args):
             else set()
         )
         optional = optional - {"checkpoint-manifest.json", "train-metrics.jsonl"}
+        if v6_student:
+            optional = optional | STUDENT_MEMORY_SMALL_RESULTS
         skipped = result.get("skipped", [])
         if not isinstance(skipped, list) or any(
             not isinstance(item, dict)

@@ -89,7 +89,7 @@ STUDENT_BINDINGS = (
 )
 STUDENT_PROTOCOL_PATHS = tuple(
     "prereg/amendments/qwen3_adapted_student_calibration_v" + str(version) + ".json"
-    for version in (1, 2, 3, 4, 5)
+    for version in (1, 2, 3, 4, 5, 6)
 )
 STUDENT_FIXED_BINDINGS = {
     "adapted_teacher_sha256": "6928f2537dcca5f2d65c1498659e1ebf011845eb72ef364b9544036c2238e9c7",
@@ -653,6 +653,10 @@ def validate_resources(resources, task="gpu-smoke"):
         "cpus": 24 if preflight or teacher or calibration or probe or student else 4,
         "mem_gib": 192 if preflight or teacher or calibration or probe or student else 16,
     }
+    # A permitted size is not protocol acceptance: student_prerequisites binds
+    # it to the verified immutable protocol before consuming a run claim.
+    if student and isinstance(resources, dict) and type(resources.get("mem_gib")) is int and resources["mem_gib"] == 384:
+        expected["mem_gib"] = 384
     if task in TEACHER_FIT_TASKS or task == TEACHER_QUALIFY_TASK:
         expected.update(partition="nairr-gpu", qos="nairr-gpu-normal", gpus=4, cpus=24, mem_gib=192)
     require(
@@ -910,6 +914,17 @@ def student_bindings(proof):
     return values
 
 
+def validate_student_memory_profile(resources, protocol_path):
+    require(protocol_path in STUDENT_PROTOCOL_PATHS, "Unknown student resource protocol")
+    expected = 384 if protocol_path == STUDENT_PROTOCOL_PATHS[-1] else 192
+    require(
+        isinstance(resources, dict)
+        and type(resources.get("mem_gib")) is int
+        and resources["mem_gib"] == expected,
+        "Student host memory differs from the verified protocol resource profile",
+    )
+
+
 def student_prerequisites(root, release, request, provenance):
     """Verify actual completed producers before consuming a fresh run claim."""
     contract = student_contract(release)
@@ -964,6 +979,7 @@ def student_prerequisites(root, release, request, provenance):
         len(protocol_paths) == 1 and protocol.get("protocol_path", protocol_paths[0]) == protocol_paths[0],
         "Student protocol artifact path or bytes differ from release",
     )
+    validate_student_memory_profile(request.get("resources"), protocol_paths[0])
     qualification = upstream_evidence(
         root, contract.QUALIFICATION_JOB_ID, TEACHER_QUALIFY_TASK, "accepted_teacher_qualification"
     )
@@ -1009,6 +1025,7 @@ def student_prerequisites(root, release, request, provenance):
             "Preflight protocol, teacher or runtime differs from calibration",
         )
         require(preflight["receipt"]["run_id"] != request["run_id"], "Calibration needs a fresh release")
+        validate_student_memory_profile(preflight["receipt"].get("resources"), protocol_paths[0])
         prior_files = {row["path"]: row for row in preflight["release_manifest"]["files"]}
         require(
             all(
@@ -2242,6 +2259,17 @@ def bounded_tail(path, lines=100):
         return b"\n".join(stream.read(65536).splitlines()[-lines:]) + b"\n"
 
 
+STUDENT_MEMORY_SMALL_RESULTS = {
+    "calibration-details.json": "adapted-calibration.json",
+    "memory-initial.json": "memory-initial.json",
+    "memory-after_export.json": "memory-after_export.json",
+    "memory-after_training.json": "memory-after_training.json",
+    "memory-after_validation.json": "memory-after_validation.json",
+    "memory-failure.json": "memory-failure.json",
+    "training-metrics.jsonl": "canonical_sft/metrics.jsonl",
+}
+
+
 def selected_files(receipt, directory, lines):
     result_dir = safe_path(receipt["result_dir"])
     report_name = TASK_RESULTS[receipt.get("task", "gpu-smoke")]
@@ -2269,6 +2297,14 @@ def selected_files(receipt, directory, lines):
         files.extend(
             (name, result_dir / "artifacts" / name, True) for name in ("train.log", "export.log")
         )
+        proof_path = directory / "prerequisites.json"
+        if proof_path.is_file():
+            proof = read_json(proof_path)
+            if proof.get("protocol", {}).get("protocol_path") == STUDENT_PROTOCOL_PATHS[-1]:
+                files.extend(
+                    (name, result_dir / "artifacts" / relative, False)
+                    for name, relative in STUDENT_MEMORY_SMALL_RESULTS.items()
+                )
     return files
 
 
@@ -2301,6 +2337,8 @@ def fetch(request):
         else set()
     )
     optional = optional - {"checkpoint-manifest.json", "train-metrics.jsonl"}
+    if task == "qwen3-v2-adapted-calibration":
+        optional = optional | set(STUDENT_MEMORY_SMALL_RESULTS)
     for name, path, tail in selected_files(receipt, directory, 200):
         safe_path(path)
         if not path.exists():

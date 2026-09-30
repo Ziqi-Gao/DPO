@@ -32,6 +32,7 @@ WORLD_SIZE = 2
 DEVICE_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v3.json"
 OPTIMIZER_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v4.json"
 PRECISION_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+MEMORY_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v6.json"
 
 
 def sibling(name):
@@ -58,6 +59,28 @@ checkpoint_file = guards.checkpoint_file
 verify_checkpoint = guards.verify_checkpoint
 publish_json = guards.publish_json
 memory_envelope = guards.memory_envelope
+student_memory = sibling("sdsc_student_memory")
+
+
+def allocation_identity(environment, protocol_path=PRECISION_PROTOCOL_PATH):
+    if protocol_path != MEMORY_PROTOCOL_PATH:
+        student_memory.expected_bytes(protocol_path)
+        return guards.allocation_identity(environment)
+    require(re.fullmatch(r"[1-9][0-9]*", environment.get("SLURM_JOB_ID", "")), "Slurm job ID missing")
+    require(environment.get("SLURM_CPUS_PER_TASK") == "24", "preflight requires 24 allocated CPUs")
+    require(environment.get("SLURM_MEM_PER_NODE") == "393216", "v6 preflight requires 384 GiB Slurm memory")
+    world = int(environment.get("WORLD_SIZE", "0"))
+    rank, local_rank = int(environment.get("RANK", "-1")), int(environment.get("LOCAL_RANK", "-1"))
+    require(world == 2 and rank in range(world) and local_rank == rank,
+            "preflight requires single-node torchrun with exactly two ranks")
+    require(environment.get("LOCAL_WORLD_SIZE", "2") == "2", "local torchrun world differs")
+    visible = environment.get("CUDA_VISIBLE_DEVICES", "")
+    devices = visible.split(",")
+    require(len(devices) == len(set(devices)) == 2 and all(value and value.strip() == value for value in devices),
+            "CUDA visibility must expose two GPUs")
+    return {"job_id": environment["SLURM_JOB_ID"], "rank": rank, "local_rank": local_rank,
+            "world_size": world, "cuda_visible_devices": visible, "threads_per_rank": 12,
+            "memory_mib": 393216}
 
 
 def staged_directory(path, work, label):
@@ -172,8 +195,8 @@ def activate_scientific_source(root):
     sys.path.insert(0, str(root / "src"))
 
 
-def validate_memory(memory):
-    limit = 192 * 1024**3
+def validate_memory(memory, protocol_path=PRECISION_PROTOCOL_PATH):
+    limit = student_memory.expected_bytes(protocol_path)
     peak = memory.get("peak_bytes")
     current = memory.get("current_bytes")
     required = max(32 * 1024**3, math.ceil(limit * 0.20))
@@ -198,6 +221,20 @@ def validate_memory(memory):
         ),
         "preflight selected cgroup is not bound to ancestor evidence",
     )
+    if protocol_path == MEMORY_PROTOCOL_PATH:
+        require(memory.get("expected_limit_bytes") == limit
+                and memory.get("cgroup_version") in (1, 2)
+                and type(memory.get("observed_at_unix")) in (int, float)
+                and math.isfinite(memory["observed_at_unix"])
+                and isinstance(memory.get("memory_stat"), dict) and memory["memory_stat"],
+                "v6 preflight raw memory measurements are missing")
+        limiting = [entry for entry in ancestors if entry.get("limit_bytes") == limit]
+        require(all(type(entry.get("peak_bytes")) is int for entry in limiting)
+                and peak == max(entry["peak_bytes"] for entry in limiting),
+                "v6 preflight did not retain the aggregate memory peak")
+        for key in ("memory_stat", "memory_events", "memory_events_local", "memory_oom_control", "memory_failcnt"):
+            require(key in memory and key in selected[0] and memory[key] == selected[0][key],
+                    "v6 preflight raw memory counters differ from selected cgroup")
 
 
 def validate_completed_report(report, expected):
@@ -270,6 +307,8 @@ def validate_completed_report(report, expected):
             and allocation.get("job_id") == report["job_id"],
             "preflight rank allocation differs",
         )
+        if expected.get("student_protocol_path") == MEMORY_PROTOCOL_PATH:
+            require(allocation.get("memory_mib") == 393216, "v6 preflight allocation memory differs")
         visible = allocation.get("cuda_visible_devices", "")
         devices = visible.split(",")
         require(
@@ -320,18 +359,18 @@ def validate_completed_report(report, expected):
             "preflight batch/token/window semantics differ",
         )
         if expected.get("student_protocol_path") in {
-            DEVICE_PROTOCOL_PATH, OPTIMIZER_PROTOCOL_PATH, PRECISION_PROTOCOL_PATH
+            DEVICE_PROTOCOL_PATH, OPTIMIZER_PROTOCOL_PATH, PRECISION_PROTOCOL_PATH, MEMORY_PROTOCOL_PATH
         }:
             require(
                 item.get("supervision_boundary") == supervision_boundary_evidence(f"cuda:{rank}"),
                 "v3 preflight did not exercise CPU collation and canonical supervision on this rank",
             )
-        if expected.get("student_protocol_path") in {OPTIMIZER_PROTOCOL_PATH, PRECISION_PROTOCOL_PATH}:
+        if expected.get("student_protocol_path") in {OPTIMIZER_PROTOCOL_PATH, PRECISION_PROTOCOL_PATH, MEMORY_PROTOCOL_PATH}:
             require(
                 item.get("optimizer_preparation") == optimizer_preparation_evidence(),
                 "v4 preflight did not validate production FSDP optimizer preparation",
             )
-        if expected.get("student_protocol_path") == PRECISION_PROTOCOL_PATH:
+        if expected.get("student_protocol_path") in {PRECISION_PROTOCOL_PATH, MEMORY_PROTOCOL_PATH}:
             validate_checkpoint_precision(item.get("checkpoint_precision", {}))
             require(
                 item["checkpoint_precision"] == ranks[0].get("checkpoint_precision"),
@@ -367,7 +406,7 @@ def validate_completed_report(report, expected):
                 "preflight checkpoint file identity is missing",
             )
         checkpoint_files = files
-        if expected.get("student_protocol_path") == PRECISION_PROTOCOL_PATH:
+        if expected.get("student_protocol_path") in {PRECISION_PROTOCOL_PATH, MEMORY_PROTOCOL_PATH}:
             require(
                 item["checkpoint_precision"]["resumed_baseline_sha256"]
                 == next(record["sha256"] for record in files if record["path"] == "model-full.pt"),
@@ -378,7 +417,7 @@ def validate_completed_report(report, expected):
             "preflight scratch is not local",
         )
         for key in ("initial_cgroup_memory", "cgroup_memory"):
-            validate_memory(item[key])
+            validate_memory(item[key], expected.get("student_protocol_path", PRECISION_PROTOCOL_PATH))
         allocated, reserved = item["peak_gpu_allocated_bytes"], item["peak_gpu_reserved_bytes"]
         require(0 < allocated <= reserved < gpu["total_memory_bytes"], "preflight GPU memory has no headroom")
     require(ranks[0].get("node") and ranks[0]["node"] == ranks[1].get("node"), "preflight was not one node")
@@ -580,10 +619,11 @@ def verify_optimizer_preparation(student, optimizer, scheduler):
     return optimizer_preparation_evidence()
 
 
-def precision_config():
+def precision_config(protocol_path=PRECISION_PROTOCOL_PATH):
+    require(protocol_path in {PRECISION_PROTOCOL_PATH, MEMORY_PROTOCOL_PATH}, "invalid precision protocol")
     return {
-        "protocol_amendment_path": PRECISION_PROTOCOL_PATH,
-        "adapted_teacher": {"student_protocol_path": PRECISION_PROTOCOL_PATH},
+        "protocol_amendment_path": protocol_path,
+        "adapted_teacher": {"student_protocol_path": protocol_path},
     }
 
 
@@ -607,7 +647,7 @@ def capture_precision_baseline(model, path):
     }
 
 
-def precision_update_evidence(path, initial, final):
+def precision_update_evidence(path, initial, final, *, protocol_path=PRECISION_PROTOCOL_PATH):
     """Exercise the production comparator on real full-state checkpoint tensors."""
     import torch
 
@@ -624,11 +664,11 @@ def precision_update_evidence(path, initial, final):
     for name, before in baseline.items():
         promoted = before.float()
         zero, _ = adapted_student_model_update_evidence(
-            {name: before}, {name: promoted}, resolved_config=precision_config(), resume_ancestry=[]
+            {name: before}, {name: promoted}, resolved_config=precision_config(protocol_path), resume_ancestry=[]
         )
         require(zero == 0.0, "precision conversion was counted as a parameter update")
     norm, final_hash = adapted_student_model_update_evidence(
-        baseline, final, resolved_config=precision_config(), resume_ancestry=[]
+        baseline, final, resolved_config=precision_config(protocol_path), resume_ancestry=[]
     )
     require(math.isfinite(norm) and norm > 0.0, "fresh FP32 checkpoint has no real parameter update")
     return {
@@ -650,7 +690,7 @@ def precision_update_evidence(path, initial, final):
     }
 
 
-def precision_restore_evidence(path, expected_file, restored, fresh):
+def precision_restore_evidence(path, expected_file, restored, fresh, *, protocol_path=PRECISION_PROTOCOL_PATH):
     import torch
 
     from posttrain_circuits.artifacts.checkpoints import adapted_student_model_update_evidence
@@ -658,7 +698,7 @@ def precision_restore_evidence(path, expected_file, restored, fresh):
     require(checkpoint_file(path) == expected_file, "FP32 resume baseline file changed")
     saved = torch.load(path, map_location="cpu", weights_only=True)
     norm, restored_hash = adapted_student_model_update_evidence(
-        saved, restored, resolved_config=precision_config(),
+        saved, restored, resolved_config=precision_config(protocol_path),
         resume_ancestry=["sha256:" + expected_file["sha256"]],
     )
     require(
@@ -756,19 +796,24 @@ def run_canary(args, identity, evidence):
             "qwen3-adapted-student-calibration-v3",
             "qwen3-adapted-student-calibration-v4",
             "qwen3-adapted-student-calibration-v5",
+            "qwen3-adapted-student-calibration-v6",
         },
         "unrecognized student canary protocol",
     )
-    precision_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v5"
+    memory_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v6"
+    precision_boundary = memory_boundary or protocol.amendment_id == "qwen3-adapted-student-calibration-v5"
     optimizer_boundary = precision_boundary or protocol.amendment_id == "qwen3-adapted-student-calibration-v4"
     device_boundary = optimizer_boundary or protocol.amendment_id == "qwen3-adapted-student-calibration-v3"
     if device_boundary:
-        expected_path = (PRECISION_PROTOCOL_PATH if precision_boundary else
+        expected_path = (MEMORY_PROTOCOL_PATH if memory_boundary else
+                         PRECISION_PROTOCOL_PATH if precision_boundary else
                          OPTIMIZER_PROTOCOL_PATH if optimizer_boundary else DEVICE_PROTOCOL_PATH)
         require(
             protocol.path.relative_to(args.science_root).as_posix() == expected_path,
             "wrong student preflight protocol path",
         )
+        require(expected_path == getattr(args, "student_protocol_path", PRECISION_PROTOCOL_PATH),
+                "accepted preflight protocol differs from requested memory profile")
         evidence["student_protocol_path"] = expected_path
     rank, world = identity["rank"], identity["world_size"]
     log_phase(rank, "gpu_and_distributed_checks")
@@ -999,7 +1044,7 @@ def run_canary(args, identity, evidence):
         if rank == 0:
             if precision_boundary:
                 fresh_precision = precision_update_evidence(
-                    initial_precision_path, initial_precision, model_payload
+                    initial_precision_path, initial_precision, model_payload, protocol_path=expected_path
                 )
             torch.save(model_payload, checkpoint / "model-full.pt")
             torch.save(optimizer_payload, checkpoint / "optimizer-full.pt")
@@ -1081,7 +1126,7 @@ def run_canary(args, identity, evidence):
             lambda: precision_restore_evidence(
                 checkpoint / "model-full.pt",
                 next(item for item in checkpoint_manifest["files"] if item["path"] == "model-full.pt"),
-                restored_full_state, fresh_precision,
+                restored_full_state, fresh_precision, protocol_path=expected_path,
             ) if rank == 0 else None,
         )
         del restored_full_state
@@ -1095,7 +1140,10 @@ def run_canary(args, identity, evidence):
     evidence.update(
         peak_gpu_allocated_bytes=torch.cuda.max_memory_allocated(device),
         peak_gpu_reserved_bytes=peak,
-        cgroup_memory=memory_envelope(),
+        cgroup_memory=(student_memory.record_stage(
+            evidence, f"rank-{rank}-after_canary", args.output_dir,
+            expected_bytes=student_memory.expected_bytes(MEMORY_PROTOCOL_PATH),
+        ) if memory_boundary else memory_envelope()),
         process_peak_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
     )
     require(
@@ -1126,13 +1174,13 @@ def main(argv=None):
         "student-protocol-sha256",
     ):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--student-protocol-path", default=PRECISION_PROTOCOL_PATH)
     args = parser.parse_args(argv)
-    identity = guards.allocation_identity(os.environ)
+    identity = allocation_identity(os.environ, args.student_protocol_path)
     mount = guards.local_paths(args.work_dir, args.output_dir)
     bindings = validate_inputs(args)
     runtime = guards.runtime_identity()
     snapshots = guards.pinned_cache(args.hf_home)
-    memory = memory_envelope()
     os.environ.update(
         HF_HOME=str(args.hf_home),
         HF_HUB_CACHE=str(args.hf_home / "hub"),
@@ -1181,7 +1229,6 @@ def main(argv=None):
         "runtime": runtime,
         "pinned_cache": snapshots,
         "node_local_mount": mount,
-        "initial_cgroup_memory": memory,
     }
     started, distributed = time.monotonic(), None
 
@@ -1190,6 +1237,13 @@ def main(argv=None):
 
     old_handlers = {signum: signal.signal(signum, interrupted) for signum in (signal.SIGTERM, signal.SIGINT)}
     try:
+        if args.student_protocol_path == MEMORY_PROTOCOL_PATH:
+            evidence["initial_cgroup_memory"] = student_memory.record_stage(
+                evidence, f"rank-{identity['rank']}-initial", args.output_dir,
+                expected_bytes=student_memory.expected_bytes(args.student_protocol_path),
+            )
+        else:
+            evidence["initial_cgroup_memory"] = memory_envelope()
         distributed = run_canary(args, identity, evidence)
         if "student_protocol_path" in evidence:
             bindings["student_protocol_path"] = evidence["student_protocol_path"]
@@ -1227,6 +1281,14 @@ def main(argv=None):
             )
         distributed.monitored_barrier(timeout=timedelta(seconds=120), wait_all_ranks=True)
     except BaseException as error:
+        if args.student_protocol_path == MEMORY_PROTOCOL_PATH:
+            try:
+                student_memory.record_stage(
+                    evidence, f"rank-{identity['rank']}-exception", args.output_dir,
+                    expected_bytes=student_memory.expected_bytes(args.student_protocol_path),
+                )
+            except Exception as observation_error:
+                evidence["exception_memory_error"] = f"{type(observation_error).__name__}: {observation_error}"
         evidence.update(
             passed=False, error=f"{type(error).__name__}: {error}", elapsed_seconds=time.monotonic() - started
         )

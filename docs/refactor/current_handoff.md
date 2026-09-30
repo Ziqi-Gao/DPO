@@ -16,10 +16,13 @@ The previous dtype error did not recur; this is not evidence of an OOM. The
 calibration is not accepted. Its results are persisted and bounded evidence
 has been fetched. The supervisor stopped at **2026-09-30T06:02:21Z** without
 retry or cancellation. The current quser43 shared master and both terminal job
-states were freshly verified. Next diagnose the aggregate memory peak while
-preserving the reviewed headroom gate and existing outputs. Central
-ServerScheduler observations below remain dated 2026-09-10 and were not
-reverified from Quest.
+states were freshly verified. The user explicitly authorized a repair and a
+fresh submission with larger memory/GPU resources. The proposed v6 successor
+uses **2 H100 / 24 CPU / 384 GiB**, preserves scientific settings and the
+32-GiB/20% headroom gate, and records measured memory before rejecting a stage.
+Independent acceptance and a fresh matching GPU preflight are required before
+one calibration; no v6 job has been submitted yet. Central ServerScheduler
+observations below remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -1287,6 +1290,42 @@ repair and fresh charged run. Do not waive the headroom gate, silently change
 the reviewed memory envelope, retry this intent or treat checkpoints as an
 accepted resume contract. Inspect stopped state and receipts before any
 continuation. Existing stopped flows and unknown-intent protections remain.
+
+The v6 repair is a separately proposed successor, not a reinterpretation of
+54533934. A real cgroup fixture reproduced the information loss: 160-GiB and
+191-GiB peaks under the old 192-GiB limit both raised the same error without
+recording the peak. The actual failed job's node-local mount was ext4 on
+`/scratch`, ruling out the TMPDIR-as-tmpfs hypothesis. The exact historical peak
+and whether training, checkpoint I/O/cache or final validation dominated remain
+unknown. The new student-only `tools/sdsc_student_memory.py` preserves raw
+ancestor limits/current/peak, memory.stat and available OOM/event counters on
+both success and failure. It never resets counters, drops caches or subtracts
+file cache. Calibration records initial, post-export, post-training,
+post-validation and failure observations before raising; bounded v6 fetch also
+includes the inner report and phase measurements. The frozen teacher memory
+helper and all 47 teacher scientific blobs remain unchanged.
+
+The newly authorized envelope is **2 H100 / 24 CPU / 384 GiB**, with one-hour
+preflight and two-hour calibration limits; two-rank/global-64 semantics,
+teacher inputs, checkpoints, seed and all scientific thresholds are unchanged.
+The memory gate remains `max(32 GiB, ceil(actual_limit * 0.20))`, so the new
+required headroom is 76.8 GiB. CLI admission permits only the two named student
+profiles; verified protocol bytes select 192 GiB for v1-v5 or 384 GiB for v6
+before any remote claim/sbatch, and the worker checks the real Slurm allocation.
+Fresh quser43 SSH inspection confirmed an empty account queue, partition
+capacity and QoS maxima of 762 GiB / three GPUs / 54 CPUs per shared job. The
+existing pinned runtime was checked without importing Torch or installing
+packages. Discovery/reproduction evidence is under
+`.sdsc/diagnostics/adapted-student-memory-v6/`. The proposed v6 protocol requires
+its own implementation commit, distinct independent acceptance, new releases
+and matching preflight; `tools/sdsc_student_supervise_v6.py` is a finite
+one-calibration adapter with 300-second polling and the existing no-retry,
+unknown-intent and SSH-loss stops. Tool existence does not mean it is active.
+The integrated CPU suite passed **447 tests** (24 expected PyTorch FSDP warnings),
+including genuine tiny-model save/finalization/resume for both v5 and v6,
+cgroup v1/v2 and failed-stage preservation, exact resource/protocol rejection,
+and real remote-fetch selection through CLI disk publication. AST and
+`git diff --check` passed. CPU tests do not establish the new GPU envelope.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters

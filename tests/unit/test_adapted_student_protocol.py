@@ -28,7 +28,7 @@ def config():
         [
             "g0=qwen3_v2_eap_separation",
             "experiment=canonical_sft",
-            "adapted_teacher=qwen3_accepted_student_v5",
+            "adapted_teacher=qwen3_accepted_student_v6",
             f"protocol_amendment_path={protocol.PROTOCOL_PATH}",
         ],
         config_root=ROOT / "configs",
@@ -71,32 +71,23 @@ def test_successor_preserves_original_protocol_science_and_teacher_configuration
     expected["protocol_id"] = protocol.PROTOCOL_ID
     expected["accepted_teacher"]["student_protocol_path"] = protocol.PROTOCOL_PATH
     expected["execution"].update(
-        model_update_comparison={
-            "comparison_policy": "bf16_baseline_fp32_master_v1",
-            "fresh_baseline_dtype": "bfloat16",
-            "resumed_baseline_dtype": "float32",
-            "final_dtype": "float32",
-            "value_delta_dtype": "float64",
-            "parameter_keys_and_shapes_exact": True,
-            "nonfloating_tensors_exact": True,
-            "final_tensor_hash_uses_actual_bytes": True,
-            "promotion_only_counts_as_update": False,
-        },
-        checkpoint_precision_preflight_required=True,
+        host_memory_gib=384,
+        host_memory_headroom={"minimum_gib": 32, "minimum_fraction": 0.2},
     )
     expected["science_files"] = [
         protocol.ADAPTED_TEACHER_CONFIG_PATH
-        if path == "configs/adapted_teacher/qwen3_accepted_student_v4.yaml"
+        if path == "configs/adapted_teacher/qwen3_accepted_student_v5.yaml"
         else path
         for path in expected["science_files"]
     ]
+    expected["science_files"].append("tools/sdsc_student_memory.py")
     assert list(protocol.SCIENCE_PATHS) == expected["science_files"]
     expected["review_contract"]["acceptance_allowed_changed_paths"][0] = protocol.PROTOCOL_PATH
     expected["review"] = copy.deepcopy(protocol.REVIEW_PROPOSED)
     expected["predecessor"] = copy.deepcopy(protocol.PREDECESSOR)
     expected["preserved_protocols"] = copy.deepcopy(list(protocol.PRESERVED_PROTOCOLS))
     expected["repair"] = {
-        "kind": "explicit_bf16_to_fp32_checkpoint_update_evidence",
+        "kind": "larger_host_memory_preserving_aggregate_peak_headroom",
         "scientific_settings_and_teacher_evidence_unchanged": True,
         "reuse_predecessor_gpu_preflight": False,
     }
@@ -106,6 +97,7 @@ def test_successor_preserves_original_protocol_science_and_teacher_configuration
         "qwen3_accepted_student_v2.yaml",
         "qwen3_accepted_student_v3.yaml",
         "qwen3_accepted_student_v4.yaml",
+        "qwen3_accepted_student_v5.yaml",
     ):
         teacher_config = yaml.safe_load((ROOT / "configs/adapted_teacher" / name).read_text())
         teacher_config["student_protocol_path"] = protocol.PROTOCOL_PATH
@@ -118,7 +110,7 @@ def test_successor_accelerate_config_only_makes_false_use_orig_params_explicit()
     assert yaml.safe_load((ROOT / protocol.ACCELERATE_CONFIG_PATH).read_text()) == previous
 
 
-def test_run_amendment_dispatches_composed_v5_to_actual_student_resolver(monkeypatch, tmp_path):
+def test_run_amendment_dispatches_composed_v6_to_actual_student_resolver(monkeypatch, tmp_path):
     from posttrain_circuits.artifacts.runs import resolve_protocol_amendment
 
     sentinel = object()
@@ -141,6 +133,7 @@ def test_run_amendment_dispatches_composed_v5_to_actual_student_resolver(monkeyp
         "prereg/amendments/qwen3_adapted_student_calibration_v2.json",
         "prereg/amendments/qwen3_adapted_student_calibration_v3.json",
         "prereg/amendments/qwen3_adapted_student_calibration_v4.json",
+        "prereg/amendments/qwen3_adapted_student_calibration_v5.json",
         "prereg/amendments/unknown.json",
     ],
 )
@@ -168,6 +161,12 @@ def test_run_amendment_dispatch_rejects_previous_or_unknown_path(path, monkeypat
         (("student", "global_batch_size"), 32),
         (("student", "max_steps"), 1000),
         (("execution", "gpu_count"), 4),
+        (("execution", "host_memory_gib"), 192),
+        (("execution", "host_memory_gib"), 512),
+        (("execution", "host_memory_headroom", "minimum_gib"), 16),
+        (("execution", "host_memory_headroom", "minimum_fraction"), 0.1),
+        (("execution", "fresh_matching_real_gpu_preflight_required"), False),
+        (("repair", "reuse_predecessor_gpu_preflight"), True),
         (("execution", "host_memory_gib"), 96),
         (("execution", "fsdp_use_orig_params"), True),
         (("execution", "supervision_tensor_device"), "cpu"),
@@ -435,7 +434,9 @@ def test_real_git_relabelled_implementation_and_reedited_protocol_rejected(histo
 
 
 @pytest.mark.parametrize("mode", ["dirty", "staged", "committed"])
-@pytest.mark.parametrize("generation", ["predecessor", "preserved_v1", "preserved_v2", "preserved_v3"])
+@pytest.mark.parametrize(
+    "generation", ["predecessor", "preserved_v1", "preserved_v2", "preserved_v3", "preserved_v4"]
+)
 def test_real_git_predecessor_artifact_cannot_be_rewritten(history, mode, generation):
     accept_history(history)
     historical = {
@@ -443,6 +444,7 @@ def test_real_git_predecessor_artifact_cannot_be_rewritten(history, mode, genera
         "preserved_v1": protocol.PRESERVED_PROTOCOLS[0],
         "preserved_v2": protocol.PRESERVED_PROTOCOLS[1],
         "preserved_v3": protocol.PRESERVED_PROTOCOLS[2],
+        "preserved_v4": protocol.PRESERVED_PROTOCOLS[3],
     }
     path = historical[generation]["protocol_path"]
     history.write(path, raw({"rewritten": True}))

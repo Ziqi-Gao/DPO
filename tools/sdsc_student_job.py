@@ -457,10 +457,10 @@ def main(argv=None):
         visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
         contract.require(
             os.environ.get("SLURM_CPUS_PER_TASK") == "24"
-            and os.environ.get("SLURM_MEM_PER_NODE") == "196608"
+            and os.environ.get("SLURM_MEM_PER_NODE") in {"196608", "393216"}
             and len(visible) == len(set(visible)) == 2
             and all(x and x != "-1" and x.strip() == x for x in visible),
-            "student task requires two GPUs, 24 CPUs and 192 GiB",
+            "student task requires two GPUs, 24 CPUs and a reviewed 192/384 GiB profile",
         )
         contract.require(
             all(intent.get(k) == v for k, v in identity.items() if k != "job_id"),
@@ -476,6 +476,15 @@ def main(argv=None):
             and proof.get("task") == task
             and proof.get("target") == {k: intent[k] for k in ("run_id", "code_sha256", "intent_id")},
             "student prerequisite identity differs",
+        )
+        protocol_path = proof["protocol"].get(
+            "protocol_path", "prereg/amendments/qwen3_adapted_student_calibration_v1.json"
+        )
+        memory_gib = contract.student_memory_gib(protocol_path)
+        contract.require(
+            intent.get("resources", {}).get("mem_gib") == memory_gib
+            and os.environ.get("SLURM_MEM_PER_NODE") == str(memory_gib * 1024),
+            "actual student allocation differs from the accepted memory profile",
         )
         identity.update(
             {
@@ -646,6 +655,8 @@ def main(argv=None):
             protocol["protocol_sha256"],
         ]
         if contract.TASKS[task] == "preflight":
+            if memory_gib == 384:
+                arguments.extend(["--student-protocol-path", protocol_path])
             command = [
                 python,
                 "-I",

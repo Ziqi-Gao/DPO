@@ -86,7 +86,7 @@ class StudentJobTests(unittest.TestCase):
         return dict(self.job.identity, passed=passed, exit_code=0 if passed else 1)
 
     def test_preflight_contract_preserves_optional_historical_path_and_passes_current_execution_gate(self):
-        for version in (None, 1, 2, 3, 4, 5):
+        for version in (None, 1, 2, 3, 4, 5, 6):
             protocol = dict(head="a" * 40, protocol_sha256="b" * 64)
             if version is not None:
                 protocol["protocol_path"] = (

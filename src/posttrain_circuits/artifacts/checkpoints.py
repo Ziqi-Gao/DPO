@@ -373,9 +373,9 @@ def adapted_student_model_update_evidence(
     resolved_config: Mapping[str, Any],
     resume_ancestry: list[str],
 ) -> tuple[float, str]:
-    """Apply only the reviewed v5 BF16-input/FP32-master comparison contract.
+    """Apply only the reviewed v5/v6 BF16-input/FP32-master comparison contract.
 
-    Historical callers retain strict tensor metadata equality. Fresh v5 runs
+    Historical callers retain strict tensor metadata equality. Fresh v5/v6 runs
     compare the exact BF16 checkpoint values against FP32 training masters;
     resumed runs compare FP32 masters against their bound FP32 checkpoint.
     Neither stored model is converted or replaced. Conversion alone has zero
@@ -384,7 +384,10 @@ def adapted_student_model_update_evidence(
 
     import torch
 
-    protocol_path = "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+    protocol_paths = (
+        "prereg/amendments/qwen3_adapted_student_calibration_v5.json",
+        "prereg/amendments/qwen3_adapted_student_calibration_v6.json",
+    )
     amendment_path = resolved_config.get("protocol_amendment_path")
     adapted_teacher = resolved_config.get("adapted_teacher")
     student_path = (
@@ -392,9 +395,9 @@ def adapted_student_model_update_evidence(
         if isinstance(adapted_teacher, Mapping)
         else None
     )
-    if amendment_path != protocol_path and student_path != protocol_path:
+    if amendment_path not in protocol_paths and student_path not in protocol_paths:
         return model_update_evidence(baseline, final)
-    if amendment_path != protocol_path or student_path != protocol_path:
+    if amendment_path not in protocol_paths or amendment_path != student_path:
         raise ValueError("adapted student update evidence has contradictory protocol selectors")
     if (
         not isinstance(resume_ancestry, list)

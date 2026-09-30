@@ -28,17 +28,17 @@ from posttrain_circuits.artifacts.teacher_adaptation_protocol import (
     resolve_teacher_adaptation_protocol,
 )
 
-PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
-PROTOCOL_ID = "qwen3-adapted-student-calibration-v5"
-ADAPTED_TEACHER_CONFIG_PATH = "configs/adapted_teacher/qwen3_accepted_student_v5.yaml"
+PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v6.json"
+PROTOCOL_ID = "qwen3-adapted-student-calibration-v6"
+ADAPTED_TEACHER_CONFIG_PATH = "configs/adapted_teacher/qwen3_accepted_student_v6.yaml"
 ACCELERATE_CONFIG_PATH = "configs/accelerate/fsdp_2gpu_adapted_student_v2.yaml"
 PREDECESSOR = {
-    "protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v4.json",
-    "protocol_id": "qwen3-adapted-student-calibration-v4",
-    "implementation_commit": "89a8ffd598d9377ebcbef556bee0057699d9eb35",
-    "acceptance_commit": "cfac02db4cf67c7d1a8c1b09697fcc25de76474b",
-    "protocol_sha256": "822b5640da8e47232ce09795e364c73fae16512f1123d2a0b4dfa56c1769f93c",
-    "artifact_sha256": "61b52355f3ac4c91f6de819c0e0a2711ff9c4069ad9c8313dd080f07df3cc8cf",
+    "protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v5.json",
+    "protocol_id": "qwen3-adapted-student-calibration-v5",
+    "implementation_commit": "529d46eceab6fca7bf9bb73fc79e82101fbd0fd1",
+    "acceptance_commit": "9169a61e452c0b94064b06e6a449abfff63857f1",
+    "protocol_sha256": "14c79d22ae6016140591ee15dd9bb84cafcab53bd86619350c874bb0b1b964e2",
+    "artifact_sha256": "c3e2f33408db18be07d6ec855752ea1c12461958528ac5380ee7b1303dd620e3",
 }
 PRESERVED_PROTOCOLS = (
     {
@@ -64,6 +64,14 @@ PRESERVED_PROTOCOLS = (
         "acceptance_commit": "df05bd2a96363829a4bc587c04a2dd116e2a6242",
         "protocol_sha256": "c727957ed2fa059481772ebbdef68982a0280436d41cb6be4acd5eff1fd70ec9",
         "artifact_sha256": "0a64f606455830786639e019b736d108d072f02f4d20cf869061ff6059df8d53",
+    },
+    {
+        "protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v4.json",
+        "protocol_id": "qwen3-adapted-student-calibration-v4",
+        "implementation_commit": "89a8ffd598d9377ebcbef556bee0057699d9eb35",
+        "acceptance_commit": "cfac02db4cf67c7d1a8c1b09697fcc25de76474b",
+        "protocol_sha256": "822b5640da8e47232ce09795e364c73fae16512f1123d2a0b4dfa56c1769f93c",
+        "artifact_sha256": "61b52355f3ac4c91f6de819c0e0a2711ff9c4069ad9c8313dd080f07df3cc8cf",
     },
 )
 PRODUCER_HEAD = "929fb14834852a7c91e6656c76fd1834e1b5007d"
@@ -126,6 +134,7 @@ SCIENCE_PATHS = (
     "tools/sdsc_student_job.sh",
     "tools/sdsc_adapted_training_preflight.py",
     "tools/sdsc_adapted_calibration.py",
+    "tools/sdsc_student_memory.py",
 )
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\Z")
@@ -133,7 +142,7 @@ _MAX_BYTES = 2 * 1024 * 1024
 
 
 class AdaptedStudentProtocolError(ValueError):
-    """The proposed consumer or its actual source authority differs from v5."""
+    """The proposed consumer or its actual source authority differs from v6."""
 
 
 def _canonical(value: Any) -> bytes:
@@ -174,7 +183,7 @@ def proposed_adapted_student_protocol() -> dict[str, Any]:
         "predecessor": copy.deepcopy(PREDECESSOR),
         "preserved_protocols": copy.deepcopy(list(PRESERVED_PROTOCOLS)),
         "repair": {
-            "kind": "explicit_bf16_to_fp32_checkpoint_update_evidence",
+            "kind": "larger_host_memory_preserving_aggregate_peak_headroom",
             "scientific_settings_and_teacher_evidence_unchanged": True,
             "reuse_predecessor_gpu_preflight": False,
         },
@@ -237,7 +246,8 @@ def proposed_adapted_student_protocol() -> dict[str, Any]:
             "gpu_type": "h100",
             "gpu_count": 2,
             "cpus": 24,
-            "host_memory_gib": 192,
+            "host_memory_gib": 384,
+            "host_memory_headroom": {"minimum_gib": 32, "minimum_fraction": 0.2},
             "threads_per_rank": 12,
             "fsdp_requested": "FULL_SHARD",
             "fsdp_effective": "FULL_SHARD",
@@ -406,8 +416,8 @@ def resolve_adapted_student_protocol(
     raw = read(PROTOCOL_PATH)
     payload = load_adapted_student_protocol(raw, require_accepted=require_accepted)
     # Resolve all historical acceptances through actual immutable Git ancestry.
-    # V5's changed execution is separately reviewed; old scientific artifacts
-    # remain byte-identical and are never reinterpreted as v5 evidence.
+    # V6's changed memory envelope is separately reviewed; old scientific artifacts
+    # remain byte-identical and are never reinterpreted as v6 evidence.
     historical_bytes = {}
     for historical in (*PRESERVED_PROTOCOLS, PREDECESSOR):
         predecessor_path = historical["protocol_path"]

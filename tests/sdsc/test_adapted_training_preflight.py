@@ -296,9 +296,15 @@ print(module.TASK)
             worker.precision_update_evidence(path, initial, model.state_dict())
 
     def test_v5_precision_admission_requires_complete_bound_evidence_on_both_ranks(self):
+        self._precision_admission(worker.PRECISION_PROTOCOL_PATH)
+
+    def test_v6_admission_keeps_all_v5_physical_evidence_and_requires_384_gib(self):
+        self._precision_admission(worker.MEMORY_PROTOCOL_PATH)
+
+    def _precision_admission(self, protocol_path):
         report, expected = preflight_fixture()
-        expected["student_protocol_path"] = worker.PRECISION_PROTOCOL_PATH
-        report["student_protocol_path"] = worker.PRECISION_PROTOCOL_PATH
+        expected["student_protocol_path"] = protocol_path
+        report["student_protocol_path"] = protocol_path
         precision = {
             "comparison_policy": "bf16_baseline_fp32_master_v1",
             "helper": "adapted_student_model_update_evidence",
@@ -321,11 +327,33 @@ print(module.TASK)
         }
         for rank, item in enumerate(report["ranks"]):
             item.update(
-                student_protocol_path=worker.PRECISION_PROTOCOL_PATH,
+                student_protocol_path=protocol_path,
                 supervision_boundary=worker.supervision_boundary_evidence(f"cuda:{rank}"),
                 optimizer_preparation=worker.optimizer_preparation_evidence(),
                 checkpoint_precision=copy.deepcopy(precision),
             )
+        if protocol_path == worker.MEMORY_PROTOCOL_PATH:
+            for item in report["ranks"]:
+                item["allocation"]["memory_mib"] = 393216
+                for key in ("initial_cgroup_memory", "cgroup_memory"):
+                    memory = item[key]
+                    limit = 384 * 1024**3
+                    memory.update(limit_bytes=limit, expected_limit_bytes=limit,
+                                  minimum_headroom_bytes=math.ceil(limit * .2),
+                                  headroom_bytes=limit - memory["peak_bytes"],
+                                  cgroup_version=1, observed_at_unix=1.0,
+                                  memory_stat={"rss": 123, "cache": 456}, memory_events=None,
+                                  memory_events_local=None, memory_oom_control={"oom_kill": 0}, memory_failcnt=0)
+                    memory["ancestors"][0].update({key: memory[key] for key in (
+                        "limit_bytes", "memory_stat", "memory_events", "memory_events_local", "memory_oom_control", "memory_failcnt")})
+            changed = copy.deepcopy(report)
+            changed["ranks"][0]["cgroup_memory"] = memory_fixture()
+            with self.assertRaisesRegex(ValueError, "memory"):
+                worker.validate_completed_report(changed, expected)
+            changed = copy.deepcopy(report)
+            del changed["ranks"][0]["initial_cgroup_memory"]["memory_stat"]
+            with self.assertRaisesRegex(ValueError, "raw memory"):
+                worker.validate_completed_report(changed, expected)
         worker.validate_completed_report(report, expected)
         for key in precision:
             changed = copy.deepcopy(report)
@@ -504,6 +532,11 @@ print(module.TASK)
         new_tree = ast.parse(SCRIPT.read_text())
 
         class LegacyBranch(ast.NodeTransformer):
+            def visit_IfExp(self, node):
+                if isinstance(node.test, ast.Name) and node.test.id == "memory_boundary":
+                    return self.visit(node.orelse)
+                return self.generic_visit(node)
+
             def visit_If(self, node):
                 self.generic_visit(node)
                 if isinstance(node.test, ast.Name) and node.test.id == "device_boundary":
@@ -578,6 +611,14 @@ print(module.TASK)
             "CUDA_VISIBLE_DEVICES": "GPU-a,GPU-b",
         }
         self.assertEqual(worker.guards.allocation_identity(env)["threads_per_rank"], 12)
+        v6_env = {**env, "SLURM_MEM_PER_NODE": "393216"}
+        before = dict(v6_env)
+        self.assertEqual(worker.allocation_identity(v6_env, worker.MEMORY_PROTOCOL_PATH)["memory_mib"], 393216)
+        self.assertEqual(v6_env, before)
+        with self.assertRaisesRegex(ValueError, "384 GiB"):
+            worker.allocation_identity(env, worker.MEMORY_PROTOCOL_PATH)
+        with self.assertRaisesRegex(ValueError, "192 GiB"):
+            worker.allocation_identity(v6_env, worker.PRECISION_PROTOCOL_PATH)
         for key, value in (("WORLD_SIZE", "4"), ("SLURM_MEM_PER_NODE", "0"), ("CUDA_VISIBLE_DEVICES", "0")):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 worker.guards.allocation_identity({**env, key: value})
