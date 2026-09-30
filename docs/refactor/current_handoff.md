@@ -2,19 +2,19 @@
 
 Last updated: 2026-09-30 UTC. Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
-teacher-only 256-token protocol. V4 student preflight 54509682 passed, but
-calibration 54509809 failed at its first step-20 checkpoint publication after
-20 real optimizer updates. Fresh SDSC accounting confirms FAILED / 1:0; its
-supervisor is stopped and no student calibration is accepted. The restored
-quser44 shared SSH connection now permits verified remote inspection. All 311
-baseline/final tensors have identical keys/shapes; BF16 initial weights versus
-FP32 FSDP masters explain the strict metadata rejection. The separate v5 precision-comparison implementation `529d46eceab6fca7bf9bb73fc79e82101fbd0fd1`
-is independently accepted by `/root/checkpoint_contract_audit`; the distinct
-review-only acceptance is being recorded here. The final affected suite passed
-346 tests and independent review passed 217. A fresh matching GPU preflight
-is still required before one calibration.
-No v5 compute job has been submitted yet. Central ServerScheduler observations
-below remain dated 2026-09-10 and were not reverified from Quest.
+teacher-only 256-token protocol. V4 calibration 54509809 failed at its first
+step-20 checkpoint publication after twenty genuine optimizer updates because
+the original BF16 baseline and FP32 FSDP master weights were compared with a
+strict same-dtype contract. The separate v5 implementation `529d46e` and
+independent review-only acceptance `9169a61` preserve the teacher and scientific
+settings. The affected suite passed 346 tests; independent review passed 217.
+New matching two-H100 preflight **54533796** has been submitted and is RUNNING
+on **exp-19-07**. The independently reviewed finite Quest supervisor is active
+on quser44 (PID 1076537), with verified `waiting_preflight` state; it will
+submit one matching calibration only after strict preflight acceptance. No v5
+calibration is submitted or accepted yet. The quser44 shared SSH master is
+restored. Central ServerScheduler observations below remain dated 2026-09-10
+and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -1191,10 +1191,58 @@ regressions pass; these are not two-H100 evidence. V5 GPU preflight adds a
 frozen physical BF16 baseline, positive first-update evidence and exact FP32
 full-state restoration. It makes no real-GPU next-update equivalence claim.
 Independent review accepted implementation `529d46eceab6fca7bf9bb73fc79e82101fbd0fd1`
-at 2026-09-30T05:00:02Z. The separate acceptance and fresh matching preflight
-must precede one new calibration. Preserve all old stopped flows and failed staged checkpoints.
+at 2026-09-30T05:00:02Z; distinct review-only acceptance is
+`9169a61e452c0b94064b06e6a449abfff63857f1`. Protocol core SHA is
+`14c79d22ae6016140591ee15dd9bb84cafcab53bd86619350c874bb0b1b964e2`, physical
+accepted artifact SHA is
+`c3e2f33408db18be07d6ec855752ea1c12461958528ac5380ee7b1303dd620e3`.
+A fresh matching preflight must pass before one new calibration. Preserve all old stopped flows and failed staged checkpoints.
 Evidence is under `.sdsc/diagnostics/adapted-student-v5/` and the three verified
 small files in `.sdsc/fetched/54509809/verified-small-v5/`.
+
+The new v5 preflight **54533796**, intent
+`4e76f478490a4a0fa0e0547b1fb1414b`, was submitted exactly once at
+**2026-09-30T05:04:33Z**. Its actual receipt binds accepted science HEAD
+`9169a61e452c0b94064b06e6a449abfff63857f1` and teacher 54496291. Resources are
+**2 H100 / 24 CPU / 192 GiB / one hour**, nwu181,
+nairr-gpu-shared / nairr-gpu-shared-normal. Fresh queue/accounting show RUNNING
+on exp-19-07; startup logs show verified teacher-input and selected-checkpoint
+staging, then pinned model-cache staging. No terminal/GPU PASS is claimed.
+Run `20260930T050103Z-a99b8a463429-c1902767` contains 600 files / 6,825,905
+source bytes after matching dry-run; deployed source SHA is
+`a99b8a463429fcbdd0d43978b41e6072cc7319e79b1dfbb0e0bfb03cddb57e9f`.
+Verified genuine provenance SHA is
+`5c74d06e32fe1cb48a4f74a809dc008036ab02222fce7d98df21076b56f99e75`.
+The existing runtime's Python executable SHA and five direct package metadata
+pins were freshly rechecked without importing GPU libraries or changing it.
+
+The separate deployed calibration release
+`20260930T050336Z-a99b8a463429-8b09fc13` replays the same source bytes and
+original bundle. Its verified provenance SHA is
+`f7c3f4864a0565115d9c7badfbfdb9f9c87608a4c5c46f953318fe286d88ddc4`.
+Replay evidence is `.sdsc/replays/replay-3a223cb3990240d4a88c75d476a59094/`.
+The new finite plan is
+`.sdsc/supervision/student54533796-to-calibration-v5/plan.json`, SHA
+`71658ec65453e6d6d90b505e31f4aa37dd095fdfc5a5899136c00e20c09d6fd0`;
+profile SHA is
+`9689c0c0f326dee427211b27696eab81e394557ba9cd272b2fa8fd9195b7f8a0`.
+It allows one **2 H100 / 24 CPU / 192 GiB / two-hour** calibration only after
+strict v5 preflight acceptance, at 300-second intervals for at most fourteen
+days. Its calibration dry-run has no blockers; actual remote prerequisites
+are reverified before any claim or sbatch. Independent operational review
+accepted the actual rebuilt plan, all 600 deployed source files, nine evidence
+pins and launch script; review SHA is
+`6005ccd83548346481fee0613f7417d210f711c5cd94e86abd20e1a1b2cedbac`.
+The finite supervisor launched once on **quser44** at
+**2026-09-30T05:10:36Z**, PID **1076537**, process start ticks **20293972**.
+Its actual process identity and `waiting_preflight` state were verified; the
+first observation shows preflight RUNNING after 6m04s on exp-19-07 and
+`submission_attempted=false`. No calibration job exists yet. It keeps 300-second
+polling and stops on failure, lost shared SSH, changed pins or unknown intent;
+it neither retries nor cancels. Do not edit its pinned controls or rerun
+`tools/sdsc check` while active. It does not send chat notifications.
+Inspect launch/state/receipts before any continuation. Existing stopped flows
+and unknown-intent protections remain.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters

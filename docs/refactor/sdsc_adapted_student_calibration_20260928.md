@@ -6,9 +6,9 @@ v3 flows remain historical; do not restart them or substitute this teacher into
 their original prerequisites.
 
 The current accepted successor,
-`prereg/amendments/qwen3_adapted_student_calibration_v4.json`, binds genuine
-implementation commit `89a8ffd598d9377ebcbef556bee0057699d9eb35` and distinct
-review-only acceptance `cfac02db4cf67c7d1a8c1b09697fcc25de76474b`.
+`prereg/amendments/qwen3_adapted_student_calibration_v5.json`, binds genuine
+implementation commit `529d46eceab6fca7bf9bb73fc79e82101fbd0fd1` and distinct
+review-only acceptance `9169a61e452c0b94064b06e6a449abfff63857f1`.
 It preserves all 47 accepted producer files and binds the named student
 implementation. Acceptance of this protocol is not acceptance of GPU results.
 
@@ -33,7 +33,7 @@ Metrics consume 1,188,770/2,000,000 input tokens; step-20 loss is 2.681661978 an
 answer/proof/format validation are each zero. This execution repair changes no
 scientific hyperparameters or thresholds and establishes no student quality.
 
-The separate proposed `qwen3_adapted_student_calibration_v5.json` retains exact
+The separately accepted `qwen3_adapted_student_calibration_v5.json` retains exact
 v1–v4 authority and all 47 accepted teacher files. Its comparison policy is gated
 by agreeing top-level and nested v5 protocol selectors. Fresh runs require
 uniform BF16→FP32; resumed runs require FP32→FP32 and valid unique ancestry.
@@ -54,8 +54,15 @@ review separately passed 217 focused tests. Ruff and Python parsing pass. Durabl
 files to their report. Fresh matching GPU evidence remains required.
 
 The v5 controller retains one-submission protection, old failure rejection,
-300-second polling and a fourteen-day bound. No new flow is currently active;
-independent implementation acceptance precedes new deployment/submission.
+300-second polling and a fourteen-day bound. Matching preflight 54533796 was
+submitted at 2026-09-30T05:04:33Z and is running on exp-19-07. The independent
+calibration release and finite plan are under
+`.sdsc/supervision/student54533796-to-calibration-v5/`. The independently
+reviewed finite Quest process launched on quser44 at 2026-09-30T05:10:36Z,
+PID 1076537, and its actual identity and `waiting_preflight` state are verified.
+It will submit one matching two-hour calibration after strict preflight PASS;
+no calibration job or new GPU acceptance exists yet. Preserve its pinned
+controls and current `.sdsc/check.json` while active.
 
 ## Execution
 
