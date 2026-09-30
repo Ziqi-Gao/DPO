@@ -22,6 +22,41 @@ all 2048 candidates, tokens, log probabilities, masks, seeds and order remain
 unchanged. Its 256-token teacher acceptance does not assert historical
 128-token teacher readiness. Student evaluation stays at 128 tokens.
 
+## V5 checkpoint precision correction
+
+Remote inspection on 2026-09-30 confirms calibration 54509809 performed twenty
+AdamW updates and failed when publishing its first step-20 checkpoint. All 311
+model tensors have matching names/shapes: the physical initial export is BF16,
+whereas Accelerate/FSDP training and full-state export use FP32 masters. The
+strict comparator rejected this expected promotion at `lm_head.weight`.
+Metrics consume 1,188,770/2,000,000 input tokens; step-20 loss is 2.681661978 and
+answer/proof/format validation are each zero. This execution repair changes no
+scientific hyperparameters or thresholds and establishes no student quality.
+
+The separate proposed `qwen3_adapted_student_calibration_v5.json` retains exact
+v1–v4 authority and all 47 accepted teacher files. Its comparison policy is gated
+by agreeing top-level and nested v5 protocol selectors. Fresh runs require
+uniform BF16→FP32; resumed runs require FP32→FP32 and valid unique ancestry.
+Names/shapes and nonfloating values/dtypes remain exact; nonfinite, complex,
+mixed or unreviewed precision is rejected. Original baseline files are unchanged.
+The displacement uses FP64; the final tensor hash binds actual FP32 bytes.
+Promotion alone produces zero and cannot pass the existing positive-update gate.
+Trainer checkpoint publication and independent finalizer share this policy.
+
+Real CPU Accelerator/FSDP tests reproduce the old failure, then exercise actual
+save, independent finalizer, resume and the next optimizer update against the
+uninterrupted model/optimizer hashes. The new GPU canary freezes an initial BF16
+copy before preparation, rechecks its physical file, compares the full FP32
+first-update state and requires exact zero displacement/hash equality after
+same-world full-state restoration. CPU next-update equivalence is not claimed
+as GPU equivalence. The final affected suite passed 346 tests; independent
+review separately passed 217 focused tests. Ruff and Python parsing pass. Durable publication must bind the initial and full-state
+files to their report. Fresh matching GPU evidence remains required.
+
+The v5 controller retains one-submission protection, old failure rejection,
+300-second polling and a fourteen-day bound. No new flow is currently active;
+independent implementation acceptance precedes new deployment/submission.
+
 ## Execution
 
 1. Check existing `.sdsc/submissions/` and supervision states, then the shared

@@ -18,9 +18,9 @@ import torch
 
 from posttrain_circuits.artifacts.checkpoints import (
     accelerator_state_file_hashes,
+    adapted_student_model_update_evidence,
     load_checkpoint,
     load_checkpoint_model_state,
-    model_update_evidence,
     save_checkpoint,
     torch_state_hash,
     validate_accelerator_state_directory,
@@ -1707,7 +1707,12 @@ class FactorialTrainer:
             if sha256_file(self._update_norm_baseline_path) != self._update_norm_baseline_sha256:
                 raise ValueError("Factorial update-norm baseline checkpoint bytes changed")
             baseline = load_checkpoint_model_state(self._update_norm_baseline_path)
-        norm, final_hash = model_update_evidence(baseline, final_state)
+        norm, final_hash = adapted_student_model_update_evidence(
+            baseline,
+            final_state,
+            resolved_config=self.resolved_config,
+            resume_ancestry=self.resume_ancestry,
+        )
         if norm <= 0.0:
             raise RuntimeError("Factorial checkpoint has no parameter change from its bound baseline")
         return norm, final_hash

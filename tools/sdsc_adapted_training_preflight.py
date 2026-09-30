@@ -31,6 +31,7 @@ RESULT = "adapted-preflight.json"
 WORLD_SIZE = 2
 DEVICE_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v3.json"
 OPTIMIZER_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v4.json"
+PRECISION_PROTOCOL_PATH = "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
 
 
 def sibling(name):
@@ -318,15 +319,23 @@ def validate_completed_report(report, expected):
             and item.get("reserved_global_nonpadding_tokens") == 64 * 1536,
             "preflight batch/token/window semantics differ",
         )
-        if expected.get("student_protocol_path") in {DEVICE_PROTOCOL_PATH, OPTIMIZER_PROTOCOL_PATH}:
+        if expected.get("student_protocol_path") in {
+            DEVICE_PROTOCOL_PATH, OPTIMIZER_PROTOCOL_PATH, PRECISION_PROTOCOL_PATH
+        }:
             require(
                 item.get("supervision_boundary") == supervision_boundary_evidence(f"cuda:{rank}"),
                 "v3 preflight did not exercise CPU collation and canonical supervision on this rank",
             )
-        if expected.get("student_protocol_path") == OPTIMIZER_PROTOCOL_PATH:
+        if expected.get("student_protocol_path") in {OPTIMIZER_PROTOCOL_PATH, PRECISION_PROTOCOL_PATH}:
             require(
                 item.get("optimizer_preparation") == optimizer_preparation_evidence(),
                 "v4 preflight did not validate production FSDP optimizer preparation",
+            )
+        if expected.get("student_protocol_path") == PRECISION_PROTOCOL_PATH:
+            validate_checkpoint_precision(item.get("checkpoint_precision", {}))
+            require(
+                item["checkpoint_precision"] == ranks[0].get("checkpoint_precision"),
+                "v5 checkpoint precision evidence differs across ranks",
             )
         fsdp = item["fsdp"]
         require(
@@ -358,6 +367,12 @@ def validate_completed_report(report, expected):
                 "preflight checkpoint file identity is missing",
             )
         checkpoint_files = files
+        if expected.get("student_protocol_path") == PRECISION_PROTOCOL_PATH:
+            require(
+                item["checkpoint_precision"]["resumed_baseline_sha256"]
+                == next(record["sha256"] for record in files if record["path"] == "model-full.pt"),
+                "v5 resumed precision baseline is not the verified model checkpoint",
+            )
         require(
             item["node_local_mount"]["fstype"] in {"ext2", "ext3", "ext4", "xfs", "btrfs"},
             "preflight scratch is not local",
@@ -565,6 +580,146 @@ def verify_optimizer_preparation(student, optimizer, scheduler):
     return optimizer_preparation_evidence()
 
 
+def precision_config():
+    return {
+        "protocol_amendment_path": PRECISION_PROTOCOL_PATH,
+        "adapted_teacher": {"student_protocol_path": PRECISION_PROTOCOL_PATH},
+    }
+
+
+def capture_precision_baseline(model, path):
+    """Freeze the actual pre-Accelerator model, never an aliased state_dict view."""
+    import torch
+
+    from posttrain_circuits.artifacts.checkpoints import torch_state_hash
+
+    require(not path.exists(), "precision baseline already exists")
+    baseline = {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
+    require(
+        baseline and all(value.dtype == torch.bfloat16 for value in baseline.values()),
+        "initial Qwen3 canary inventory is not entirely BF16",
+    )
+    torch.save(baseline, path)
+    return {
+        "file": checkpoint_file(path),
+        "model_sha256": torch_state_hash(baseline),
+        "tensor_count": len(baseline),
+    }
+
+
+def precision_update_evidence(path, initial, final):
+    """Exercise the production comparator on real full-state checkpoint tensors."""
+    import torch
+
+    from posttrain_circuits.artifacts.checkpoints import (
+        adapted_student_model_update_evidence,
+        torch_state_hash,
+    )
+
+    require(checkpoint_file(path) == initial["file"], "physical BF16 baseline changed")
+    baseline = torch.load(path, map_location="cpu", weights_only=True)
+    require(torch_state_hash(baseline) == initial["model_sha256"], "BF16 baseline tensors changed")
+    # Promotion alone must yield numeric zero. Do this one tensor at a time so
+    # the test does not allocate an extra complete FP32 model on the host.
+    for name, before in baseline.items():
+        promoted = before.float()
+        zero, _ = adapted_student_model_update_evidence(
+            {name: before}, {name: promoted}, resolved_config=precision_config(), resume_ancestry=[]
+        )
+        require(zero == 0.0, "precision conversion was counted as a parameter update")
+    norm, final_hash = adapted_student_model_update_evidence(
+        baseline, final, resolved_config=precision_config(), resume_ancestry=[]
+    )
+    require(math.isfinite(norm) and norm > 0.0, "fresh FP32 checkpoint has no real parameter update")
+    return {
+        "comparison_policy": "bf16_baseline_fp32_master_v1",
+        "helper": "adapted_student_model_update_evidence",
+        "scope": "real_full_state_first_update_and_same_world_restore_only",
+        "initial_checkpoint": initial["file"],
+        "initial_model_sha256": initial["model_sha256"],
+        "tensor_count": len(baseline),
+        "fresh_baseline_dtype": "bfloat16",
+        "resumed_baseline_dtype": "float32",
+        "final_dtype": "float32",
+        "value_delta_dtype": "float64",
+        "physical_initial_checkpoint_unchanged": True,
+        "promotion_only_update_norm": 0.0,
+        "fresh_parameter_update_norm": norm,
+        "fresh_final_model_sha256": final_hash,
+        "gpu_next_update_equivalence_claim": False,
+    }
+
+
+def precision_restore_evidence(path, expected_file, restored, fresh):
+    import torch
+
+    from posttrain_circuits.artifacts.checkpoints import adapted_student_model_update_evidence
+
+    require(checkpoint_file(path) == expected_file, "FP32 resume baseline file changed")
+    saved = torch.load(path, map_location="cpu", weights_only=True)
+    norm, restored_hash = adapted_student_model_update_evidence(
+        saved, restored, resolved_config=precision_config(),
+        resume_ancestry=["sha256:" + expected_file["sha256"]],
+    )
+    require(
+        norm == 0.0 and restored_hash == fresh["fresh_final_model_sha256"],
+        "saved/restored FP32 full model differs",
+    )
+    return {
+        **fresh,
+        "resumed_baseline_sha256": expected_file["sha256"],
+        "restored_parameter_update_norm": norm,
+        "restored_final_model_sha256": restored_hash,
+    }
+
+
+def validate_checkpoint_precision(evidence):
+    """Reject missing, zero-update, recast or mismatched v5 precision evidence."""
+    fixed = {
+        "comparison_policy": "bf16_baseline_fp32_master_v1",
+        "helper": "adapted_student_model_update_evidence",
+        "scope": "real_full_state_first_update_and_same_world_restore_only",
+        "tensor_count": 311,
+        "fresh_baseline_dtype": "bfloat16",
+        "resumed_baseline_dtype": "float32",
+        "final_dtype": "float32",
+        "value_delta_dtype": "float64",
+        "physical_initial_checkpoint_unchanged": True,
+        "promotion_only_update_norm": 0.0,
+        "restored_parameter_update_norm": 0.0,
+        "gpu_next_update_equivalence_claim": False,
+    }
+    variable = {
+        "initial_checkpoint", "initial_model_sha256", "fresh_parameter_update_norm",
+        "fresh_final_model_sha256", "resumed_baseline_sha256", "restored_final_model_sha256",
+    }
+    require(
+        isinstance(evidence, dict) and set(evidence) == set(fixed) | variable
+        and all(
+            type(evidence[key]) is type(value) and evidence[key] == value for key, value in fixed.items()
+        ),
+        "v5 checkpoint precision evidence is incomplete or differs",
+    )
+    for key in ("initial_model_sha256", "fresh_final_model_sha256", "resumed_baseline_sha256",
+                "restored_final_model_sha256"):
+        require(isinstance(evidence[key], str) and re.fullmatch(r"[a-f0-9]{64}", evidence[key]),
+                "v5 checkpoint precision hash is invalid")
+    record = evidence["initial_checkpoint"]
+    require(
+        isinstance(record, dict) and set(record) == {"path", "size", "sha256"}
+        and record["path"] == "initial-canary.pt" and type(record["size"]) is int and record["size"] > 0
+        and isinstance(record["sha256"], str) and re.fullmatch(r"[a-f0-9]{64}", record["sha256"]),
+        "v5 physical initial checkpoint evidence differs",
+    )
+    norm = evidence["fresh_parameter_update_norm"]
+    require(
+        type(norm) is float and math.isfinite(norm) and norm > 0.0
+        and evidence["fresh_final_model_sha256"] == evidence["restored_final_model_sha256"]
+        and evidence["initial_model_sha256"] != evidence["fresh_final_model_sha256"],
+        "v5 checkpoint precision update/restoration did not pass",
+    )
+
+
 def run_canary(args, identity, evidence):
     activate_scientific_source(args.science_root)
     import torch
@@ -600,13 +755,16 @@ def run_canary(args, identity, evidence):
             "qwen3-adapted-student-calibration-v2",
             "qwen3-adapted-student-calibration-v3",
             "qwen3-adapted-student-calibration-v4",
+            "qwen3-adapted-student-calibration-v5",
         },
         "unrecognized student canary protocol",
     )
-    optimizer_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v4"
+    precision_boundary = protocol.amendment_id == "qwen3-adapted-student-calibration-v5"
+    optimizer_boundary = precision_boundary or protocol.amendment_id == "qwen3-adapted-student-calibration-v4"
     device_boundary = optimizer_boundary or protocol.amendment_id == "qwen3-adapted-student-calibration-v3"
     if device_boundary:
-        expected_path = OPTIMIZER_PROTOCOL_PATH if optimizer_boundary else DEVICE_PROTOCOL_PATH
+        expected_path = (PRECISION_PROTOCOL_PATH if precision_boundary else
+                         OPTIMIZER_PROTOCOL_PATH if optimizer_boundary else DEVICE_PROTOCOL_PATH)
         require(
             protocol.path.relative_to(args.science_root).as_posix() == expected_path,
             "wrong student preflight protocol path",
@@ -671,6 +829,12 @@ def run_canary(args, identity, evidence):
     log_phase(rank, "student_load")
     student_bundle = collective_phase(dist, lambda: load_model_and_tokenizer(model_config, for_training=True))
     model, tokenizer = student_bundle.model, student_bundle.tokenizer
+    initial_precision_path = args.output_dir / "initial-canary.pt"
+    initial_precision = None
+    if precision_boundary:
+        initial_precision = collective_phase(
+            dist, lambda: capture_precision_baseline(model, initial_precision_path) if rank == 0 else None
+        )
     require(student_bundle.resolved_model_commit == MODELS["Qwen/Qwen3-1.7B"], "student revision mismatch")
     layer_types = {type(module) for module in model.modules() if type(module).__name__ == "Qwen3DecoderLayer"}
     require(len(layer_types) == 1, "student decoder layer type differs")
@@ -828,8 +992,15 @@ def run_canary(args, identity, evidence):
         model_state = student.state_dict()
         optim_state = FSDP.optim_state_dict(student, optimizer)
 
+    fresh_precision = None
+
     def save_full(model_payload, optimizer_payload):
+        nonlocal fresh_precision
         if rank == 0:
+            if precision_boundary:
+                fresh_precision = precision_update_evidence(
+                    initial_precision_path, initial_precision, model_payload
+                )
             torch.save(model_payload, checkpoint / "model-full.pt")
             torch.save(optimizer_payload, checkpoint / "optimizer-full.pt")
             publish_json(
@@ -899,6 +1070,25 @@ def run_canary(args, identity, evidence):
         "files": checkpoint_manifest["files"],
         "all_files_verified_before_restore": True,
     }
+    if precision_boundary:
+        log_phase(rank, "checkpoint_precision_full_state_comparison")
+        with FSDP.state_dict_type(
+            student, StateDictType.FULL_STATE_DICT, FullStateDictConfig(**options)
+        ):
+            restored_full_state = student.state_dict()
+        precision = collective_phase(
+            dist,
+            lambda: precision_restore_evidence(
+                checkpoint / "model-full.pt",
+                next(item for item in checkpoint_manifest["files"] if item["path"] == "model-full.pt"),
+                restored_full_state, fresh_precision,
+            ) if rank == 0 else None,
+        )
+        del restored_full_state
+        shared_precision = [precision]
+        dist.broadcast_object_list(shared_precision, src=0)
+        evidence["checkpoint_precision"] = shared_precision[0]
+        validate_checkpoint_precision(evidence["checkpoint_precision"])
     torch.cuda.synchronize(device)
     peak = torch.cuda.max_memory_reserved(device)
     require(0 < peak < properties[rank].total_memory, "GPU peak left no memory headroom")

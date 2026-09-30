@@ -263,6 +263,87 @@ print(module.TASK)
         with self.assertRaises(ValueError):
             worker.verify_optimizer_preparation(model, optimizer, scheduler)
 
+    def test_v5_real_precision_files_reject_false_updates_and_changed_restores(self):
+        import torch
+
+        model = torch.nn.Linear(3, 2).to(dtype=torch.bfloat16)
+        path = self.root / "initial-canary.pt"
+        original = {name: value.detach().clone() for name, value in model.state_dict().items()}
+        initial = worker.capture_precision_baseline(model, path)
+        model.float()
+        # An aliased state_dict would have been invalidated by preparation.
+        stored = torch.load(path, weights_only=True)
+        self.assertTrue(all(torch.equal(stored[name], value) for name, value in original.items()))
+        self.assertEqual({value.dtype for value in stored.values()}, {torch.bfloat16})
+        with self.assertRaisesRegex(ValueError, "no real parameter update"):
+            worker.precision_update_evidence(path, initial, model.state_dict())
+        with torch.no_grad():
+            model.weight.add_(0.0001)  # smaller than a BF16 rounding unit here
+        fresh = worker.precision_update_evidence(path, initial, model.state_dict())
+        self.assertGreater(fresh["fresh_parameter_update_norm"], 0)
+        self.assertEqual(worker.checkpoint_file(path), initial["file"])
+        final_path = self.root / "model-full.pt"
+        torch.save(model.state_dict(), final_path)
+        record = worker.checkpoint_file(final_path)
+        evidence = worker.precision_restore_evidence(final_path, record, model.state_dict(), fresh)
+        self.assertEqual(evidence["restored_parameter_update_norm"], 0.0)
+        with torch.no_grad():
+            model.weight.add_(0.0001)
+        with self.assertRaisesRegex(ValueError, "saved/restored FP32"):
+            worker.precision_restore_evidence(final_path, record, model.state_dict(), fresh)
+        path.write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "physical BF16 baseline changed"):
+            worker.precision_update_evidence(path, initial, model.state_dict())
+
+    def test_v5_precision_admission_requires_complete_bound_evidence_on_both_ranks(self):
+        report, expected = preflight_fixture()
+        expected["student_protocol_path"] = worker.PRECISION_PROTOCOL_PATH
+        report["student_protocol_path"] = worker.PRECISION_PROTOCOL_PATH
+        precision = {
+            "comparison_policy": "bf16_baseline_fp32_master_v1",
+            "helper": "adapted_student_model_update_evidence",
+            "scope": "real_full_state_first_update_and_same_world_restore_only",
+            "tensor_count": 311,
+            "fresh_baseline_dtype": "bfloat16",
+            "resumed_baseline_dtype": "float32",
+            "final_dtype": "float32",
+            "value_delta_dtype": "float64",
+            "physical_initial_checkpoint_unchanged": True,
+            "promotion_only_update_norm": 0.0,
+            "restored_parameter_update_norm": 0.0,
+            "gpu_next_update_equivalence_claim": False,
+            "initial_checkpoint": {"path": "initial-canary.pt", "size": 1024, "sha256": "a" * 64},
+            "initial_model_sha256": "b" * 64,
+            "fresh_parameter_update_norm": 0.1,
+            "fresh_final_model_sha256": "c" * 64,
+            "restored_final_model_sha256": "c" * 64,
+            "resumed_baseline_sha256": "e" * 64,
+        }
+        for rank, item in enumerate(report["ranks"]):
+            item.update(
+                student_protocol_path=worker.PRECISION_PROTOCOL_PATH,
+                supervision_boundary=worker.supervision_boundary_evidence(f"cuda:{rank}"),
+                optimizer_preparation=worker.optimizer_preparation_evidence(),
+                checkpoint_precision=copy.deepcopy(precision),
+            )
+        worker.validate_completed_report(report, expected)
+        for key in precision:
+            changed = copy.deepcopy(report)
+            del changed["ranks"][1]["checkpoint_precision"][key]
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "precision"):
+                worker.validate_completed_report(changed, expected)
+        for key, value in (
+            ("fresh_parameter_update_norm", 0.0), ("fresh_parameter_update_norm", float("nan")),
+            ("promotion_only_update_norm", 0.1), ("final_dtype", "bfloat16"),
+            ("restored_final_model_sha256", "a" * 64), ("resumed_baseline_sha256", "a" * 64),
+            ("gpu_next_update_equivalence_claim", True),
+        ):
+            changed = copy.deepcopy(report)
+            for item in changed["ranks"]:
+                item["checkpoint_precision"][key] = value
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, "precision"):
+                worker.validate_completed_report(changed, expected)
+
     def test_v4_control_plane_keeps_cpu_collectives_and_barrier_on_gloo(self):
         distributed = Mock()
         control = worker.GlooControlPlane(distributed, "gloo")
@@ -429,14 +510,25 @@ print(module.TASK)
                     return node.orelse
                 if isinstance(node.test, ast.Name) and node.test.id == "optimizer_boundary":
                     return node.orelse
+                if isinstance(node.test, ast.Name) and node.test.id == "precision_boundary":
+                    return node.orelse
                 if (isinstance(node.test, ast.UnaryOp) and isinstance(node.test.op, ast.Not)
                     and isinstance(node.test.operand, ast.Name)
                     and node.test.operand.id == "optimizer_boundary"):
                     return node.body
                 return node
 
-        # Only the explicitly selected v3 supervision branch differs. Its actual
-        # collator/forward/loss and report gates have direct behavioral coverage.
+            def visit_Assign(self, node):
+                if (len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == "fresh_precision"):
+                    return None
+                return self.generic_visit(node)
+
+            def visit_Nonlocal(self, node):
+                return None if node.names == ["fresh_precision"] else node
+
+        # Explicit v3/v4/v5 branches have behavioral coverage; the original
+        # numeric/restore branch remains exact after removing v5-only evidence.
         new_tree = LegacyBranch().visit(new_tree)
 
         def numerical_tail(tree):

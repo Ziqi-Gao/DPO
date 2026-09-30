@@ -14,9 +14,9 @@ import yaml
 
 from posttrain_circuits.artifacts.checkpoints import (
     accelerator_state_file_hashes,
+    adapted_student_model_update_evidence,
     checkpoint_runtime_state_hashes,
     load_checkpoint_model_state,
-    model_update_evidence,
     torch_state_hash,
     validate_accelerator_state_directory,
     validate_native_trainer_checkpoint_files,
@@ -1159,9 +1159,11 @@ def _validate_factorial_update_evidence(
     final_model = checkpoint_payload.get("model")
     if not isinstance(final_model, dict):
         raise ValueError("Factorial final checkpoint has no model state")
-    observed_norm, observed_final_hash = model_update_evidence(
+    observed_norm, observed_final_hash = adapted_student_model_update_evidence(
         baseline_model,
         final_model,
+        resolved_config=resolved_config,
+        resume_ancestry=ancestry,
     )
     if not math.isfinite(observed_norm) or observed_norm <= 0.0:
         raise ValueError("Factorial final model did not change from its bound baseline")

@@ -100,7 +100,7 @@ print(module.TASK)
         self.assertIsNone(before["train_argv"])
         self.assertFalse(before["execution_enabled"])
         self.args.output_dir = self.root / "literal ; $(touch NEVER)"
-        overrides = ["adapted_teacher=qwen3_accepted_student_v4", *worker.storage_overrides(self.args)]
+        overrides = ["adapted_teacher=qwen3_accepted_student_v5", *worker.storage_overrides(self.args)]
         plan = worker.build_plan(self.args, overrides, initial_checkpoint_sha256="f" * 64)
         command = plan["train_argv"]
         self.assertIn("posttrain_circuits.cli.train", command)

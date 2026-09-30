@@ -367,6 +367,42 @@ def validate_publication(root, report, publication):
         result_name in records and document(root / result_name) == report,
         "published report missing/different",
     )
+    if (
+        TASKS[report["task"]] == "preflight"
+        and report.get("student_protocol_path")
+        == "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+    ):
+        ranks = report.get("ranks")
+        require(
+            isinstance(ranks, list) and len(ranks) == 2 and isinstance(ranks[0], dict),
+            "v5 publication requires both preflight rank reports",
+        )
+        initial = ranks[0].get("checkpoint_precision", {}).get("initial_checkpoint")
+        require(
+            isinstance(initial, dict)
+            and set(initial) == {"path", "size", "sha256"}
+            and initial.get("path") == "initial-canary.pt",
+            "v5 publication lacks physical initial checkpoint identity",
+        )
+        checkpoint = ranks[0].get("checkpoint", {}).get("files")
+        require(
+            isinstance(checkpoint, list)
+            and len(checkpoint) == 4
+            and all(isinstance(row, dict) and set(row) == {"path", "size", "sha256"} for row in checkpoint)
+            and [row["path"] for row in checkpoint]
+            == ["model-full.pt", "optimizer-full.pt", "rank-0-runtime.pt", "rank-1-runtime.pt"],
+            "v5 publication lacks exact full-state checkpoint inventory",
+        )
+        for prefix, row in [("artifacts/", initial), *[("artifacts/checkpoint/", row) for row in checkpoint]]:
+            name = prefix + row["path"]
+            require(
+                type(row["size"]) is int
+                and row["size"] > 0
+                and isinstance(row["sha256"], str)
+                and re.fullmatch(r"[a-f0-9]{64}", row["sha256"])
+                and records.get(name) == {**row, "path": name},
+                "v5 published precision checkpoint differs: " + name,
+            )
     if TASKS[report["task"]] == "calibration":
         binding = report["training_artifacts"]
         require(

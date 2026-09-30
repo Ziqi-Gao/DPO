@@ -366,6 +366,76 @@ def model_update_evidence(
     return norm, torch_state_hash(dict(final))
 
 
+def adapted_student_model_update_evidence(
+    baseline: Mapping[str, Any],
+    final: Mapping[str, Any],
+    *,
+    resolved_config: Mapping[str, Any],
+    resume_ancestry: list[str],
+) -> tuple[float, str]:
+    """Apply only the reviewed v5 BF16-input/FP32-master comparison contract.
+
+    Historical callers retain strict tensor metadata equality. Fresh v5 runs
+    compare the exact BF16 checkpoint values against FP32 training masters;
+    resumed runs compare FP32 masters against their bound FP32 checkpoint.
+    Neither stored model is converted or replaced. Conversion alone has zero
+    displacement, and the returned hash always binds the actual final state.
+    """
+
+    import torch
+
+    protocol_path = "prereg/amendments/qwen3_adapted_student_calibration_v5.json"
+    amendment_path = resolved_config.get("protocol_amendment_path")
+    adapted_teacher = resolved_config.get("adapted_teacher")
+    student_path = (
+        adapted_teacher.get("student_protocol_path")
+        if isinstance(adapted_teacher, Mapping)
+        else None
+    )
+    if amendment_path != protocol_path and student_path != protocol_path:
+        return model_update_evidence(baseline, final)
+    if amendment_path != protocol_path or student_path != protocol_path:
+        raise ValueError("adapted student update evidence has contradictory protocol selectors")
+    if (
+        not isinstance(resume_ancestry, list)
+        or any(
+            not isinstance(value, str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None
+            for value in resume_ancestry
+        )
+        or len(set(resume_ancestry)) != len(resume_ancestry)
+    ):
+        raise ValueError("adapted student update evidence has invalid resume ancestry")
+    if not baseline or not final or set(baseline) != set(final):
+        raise ValueError("baseline and final model state inventories differ")
+    baseline_dtype = torch.float32 if resume_ancestry else torch.bfloat16
+    squared = 0.0
+    floating_tensors = 0
+    for name in sorted(final):
+        before = baseline[name]
+        after = final[name]
+        if not isinstance(before, torch.Tensor) or not isinstance(after, torch.Tensor):
+            raise ValueError(f"model state is not tensor-valued: {name}")
+        if before.shape != after.shape:
+            raise ValueError(f"baseline/final model tensor metadata differs: {name}")
+        if torch.is_floating_point(before) or torch.is_floating_point(after):
+            if before.dtype != baseline_dtype or after.dtype != torch.float32:
+                raise ValueError(f"adapted student model tensor precision differs: {name}")
+            if not bool(torch.isfinite(before).all()) or not bool(torch.isfinite(after).all()):
+                raise ValueError(f"adapted student model tensor is not finite: {name}")
+            floating_tensors += 1
+            delta = after.detach().cpu().double() - before.detach().cpu().double()
+            squared += float(torch.sum(delta * delta).item())
+        elif torch.is_complex(before) or torch.is_complex(after) or before.dtype != after.dtype:
+            raise ValueError(f"baseline/final model tensor metadata differs: {name}")
+        elif not torch.equal(before.detach().cpu(), after.detach().cpu()):
+            raise ValueError(f"adapted student nonfloating model tensor differs: {name}")
+    norm = math.sqrt(squared)
+    if floating_tensors < 1 or not math.isfinite(norm):
+        raise ValueError("model update norm is not finite or has no floating tensors")
+    return norm, torch_state_hash(dict(final))
+
+
 def load_checkpoint_model_state(path: Path) -> dict[str, Any]:
     """Load the exact model mapping from a bound checkpoint, mmap when supported."""
 

@@ -1,5 +1,6 @@
 """Real local staging/publication and owned-child shutdown; no SSH, Slurm or GPU."""
 
+import copy
 import hashlib
 import importlib.util
 import io
@@ -85,7 +86,7 @@ class StudentJobTests(unittest.TestCase):
         return dict(self.job.identity, passed=passed, exit_code=0 if passed else 1)
 
     def test_preflight_contract_preserves_optional_historical_path_and_passes_current_execution_gate(self):
-        for version in (None, 1, 2, 3, 4):
+        for version in (None, 1, 2, 3, 4, 5):
             protocol = dict(head="a" * 40, protocol_sha256="b" * 64)
             if version is not None:
                 protocol["protocol_path"] = (
@@ -129,6 +130,28 @@ class StudentJobTests(unittest.TestCase):
         log = self.root / "worker.log"
         log.write_bytes(b"worker evidence\n")
         return root, log
+
+    def precision_output(self):
+        output, log = self.output()
+        (output / "initial-canary.pt").write_bytes(b"physical BF16 initial checkpoint\n")
+        (output / "checkpoint").mkdir()
+        files = []
+        for name in ("model-full.pt", "optimizer-full.pt", "rank-0-runtime.pt", "rank-1-runtime.pt"):
+            path = output / "checkpoint" / name
+            path.write_bytes(("full-state checkpoint " + name + "\n").encode())
+            files.append(self.contract.file_record(path))
+        rank = {
+            "checkpoint_precision": {
+                "initial_checkpoint": self.contract.file_record(output / "initial-canary.pt")
+            },
+            "checkpoint": {"files": files},
+        }
+        report = {
+            **self.report(True),
+            "student_protocol_path": "prereg/amendments/qwen3_adapted_student_calibration_v5.json",
+            "ranks": [rank, copy.deepcopy(rank)],
+        }
+        return output, log, report
 
     def test_stage_release_verifies_bytes_and_keeps_executable_mode_readonly(self):
         root, destination, files = self.release()
@@ -215,6 +238,87 @@ class StudentJobTests(unittest.TestCase):
         self.assertFalse(receipt["passed"])
         self.assertTrue(receipt["persisted"])
         self.assertEqual((self.results / "artifacts/nested/metrics.json").read_bytes(), b'{"loss":0.25}\n')
+
+    def test_v5_publication_binds_real_initial_and_full_state_files(self):
+        output, log, report = self.precision_output()
+        with redirect_stdout(io.StringIO()):
+            self.job.publish(output, log, report, self.contract)
+        receipt = self.contract.document(self.results / "receipt.json")
+        records = self.contract.validate_publication(self.results, report, receipt)
+        initial = report["ranks"][0]["checkpoint_precision"]["initial_checkpoint"]
+        self.assertEqual(
+            records["artifacts/initial-canary.pt"], dict(initial, path="artifacts/initial-canary.pt")
+        )
+        for row in report["ranks"][0]["checkpoint"]["files"]:
+            name = "artifacts/checkpoint/" + row["path"]
+            self.assertEqual(records[name], dict(row, path=name))
+
+    def test_v5_publication_rejects_omitted_initial_or_full_state_inventory(self):
+        output, log, report = self.precision_output()
+        with redirect_stdout(io.StringIO()):
+            self.job.publish(output, log, report, self.contract)
+        receipt = self.contract.document(self.results / "receipt.json")
+        required = ["artifacts/initial-canary.pt"] + [
+            "artifacts/checkpoint/" + row["path"] for row in report["ranks"][0]["checkpoint"]["files"]
+        ]
+        for name in required:
+            with self.subTest(name=name):
+                changed = {**receipt, "files": [row for row in receipt["files"] if row["path"] != name]}
+                with self.assertRaisesRegex(ValueError, "published precision checkpoint differs"):
+                    self.contract.validate_publication(self.results, report, changed)
+
+    def test_v5_publication_rejects_report_checkpoint_size_or_hash_mismatch(self):
+        output, log, report = self.precision_output()
+        with redirect_stdout(io.StringIO()):
+            self.job.publish(output, log, report, self.contract)
+        receipt = self.contract.document(self.results / "receipt.json")
+        for index in range(5):
+            for field, value in (("size", 999), ("sha256", "0" * 64)):
+                with self.subTest(index=index, field=field):
+                    changed = copy.deepcopy(report)
+                    rank = changed["ranks"][0]
+                    row = (
+                        rank["checkpoint_precision"]["initial_checkpoint"]
+                        if index == 0
+                        else rank["checkpoint"]["files"][index - 1]
+                    )
+                    row[field] = value
+                    self.job.atomic_json(self.results / "adapted-preflight.json", changed)
+                    publication = {
+                        **receipt,
+                        "files": [
+                            self.contract.file_record(self.results / item["path"])
+                            if item["path"] == "adapted-preflight.json"
+                            else item
+                            for item in receipt["files"]
+                        ],
+                    }
+                    with self.assertRaisesRegex(ValueError, "published precision checkpoint differs"):
+                        self.contract.validate_publication(self.results, changed, publication)
+
+    def test_v5_missing_initial_payload_prevents_success_receipt(self):
+        output, log, report = self.precision_output()
+        (output / "initial-canary.pt").unlink()
+        with self.assertRaisesRegex(ValueError, "published precision checkpoint differs"):
+            self.job.publish(output, log, report, self.contract)
+        self.assertFalse((self.results / "receipt.json").exists())
+
+    def test_historical_preflight_publication_does_not_require_v5_precision_files(self):
+        output, log = self.output()
+        for version in range(1, 5):
+            with self.subTest(version=version):
+                destination = self.results / ("historical-v" + str(version))
+                destination.mkdir()
+                self.job.result_root = destination
+                report = {
+                    **self.report(True),
+                    "student_protocol_path": (
+                        f"prereg/amendments/qwen3_adapted_student_calibration_v{version}.json"
+                    ),
+                }
+                with redirect_stdout(io.StringIO()):
+                    self.job.publish(output, log, report, self.contract)
+                self.assertTrue(self.contract.document(destination / "receipt.json")["passed"])
 
     def test_failed_persistent_readback_never_writes_receipt(self):
         output, log = self.output()

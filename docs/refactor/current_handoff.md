@@ -1,34 +1,18 @@
 # OPD current handoff
 
-Last updated: 2026-09-30 UTC (teacher fit 54494742, qualification 54496291 and
-independent CPU audit 54497294 completed; adapted teacher independently accepted
-under the reviewed teacher-only 256-token protocol; acceptance published and
-hash-verified on persistent SDSC storage; a separate adapted-teacher student
-preflight/calibration implementation independently reviewed and accepted; startup
-failure 54504816 fixed by an independently reviewed transport successor;
-new preflight 54504895 completed with verified GPU and persistent-output evidence;
-student calibration 54505782 failed closed before its first update due to an
-Accelerate FSDP default; separate v2 execution correction independently accepted,
-source and genuine provenance verified after SSH recovery; new matching v2
-preflight 54506703 completed and independently accepted on exp-19-01;
-the user authorized finite Quest monitoring and automatic submission of one
-fresh matching student calibration; the reviewed Quest supervisor automatically
-submitted calibration 54506821. It failed on exp-19-15 because replay-loss
-targets remained on CPU while logits were on GPU. The independently reviewed
-read-only observer fetched the terminal evidence and stopped. The v3 device
-correction and production-supervision preflight passed CPU checks and independent
-review. Matching preflight 54507345 completed successfully; the v3 Quest supervisor
-automatically submitted calibration 54507464. That job failed the AdamW-state
-cadence check after 5m10s. The supervisor fetched failure evidence and stopped.
-The v4 optimizer-binding repair is independently accepted; fresh preflight
-54509682 completed successfully on exp-19-15. Its reviewed finite Quest
-supervisor automatically submitted calibration 54509809. It failed after 26m38s
-at the first step-20 checkpoint publication because baseline/final tensor
-metadata differed for lm_head.weight. Failure evidence was fetched and the flow
-stopped; no calibration is accepted. The current quser44 session has no shared
-SSH master, so this inspection used the preserved terminal evidence).
-Central ServerScheduler observations below
-remain dated 2026-09-10 and were not reverified from Quest.
+Last updated: 2026-09-30 UTC. Adapted teacher fit 54494742, qualification
+54496291 and independent CPU audit 54497294 remain accepted under the reviewed
+teacher-only 256-token protocol. V4 student preflight 54509682 passed, but
+calibration 54509809 failed at its first step-20 checkpoint publication after
+20 real optimizer updates. Fresh SDSC accounting confirms FAILED / 1:0; its
+supervisor is stopped and no student calibration is accepted. The restored
+quser44 shared SSH connection now permits verified remote inspection. All 311
+baseline/final tensors have identical keys/shapes; BF16 initial weights versus
+FP32 FSDP masters explain the strict metadata rejection. The separate proposed
+v5 precision-comparison repair has real CPU save/finalizer/resume regression
+coverage and awaits independent acceptance and a fresh matching GPU preflight.
+No v5 compute job has been submitted yet. Central ServerScheduler observations
+below remain dated 2026-09-10 and were not reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -175,7 +159,7 @@ GPUs, five-minute polling and a fourteen-day deadline. It stops on failed
 science, SSH loss, changed control hashes or unresolved submissions; no blind
 retry, auto-cancellation, full factorial or Gemma.
 
-The latest successful connection check ran from Quest **quser32** at
+An earlier successful connection check ran from Quest **quser32** at
 **2026-09-28T20:13:38Z**, after the user restored the shared master and requested
 another attempt. Its runtime-computed path is `$HOME/.ssh/cm/sdsc-$(hostname -s)`.
 SSH confirmed zgao12@login02; Slurm commands, source paths and project result
@@ -1157,17 +1141,17 @@ The supervisor's preserved final accounting records **FAILED / 1:0** after
 queue. Both ranks reached the first **step-20 checkpoint** publication and
 raised `baseline/final model tensor metadata differs: lm_head.weight` from
 `model_update_evidence`. This has passed the earlier first-update AdamW failure
-boundary, but is not a successful calibration. The comparison rejects either
-shape or dtype differences; retained logs do not identify which actual tensor
-metadata differed. Accelerate's FP32 upcast warnings support a dtype hypothesis,
-not a proven diagnosis. Do not relax or bypass the checkpoint validator.
+boundary, but is not a successful calibration. Fresh bounded metadata evidence
+below confirms uniform BF16→FP32 promotion rather than any key/shape change.
+The successor corrects the explicit precision contract without bypassing the
+checkpoint validator.
 The receipt records 28 persistently read-back-verified files / **25,354,722,334
 bytes**, including nonempty **37,784-byte** training metrics and the temporary
 `.step-00000020.accelerate.stage-*` model/optimizer/RNG state. The public
 step-20 checkpoint was not committed and the wrapper reports `resumable=false`;
-do not treat temporary staging files as an accepted resume point. Metrics content
-has not been fetched, so exact loss, token totals and validation scores remain
-unverified. Eight small files / **59,474 bytes** were fetched to
+do not treat temporary staging files as an accepted resume point. Metrics were
+subsequently fetched and content-hash verified, as summarized below. Initially,
+eight small files / **59,474 bytes** were fetched to
 `.sdsc/fetched/54509809/fetch-umf99ie0/`.
 Results belong to `/expanse/lustre/projects/nwu181/zgao12/OPD/control-results/20260929T011138Z-f8208cbe6d74-172ab29a/ceafe10f2b974e8d986688d56b114079`.
 The supervisor recorded `stopped` at **2026-09-29T02:02:24Z**, with
@@ -1178,12 +1162,36 @@ never re-arm this flow or repeat its submission. It does not repair code or
 automatically notify the chat. A reviewed checkpoint-contract correction and
 fresh matching prerequisites are required before another calibration.
 
-Inspection on **2026-09-30 UTC** ran from **quser44**. The required initial
-`ssh -O check` found no socket at `$HOME/.ssh/cm/sdsc-quser44`; no authentication
-or connection retry followed, and remote state was not freshly queried. The
-user must authenticate in an ordinary terminal on this same Quest host before
-remote inspection or deployment can resume. Local failure analysis and an
-independent read-only audit agree on the step-20 boundary above.
+After the user restored authentication on **quser44**, the existing shared
+master passed `ssh -O check`; `tools/sdsc check` at **2026-09-30T04:40:27Z**
+verified zgao12@login02, Slurm availability, paths and account/partition QoS
+`nairr-gpu-shared-normal`. Fresh accounting independently confirms 54509809
+FAILED / 1:0 after 26m38s with an empty queue entry. No login retry occurred.
+
+Bounded, inert checkpoint-metadata inspection found all **311 tensors** have
+identical names/shapes and uniformly change **BF16 initial → FP32 final**.
+The original publication receipt matches the retained receipt. This inspection
+read pickle metadata only, did not execute checkpoint globals/load tensor
+storage/import Torch, and did not rehash or download the large weight files.
+Hash-verified small metrics contain **20 updates / 1,188,770 of 2,000,000 input
+tokens**. Step-20 loss is 2.681661978; answer/proof/format validation are all
+**0.0**. They are disclosed failure-stage measurements, not student quality
+acceptance or authority to change hyperparameters/thresholds.
+
+The separate proposed v5 repair preserves physical initial checkpoint bytes,
+all teacher evidence and scientific settings. Its explicit policy compares
+fresh BF16 values with FP32 masters, and resumed FP32 with FP32, using FP64
+deltas and hashes of actual final bytes. Promotion alone remains zero; exact
+inventories/shapes, finite values and valid ancestry remain mandatory. Both
+trainer publication and independent finalization use the same narrowly gated
+policy. Real CPU Accelerator/FSDP save, finalizer, resume and next-update
+regressions pass; these are not two-H100 evidence. V5 GPU preflight adds a
+frozen physical BF16 baseline, positive first-update evidence and exact FP32
+full-state restoration. It makes no real-GPU next-update equivalence claim.
+Independent review/acceptance and a fresh matching preflight must precede one
+new calibration. Preserve all old stopped flows and failed staged checkpoints.
+Evidence is under `.sdsc/diagnostics/adapted-student-v5/` and the three verified
+small files in `.sdsc/fetched/54509809/verified-small-v5/`.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
