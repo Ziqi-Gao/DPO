@@ -6,6 +6,7 @@ import importlib.util
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +32,7 @@ def plan(c, tmp_path, monkeypatch):
     pins = {name: "a" * 64 for name in c.TOOLS}
     pins["tools/sdsc_student_quality.py"] = c.SHARED_SHA
     contract = c.helper("sdsc_student_contract")
-    intent = c.sha(c.canonical([c.TASK, c.PARENT_REPORT_SHA, pins[c.TOOLS[2]]]))[:32]
+    intent = c.execution_intent(pins)
     runtime = str(c.PROJECT / "envs/qwen3-v2-g0-py31213-cu128-v1/bin/python3.12")
     cache = str(c.PROJECT / "cache/huggingface")
     return dict(
@@ -63,6 +64,7 @@ def plan(c, tmp_path, monkeypatch):
         created_at="2026-09-30T00:00:00Z",
         submission_dir=str(c.CONTROL / "student-instruction-submissions" / intent),
         claim=str(c.CONTROL / "student-instruction-claims" / (intent + ".json")),
+        scientific_claim=str(c.scientific_claim_path()),
         result_dir=str(c.PROJECT / "student-instruction" / intent),
         job_name="opd-si-" + intent,
         python=runtime,
@@ -242,6 +244,9 @@ def test_reconcile_cannot_turn_no_match_into_submission(c, plan, monkeypatch):
     directory.mkdir(parents=True)
     Path(plan["claim"]).parent.mkdir(parents=True)
     c.write_once(Path(plan["claim"]), c.canonical(dict(plan_sha256=c.sha(c.canonical(plan)))))
+    Path(plan["scientific_claim"]).parent.mkdir(parents=True, exist_ok=True)
+    c.write_once(Path(plan["scientific_claim"]), c.canonical(c.scientific_claim_record(plan)))
+    c.write_once(c.legacy_claim_path(), c.canonical(c.legacy_reservation(plan)))
     c.write_once(directory / "plan.json", c.canonical(plan))
     monkeypatch.setattr(c, "run", lambda args: dict(returncode=0, stdout="", stderr=""))
     with pytest.raises(ValueError, match="unknown"):
@@ -479,6 +484,9 @@ def stage_failed_publication(c, plan, monkeypatch, *, receipt=True):
     c.write_once(directory / "receipt.json", c.canonical(c.make_receipt(plan, "123")))
     Path(plan["claim"]).parent.mkdir(parents=True)
     c.write_once(Path(plan["claim"]), c.canonical(dict(plan_sha256=c.sha(c.canonical(plan)))))
+    Path(plan["scientific_claim"]).parent.mkdir(parents=True, exist_ok=True)
+    c.write_once(Path(plan["scientific_claim"]), c.canonical(c.scientific_claim_record(plan)))
+    c.write_once(c.legacy_claim_path(), c.canonical(c.legacy_reservation(plan)))
     queue, account = accounting(plan)
     account["stdout"] = account["stdout"].replace("COMPLETED|0:0", "FAILED|1:0")
     monkeypatch.setattr(c, "run", lambda args: queue if args[0] == "squeue" else account)
@@ -549,31 +557,118 @@ def test_real_parent_checkpoint_envelope(c):
     assert config["path"] == "artifacts/canonical_sft/resolved_config.yaml"
 
 
-@pytest.mark.parametrize(
-    "rows,total",
-    [
-        ("", 0),
-        ("54558773|RUNNING|gpu:h100:1\n", 1),
-        ("1_0|RUNNING|gpu:h100:1\n1_1|PENDING|gpu:h100:1\n2|RUNNING|(null)\n", 2),
-        ("1|PENDING|gpu:3\n", 3),
-    ],
-)
-def test_concurrency_counts_pending_and_array_elements(c, monkeypatch, rows, total):
-    monkeypatch.setattr(c, "run", lambda argv: dict(returncode=0, stdout=rows, stderr=""))
-    assert c.check_gpu_ceiling()["existing_requested_gpus"] == total
+def live_inventory(job="54558773", *, state="RUNNING", gpus=1, typed=False):
+    gpu = "" if gpus == 0 else f",gres/gpu={gpus}"
+    if typed and gpus:
+        gpu += f",gres/gpu:h100={gpus}"
+    tres = "cpu=24,mem=192G,node=1,billing=4800" + gpu
+    return (
+        f"JobId={job} UserId=zgao12(543540) JobState={state} NumNodes=1 NumTasks=1 "
+        f"ReqTRES={tres} "
+        + (f"AllocTRES={tres} " if state == "RUNNING" else "")
+        + (f"TresPerJob=gres:gpu:h100:{gpus}" if gpus else "")
+    )
+
+
+def inventory_stubs(c, monkeypatch, queue, live):
+    monkeypatch.setattr(c.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_name="zgao12"))
+
+    def run(argv):
+        if argv[0] == "squeue":
+            return dict(returncode=0, stdout=queue, stderr="")
+        assert argv[:4] == ["scontrol", "show", "job", "--oneliner"]
+        return dict(returncode=0, stdout=live[argv[-1]], stderr="")
+
+    monkeypatch.setattr(c, "run", run)
+
+
+def test_actual_missing_queue_gres_counts_one_h100(c, monkeypatch):
+    # Exact real 2026-09-30 fields: --gpus produced N/A for %b, but TRES carries one GPU.
+    queue = "54558773|RUNNING|N/A\n"
+    live = live_inventory()
+    inventory_stubs(c, monkeypatch, queue, {"54558773": live})
+    actual = c.check_gpu_ceiling()
+    assert actual["existing_requested_gpus"] == 1
+    assert actual["jobs"][0]["authoritative_fields"]["ReqTRES"].endswith("gres/gpu=1")
+
+
+def test_private_full_actual_slurm_snapshot(c, monkeypatch):
+    path = ROOT / ".sdsc/diagnostics/student-quality-v2/gpu-concurrency-field-evidence.json"
+    if not path.is_file():
+        pytest.skip("private live field evidence absent")
+    actual = json.loads(path.read_text())
+    inventory_stubs(c, monkeypatch, actual["queue"]["stdout"], {"54558773": actual["job"]["stdout"]})
+    assert c.check_gpu_ceiling()["existing_requested_gpus"] == 1
 
 
 @pytest.mark.parametrize(
-    "rows",
+    "state,gpus,typed", [("RUNNING", 0, False), ("PENDING", 3, False), ("RUNNING", 2, True)]
+)
+def test_cpu_only_pending_and_typed_total_not_double_counted(c, monkeypatch, state, gpus, typed):
+    inventory_stubs(
+        c, monkeypatch, f"1|{state}|N/A\n", {"1": live_inventory("1", state=state, gpus=gpus, typed=typed)}
+    )
+    assert c.check_gpu_ceiling()["existing_requested_gpus"] == gpus
+
+
+def test_expanded_array_identity_and_total(c, monkeypatch):
+    live = live_inventory("17") + " ArrayJobId=10 ArrayTaskId=0"
+    inventory_stubs(c, monkeypatch, "10_0|RUNNING|N/A\n", {"10_0": live})
+    assert c.check_gpu_ceiling()["existing_requested_gpus"] == 1
+
+
+@pytest.mark.parametrize(
+    "kind",
     [
-        "1|RUNNING|gpu:h100:4\n",
-        "1|PENDING|gpu:h100:1,gpu=8\n",
-        "1_[0-7%1]|PENDING|gpu:h100:4\n",
-        "1|RUNNING|gpu:h100:unknown\n",
+        "missing_req",
+        "missing_alloc",
+        "foreign",
+        "job",
+        "conflict",
+        "typed_conflict",
+        "bad_gpu",
+        "bad_perjob",
+        "queue_conflict",
+        "excess",
+        "ambiguous_array",
+        "duplicate_job",
+        "incomplete_cpu",
+        "unknown_state",
     ],
 )
-def test_ambiguous_or_excess_gpu_inventory_fails(c, monkeypatch, rows):
-    monkeypatch.setattr(c, "run", lambda argv: dict(returncode=0, stdout=rows, stderr=""))
+def test_unknown_inconsistent_or_excess_gpu_inventory_fails(c, monkeypatch, kind):
+    queue, live = "1|RUNNING|N/A\n", live_inventory("1")
+    if kind == "missing_req":
+        live = live.replace("ReqTRES=", "UnknownTRES=")
+    elif kind == "missing_alloc":
+        live = live.replace("AllocTRES=", "UnknownTRES=")
+    elif kind == "foreign":
+        live = live.replace("UserId=zgao12", "UserId=other")
+    elif kind == "job":
+        live = live.replace("JobId=1 ", "JobId=2 ")
+    elif kind == "conflict":
+        live = live.replace(
+            "AllocTRES=cpu=24,mem=192G,node=1,billing=4800,gres/gpu=1", "AllocTRES=cpu=24,node=1,gres/gpu=2"
+        )
+    elif kind == "typed_conflict":
+        live = live.replace("gres/gpu=1", "gres/gpu=1,gres/gpu:h100=2")
+    elif kind == "bad_gpu":
+        live = live.replace("gres/gpu=1", "gres/gpu=1,unknown/gpu=2")
+    elif kind == "bad_perjob":
+        live = live.replace("gres:gpu:h100:1", "gres:gpu:h100:1,gres:gpu:bad")
+    elif kind == "queue_conflict":
+        queue = "1|RUNNING|gpu:h100:2\n"
+    elif kind == "excess":
+        live = live_inventory("1", gpus=4)
+    elif kind == "ambiguous_array":
+        queue = "1_[0-3]|PENDING|N/A\n"
+    elif kind == "duplicate_job":
+        queue *= 2
+    elif kind == "incomplete_cpu":
+        live = "JobId=1 UserId=zgao12(1) JobState=PENDING ReqTRES=mem=32G"
+    else:
+        live = live.replace("RUNNING", "UNKNOWN")
+    inventory_stubs(c, monkeypatch, queue, {"1": live})
     with pytest.raises(ValueError):
         c.check_gpu_ceiling()
 
@@ -658,3 +753,80 @@ def test_old_quality_publication_cannot_be_borrowed(c, plan):
         pytest.skip("private historical evidence absent")
     with pytest.raises(ValueError, match="unbound"):
         c.publication_records(c.document(old), plan, "54557365")
+
+
+def revised_execution(c, plan):
+    changed = copy.deepcopy(plan)
+    changed["control_sha256"][c.TOOLS[0]] = "e" * 64
+    intent = c.execution_intent(changed["control_sha256"])
+    old = changed["intent_id"]
+    changed["intent_id"] = intent
+    for key in ("submission_dir", "claim", "result_dir", "job_name"):
+        changed[key] = changed[key].replace(old, intent)
+    return changed
+
+
+def test_execution_revision_preserves_scientific_subject(c, plan):
+    changed = revised_execution(c, plan)
+    c.validate_plan(changed)
+    assert changed["intent_id"] != plan["intent_id"]
+    assert changed["scientific_claim"] == plan["scientific_claim"]
+    identity = c.science_identity()
+    assert identity["initial_sha256"] == c.INITIAL_SHA
+    assert identity["generation"]["max_new_tokens"] == 256
+    assert "first32-train" in identity["population"]
+    assert "without-explicit-autocast" in identity["precision"]
+
+
+def test_unknown_submission_blocks_another_execution_version(c, plan, monkeypatch):
+    stubs(c, monkeypatch)
+    calls = []
+
+    def lost(argv):
+        calls.append(argv)
+        raise subprocess.TimeoutExpired(argv, 45)
+
+    monkeypatch.setattr(c, "run", lost)
+    with pytest.raises(subprocess.TimeoutExpired):
+        c.remote_action(dict(action="submit", plan=plan, authorize=True))
+    winner = c.document(Path(plan["scientific_claim"]))
+    assert winner == c.scientific_claim_record(plan)
+    assert c.document(c.legacy_claim_path()) == c.legacy_reservation(plan)
+    changed = revised_execution(c, plan)
+    with pytest.raises(ValueError, match="winning intent"):
+        c.remote_action(dict(action="submit", plan=changed, authorize=True))
+    assert len(calls) == 1 and not Path(changed["claim"]).exists()
+
+
+@pytest.mark.parametrize("kind", ["claim", "directory"])
+def test_legacy_unknown_intent_cannot_be_bypassed(c, plan, monkeypatch, kind):
+    stubs(c, monkeypatch)
+    monkeypatch.setattr(c, "run", lambda argv: pytest.fail("Slurm submit occurred"))
+    if kind == "claim":
+        path = c.legacy_claim_path()
+        path.parent.mkdir(parents=True)
+        path.write_text("{}")
+    else:
+        (c.CONTROL / "student-instruction-submissions" / c.LEGACY_INTENT).mkdir(parents=True)
+    with pytest.raises(ValueError, match="legacy"):
+        c.remote_action(dict(action="submit", plan=plan, authorize=True))
+    assert not Path(plan["scientific_claim"]).exists()
+
+
+def test_cross_version_exclusive_claim_race_never_submits(c, plan, monkeypatch):
+    stubs(c, monkeypatch)
+    original = c.write_once
+
+    def write(path, raw):
+        if path == c.legacy_claim_path():
+            path.write_text("legacy runner won")
+        return original(path, raw)
+
+    monkeypatch.setattr(c, "write_once", write)
+    monkeypatch.setattr(c, "run", lambda argv: pytest.fail("Slurm submit occurred"))
+    with pytest.raises(FileExistsError):
+        c.remote_action(dict(action="submit", plan=plan, authorize=True))
+    assert Path(plan["scientific_claim"]).exists()
+    assert not Path(plan["claim"]).exists()
+    with pytest.raises(ValueError, match="claimed"):
+        c.remote_action(dict(action="submit", plan=revised_execution(c, plan), authorize=True))

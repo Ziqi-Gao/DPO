@@ -166,7 +166,28 @@ training-side screen requires both strict answer and full-proof scores at least
 4/32 and strictly above its paired baseline; failure stops that candidate, while
 passing still grants no student/teacher/G0 acceptance or automatic training.
 Combine both complete independently audited diagnostics before subsequent
-scientific decisions. Its source/plan/submission do not yet exist remotely.
+scientific decisions. Implementation **59ca370** was deployed as release
+`20260930T224226Z-441365399546-4153923a`, but its first remote dry-run exposed a
+GPU inventory bug: `squeue %b` returned `N/A` for running one-H100 job54558773,
+which the controller incorrectly counted as zero. **No screen was submitted**.
+Preserve superseded draft intent `6b36e12f9a946f983581e4302282744b`, plan SHA
+`35523e156f3e8b11bdfd2d2107138630f3cf9c9f014d3db7fbb9b1f2fb5f637f`,
+its source and faulty dry-run as evidence; never submit that plan.
+
+The repair now enumerates live IDs with squeue and reads each job's authoritative
+`scontrol` ReqTRES/AllocTRES, cross-checking user/job identity and per-job/node/task
+GPU fields. Missing or inconsistent facts stop submission. Actual field replay
+correctly counts 54558773 as one H100. Fresh execution identities bind all control
+pins, while an independent immutable scientific claim plus an atomic reservation
+of the legacy claim prevents duplicate submission across control revisions.
+Unknown claims remain fail-closed and are never deleted or automatically retried.
+The repair passes **118 CPU tests**; independent review reran **92 transport/node
+tests** and accepted controller SHA `e217b5657bb8dde40dd50a0da778f032760cbacc7771731712a5c487d27ec726`.
+Review evidence is `instruction-control-node-independent-review-v2.json` under
+`.sdsc/diagnostics/student-quality-v2/`; it does not grant scientific acceptance.
+A new source deployment, plan, actual remote dry-run and deployment review are
+required before the one authorized screen submission. At **22:49:07Z** the
+existing quality diagnosis54558773 remains RUNNING.
 
 54558773 logs at **22:40:34Z** confirm all four initial arms completed: both caps
 still give zero strict scores in validation128 and training32, matching the old

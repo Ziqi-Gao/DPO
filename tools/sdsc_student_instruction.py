@@ -101,6 +101,71 @@ CONFIG_SHA = "05872b4521802813640004bf614dad65a6e1d2c3c3662a7502ca11bec5e15dbe"
 SCREEN_DOC = "docs/refactor/sdsc_student_instruction_screen_20260930.md"
 DATASET_NAMES = {"manifest.json", "train/examples.jsonl"}
 
+LEGACY_INTENT = "6b36e12f9a946f983581e4302282744b"
+
+
+def science_identity():
+    return dict(
+        task=TASK,
+        parent_report_sha256=PARENT_REPORT_SHA,
+        initial_sha256=INITIAL_SHA,
+        candidate_sha256=CANDIDATE_SHA,
+        baseline_sha256=BASELINE_SHA,
+        population="original-family-first32-train-in-manifest-order",
+        dataset_manifest_sha256="bee7baf767f04ee153ec7ad5f4da535d7fb3c31ba274cf3a0e5d66a01ac6c189",
+        train_file_sha256="377538a779f31246eb9aee0ee3283755641149f8dd713c942693f3da2ab1bf4b",
+        generation=dict(
+            max_new_tokens=256,
+            max_model_input_length=1536,
+            do_sample=False,
+            use_cache=False,
+            truncation=False,
+        ),
+        precision="original-pinned-BF16-without-explicit-autocast",
+    )
+
+
+def execution_intent(pins):
+    return sha(canonical(dict(science=science_identity(), controls=pins, resources=RESOURCES)))[:32]
+
+
+def scientific_claim_path():
+    return CONTROL / "student-instruction-scientific-claims" / (sha(canonical(science_identity())) + ".json")
+
+
+def legacy_claim_path():
+    return CONTROL / "student-instruction-claims" / (LEGACY_INTENT + ".json")
+
+
+def scientific_claim_record(plan):
+    return dict(
+        science_identity=science_identity(),
+        intent_id=plan["intent_id"],
+        plan_sha256=sha(canonical(plan)),
+        submission_dir=plan["submission_dir"],
+        no_retry=True,
+    )
+
+
+def legacy_reservation(plan):
+    return dict(
+        legacy_intent=LEGACY_INTENT,
+        reservation="scientific-claim-cross-version-guard",
+        **scientific_claim_record(plan),
+    )
+
+
+def require_unclaimed_science(plan):
+    require(
+        not safe(plan["scientific_claim"]).exists(),
+        "scientific candidate already claimed; reconcile its winning intent, never resubmit",
+    )
+    require(
+        not safe(legacy_claim_path()).exists()
+        and not safe(CONTROL / "student-instruction-submissions" / LEGACY_INTENT).exists(),
+        "legacy candidate submission/claim exists; reconcile, never resubmit",
+    )
+
 
 def helper(name, root=ROOT):
     spec = importlib.util.spec_from_file_location("_quality_" + name, root / "tools" / (name + ".py"))
@@ -194,14 +259,10 @@ def validate_plan(plan):
         and re.fullmatch("[a-f0-9]{64}", plan["code_sha256"]),
         "invalid plan identities",
     )
+    require(plan["intent_id"] == execution_intent(plan["control_sha256"]), "intent changed")
     require(
-        plan["intent_id"]
-        == sha(
-            canonical(
-                [TASK, PARENT_REPORT_SHA, plan["control_sha256"]["tools/sdsc_student_instruction_probe.py"]]
-            )
-        )[:32],
-        "intent changed",
+        plan.get("scientific_claim") == str(scientific_claim_path()),
+        "permanent scientific claim path differs",
     )
     require(
         plan["release"] == str(CONTROL / "releases" / plan["run_id"])
@@ -310,31 +371,134 @@ def sbatch(plan):
     ]
 
 
+def gpu_tres(value, *, complete):
+    """Parse total/typed GPU TRES once; a complete CPU inventory can establish zero."""
+    require(
+        isinstance(value, str) and value not in ("", "N/A", "(null)", "None"),
+        "missing authoritative GPU TRES inventory",
+    )
+    pairs = [item.split("=", 1) for item in value.split(",")]
+    require(all(len(item) == 2 for item in pairs), "malformed TRES inventory")
+    entries = dict(pairs)
+    require(len(entries) == len(pairs), "duplicate TRES entries")
+    if complete:
+        require(
+            all(re.fullmatch(r"[1-9][0-9]*", entries.get(key, "")) for key in ("cpu", "node")),
+            "TRES lacks complete CPU/node request identity",
+        )
+    gpu = {}
+    for key, count in entries.items():
+        if "gpu" not in key.lower():
+            continue
+        match = re.fullmatch(r"gres/gpu(?::([A-Za-z0-9_-]+))?", key)
+        require(match is not None and re.fullmatch(r"[0-9]+", count), "unrecognized GPU TRES entry")
+        gpu[match.group(1) or "total"] = int(count)
+    typed = sum(count for key, count in gpu.items() if key != "total")
+    if "total" in gpu:
+        require(len(gpu) == 1 or typed == gpu["total"], "generic/typed GPU totals conflict")
+        return gpu["total"]
+    return typed
+
+
+def gpu_gres(value):
+    """Parse Slurm TresPerJob/Node/Task or queue GRES; absence is unknown."""
+    if value in (None, "", "N/A", "(null)", "None"):
+        return None
+    gpu = {}
+    for token in value.split(","):
+        if "gpu" not in token.lower():
+            continue
+        match = re.fullmatch(r"(?:gres[:/])?gpu(?::([A-Za-z0-9_-]+))?:([0-9]+)", token)
+        require(match is not None, "unrecognized GPU GRES entry")
+        kind = match.group(1) or "total"
+        require(kind not in gpu, "duplicate GPU GRES entry")
+        gpu[kind] = int(match.group(2))
+    if not gpu:
+        return None
+    typed = sum(count for key, count in gpu.items() if key != "total")
+    if "total" in gpu:
+        require(len(gpu) == 1 or typed == gpu["total"], "generic/typed GPU GRES totals conflict")
+        return gpu["total"]
+    return typed
+
+
+def live_gpu_request(job, user, queue_gres):
+    observed = run(["scontrol", "show", "job", "--oneliner", job])
+    require(observed["returncode"] == 0, "live GPU inventory unavailable")
+    pairs = re.findall(r"(?:^|\s)([A-Za-z][A-Za-z0-9_/:]*)=(\S+)", observed["stdout"])
+    fields = dict(pairs)
+    require(len(fields) == len(pairs), "ambiguous/duplicate live job fields")
+    # Expanded arrays may be reported by a raw JobId with separate array identity.
+    raw_id = fields.get("JobId", "")
+    array_id = fields.get("ArrayJobId", "") + "_" + fields.get("ArrayTaskId", "")
+    require(
+        re.fullmatch(r"[1-9][0-9]*(?:_[0-9]+)?", raw_id)
+        and (raw_id == job or ("_" in job and array_id == job))
+        and re.fullmatch(re.escape(user) + r"\([0-9]+\)", fields.get("UserId", "")),
+        "live GPU inventory has foreign/unknown job identity",
+    )
+    state = fields.get("JobState")
+    require(
+        state in {"RUNNING", "PENDING", "CONFIGURING", "COMPLETING", "SUSPENDED", "STOPPED"},
+        "live queue changed or state unknown; recheck without submission",
+    )
+    requested = gpu_tres(fields.get("ReqTRES"), complete=True)
+    evidence = {"ReqTRES": fields["ReqTRES"]}
+    allocated = fields.get("AllocTRES")
+    if state in {"RUNNING", "COMPLETING", "SUSPENDED", "STOPPED"}:
+        require(allocated not in (None, "", "N/A", "(null)", "None"), "active job lacks AllocTRES")
+    if allocated not in (None, "", "N/A", "(null)", "None"):
+        require(gpu_tres(allocated, complete=True) == requested, "requested/allocated GPU totals conflict")
+        evidence["AllocTRES"] = allocated
+    if "TRES" in fields:
+        require(gpu_tres(fields["TRES"], complete=True) == requested, "TRES GPU totals conflict")
+        evidence["TRES"] = fields["TRES"]
+    for names, multiplier in (
+        (("TresPerJob", "TRESPerJob"), 1),
+        (("TresPerNode", "TRESPerNode"), fields.get("NumNodes")),
+        (("TresPerTask", "TRESPerTask"), fields.get("NumTasks")),
+    ):
+        values = [fields[name] for name in names if name in fields]
+        require(len(values) <= 1, "ambiguous per-unit GPU fields")
+        if not values:
+            continue
+        amount = gpu_gres(values[0])
+        if amount is not None:
+            require(re.fullmatch(r"[1-9][0-9]*", str(multiplier)), "ambiguous GPU unit multiplicity")
+            require(amount * int(multiplier) == requested, "per-unit/requested GPU totals conflict")
+        evidence[names[0]] = values[0]
+    per_node = gpu_gres(queue_gres)
+    if per_node is not None:
+        require(re.fullmatch(r"[1-9][0-9]*", fields.get("NumNodes", "")), "unknown queue GPU node count")
+        require(per_node * int(fields["NumNodes"]) == requested, "queue/live GPU totals conflict")
+    return dict(
+        job_id=job,
+        live_job_id=raw_id,
+        state=state,
+        user=user,
+        queue_gres=queue_gres,
+        requested_gpus=requested,
+        authoritative_fields=evidence,
+    )
+
+
 def check_gpu_ceiling():
-    """Read current requested GPUs, including pending jobs; never reserve locally."""
+    """Read complete live GPU TRES for every own job; N/A queue GRES proves nothing."""
     user = pwd.getpwuid(os.getuid()).pw_name
     query = run(["squeue", "--noheader", "--array", "--user=" + user, "--format=%i|%T|%b"])
     require(query["returncode"] == 0, "GPU concurrency query unavailable")
-    total = 0
-    jobs = []
+    jobs, seen = [], set()
     for line in query["stdout"].splitlines():
         if not line.strip():
             continue
         parts = line.split("|")
         require(
-            len(parts) == 3 and re.fullmatch(r"[1-9][0-9]*(?:_[0-9]+)?", parts[0]),
+            len(parts) == 3 and re.fullmatch(r"[1-9][0-9]*(?:_[0-9]+)?", parts[0]) and parts[0] not in seen,
             "ambiguous queue/array GPU inventory",
         )
-        value = parts[2].strip()
-        count = 0
-        for token in value.split(","):
-            if "gpu" not in token.lower():
-                continue
-            match = re.fullmatch(r"(?:gres/)?gpu(?::[A-Za-z0-9_-]+)?:([0-9]+)", token)
-            require(match is not None, "unrecognized GPU request")
-            count += int(match.group(1))
-        total += count
-        jobs.append(dict(job_id=parts[0], state=parts[1], requested_gpus=count))
+        seen.add(parts[0])
+        jobs.append(live_gpu_request(parts[0], user, parts[2].strip()))
+    total = sum(job["requested_gpus"] for job in jobs)
     require(total + RESOURCES["gpus"] <= 4, "new screen would exceed four allocatable GPUs")
     return dict(
         existing_requested_gpus=total, new_gpus=RESOURCES["gpus"], jobs=jobs, limit=4, observation_only=True
@@ -703,6 +867,7 @@ def remote_action(request):
     if action == "dry-run":
         verify_parent(plan, accounting=True)
         concurrent = check_gpu_ceiling()
+        require_unclaimed_science(plan)
         require(not directory.exists() and not claim.exists(), "intent already exists; reconcile only")
         require(
             safe(plan["python"]).is_file()
@@ -732,9 +897,15 @@ def remote_action(request):
         require(request.get("authorize") is True, "explicit authorization required")
         verify_parent(plan, accounting=True)
         check_gpu_ceiling()
+        require_unclaimed_science(plan)
         require(not directory.exists() and not claim.exists(), "intent exists; reconcile, never resubmit")
         directory.parent.mkdir(parents=True, exist_ok=True)
         claim.parent.mkdir(parents=True, exist_ok=True)
+        science_claim = safe(plan["scientific_claim"])
+        science_claim.parent.mkdir(parents=True, exist_ok=True)
+        write_once(science_claim, canonical(scientific_claim_record(plan)))
+        # Atomic reservation in the old scheme prevents the already deployed old CLI racing us.
+        write_once(safe(legacy_claim_path()), canonical(legacy_reservation(plan)))
         write_once(
             claim, canonical(dict(intent_id=plan["intent_id"], plan_sha256=sha(canonical(plan)), at=now()))
         )
@@ -757,7 +928,9 @@ def remote_action(request):
             raise
     require(
         read(directory / "plan.json") == canonical(plan)
-        and document(claim)["plan_sha256"] == sha(canonical(plan)),
+        and document(claim)["plan_sha256"] == sha(canonical(plan))
+        and document(safe(plan["scientific_claim"])) == scientific_claim_record(plan)
+        and document(safe(legacy_claim_path())) == legacy_reservation(plan),
         "persistent plan/claim differs",
     )
     if action == "reconcile" and not (directory / "receipt.json").exists():
@@ -944,7 +1117,12 @@ def prepare(args, cli):
         for row in contract.DATASET_FILES
         if row["path"] in DATASET_NAMES
     ]
-    intent = sha(canonical([TASK, PARENT_REPORT_SHA, records[TOOLS[2]]["sha256"]]))[:32]
+    intent = execution_intent({name: records[name]["sha256"] for name in TOOLS})
+    legacy_local = ROOT / ".sdsc/student-instruction" / LEGACY_INTENT
+    require(
+        not (legacy_local / "submission-started.json").exists(),
+        "legacy local submission started; reconcile before any new preparation",
+    )
     plan = dict(
         schema="quest-sdsc-student-instruction-plan-v1",
         task=TASK,
@@ -970,6 +1148,7 @@ def prepare(args, cli):
         release=str(CONTROL / "releases" / manifest["run_id"]),
         submission_dir=str(CONTROL / "student-instruction-submissions" / intent),
         claim=str(CONTROL / "student-instruction-claims" / (intent + ".json")),
+        scientific_claim=str(scientific_claim_path()),
         result_dir=str(PROJECT / "student-instruction" / intent),
         job_name="opd-si-" + intent,
         python=receipt["python"],
