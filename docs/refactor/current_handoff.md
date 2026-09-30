@@ -130,15 +130,43 @@ training prompt's prefix, not a validation or generated-response KL. Different
 step losses consume different64-sample windows. Optimization overshoot remains
 a testable hypothesis, not a demonstrated implementation fix.
 
-Next authorized diagnosis: independently verify the actual first64 accepted
-teacher records through the real state-source/collator/labels path, including
-EOS, masked positions and sequence-mean (not batch-token-mean) CE. Then prepare
-one separately reviewed, train-only four-update pair at5e-4/5e-5, retaining the
-same original initial/v7/teacher store/W2 semantics and empty initial optimizer.
-This is a new diagnostic scientific choice, not acceptance of changed formal
-training parameters. No such GPU job has yet been submitted. Preserve original
-protocols and obtain independent implementation/deployment reviews; no renewed
-user authorization is needed for this bounded repair work.
+The real first64 teacher-data prerequisite is now complete and independently
+replayed on Quest. Exactly64 candidate-0000 records,53,440 prompt tokens and5,896
+response tokens match the historical59,336-token first window. All64 proofs,
+actual state-source/collator spans, shifted sequence CE and analytic synthetic
+CPU gradients agree; five corruption cases reject. Report SHA
+`86e5cca158476439cc9f73881bd7e73869b4a6837d1089284369156c79f9c933`, capture SHA
+`aae6b2fd3fae601f265998416a9d2de8a7340c8672e1bcf2ef026508ebdff8b5` and independent
+review SHA `2fb7197c06f80294745372ee411f87a70b90a7a29cb5f6485a7ef03633e4d84c`
+are under `.sdsc/diagnostics/student-quality-v2/teacher-batch-audit-*`.
+The source ledger was read/hash-checked once remotely; only1,012,177 bytes were
+transferred. No label/mask/shift defect was found. Synthetic CPU logits do not
+establish real1.7B/FSDP optimization or any scientific acceptance.
+
+The separate train-only LR diagnosis is implemented in
+`tools/sdsc_student_lr{,_job,_probe}.py`, with frozen scope and command sequence
+in `docs/refactor/sdsc_student_lr_diagnosis_20260930.md`. It compares5e-4/5e-5,
+four successive original global64 windows per arm, original initial/v7/teacher
+store, fresh optimizer/RNG/cursors, W2/FULL_SHARD and no validation inputs.
+Resources are **2 H100 /24 CPU /384 GiB /1 hour**. It measures fixed-batch
+teacher CE, actual first-step AdamW math/cadence, standalone exported-model
+responses and root/export logits; neither LR improvement nor diagnostic PASS
+is model acceptance. Both final model-only checkpoints must be read-back
+hashed on project storage and never fetched. New control code explicitly
+rejects observed own-job OOM/allocation-failure counters; the frozen memory
+helper only collected them. Preserve old job evidence and all old controls.
+
+The three focused CPU suites pass **153 tests** (40 worker,85 transport,28 node),
+including real tiny-Qwen loss, original trainer updates, actual AdamW hooks,
+node-to-worker admission, failure publication and OOM negative fixtures.
+Independent final implementation reviews are in progress; **no LR release,
+plan or GPU submission yet exists**. Fresh SSH on quser43 passed at23:41:59Z;
+the discovered Python3.12.13 executable and all19 fixed package versions match
+(`lr-runtime-check.json`, SHA
+`f9b2b5d7eaf84d29ec56e35cf63e8c4fc01ad8386b76043d257739e65543cffc`).
+Next: complete independent review, matching source preview/sync, actual plan and
+remote dry-run/deployment review, then one authorized fresh submission. No
+renewed user permission is needed; missing acknowledgement requires reconcile.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
@@ -148,6 +176,11 @@ denominator. Initial anti-shortcut and circuit gates remain mandatory. Improving
 trained weights cannot repair the fixed initial-capability gate; never substitute
 a trained checkpoint for initial or relax thresholds to force PASS. The old
 G0/pilot adapters are not automatically valid for the new producer identities.
+The audited0/128 quality path uses explicit BF16 autocast, while the original
+formal scorer does not; the native-BF16 screen covers training32 only. Retain
+this as strong failure evidence, not an invented complete formal-G0 or
+anti-shortcut/circuit result. A change of model/initial scientific identity
+would require a separately reviewed successor, not an automatic LR branch.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
