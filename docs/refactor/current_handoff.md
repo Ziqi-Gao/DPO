@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-09-29 UTC (teacher fit 54494742, qualification 54496291 and
+Last updated: 2026-09-30 UTC (teacher fit 54494742, qualification 54496291 and
 independent CPU audit 54497294 completed; adapted teacher independently accepted
 under the reviewed teacher-only 256-token protocol; acceptance published and
 hash-verified on persistent SDSC storage; a separate adapted-teacher student
@@ -22,8 +22,11 @@ automatically submitted calibration 54507464. That job failed the AdamW-state
 cadence check after 5m10s. The supervisor fetched failure evidence and stopped.
 The v4 optimizer-binding repair is independently accepted; fresh preflight
 54509682 completed successfully on exp-19-15. Its reviewed finite Quest
-supervisor automatically submitted calibration 54509809, now RUNNING on
-exp-19-15. There is no accepted calibration yet).
+supervisor automatically submitted calibration 54509809. It failed after 26m38s
+at the first step-20 checkpoint publication because baseline/final tensor
+metadata differed for lm_head.weight. Failure evidence was fetched and the flow
+stopped; no calibration is accepted. The current quser44 session has no shared
+SSH master, so this inspection used the preserved terminal evidence).
 Central ServerScheduler observations below
 remain dated 2026-09-10 and were not reverified from Quest.
 
@@ -1149,17 +1152,38 @@ at **01:16:36Z**, PID **3739259**. It verified preflight success and automatical
 submitted exactly one calibration **54509809** at **01:32:18Z**, intent
 `ceafe10f2b974e8d986688d56b114079`, prerequisite SHA
 `7227a7bf5871b0e4346e037a1cb7e3dbaea92673cf1ecdcd6435a8fe649ea2dd`.
-Actual state is `waiting_calibration`, `submission_attempted=true`, with a
-durable real receipt and no error. Fresh SSH/accounting confirms **RUNNING**
-on **exp-19-15**; initial status is
-`.sdsc/diagnostics/adapted-student-v4/calibration-54509809-initial-status.json`.
+The supervisor's preserved final accounting records **FAILED / 1:0** after
+**26m38s** on **exp-19-15**, with batch failed, extern completed and an empty
+queue. Both ranks reached the first **step-20 checkpoint** publication and
+raised `baseline/final model tensor metadata differs: lm_head.weight` from
+`model_update_evidence`. This has passed the earlier first-update AdamW failure
+boundary, but is not a successful calibration. The comparison rejects either
+shape or dtype differences; retained logs do not identify which actual tensor
+metadata differed. Accelerate's FP32 upcast warnings support a dtype hypothesis,
+not a proven diagnosis. Do not relax or bypass the checkpoint validator.
+The receipt records 28 persistently read-back-verified files / **25,354,722,334
+bytes**, including nonempty **37,784-byte** training metrics and the temporary
+`.step-00000020.accelerate.stage-*` model/optimizer/RNG state. The public
+step-20 checkpoint was not committed and the wrapper reports `resumable=false`;
+do not treat temporary staging files as an accepted resume point. Metrics content
+has not been fetched, so exact loss, token totals and validation scores remain
+unverified. Eight small files / **59,474 bytes** were fetched to
+`.sdsc/fetched/54509809/fetch-umf99ie0/`.
 Results belong to `/expanse/lustre/projects/nwu181/zgao12/OPD/control-results/20260929T011138Z-f8208cbe6d74-172ab29a/ceafe10f2b974e8d986688d56b114079`.
-The supervisor's first calibration query waits the reviewed five-minute interval after the
-receipt. Monitoring then continues every 300 seconds with the same terminal
-artifact and stop guards. No calibrated artifact or G0 success is established.
-Do not change pinned controls or `.sdsc/check.json`, start a competing flow,
-or re-arm an existing claim. This process neither repairs future bugs nor
-automatically notifies the chat; SSH loss stops it for manual authentication.
+The supervisor recorded `stopped` at **2026-09-29T02:02:24Z**, with
+`submission_attempted=true`, `submission_outcome_unknown=false`, `no_retry=true`
+and no cancellation. The current local supervision inventory has no active
+flow. Preserve the original plan, stage claim, receipts and failed output;
+never re-arm this flow or repeat its submission. It does not repair code or
+automatically notify the chat. A reviewed checkpoint-contract correction and
+fresh matching prerequisites are required before another calibration.
+
+Inspection on **2026-09-30 UTC** ran from **quser44**. The required initial
+`ssh -O check` found no socket at `$HOME/.ssh/cm/sdsc-quser44`; no authentication
+or connection retry followed, and remote state was not freshly queried. The
+user must authenticate in an ordinary terminal on this same Quest host before
+remote inspection or deployment can resume. Local failure analysis and an
+independent read-only audit agree on the step-20 boundary above.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
