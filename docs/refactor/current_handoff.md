@@ -8,13 +8,18 @@ the original BF16 baseline and FP32 FSDP master weights were compared with a
 strict same-dtype contract. The separate v5 implementation `529d46e` and
 independent review-only acceptance `9169a61` preserve the teacher and scientific
 settings. The affected suite passed 346 tests; independent review passed 217.
-New matching two-H100 preflight **54533796** has been submitted and is RUNNING
-on **exp-19-07**. The independently reviewed finite Quest supervisor is active
-on quser44 (PID 1076537), with verified `waiting_preflight` state; it will
-submit one matching calibration only after strict preflight acceptance. No v5
-calibration is submitted or accepted yet. The quser44 shared SSH master is
-restored. Central ServerScheduler observations below remain dated 2026-09-10
-and were not reverified from Quest.
+Matching two-H100 preflight **54533796 passed** (COMPLETED / 0:0, 20m09s).
+The finite Quest supervisor automatically submitted calibration **54533934**,
+which completed 33 optimizer updates and saved step-20/33 checkpoints, then
+**failed post-training host-memory headroom acceptance** (FAILED / 1:0, 34m42s).
+The previous dtype error did not recur; this is not evidence of an OOM. The
+calibration is not accepted. Its results are persisted and bounded evidence
+has been fetched. The supervisor stopped at **2026-09-30T06:02:21Z** without
+retry or cancellation. The current quser43 shared master and both terminal job
+states were freshly verified. Next diagnose the aggregate memory peak while
+preserving the reviewed headroom gate and existing outputs. Central
+ServerScheduler observations below remain dated 2026-09-10 and were not
+reverified from Quest.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
@@ -1196,7 +1201,8 @@ at 2026-09-30T05:00:02Z; distinct review-only acceptance is
 `14c79d22ae6016140591ee15dd9bb84cafcab53bd86619350c874bb0b1b964e2`, physical
 accepted artifact SHA is
 `c3e2f33408db18be07d6ec855752ea1c12461958528ac5380ee7b1303dd620e3`.
-A fresh matching preflight must pass before one new calibration. Preserve all old stopped flows and failed staged checkpoints.
+The matching v5 preflight below passed before the single new calibration.
+Preserve all old stopped flows and failed staged checkpoints.
 Evidence is under `.sdsc/diagnostics/adapted-student-v5/` and the three verified
 small files in `.sdsc/fetched/54509809/verified-small-v5/`.
 
@@ -1205,9 +1211,15 @@ The new v5 preflight **54533796**, intent
 **2026-09-30T05:04:33Z**. Its actual receipt binds accepted science HEAD
 `9169a61e452c0b94064b06e6a449abfff63857f1` and teacher 54496291. Resources are
 **2 H100 / 24 CPU / 192 GiB / one hour**, nwu181,
-nairr-gpu-shared / nairr-gpu-shared-normal. Fresh queue/accounting show RUNNING
-on exp-19-07; startup logs show verified teacher-input and selected-checkpoint
-staging, then pinned model-cache staging. No terminal/GPU PASS is claimed.
+nairr-gpu-shared / nairr-gpu-shared-normal. Fresh accounting confirms
+**COMPLETED / 0:0 after 20m09s**, with an empty queue entry. Independent strict
+validation accepted the actual report and all five persisted precision
+checkpoint identities. Report SHA is
+`69fba89bd302b598b89188aaa32fdd838f2ee763d9f4af400c12de082e911585`;
+evidence is `.sdsc/fetched/54533796/fetch-n5rakjzd/` and
+`.sdsc/diagnostics/adapted-student-v5/preflight-54533796-status-20260930.json`.
+The preflight's aggregate cgroup peak was 126,727,565,312 bytes (118.02 GiB),
+with 73.98 GiB headroom; this is not the subsequent calibration's memory peak.
 Run `20260930T050103Z-a99b8a463429-c1902767` contains 600 files / 6,825,905
 source bytes after matching dry-run; deployed source SHA is
 `a99b8a463429fcbdd0d43978b41e6072cc7319e79b1dfbb0e0bfb03cddb57e9f`.
@@ -1235,14 +1247,46 @@ pins and launch script; review SHA is
 `6005ccd83548346481fee0613f7417d210f711c5cd94e86abd20e1a1b2cedbac`.
 The finite supervisor launched once on **quser44** at
 **2026-09-30T05:10:36Z**, PID **1076537**, process start ticks **20293972**.
-Its actual process identity and `waiting_preflight` state were verified; the
-first observation shows preflight RUNNING after 6m04s on exp-19-07 and
-`submission_attempted=false`. No calibration job exists yet. It keeps 300-second
-polling and stops on failure, lost shared SSH, changed pins or unknown intent;
-it neither retries nor cancels. Do not edit its pinned controls or rerun
-`tools/sdsc check` while active. It does not send chat notifications.
-Inspect launch/state/receipts before any continuation. Existing stopped flows
-and unknown-intent protections remain.
+After strict preflight acceptance it submitted calibration **54533934** once at
+**2026-09-30T05:27:12Z**, intent `d27fa16c0fe2425d9bb1041f6d326295`, using the
+reviewed two-hour profile and deployed calibration release above. Fresh SSH
+accounting from quser43 confirms **FAILED / 1:0 after 34m42s**; main/batch
+failed, extern completed, and the queue entry is empty. The supervisor fetched
+bounded terminal evidence and **stopped at 2026-09-30T06:02:21Z** (01:02 CDT).
+Its state records `submission_attempted=true`,
+`submission_outcome_unknown=false`, `no_retry=true` and `jobs_cancelled=false`.
+It is not an active monitor or authorization to re-arm the stopped flow.
+
+The scientific training subprocess completed **33 optimizer updates**, consuming
+**1,961,368 of 2,000,000 non-padding input tokens**. The remaining 38,632 tokens
+could not admit another exact global-64 optimizer window, so the normal token
+budget stop applied. Final update loss was **0.2498967983**; step-20 validation
+answer/proof/format rates were all **0.0**. There was no step-33 quality
+evaluation. These measurements do not establish student quality acceptance.
+Real step-20 and step-33 checkpoints were published, and
+`validate_factorial_run_artifacts` returned successfully before the wrapper's
+final `memory_envelope()` check raised
+`192 GiB cgroup lacks 32 GiB and 20% headroom`. Thus the v5 precision repair
+crossed the real training/save boundary, but calibration acceptance failed.
+The exact final aggregate peak was not recorded because the memory function
+raised before assigning `final_cgroup_memory`; peak exceeded the approximately
+153.6 GiB acceptance ceiling, but its exact value and anonymous/file-cache
+contributions are unknown. Slurm batch MaxRSS is not the aggregate cgroup peak.
+There is no demonstrated host/GPU OOM or evidence yet attributing this to cache.
+
+The publication receipt records **36 files / 91,031,115,461 bytes** verified on
+persistent storage under the calibration release's intent directory. Both
+checkpoints, corresponding Accelerate model/optimizer/scheduler/RNG state and
+final update evidence remain there; wrapper `resumable=false` remains in force.
+Bounded terminal fetch is `.sdsc/fetched/54533934/fetch-6b5bekn4/`. An additional
+receipt-size/SHA-verified read fetched only the inner calibration report,
+`metrics.jsonl` and `factorial_update_evidence.json` into
+`.sdsc/fetched/54533934/verified-small-status/`; no weights were downloaded.
+Next preserve these outputs and diagnose the aggregate peak before a reviewed
+repair and fresh charged run. Do not waive the headroom gate, silently change
+the reviewed memory envelope, retry this intent or treat checkpoints as an
+accepted resume contract. Inspect stopped state and receipts before any
+continuation. Existing stopped flows and unknown-intent protections remain.
 
 Keep both old v3 flows stopped. Calibration does not complete G0 or certify
 multistep resume/pilot/Blackwell execution; their historical teacher adapters
