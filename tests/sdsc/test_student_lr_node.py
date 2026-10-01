@@ -88,6 +88,29 @@ def test_fixed_launcher_has_two_processes_and_no_formal_train(node):
     assert "posttrain_circuits.cli.train" not in argv and "--confirm-production" not in argv
 
 
+def test_real_child_starts_in_science_checkout(node, tmp_path, monkeypatch):
+    import sys
+
+    source, science = tmp_path / "snapshot", tmp_path / "science"
+    source.mkdir()
+    science.mkdir()
+    # Observe a real child, not a mocked Popen or just the configured argument.
+    probe = (
+        "import os,json; print(json.dumps({'cwd':os.getcwd(),'session':os.getsid(0),"
+        "'pid':os.getpid(),'cvd':os.environ['CUDA_VISIBLE_DEVICES']}))"
+    )
+    monkeypatch.setattr(node, "worker_argv", lambda *args: [sys.executable, "-c", probe])
+    environment = dict(os.environ, CUDA_VISIBLE_DEVICES="GPU-b,GPU-a")
+    log = tmp_path / "child.log"
+    with log.open("xb") as stream:
+        process = node.start_worker({}, source, science, None, None, environment, stream)
+        assert process.wait(timeout=15) == 0
+    observed = json.loads(log.read_text())
+    assert observed["cwd"] == str(science.resolve())
+    assert observed["session"] == observed["pid"] == process.pid
+    assert observed["cvd"] == environment["CUDA_VISIBLE_DEVICES"]
+
+
 def checkpoint(tmp_path, name, raw=b"small model-only fixture"):
     source = tmp_path / "artifacts" / name
     source.parent.mkdir(parents=True, exist_ok=True)

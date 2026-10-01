@@ -28,7 +28,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONTROL = Path("/home/zgao12/quest-runs/OPD")
 PROJECT = Path("/expanse/lustre/projects/nwu181/zgao12/OPD")
-TASK = "qwen3-v2-student-lr-diagnostic-v1"
+TASK = "qwen3-v2-student-lr-diagnostic-v2"
+WORKER_TASK = "qwen3-v2-student-lr-diagnostic-v1"
 PARENT_JOB = "54548846"
 PARENT_INTENT = "594d09aee22c4bdabbe29b0501705344"
 PARENT_REPORT_SHA = "91794e528ec83ff0c7f35bd3734d36022d60db2794c3e41c7686beb97fbff4f1"
@@ -107,6 +108,16 @@ AUDIT_REPORT_SHA = "86e5cca158476439cc9f73881bd7e73869b4a6837d1089284369156c79f9
 AUDIT_CAPTURE_SHA = "aae6b2fd3fae601f265998416a9d2de8a7340c8672e1bcf2ef026508ebdff8b5"
 ARMS = (("lr-5e-4", 0.0005), ("lr-5e-5", 0.00005))
 LARGE_NAMES = tuple("checkpoints/" + label + "-step4.pt" for label, _ in ARMS)
+RECOVERY = dict(
+    job_id="54560005",
+    intent_id="e37a9af579142b7e06f02436e6f4dfe9",
+    run_id="20260930T235843Z-d00427625f69-bde6da4a",
+    plan_sha256="7bbb9b4a6e308b6727968e3807c659be13f1fbe1cc55dfaedc0c53e161680e9e",
+    publication_sha256="788c79f0771f6f028851df4995238dd351b03987fa6fac794a26803913a619bd",
+    failure_sha256="72ae3074087e68ba9603d85ea630746f7a12e3696f8576402291a3c6273d227c",
+    controller_sha256="af2b3b7c995eed95ff821a02b4b097872b83c2c942ad0b0e105bc8fa7710b7aa",
+    reason="both-ranks-missing-genuine-git-before-any-training",
+)
 
 
 def teacher_inputs():
@@ -131,6 +142,7 @@ def science_identity():
     contract = helper("sdsc_student_contract")
     return dict(
         task=TASK,
+        recovery_from=RECOVERY,
         parent_report_sha256=PARENT_REPORT_SHA,
         initial_sha256=INITIAL_SHA,
         original_instruction_sha256=BASELINE_SHA,
@@ -313,8 +325,10 @@ def checkpoint_rows(publication, report):
 
 def validate_plan(plan):
     require(
-        plan["schema"] == "quest-sdsc-student-lr-plan-v1"
+        plan["schema"] == "quest-sdsc-student-lr-plan-v2"
         and plan["task"] == TASK
+        and plan.get("worker_task") == WORKER_TASK
+        and canonical(plan.get("recovery_from")) == canonical(RECOVERY)
         and canonical(plan["resources"]) == canonical(RESOURCES)
         and plan["scope"] == "train-only-learning-rate-diagnostic",
         "unreviewed diagnostic task/resources/scope",
@@ -402,6 +416,158 @@ def verify_source(plan, root=None):
         "deployed controls differ",
     )
     return manifest
+
+
+def recovery_context():
+    """Use the immutable v1 release for v1 validation, never the new task globals."""
+    directory = safe(CONTROL / "student-lr-submissions" / RECOVERY["intent_id"])
+    old_plan = document(directory / "plan.json", RECOVERY["plan_sha256"])
+    source = safe(CONTROL / "releases" / RECOVERY["run_id"] / "source")
+    pins = old_plan.get("control_sha256", {})
+    require(
+        set(pins) == set(TOOLS) and pins.get("tools/sdsc_student_lr.py") == RECOVERY["controller_sha256"],
+        "old recovery controls differ",
+    )
+    for name, digest in pins.items():
+        require(sha(read(source / name)) == digest, "immutable v1 dependency changed: " + name)
+    path = source / "tools/sdsc_student_lr.py"
+    spec = importlib.util.spec_from_file_location("_lr_frozen_v1_recovery", path)
+    previous = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(previous)
+    previous.validate_plan(old_plan)
+    previous.verify_source(old_plan)
+    require(
+        old_plan["intent_id"] == RECOVERY["intent_id"]
+        and old_plan["run_id"] == RECOVERY["run_id"]
+        and old_plan["submission_dir"] == str(directory),
+        "old recovery plan identity differs",
+    )
+    receipt = document(directory / "receipt.json")
+    previous.validate_submission_receipt(receipt, old_plan)
+    require(receipt["job_id"] == RECOVERY["job_id"], "recovery requires the one sealed failed job")
+    require(
+        document(safe(old_plan["scientific_claim"])) == previous.scientific_claim_record(old_plan)
+        and document(safe(old_plan["claim"]))["plan_sha256"] == RECOVERY["plan_sha256"],
+        "old permanent claims must remain intact",
+    )
+    return previous, old_plan, receipt
+
+
+def validate_recovery_evidence(previous, old_plan, status, raw):
+    """Admit only the exact sealed pre-training startup failure, not a retry policy."""
+    require(
+        status.get("state") == "FAILED"
+        and status.get("success") is False
+        and status.get("diagnostic_complete") is False
+        and status.get("accounting_complete") is False
+        and status.get("queue", {}).get("returncode") == 0
+        and not status["queue"]["stdout"].strip()
+        and status.get("accounting", {}).get("returncode") == 0,
+        "recovery requires an absent queue entry and known failed accounting",
+    )
+    rows = [line.split("|") for line in status["accounting"]["stdout"].splitlines() if line.strip()]
+    job = RECOVERY["job_id"]
+    expected = {
+        job: ["FAILED", "1:0"],
+        job + ".batch": ["FAILED", "1:0"],
+        job + ".extern": ["COMPLETED", "0:0"],
+    }
+    require(
+        len(rows) == 3
+        and {r[0] for r in rows} == set(expected)
+        and all(len(row) >= 12 and row[1:3] == expected[row[0]] for row in rows),
+        "recovery accounting is missing, active, successful or has different step exits",
+    )
+    parent = next(row for row in rows if row[0] == job)
+    tres = dict(item.split("=", 1) for item in parent[10].split(",") if "=" in item)
+    require(
+        parent[7] == "24"
+        and parent[8] in {"384G", "384Gn", "393216M", "393216Mn"}
+        and tres.get("cpu") == "24"
+        and tres.get("gres/gpu") == "2"
+        and tres.get("mem") in {"384G", "393216M"},
+        "old failed allocation differs",
+    )
+    require(
+        status.get("publication_verified") is True
+        and status.get("artifact_hashes_verified") is True
+        and status.get("publication_sha256") == RECOVERY["publication_sha256"],
+        "recovery publication is absent, unverified or changed",
+    )
+    published = status["publication"]
+    inventory = previous.publication_records(published, old_plan, job)
+    require(
+        set(inventory) == set(raw) == {"lr-probe.json", "node-result.json", "memory.json"}
+        and published.get("passed") is False
+        and published.get("diagnostic_complete") is False
+        and published.get("large_files") == [],
+        "recovery has raw training/generation/checkpoint evidence",
+    )
+    for name, data in raw.items():
+        require(
+            len(data) == inventory[name]["size"] and sha(data) == inventory[name]["sha256"],
+            "recovery evidence bytes differ: " + name,
+        )
+    require(sha(raw["lr-probe.json"]) == RECOVERY["failure_sha256"], "different startup failure")
+    failure = json.loads(raw["lr-probe.json"])
+    error = "ValueError: rank-local phase failed: " + json.dumps(
+        [
+            dict(
+                rank=rank,
+                type="AdaptedStudentProtocolError",
+                message="student protocol needs real .git or .opd-git metadata",
+            )
+            for rank in range(2)
+        ]
+    )
+    require(
+        canonical(failure)
+        == canonical(
+            dict(
+                schema="quest-sdsc-student-lr-probe-v1",
+                passed=False,
+                diagnostic_complete=False,
+                failed_rank="0",
+                raw_artifacts=[],
+                error=error,
+                **dict.fromkeys(FLAGS, False),
+            )
+        ),
+        "failure is not the exact two-rank pre-training Git lookup failure",
+    )
+    node = json.loads(raw["node-result.json"])
+    require(
+        node.get("exit_code") == 1
+        and type(node.get("exit_code")) is int
+        and node.get("diagnostic_complete") is False
+        and node.get("large_artifacts") == []
+        and node.get("job_id") == job
+        and node.get("plan_sha256") == RECOVERY["plan_sha256"]
+        and all(node.get(k) is False for k in FLAGS),
+        "failed node contains completed or foreign evidence",
+    )
+
+
+def verify_recovery(plan):
+    require(canonical(plan.get("recovery_from")) == canonical(RECOVERY), "unreviewed recovery predecessor")
+    previous, old_plan, receipt = recovery_context()
+    status = previous.inspect_job(old_plan, receipt)
+    result_root = safe(old_plan["result_dir"])
+    publication_raw = read(result_root / "receipt.json")
+    require(sha(publication_raw) == RECOVERY["publication_sha256"], "sealed failure receipt changed")
+    require(json.loads(publication_raw) == status.get("publication"), "failure changed during recovery check")
+    raw = {name: read(result_root / name) for name in ("lr-probe.json", "node-result.json", "memory.json")}
+    validate_recovery_evidence(previous, old_plan, status, raw)
+    require(not (result_root / "checkpoints").exists(), "unexpected recovery checkpoint directory")
+    return dict(
+        verified=True,
+        job_id=RECOVERY["job_id"],
+        old_plan_sha256=RECOVERY["plan_sha256"],
+        publication_sha256=RECOVERY["publication_sha256"],
+        failure_sha256=RECOVERY["failure_sha256"],
+        no_training_evidence=True,
+        checked_at=now(),
+    )
 
 
 def verify_parent(plan, *, accounting=False):
@@ -806,6 +972,7 @@ def validate_worker_report(report, plan, job, records):
     canonical(report)  # Reject nonfinite diagnostic numbers at any nesting depth.
     require(
         report.get("schema") == "quest-sdsc-student-lr-probe-v1"
+        and report.get("task") == WORKER_TASK
         and report.get("diagnostic_complete") is True
         and report.get("passed") is True
         and all(report.get(k) is False for k in FLAGS),
@@ -1287,6 +1454,7 @@ def remote_action(request):
     claim = safe(plan["claim"])
     action = request["action"]
     if action == "dry-run":
+        recovery = verify_recovery(plan)
         verify_parent(plan, accounting=True)
         concurrent = check_gpu_ceiling()
         require_unclaimed_science(plan)
@@ -1315,9 +1483,11 @@ def remote_action(request):
             runtime_executable_verified=True,
             node_mounts_still_required=True,
             gpu_concurrency=concurrent,
+            recovery=recovery,
         )
     if action == "submit":
         require(request.get("authorize") is True, "explicit authorization required")
+        verify_recovery(plan)
         verify_parent(plan, accounting=True)
         check_gpu_ceiling()
         require_unclaimed_science(plan)
@@ -1539,8 +1709,10 @@ def prepare(args, cli):
     ]
     intent = execution_intent({name: records[name]["sha256"] for name in TOOLS})
     plan = dict(
-        schema="quest-sdsc-student-lr-plan-v1",
+        schema="quest-sdsc-student-lr-plan-v2",
         task=TASK,
+        worker_task=WORKER_TASK,
+        recovery_from=RECOVERY,
         scope="train-only-learning-rate-diagnostic",
         intent_id=intent,
         run_id=manifest["run_id"],

@@ -706,6 +706,9 @@ def staged_science(inputs, output):
     cache = confined(inputs["hf_home"], work, directory=True)
     require(str(cache) == os.environ.get("HF_HOME"), "offline cache differs")
     science = confined(inputs["science_root"], work, directory=True)
+    # The immutable teacher reader resolves its accepted Git history from cwd.
+    # A source-only deployment snapshot must never become that authority.
+    require(Path.cwd().resolve() == science.resolve(), "worker cwd must equal verified science root")
     require(
         not any(
             name == "posttrain_circuits" or name.startswith("posttrain_circuits.") for name in sys.modules

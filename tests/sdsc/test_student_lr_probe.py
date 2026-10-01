@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import os
 import random
 import subprocess
 import sys
@@ -534,7 +535,8 @@ def audit_fixture(probe, work):
     }
 
 
-def test_node_actual_input_producer_to_fresh_worker_consumer(probe, tmp_path):
+@pytest.mark.parametrize("scientific_cwd", [True, False])
+def test_node_actual_input_producer_to_fresh_worker_consumer(probe, tmp_path, scientific_cwd):
     """No copied input allowlist: execute the actual node producer and worker guard."""
     node = module("sdsc_student_lr_job")
     science, cache, output = tmp_path / "science", tmp_path / "huggingface", tmp_path / "artifacts"
@@ -584,13 +586,19 @@ print('producer_consumer_fixture_passed')
             str(target),
             str(output),
         ],
+        cwd=science if scientific_cwd else tmp_path,
         capture_output=True,
         text=True,
         timeout=30,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "producer_consumer_fixture_passed"
+    if scientific_cwd:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "producer_consumer_fixture_passed"
+    else:
+        assert result.returncode != 0
+        assert "worker cwd must equal verified science root" in result.stderr
+        assert "producer_consumer_fixture_passed" not in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -703,3 +711,110 @@ def test_bounded_progress_is_small_and_does_not_claim_success(probe, tmp_path):
     assert all(report[key] is False for key in probe.FLAGS)
     assert report["passed"] is report["diagnostic_complete"] is False
     assert (tmp_path / "progress.json").stat().st_size < 1024
+
+
+def restore_genuine_parent_for_cpu_fixture(destination):
+    """Restore actual accepted history locally; no invented commits or resolver mocks."""
+    parent = "6c04f804b302184b8ff95d00fab404e0531ed8d6"
+    metadata = ROOT / (".git" if (ROOT / ".git" / "HEAD").is_file() else ".opd-git")
+    if not metadata.is_dir():
+        pytest.skip("genuine accepted-history integration requires a repository clone")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL="/dev/null",
+        GIT_NO_REPLACE_OBJECTS="1",
+        GIT_NO_LAZY_FETCH="1",
+        GIT_OPTIONAL_LOCKS="0",
+    )
+
+    def git(*args, data=None):
+        return subprocess.run(
+            ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", *args],
+            input=data,
+            capture_output=True,
+            env=environment,
+            timeout=30,
+            check=True,
+        ).stdout
+
+    # Every write is within this new pytest checkout; the user's refs/index stay untouched.
+    git("init", "--quiet", str(destination))
+    git("-C", str(destination), "fetch", "--quiet", "--no-tags", str(metadata), parent)
+    git("-C", str(destination), "update-ref", "HEAD", parent)
+    git("-C", str(destination), "read-tree", parent)
+    listing = git("-C", str(destination), "ls-tree", "-r", "-z", parent)
+    entries = []
+    for entry in listing.split(b"\0"):
+        if not entry:
+            continue
+        fields, name = entry.split(b"\t", 1)
+        mode, kind, object_id = fields.split()
+        assert mode in (b"100644", b"100755") and kind == b"blob"
+        relative = Path(name.decode())
+        assert not relative.is_absolute() and ".." not in relative.parts
+        assert relative.parts[0] not in (".git", ".opd-git")
+        entries.append((relative, mode, object_id))
+    payload = git(
+        "-C", str(destination), "cat-file", "--batch", data=b"".join(row[2] + b"\n" for row in entries)
+    )
+    offset = 0
+    for relative, mode, object_id in entries:
+        end = payload.index(b"\n", offset)
+        observed_id, kind, size_text = payload[offset:end].split()
+        size = int(size_text)
+        assert observed_id == object_id and kind == b"blob"
+        path = destination / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload[end + 1 : end + 1 + size])
+        path.chmod(0o755 if mode == b"100755" else 0o644)
+        offset = end + size + 2
+    assert offset == len(payload)
+    return parent
+
+
+def test_genuine_student_metadata_and_teacher_reader_use_cwd(tmp_path, monkeypatch):
+    """Actual accepted history and actual reader, without stubbing their call chain."""
+    from posttrain_circuits.artifacts import adapted_student_protocol as protocol
+    from posttrain_circuits.artifacts.adapted_teacher_sft import read_accepted_teacher_sft
+    from posttrain_circuits.artifacts.teacher_adaptation_protocol import TeacherAdaptationProtocolError
+    from posttrain_circuits.core.config import compose_config
+
+    science = tmp_path / "science"
+    parent = restore_genuine_parent_for_cpu_fixture(science)
+    source = tmp_path / "source"
+    source.mkdir()
+    empty_teacher = tmp_path / "teacher"
+    empty_teacher.mkdir()
+    config = compose_config(
+        [
+            "g0=qwen3_v2_eap_separation",
+            "experiment=canonical_sft",
+            "adapted_teacher=qwen3_accepted_student_v6",
+            f"protocol_amendment_path={protocol.PROTOCOL_PATH}",
+        ],
+        config_root=science / "configs",
+    )
+    # Match the real launch defect: module bytes/teacher path do not select the Git root.
+    monkeypatch.chdir(source)
+    with pytest.raises(protocol.AdaptedStudentProtocolError, match="needs real .git or .opd-git"):
+        protocol.validate_student_protocol(config)
+    with pytest.raises(protocol.AdaptedStudentProtocolError, match="needs real .git or .opd-git"):
+        read_accepted_teacher_sft(empty_teacher, config=config)
+
+    monkeypatch.chdir(science)
+    binding = protocol.validate_student_protocol(config)
+    assert binding.head == binding.git_commit == parent
+    assert len(binding.science_file_sha256) == 49
+    assert binding.reviewed_implementation_commit == "9a196677a269c2e5f1c925da4e43b6145c1cdd7a"
+    # The genuine protocol passes; an absent teacher store still fails its next real gate.
+    with pytest.raises(ValueError, match="teacher input bundle has missing or extra files"):
+        read_accepted_teacher_sft(empty_teacher, config=config)
+
+    # Correct cwd never bypasses immutable source validation.
+    path = science / "src/posttrain_circuits/datasets/proofgraph/rendering.py"
+    path.write_bytes(path.read_bytes() + b"\n# deliberate fixture tamper\n")
+    with pytest.raises(
+        TeacherAdaptationProtocolError, match="named scientific implementation changed after review"
+    ):
+        read_accepted_teacher_sft(empty_teacher, config=config)

@@ -1,8 +1,9 @@
 # OPD current handoff
 
-Last updated: 2026-10-01 UTC. **Active: train-only LR diagnostic54560005,
-RUNNING at00:05:35Z; model/G0 remain unaccepted.** Continue its fixed plan and
-read-only observer below; do not resubmit or change its pinned controls.
+Last updated: 2026-10-01 UTC. **LR diagnostic54560005 failed before training;
+its observer exited. A reviewed startup-directory recovery is being prepared;
+no replacement has been submitted. Model/G0 remain unaccepted.** Preserve the
+failed plan, claims, immutable release and frozen controls below.
 
 Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
@@ -170,8 +171,9 @@ deployment review `2602e77191e97b3b646712808acaff39d92425b84aa7e90466c7b51ae857c
 All accepted only this diagnosis, not scientific or model success. Runtime
 Python3.12.13 and all19 fixed package versions were freshly verified.
 
-Exactly one LR job, **54560005**, was acknowledged at **2026-10-01T00:04:57Z**;
-first verified status is **RUNNING at00:05:35Z**. It is not completed/accepted.
+The first LR job, **54560005**, was acknowledged at **2026-10-01T00:04:57Z**
+and is **FAILED /1:0**, confirmed at **00:10:36Z** after130 seconds. Job and
+batch failed; extern completed0:0. It produced no training or generation.
 Run `20260930T235843Z-d00427625f69-bde6da4a` contains632 files/7,507,811 source
 bytes, source SHA `d00427625f69514edfd1c3530dc9e9f68a634973776d99be0f269cd6f1a81ee0`.
 Plan `.sdsc/student-lr/e37a9af579142b7e06f02436e6f4dfe9/plan.json` has SHA
@@ -181,20 +183,46 @@ GPUs within the four-GPU ceiling. Immutable submit records and both permanent
 claims are authoritative; never delete them or blindly submit this diagnosis
 again. Results remain under project Lustre `student-lr/<intent>/`.
 
-The finite foreground Quest observer on quser43 is
-`.sdsc/diagnostics/student-lr-v1/observe.py`, with started/status records in that
-directory. It pins this plan/controls, queries every300 seconds for at most8
-hours, stops on SSH loss/unknown state/changed controls, and fetches bounded
-terminal evidence once. It cannot submit/retry/cancel or advance G0. Inspect
-its state before launching another observer; the active tool session is55793.
-Do not edit any plan `control_sha256` file while this job is active. A separate
-independent raw auditor is being prepared before reading the future result.
-Continue monitoring and diagnose the actual evidence; user authorization
-persists, but all scientific gates and original failed results remain intact.
+The hash-verified failure was fetched to `.sdsc/fetched/54560005/fetch-tlgm98oa/`;
+publication SHA is
+`788c79f0771f6f028851df4995238dd351b03987fa6fac794a26803913a619bd`.
+Both ranks rejected `read_accepted_teacher_sft` with
+`AdaptedStudentProtocolError: student protocol needs real .git or .opd-git metadata`.
+The node restored and verified genuine science, but started the worker from the
+hashed deployment snapshot, which intentionally has no Git metadata. The
+protocol resolves its default repository from cwd. This is a launch defect,
+not an optimizer or model-quality result. The report has no arms, raw artifacts
+or checkpoints. The finite read-only observer fetched failure evidence and
+exited normally; its started/status/finished records remain under
+`.sdsc/diagnostics/student-lr-v1/`. Do not restart it.
+
+All12 original controls are byte-verified under that directory's
+`frozen-controls/`; the original remote release and permanent claims remain
+unchanged. The current candidate starts the worker in verified `science` and
+adds a worker-side cwd guard. A new v2 execution identity must explicitly bind
+this exact old failed plan, publication and empty pre-training failure, recheck
+remote terminal accounting before claiming/submitting, and retain a permanent
+v2 claim. Unknown, active, successful or partially trained old jobs forbid
+recovery. The original frozen v1 controller, not a new validator, handles old
+identity checks. The completed candidate passes178 focused CPU tests
+(107 transport,29 node,42 worker), Ruff and whitespace checks. A real child
+observes science cwd, its own session and unchanged CUDA visibility. Genuine
+6c04 history/49 science files and the original7,923-byte resolved configuration
+reproduce old source-cwd rejection and science-cwd acceptance; a missing teacher
+inventory remains rejected. No GPU/model success is inferred. Reproduction SHA
+is `b17741ab73400fcfd33c463c9a5b1a481f41c48de03b0733f9cfd0d1a32dbec8` under
+`.sdsc/diagnostics/student-lr-v1/cwd_failure_repro_result.json`.
+No replacement is submitted yet; independent review, fresh sync, remote dry-run
+and actual-deployment review are required first. Scientific inputs, LR arms and
+all acceptance gates remain unchanged.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
-score at least13 strict successes on the unscreened first128 validation examples;
+score at least13 `answer_correct` results under the original full verifier on
+the unscreened first128 validation examples (answer_accuracy at least0.10).
+This requires the original parser and listed-step validity checks; neither an
+answer tag alone nor reward==1 is the formal base metric. Complete-proof
+accuracy is separately reported; do not silently replace either definition;
 `base_capable`/`challenge` use separate circuit populations and cannot change that
 denominator. Initial anti-shortcut and circuit gates remain mandatory. Improving
 trained weights cannot repair the fixed initial-capability gate; never substitute

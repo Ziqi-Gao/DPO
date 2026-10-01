@@ -269,6 +269,19 @@ def worker_argv(plan, source, science, inputs, artifacts):
     ]
 
 
+def start_worker(plan, source, science, inputs, artifacts, environment, stream):
+    """Launch from the verified scientific checkout used by protocol validation."""
+    return subprocess.Popen(
+        worker_argv(plan, source, science, inputs, artifacts),
+        cwd=science,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=stream,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
 def wait_worker(process, *, timeout, artifacts, control, measure, result_root):
     """Finite wait on the one launcher; publish bounded progress without retries."""
     deadline = time.monotonic() + timeout
@@ -571,14 +584,8 @@ def main(argv=None):
         )
         log = work / "worker.log"
         with log.open("xb") as stream:
-            process = subprocess.Popen(
-                worker_argv(plan, source, science, work / "inputs.json", artifacts),
-                cwd=source,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=stream,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
+            process = start_worker(
+                plan, source, science, work / "inputs.json", artifacts, environment, stream
             )
             print(json.dumps(dict(phase="lr_worker_started", job_id=identity["job_id"])), flush=True)
             wait_worker(

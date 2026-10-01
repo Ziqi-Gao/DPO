@@ -70,8 +70,10 @@ def plan(c, tmp_path, monkeypatch):
     runtime = str(c.PROJECT / "envs/qwen3-v2-g0-py31213-cu128-v1/bin/python3.12")
     cache = str(c.PROJECT / "cache/huggingface")
     value = dict(
-        schema="quest-sdsc-student-lr-plan-v1",
+        schema="quest-sdsc-student-lr-plan-v2",
         task=c.TASK,
+        worker_task=c.WORKER_TASK,
+        recovery_from=copy.deepcopy(c.RECOVERY),
         scope="train-only-learning-rate-diagnostic",
         resources=copy.deepcopy(c.RESOURCES),
         science_identity=c.science_identity(),
@@ -208,6 +210,7 @@ def test_sbatch_fixed_safe_argv_and_shell_syntax(c, plan):
 
 def stubs(c, monkeypatch):
     monkeypatch.setattr(c, "verify_source", lambda p: None)
+    monkeypatch.setattr(c, "verify_recovery", lambda p: {"verified": True})
     monkeypatch.setattr(c, "verify_parent", lambda p, **k: None)
     monkeypatch.setattr(c, "check_gpu_ceiling", lambda: {})
 
@@ -249,6 +252,7 @@ def test_submit_needs_authorization(c, plan, monkeypatch):
 def test_dry_run_checks_real_inputs_but_creates_no_claim_or_sbatch(c, plan, monkeypatch):
     checked = []
     monkeypatch.setattr(c, "verify_source", lambda p: checked.append("source"))
+    monkeypatch.setattr(c, "verify_recovery", lambda p: checked.append("recovery") or {"verified": True})
     monkeypatch.setattr(c, "verify_parent", lambda p, **k: checked.append(("parent", k)))
     monkeypatch.setattr(c, "check_gpu_ceiling", lambda: dict(existing_requested_gpus=0, new_gpus=2))
     original_sha = c.sha
@@ -268,7 +272,8 @@ def test_dry_run_checks_real_inputs_but_creates_no_claim_or_sbatch(c, plan, monk
     )
     monkeypatch.setattr(c, "run", lambda args: pytest.fail("dry-run may not issue sbatch"))
     result = c.remote_action(dict(action="dry-run", plan=plan))
-    assert checked == ["source", ("parent", dict(accounting=True))]
+    assert checked == ["source", "recovery", ("parent", dict(accounting=True))]
+    assert result["recovery"] == {"verified": True}
     assert result["cpu_data_audit_verified"] and result["blockers"] == []
     assert not Path(plan["scientific_claim"]).exists()
     assert not Path(plan["submission_dir"]).exists()
@@ -652,6 +657,7 @@ def successful_worker(c, plan):
     records = {name: dict(path=name, size=len(raw), sha256=c.sha(raw)) for name, raw in files.items()}
     report = dict(
         schema="quest-sdsc-student-lr-probe-v1",
+        task=c.WORKER_TASK,
         passed=True,
         diagnostic_complete=True,
         job_id="123",
@@ -823,3 +829,181 @@ def test_memory_events_reject_malformed_mapping_and_accept_v2_zero(c):
     row["memory_events_local"] = []
     with pytest.raises(ValueError, match="counter mapping"):
         c.validate_job_memory_events(evidence, "123")
+
+
+@pytest.fixture
+def recovery_case(c, tmp_path, monkeypatch):
+    # Exact 642-byte startup report from the sealed v1 job, independently pinned.
+    failure = dict(
+        schema="quest-sdsc-student-lr-probe-v1",
+        passed=False,
+        diagnostic_complete=False,
+        failed_rank="0",
+        raw_artifacts=[],
+        **dict.fromkeys(c.FLAGS, False),
+        error="ValueError: rank-local phase failed: "
+        + json.dumps(
+            [
+                dict(
+                    rank=rank,
+                    type="AdaptedStudentProtocolError",
+                    message="student protocol needs real .git or .opd-git metadata",
+                )
+                for rank in range(2)
+            ]
+        ),
+    )
+    failure_raw = c.canonical(failure) + b"\n"
+    assert len(failure_raw) == 642 and c.sha(failure_raw) == c.RECOVERY["failure_sha256"]
+    node = dict(
+        exit_code=1,
+        diagnostic_complete=False,
+        large_artifacts=[],
+        job_id="54560005",
+        plan_sha256=c.RECOVERY["plan_sha256"],
+        **dict.fromkeys(c.FLAGS, False),
+    )
+    raw = {"lr-probe.json": failure_raw, "node-result.json": c.canonical(node), "memory.json": b"{}"}
+    old_plan = dict(result_dir=str(tmp_path / "old-result"))
+    Path(old_plan["result_dir"]).mkdir()
+    published = dict(
+        passed=False,
+        diagnostic_complete=False,
+        large_files=[],
+        files=[dict(path=n, size=len(v), sha256=c.sha(v)) for n, v in raw.items()],
+    )
+    recovery = dict(c.RECOVERY, publication_sha256=c.sha(c.canonical(published)))
+    monkeypatch.setattr(c, "RECOVERY", recovery)
+    status = dict(
+        state="FAILED",
+        success=False,
+        diagnostic_complete=False,
+        accounting_complete=False,
+        queue=dict(returncode=0, stdout=""),
+        accounting=dict(
+            returncode=0,
+            stdout=(
+                "54560005|FAILED|1:0|opd-slr-fixture|nwu181|nairr-gpu-shared|nairr-gpu-shared-normal|24|384G|130|cpu=24,mem=384G,gres/gpu=2|\n"
+                "54560005.batch|FAILED|1:0|batch|nwu181|||24||130|cpu=24,gres/gpu=2,mem=384G|\n"
+                "54560005.extern|COMPLETED|0:0|extern|nwu181|||24||130|cpu=24,gres/gpu=2,mem=384G|\n"
+            ),
+        ),
+        publication_verified=True,
+        artifact_hashes_verified=True,
+        publication=published,
+        publication_sha256=recovery["publication_sha256"],
+    )
+    # Transport/identity is the already-reviewed v1 controller's responsibility.
+    previous = SimpleNamespace(
+        publication_records=lambda p, plan, job: {r["path"]: r for r in p["files"]},
+        inspect_job=lambda plan, receipt: status,
+    )
+    for name, data in raw.items():
+        (Path(old_plan["result_dir"]) / name).write_bytes(data)
+    (Path(old_plan["result_dir"]) / "receipt.json").write_bytes(c.canonical(published))
+    return previous, old_plan, status, raw
+
+
+def test_exact_startup_failure_is_admissible_and_no_checkpoint_allowed(c, recovery_case, monkeypatch):
+    previous, old_plan, status, raw = recovery_case
+    c.validate_recovery_evidence(previous, old_plan, status, raw)
+    monkeypatch.setattr(c, "recovery_context", lambda: (previous, old_plan, {}))
+    result = c.verify_recovery(dict(recovery_from=c.RECOVERY))
+    assert result["verified"] and result["no_training_evidence"] and result["job_id"] == "54560005"
+    (Path(old_plan["result_dir"]) / "checkpoints").mkdir()
+    with pytest.raises(ValueError, match="checkpoint"):
+        c.verify_recovery(dict(recovery_from=c.RECOVERY))
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "queue",
+        "unknown",
+        "success",
+        "missing_batch",
+        "different_exit",
+        "foreign_job",
+        "allocation",
+        "unpublished",
+        "receipt",
+        "tampered_raw",
+        "training_raw",
+        "checkpoint",
+        "arms",
+        "updates",
+        "different_error",
+        "node_success",
+    ],
+)
+def test_recovery_rejects_every_non_exact_failure(c, recovery_case, monkeypatch, defect):
+    previous, old_plan, status, raw = recovery_case
+    if defect == "queue":
+        status["queue"]["stdout"] = "54560005|RUNNING\n"
+    elif defect == "unknown":
+        status["state"] = "UNKNOWN"
+    elif defect == "success":
+        status["success"] = True
+    elif defect == "missing_batch":
+        status["accounting"]["stdout"] = "\n".join(
+            x for x in status["accounting"]["stdout"].splitlines() if ".batch|" not in x
+        )
+    elif defect == "different_exit":
+        status["accounting"]["stdout"] = status["accounting"]["stdout"].replace("FAILED|1:0", "FAILED|9:0")
+    elif defect == "foreign_job":
+        status["accounting"]["stdout"] = status["accounting"]["stdout"].replace("54560005", "54560006")
+    elif defect == "allocation":
+        status["accounting"]["stdout"] = status["accounting"]["stdout"].replace("gres/gpu=2", "gres/gpu=1")
+    elif defect == "unpublished":
+        status["publication_verified"] = False
+    elif defect == "receipt":
+        status["publication_sha256"] = "a" * 64
+    elif defect == "tampered_raw":
+        raw["lr-probe.json"] += b" "
+    elif defect == "training_raw":
+        raw["lr-records.jsonl"] = b"{}\n"
+        status["publication"]["files"].append(dict(path="lr-records.jsonl", size=3, sha256=c.sha(b"{}\n")))
+    elif defect == "checkpoint":
+        status["publication"]["large_files"] = [dict(path=c.LARGE_NAMES[0], size=1, sha256="a" * 64)]
+    else:
+        name = "node-result.json" if defect == "node_success" else "lr-probe.json"
+        value = json.loads(raw[name])
+        if defect == "node_success":
+            value["diagnostic_complete"] = True
+        elif defect == "different_error":
+            value["error"] = "different failure"
+        else:
+            value[defect] = []
+        raw[name] = c.canonical(value)
+        for row in status["publication"]["files"]:
+            if row["path"] == name:
+                row.update(size=len(raw[name]), sha256=c.sha(raw[name]))
+        # Even resealed partial/foreign reports must fail semantic verification.
+        if name == "lr-probe.json":
+            monkeypatch.setitem(c.RECOVERY, "failure_sha256", c.sha(raw[name]))
+    with pytest.raises(ValueError):
+        c.validate_recovery_evidence(previous, old_plan, status, raw)
+
+
+@pytest.mark.parametrize("action", ["dry-run", "submit"])
+def test_failed_recovery_cannot_write_claim_or_submit(c, plan, monkeypatch, action):
+    stubs(c, monkeypatch)
+
+    def reject(value):
+        raise ValueError("old job not a verified startup failure")
+
+    monkeypatch.setattr(c, "verify_recovery", reject)
+    monkeypatch.setattr(c, "run", lambda args: pytest.fail("recovery failure must never submit"))
+    with pytest.raises(ValueError, match="startup failure"):
+        c.remote_action(dict(action=action, plan=plan, authorize=True))
+    assert not Path(plan["scientific_claim"]).exists() and not Path(plan["claim"]).exists()
+    assert not Path(plan["submission_dir"]).exists()
+
+
+@pytest.mark.parametrize(
+    "field,value", [("job_id", "1"), ("plan_sha256", "a" * 64), ("publication_sha256", "b" * 64)]
+)
+def test_v2_cannot_select_another_recovery_predecessor(c, plan, field, value):
+    plan["recovery_from"][field] = value
+    with pytest.raises(ValueError):
+        c.validate_plan(plan)

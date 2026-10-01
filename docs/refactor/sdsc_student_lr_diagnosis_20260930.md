@@ -157,6 +157,37 @@ scientific decision. Most importantly, improving trained weights cannot repair
 the original initial-checkpoint base-accuracy and anti-shortcut gates. Do not
 substitute trained weights for initial or relax those thresholds.
 
+## Startup failure and bounded v2 recovery
+
+The original v1 job54560005 ended FAILED1:0 after130 seconds. Both ranks rejected
+the real teacher protocol before model loading or any optimizer update because the
+launcher used the source snapshot as cwd. That snapshot intentionally omits Git;
+the already restored, hash-verified scientific checkout is the required cwd.
+The corrected launcher uses that checkout, and the worker rejects a different
+cwd before scientific imports. The real original protocol/config regression
+must reproduce source-cwd failure and science-cwd success; a stubbed executor
+is insufficient evidence for this boundary.
+
+This is a new execution identity, `qwen3-v2-student-lr-diagnostic-v2`, retaining
+the v1 measurement schema and the scientific design above. Recovery is fixed to
+old job54560005, old plan SHA
+`7bbb9b4a6e308b6727968e3807c659be13f1fbe1cc55dfaedc0c53e161680e9e`
+and old publication SHA
+`788c79f0771f6f028851df4995238dd351b03987fa6fac794a26803913a619bd`.
+Both dry-run and submission must freshly verify the old immutable release and
+original controller's identity/publication contract, empty queue, root/batch
+FAILED1:0 and extern COMPLETED0:0. The exact three hashed failure files must
+show the same two-rank metadata error, no raw responses, arms or checkpoints.
+Missing/unknown/active/successful or partially trained evidence rejects recovery.
+
+Keep the old release, both permanent claims, plan, receipt, failure and observer
+exit record. Original controls are additionally frozen locally under
+`.sdsc/diagnostics/student-lr-v1/frozen-controls/`. The v2 claim permanently binds
+this specific recovery, preventing another run merely by changing controller
+bytes. An unknown v2 acknowledgement still requires reconciliation, never a
+retry. This exception authorizes one reviewed launch repair; it cannot retry
+scientific failures or change inputs, optimizer semantics or acceptance gates.
+
 ## Quest command sequence
 
 From the actual Quest repository, use `/usr/bin/python3.12` for the control CLI.
