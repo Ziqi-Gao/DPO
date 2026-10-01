@@ -1,12 +1,12 @@
 # OPD current handoff
 
-Last updated: 2026-10-01 UTC. **LR recovery diagnostic54560292 completed0:0
-and passed independent raw replay; model/G0 remain unaccepted.** The paired
-train-only result identifies excessive5e-4 step size;5e-5 improves4-step training
-quality but is not yet an accepted scientific successor. Original-native
-initial128 check **54560398 is RUNNING**, confirmed at01:29:51Z. Continue its
-finite read-only observer; preserve all old claims, checkpoints and failures.
-Never re-arm completed observers or modify the active initial check's12 controls.
+Last updated: 2026-10-01 UTC. **Both diagnostics completed and were independently
+audited; the original student fails its base criterion at0/128 versus13 required.**
+LR job54560292 supports a lower5e-5 training rate, but cannot repair the fixed
+original initial. Native check54560398 completed0:0 in12m38s; all128 responses
+were replayed. Model/G0 remain unaccepted. Both finite observers have exited;
+do not re-arm them or repeat the completed jobs. The next decision is a separately
+declared student successor, not more retries of the original frozen initial.
 
 Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
@@ -135,8 +135,9 @@ LambdaLR1.0, without warmup/clipping. With1,720,574,976 unique parameters,
 lr*sqrt(N)=20.7399; the actual first-update L2=18.7528 is plausible, not by itself
 a double-counting error. Logged KL7.82295 is current||initial over one fixed
 training prompt's prefix, not a validation or generated-response KL. Different
-step losses consume different64-sample windows. Optimization overshoot remains
-a testable hypothesis, not a demonstrated implementation fix.
+step losses consume different64-sample windows. The paired diagnosis
+below subsequently tests optimization overshoot; it does not establish an
+optimizer implementation defect.
 
 The real first64 teacher-data prerequisite is now complete and independently
 replayed on Quest. Exactly64 candidate-0000 records,53,440 prompt tokens and5,896
@@ -306,8 +307,9 @@ Independent actual deployment review accepted only this one check (SHA
 The frozen raw core and execution-admission wrapper received separate non-author
 reviews before new GPU output. Wrapper review SHA is
 `ec92010d3c6bfbd7abc78cf43f18d600db356ac9b6f174e179947474e5f1e3ca`;
-its49 CPU cases and local actual-plan admission passed. No native result exists
-yet; neither CPU tests nor submission accept the model.
+its49 CPU cases and local actual-plan admission passed before GPU results.
+The actual diagnostic also passed complete execution/provenance/raw replay;
+that success does not accept its failed model-quality result.
 
 Job54560398 was acknowledged at **01:29:26Z**, RUNNING at **01:29:51Z**, under
 intent `2b622073793933ada34054021664378e`. Its plan is
@@ -321,16 +323,53 @@ only immutable source and small submit metadata. The real live-binding was
 fetched/hash-verified as `live-binding-54560398.json`, SHA
 `2d051ae3b4f351774303785dabad4c6cdc8b7f48084b2b030d3708ecb0f2c03e`.
 
-The finite Quest observer is
-`.sdsc/diagnostics/student-initial-native-v1/observe.py`, SHA
-`9b1472bf34e83d8be5b865a510db85bde3036fc9c93995a094feefb7c398b758`,
-active tool session78485 on quser43. It checks every300 seconds for at most8h,
-fetches bounded terminal results, and cannot submit, retry or cancel. Its
-started/status records are alongside it; preserve all12 plan controls and the
-original science while active. Do not start a competing observer. After
-completion, run frozen `independent_initial_execution_audit.py` with the exact
-plan/job/publication/live-binding hashes; its original raw core independently
-replays all128 responses before any base-gate conclusion. G0/pilot stay stopped.
+The finite Quest observer
+`.sdsc/diagnostics/student-initial-native-v1/observe.py` (SHA
+`9b1472bf34e83d8be5b865a510db85bde3036fc9c93995a094feefb7c398b758`)
+ran on quser43 as tool session78485, confirmed **COMPLETED0:0 at01:44:56Z**,
+fetched bounded results and exited at01:44:57Z. Job/batch/extern all completed
+with zero exit status; elapsed time was758 seconds. Its real started/status/
+finished records are retained; no observer or compute job remains active in
+this completed flow. Never repeat its permanent scientific claim.
+
+Actual fetch: `.sdsc/fetched/54560398/fetch-ah0njq8o/`.
+Publication SHA `9f2f532d1cbd15e0877d142bfeb99c4f23c11171ede80ee84840e15df1574081`;
+producer report SHA `0aec6f9ffb67cda3dfdba59a9f4b786d1b76e0b9b3464c28f5aa0a52be5ee95e`.
+Frozen independent execution/raw audit:
+`.sdsc/diagnostics/student-initial-native-v1/actual-independent-audit-54560398.json`,
+SHA `55b59e7946e39f67e83f9cbfba7157832d5e9f5ed5e602a1e0a2828e70eeba34`.
+It verified the real plan/source/publication/accounting/memory and all128 prompt
+encodings, response decodings and original parser/verifier traces. Results are
+**0/128 answer-correct,0/128 full proofs,13/128 valid format**;51 responses ended
+at EOS and77 at the256 cap. Maximum prompt length1194 plus256 fits1536. The
+original base criterion13/128 is **false**. Removing the extra autocast has not
+rescued it; no checkpoint, instruction, population or threshold changed.
+Peak job memory was21,530,996,736 bytes (about20.05 GiB), leaving47,188,480,000
+bytes; all five memory boundaries pass and own-job failcnt iszero. This is a
+quality failure, not a demonstrated allocation or memory failure.
+
+A separate session on **quser33** recorded a missing shared SSH master at01:33Z
+and stopped remote operations without authentication fallback. Its dated
+`connection-stopped-quser33.json` and exact recovery of the dry-run display copy
+are preserved. That session's earlier RUNNING observation is superseded by the
+quser43 observer's shared terminal/fetch/audit records above. Local inspection of
+these completed results needs no new authentication. Any future remote operation
+must first check the master on its own actual Quest host; authentication on one
+host does not establish a master on another. Preserve every completed plan,
+claim, release and frozen auditor/control byte.
+
+The original1.7B track is blocked by its fixed-initial scientific condition,
+even if lower-LR calibration later improves trained quality. Do not submit G0 or
+pilot, replace initial with trained weights, or call this complete-model acceptance.
+A reviewable direction proposal is
+`docs/refactor/sdsc_student_acceptance_recovery_options_20261001.md`: one
+prospectively fixed larger native student, or a separately prepared common1.7B
+baseline. Both retain original numerical gates and require distinct scientific
+protocol/implementation/independent acceptance and actual results. The user has
+been asked which scientific direction to take; there is **no answer/authorization
+for either replacement yet**. Existing compute-resource authorization remains
+valid, but does not choose between these different research subjects. No new
+student-model experiment was submitted and no LR successor was silently accepted.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
@@ -344,11 +383,11 @@ denominator. Initial anti-shortcut and circuit gates remain mandatory. Improving
 trained weights cannot repair the fixed initial-capability gate; never substitute
 a trained checkpoint for initial or relax thresholds to force PASS. The old
 G0/pilot adapters are not automatically valid for the new producer identities.
-The audited0/128 quality path uses explicit BF16 autocast, while the original
-formal scorer does not; the native-BF16 screen covers training32 only. Retain
-this as strong failure evidence, not an invented complete formal-G0 or
-anti-shortcut/circuit result. A change of model/initial scientific identity
-would require a separately reviewed successor, not an automatic LR branch.
+The original-native validation128 check now confirms that this necessary base
+gate fails, independently of the earlier autocast diagnostic and training32
+screen. It is not an executed complete G0 or an invented anti-shortcut/circuit
+outcome. A change of model/initial scientific identity requires a separately
+reviewed successor and the user's direction choice, not an automatic LR branch.
 
 This is the canonical current-state summary for the OPD refactor and
 ServerScheduler integration. AGENTS.md is authoritative for operating and
