@@ -11,19 +11,41 @@ and every original scientific threshold. Implementation **625c65d** and separate
 non-author protocol/worker/transport/auditor/provenance reviews are complete.
 The focused CPU suites pass **149 tests**, including2048 actual-tokenizer response
 replays and9 corrupted-evidence rejections. Distinct acceptance **ba8d357** records
-implementation readiness, not a model/G0 result. Preflight **54562489** was
-submitted exactly once at05:27:03Z and observed **RUNNING** at05:27:39Z with
-2H100/24CPU/384GiB/1h. Its intent is `39af4ea3f267d92dca306664e6d2f432`; plan and
-submission receipts are under `.sdsc/student-prepare/39af4ea3f267d92dca306664e6d2f432/`.
-No observer or automatic continuation is active. The immutable deployed release
-is `20261001T052044Z-dffd4aa0a3f4-ca7b712b`, genuine science HEADba8d357.
-The matching32-update fit has only a local plan, intent
-`524f6a6e8f1541502f315b820880ea4c`, under `.sdsc/student-prepare/`; it is **not
-submitted**. Verify accounting, persistent artifacts and independent eight-response
-preflight replay before its fresh remote dry-run and one authorized submission.
-Fit resources are2H100/24CPU/384GiB/4h, subject to preflight timing evidence.
-Do not duplicate either intent or modify their pinned controls. See bounded
-review/deployment records in `.sdsc/diagnostics/student-preparation-v1/`.
+implementation readiness, not a model/G0 result. Preflight **54562489 PASSED**:
+all accounting rows **COMPLETED/0:0**, elapsed14m10s, queue empty and all execution
+validators accepted at05:46:46Z. It completed4 W2/global64 updates/218,500 tokens,
+actual full-state restoration and exact saved-master/native-BF16 reload parity.
+Peak own-job memory90.92GiB left293.08GiB headroom, with noOOM. All8 training-only
+responses independently replayed; no development/initial/G0 acceptance was made.
+Required30.02GB of dense/full-state artifacts were persistently read-back hashed.
+Small results: `.sdsc/fetched/54562489/fetch-oz9q5io5/`; receipt SHA
+`630e210be904f41c4bcfe26f58a3569348836925dd8b8e0d5506fccb25526eae`.
+
+Matching complete preparation **54562507** was submitted exactly once at
+05:48:11Z and observed **RUNNING** at05:49:22Z. Resources are
+**2H100/24CPU/384GiB/4h**, accountnwu181/shared partition and QoS. It starts fresh
+from original native weights, with32 updates and all four512-example development
+reports. Four-hour timing is supported by actual preflight generation evidence,
+but is not a completion guarantee. The fit intent is
+`524f6a6e8f1541502f315b820880ea4c`; preflight intent is
+`39af4ea3f267d92dca306664e6d2f432`. Their immutable plans and submission receipts
+are under `.sdsc/student-prepare/`; do not duplicate or re-arm either. No observer
+or automatic continuation is active. Deployed release
+`20261001T052044Z-dffd4aa0a3f4-ca7b712b` uses genuine science HEADba8d357; later
+handoff-only commits do not change that deployment. Controls remain pinned.
+Bounded reviews, runtime evidence and independent raw audit are in
+`.sdsc/diagnostics/student-preparation-v1/`.
+
+Next: status/fetch the existing fit, validate terminal accounting and persistent
+outputs, then independently replay all2048 development responses and freeze only
+the protocol-selected checkpoint. No candidate may be changed after formal
+exposure. Initial qualification and downstream calibration/G0 remain unexecuted.
+Successor adapters must explicitly load the prepared student and accepted dense
+teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
+`score_teacher.py` load native HF models; existing `train.py` loads BF16 before
+the FP32 prepared checkpoint and would round masters. Reuse reviewed exact-FP32
+load semantics in additive adapters, regenerate initial-dependent artifacts,
+and retain original validation128/anti-shortcut/cohort/circuit/calibration gates.
 
 CPU tests cover genuine two-process global64 loss/update equivalence and actual
 full-state save/restore with identical next update. Exact pinned tokenization
@@ -409,8 +431,9 @@ explicitly chose **keep1.7B and prepare a common initial model**. Existing
 compute-resource authorization covers the necessary preparation, preflight and
 gated continuation without per-stage confirmation. The new prospective
 preparation protocol above implements this direction; original-native failure
-is not retroactively accepted. Only its preflight54562489 has been submitted;
-full preparation remains gated as described at the top of this handoff.
+is not retroactively accepted. Its preflight54562489 passed; full preparation
+54562507 is running as described at the top of this handoff. No prepared model,
+complete G0 or formal OPD/RL comparison result is accepted yet.
 The reviewed paired-loss table, train-only response metrics and numerical-audit
 limits are in `docs/refactor/sdsc_student_optimization_findings_20261001.md`.
 
