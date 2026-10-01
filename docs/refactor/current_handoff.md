@@ -3,9 +3,10 @@
 Last updated: 2026-10-01 UTC. **LR recovery diagnostic54560292 completed0:0
 and passed independent raw replay; model/G0 remain unaccepted.** The paired
 train-only result identifies excessive5e-4 step size;5e-5 improves4-step training
-quality but is not yet an accepted scientific successor. The original-native
-initial128 check is implemented/reviewed but unsubmitted. Preserve all old
-claims, checkpoints and failures; never re-arm completed observers.
+quality but is not yet an accepted scientific successor. Original-native
+initial128 check **54560398 is RUNNING**, confirmed at01:29:51Z. Continue its
+finite read-only observer; preserve all old claims, checkpoints and failures.
+Never re-arm completed observers or modify the active initial check's12 controls.
 
 Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
@@ -284,7 +285,8 @@ all original/v2 plans/claims and the two unused drafts. No G0/pilot was started.
 
 The original-native-initial check is implemented under
 `tools/sdsc_student_initial{,_job,_probe}.py` and
-`docs/refactor/sdsc_student_initial_native_check_20261001.md`, still **unsubmitted**.
+`docs/refactor/sdsc_student_initial_native_check_20261001.md`, implementation
+**ecbbfdf**, and is now submitted exactly once as **54560398**.
 It reuses the original scorer on unscreened validation128 without extra autocast,
 original initial/config/instruction and256-token cap. Fixed resources are
 1 H100/8 CPU/64 GiB/30m. Its single base-gate observation cannot accept model/G0.
@@ -299,9 +301,36 @@ current-job64-GiB/five-phase memory and bounded5-file publication. It handles
 terminal queue cache only with matching scontrol/sacct state/exit/owner and
 keeps historical requested GPUs separate from currently allocatable GPUs.
 Fresh connection and all19 installed runtime versions passed at01:11Z/01:15Z.
-Raw replay core was independently accepted before GPU output; actual deployment
-and result admission remain required. Unused candidate files in the older LR
-snapshot do not mean this check was launched.
+Independent actual deployment review accepted only this one check (SHA
+`ccd7a2bd5ca0c7815ef48d91d748e5246d9956c5f6919493bed4c60c806b2a6d`).
+The frozen raw core and execution-admission wrapper received separate non-author
+reviews before new GPU output. Wrapper review SHA is
+`ec92010d3c6bfbd7abc78cf43f18d600db356ac9b6f174e179947474e5f1e3ca`;
+its49 CPU cases and local actual-plan admission passed. No native result exists
+yet; neither CPU tests nor submission accept the model.
+
+Job54560398 was acknowledged at **01:29:26Z**, RUNNING at **01:29:51Z**, under
+intent `2b622073793933ada34054021664378e`. Its plan is
+`.sdsc/student-initial/2b622073793933ada34054021664378e/plan.json`, SHA
+`2830dda5b6dc3846eb0d73bb92944f4e12ef4d97708530f606b8f1de21f929f5`.
+Run `20261001T012217Z-260344e37777-f9b1dcfc` has639 files/7,740,269 source bytes,
+code SHA `260344e3777791ea7fae6322506c987e6f4a1dada9448428fb6c148124a38e54`.
+Remote dry-run verified original parent/source/runtime and0+1 GPUs. Results are
+on project Lustre `student-initial/2b622073793933ada34054021664378e/`; HOME holds
+only immutable source and small submit metadata. The real live-binding was
+fetched/hash-verified as `live-binding-54560398.json`, SHA
+`2d051ae3b4f351774303785dabad4c6cdc8b7f48084b2b030d3708ecb0f2c03e`.
+
+The finite Quest observer is
+`.sdsc/diagnostics/student-initial-native-v1/observe.py`, SHA
+`9b1472bf34e83d8be5b865a510db85bde3036fc9c93995a094feefb7c398b758`,
+active tool session78485 on quser43. It checks every300 seconds for at most8h,
+fetches bounded terminal results, and cannot submit, retry or cancel. Its
+started/status records are alongside it; preserve all12 plan controls and the
+original science while active. Do not start a competing observer. After
+completion, run frozen `independent_initial_execution_audit.py` with the exact
+plan/job/publication/live-binding hashes; its original raw core independently
+replays all128 responses before any base-gate conclusion. G0/pilot stay stopped.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
