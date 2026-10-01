@@ -397,14 +397,14 @@ class ProvenanceTests(unittest.TestCase):
             self.command("rev-parse", "refs/remotes/public/master").decode().strip(), successor["public_base"]
         )
 
-    def test_64_commit_local_history_roundtrip_preserves_exact_lineage_and_source(self):
-        self.local_prelude(62)
+    def test_128_commit_local_history_roundtrip_preserves_exact_lineage_and_source(self):
+        self.local_prelude(126)
         successor = self.local_pair()
-        self.assertEqual(len(successor["commits"]), 64)
+        self.assertEqual(len(successor["commits"]), 128)
         index = (self.root / ".git/index").read_bytes()
         status = self.command("status", "--porcelain=v1")
         prepared = self.prepare_local(successor)
-        destination = Path(self.temp.name) / "64-commit-history"
+        destination = Path(self.temp.name) / "128-commit-history"
         verified = self.verify(prepared, destination)
         self.assertTrue(verified["verified"])
         self.assertEqual(verified["local_successor"], successor)
@@ -422,14 +422,14 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual((self.root / ".git/index").read_bytes(), index)
         self.assertEqual(self.command("status", "--porcelain=v1"), status)
 
-    def test_65_commit_local_history_rejected_before_export_or_import(self):
-        self.local_prelude(63)
+    def test_129_commit_local_history_rejected_before_export_or_import(self):
+        self.local_prelude(127)
         successor = self.local_pair()
-        self.assertEqual(len(successor["commits"]), 65)
+        self.assertEqual(len(successor["commits"]), 129)
         with self.assertRaisesRegex(provenance.ProvenanceError, "commit limit"):
             self.prepare_local(successor)
         self.assertFalse((self.root / ".sdsc/provenance").exists())
-        # The same actual 65-commit claim is also rejected by the manifest
+        # The same actual 129-commit claim is also rejected by the manifest
         # boundary used before any isolated Git import on the consumer side.
         with self.assertRaisesRegex(provenance.ProvenanceError, "bounded unique commit inventory"):
             provenance.validate_local_successor(successor, self.head, successor["public_base"])
@@ -456,7 +456,7 @@ class ProvenanceTests(unittest.TestCase):
             self.prepare_local(successor)
 
     def test_local_history_rejects_unsafe_earlier_tree_already_deleted_before_pair(self):
-        self.local_prelude(32)
+        self.local_prelude(64)
         self.write("secrets/fixture.txt", b"synthetic export rejection fixture\n")
         self.command("add", "secrets/fixture.txt")
         self.command("commit", "--quiet", "-m", "Unsafe historical path fixture")

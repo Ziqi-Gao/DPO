@@ -1,0 +1,532 @@
+"""No-network transport and real filesystem fixtures for common preparation."""
+
+from __future__ import annotations
+
+import base64
+import copy
+import importlib.util
+import json
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "tools" / (name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def c(monkeypatch):
+    original = subprocess.run
+
+    def guarded(argv, *args, **kwargs):
+        command = argv[0] if isinstance(argv, list | tuple) else argv.split()[0]
+        if Path(command).name in {"sbatch", "sacct", "squeue", "scontrol", "srun", "scancel", "ssh"}:
+            pytest.fail("CPU fixture attempted real remote/Slurm command")
+        return original(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", guarded)
+    return load("sdsc_student_prepare")
+
+
+@pytest.fixture
+def n():
+    return load("sdsc_student_prepare_job")
+
+
+@pytest.fixture
+def plan(c, tmp_path, monkeypatch):
+    monkeypatch.setattr(c, "CONTROL", tmp_path / "control")
+    monkeypatch.setattr(c, "PROJECT", tmp_path / "project")
+    pins = dict.fromkeys(c.TOOLS, "a" * 64)
+    pins.update(c.FROZEN)
+    protocol = dict(
+        protocol_sha256="b" * 64,
+        artifact_sha256="a" * 64,
+        implementation_commit="1" * 40,
+        acceptance_commit="2" * 40,
+        head="2" * 40,
+        science_file_sha256=dict(pins),
+    )
+    receipt = dict(
+        job_id=c.PARENT_JOB,
+        intent_id=c.PARENT_INTENT,
+        submission_dir=str(c.CONTROL / "submissions" / c.PARENT_INTENT),
+        science_git_head=c._initial.SCIENCE_HEAD,
+        bundle_sha256=c._initial.PARENT_BUNDLE_SHA,
+        python=str(c.PROJECT / "envs/qwen3-v2-g0-py31213-cu128-v1/bin/python3.12"),
+        hf_home=str(c.PROJECT / "cache/huggingface"),
+    )
+    contract = c.helper("sdsc_student_contract")
+    value = dict(
+        schema="quest-sdsc-student-prepare-plan-v1",
+        task=c.TASK,
+        mode="preflight",
+        run_id="new-preparation-run",
+        code_sha256="c" * 64,
+        manifest_sha256="d" * 64,
+        resources=c.resources("preflight"),
+        control_sha256=pins,
+        protocol=protocol,
+        provenance=dict(
+            directory=str(c.CONTROL / "provenance" / ("e" * 64)), manifest_sha256="e" * 64, head="2" * 40
+        ),
+        parent=dict(
+            receipt=receipt,
+            report_sha256=c.PARENT_REPORT_SHA,
+            publication_sha256=c._initial.PARENT_PUBLICATION_SHA,
+        ),
+        checkpoints=[
+            dict(
+                label="initial", path="artifacts/initial_checkpoint.pt", size=3441276375, sha256=c.INITIAL_SHA
+            )
+        ],
+        resolved_config=dict(
+            path="artifacts/canonical_sft/resolved_config.yaml", size=7923, sha256=c.CONFIG_SHA
+        ),
+        dataset_inputs=[
+            dict(row, source=str(contract.DATASET_ROOT / row["path"])) for row in contract.DATASET_FILES
+        ],
+        python=receipt["python"],
+        hf_home=receipt["hf_home"],
+        preflight=None,
+        created_at="2026-10-01T00:00:00Z",
+        **dict.fromkeys(c.FLAGS, False),
+    )
+    bind(c, value)
+    c.validate_plan(value)
+    return value
+
+
+def bind(c, plan):
+    plan["science_identity"] = c.science_identity(plan["mode"], plan["protocol"])
+    intent = c.execution_intent(plan)
+    plan.update(
+        intent_id=intent,
+        release=str(c.CONTROL / "releases" / plan["run_id"]),
+        submission_dir=str(c.CONTROL / "student-prepare-submissions" / intent),
+        claim=str(c.CONTROL / "student-prepare-claims" / (intent + ".json")),
+        result_dir=str(c.PROJECT / "student-prepare" / intent),
+        job_name="opd-spr-" + intent,
+    )
+    plan["scientific_claim"] = str(c.scientific_claim_path(plan))
+
+
+def test_resource_stage_limits(c, plan):
+    assert c.resources("fit")["time"] == "04:00:00"
+    assert c.resources("preflight")["time"] == "01:00:00"
+    args = c.sbatch(plan)
+    assert "--gpus=h100:2" in args and "--mem=393216M" in args and "--no-requeue" in args
+    assert "--export=NONE" in args
+    assert "--constraint=lustre" not in args
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("mode", "unknown"),
+        ("task", "canonical_grpo"),
+        ("student_accepted", True),
+        ("formal_initial_accepted", True),
+        ("execution_class_certified", True),
+        ("result_dir", "/tmp/checkpoints"),
+        ("python", "/usr/bin/python3"),
+        ("job_name", "repeat"),
+        ("intent_id", "a" * 32),
+    ],
+)
+def test_plan_rejects_scope_or_binding_change(c, plan, field, value):
+    plan[field] = value
+    with pytest.raises((ValueError, KeyError)):
+        c.validate_plan(plan)
+
+
+@pytest.mark.parametrize(
+    "change", ["omit_family", "replace_initial", "change_lr", "self_acceptance", "changed_helper"]
+)
+def test_scientific_plan_corruption(c, plan, change):
+    if change == "omit_family":
+        plan["dataset_inputs"].pop()
+    elif change == "replace_initial":
+        plan["checkpoints"][0]["sha256"] = "f" * 64
+    elif change == "change_lr":
+        plan["science_identity"]["learning_rate"] = 5e-4
+    elif change == "self_acceptance":
+        plan["protocol"]["acceptance_commit"] = plan["protocol"]["implementation_commit"]
+    else:
+        plan["control_sha256"]["tools/sdsc_student_lr.py"] = "f" * 64
+    with pytest.raises(ValueError):
+        c.validate_plan(plan)
+
+
+def test_scientific_claim_survives_changed_execution_control(c, plan):
+    before = plan["scientific_claim"]
+    old = plan["intent_id"]
+    plan["control_sha256"]["tools/sdsc_student_prepare_worker.py"] = "9" * 64
+    plan["protocol"]["science_file_sha256"]["tools/sdsc_student_prepare_worker.py"] = "9" * 64
+    bind(c, plan)
+    assert plan["scientific_claim"] == before and plan["intent_id"] != old
+    c.validate_plan(plan)
+
+
+def test_fit_requires_exact_matching_preflight(c, plan):
+    previous = copy.deepcopy(plan)
+    plan.update(
+        mode="fit",
+        resources=c.resources("fit"),
+        preflight=dict(plan=previous, plan_sha256=c.sha(c.canonical(previous))),
+    )
+    bind(c, plan)
+    c.validate_plan(plan)
+    plan["control_sha256"]["tools/sdsc_student_prepare_worker.py"] = "8" * 64
+    plan["protocol"]["science_file_sha256"]["tools/sdsc_student_prepare_worker.py"] = "8" * 64
+    bind(c, plan)
+    with pytest.raises(ValueError, match="fit/preflight"):
+        c.validate_plan(plan)
+
+
+def test_fit_missing_preflight_rejected(c, plan):
+    plan.update(mode="fit", resources=c.resources("fit"))
+    bind(c, plan)
+    with pytest.raises(ValueError):
+        c.validate_plan(plan)
+
+
+def test_remote_entrypoint_refuses_local_slurm(c):
+    result = subprocess.run(
+        [os.sys.executable, "-I", "-B", str(ROOT / "tools/sdsc_student_prepare.py"), "remote"],
+        input=b"{}",
+        capture_output=True,
+    )
+    assert result.returncode != 0 and b"Slurm operations cannot run on Quest" in result.stderr
+
+
+def test_launcher_uses_absolute_release_not_slurm_spool(c, plan, tmp_path):
+    script = c.job_script(plan).decode()
+    assert str(Path(plan["release"]) / "source/tools/sdsc_student_prepare_job.py") in script
+    assert "dirname" not in script and "CUDA_VISIBLE_DEVICES=" not in script
+    path = tmp_path / "job.sh"
+    path.write_text(script)
+    assert subprocess.run(["/bin/bash", "-n", str(path)]).returncode == 0
+
+
+def test_submission_requires_matching_dry_run_before_claim(c, plan, monkeypatch):
+    monkeypatch.setattr(c, "verify_source", lambda _: None)
+    monkeypatch.setattr(c, "admission", lambda _: pytest.fail("must reject before admission"))
+    with pytest.raises(ValueError, match="matching dry-run"):
+        c.remote_action(dict(plan=plan, action="submit", authorize=True, dry_run=None))
+    assert not Path(plan["scientific_claim"]).exists()
+
+
+def test_unknown_submission_claim_is_permanent(c, plan, monkeypatch):
+    monkeypatch.setattr(c, "verify_source", lambda _: None)
+    monkeypatch.setattr(c, "admission", lambda _: {})
+    monkeypatch.setattr(c, "run", lambda argv: dict(returncode=1, stdout="", stderr="transport lost"))
+    proof = dict(dry_run=True, blockers=[], plan_sha256=c.sha(c.canonical(plan)), argv=c.sbatch(plan))
+    with pytest.raises(ValueError, match="acknowledgement"):
+        c.remote_action(dict(plan=plan, action="submit", authorize=True, dry_run=proof))
+    assert Path(plan["scientific_claim"]).exists() and Path(plan["claim"]).exists()
+    assert (Path(plan["submission_dir"]) / "unknown.json").exists()
+    assert not (Path(plan["submission_dir"]) / "receipt.json").exists()
+
+
+def test_scientific_claim_stops_racing_submit(c, plan, monkeypatch):
+    monkeypatch.setattr(c, "verify_source", lambda _: None)
+    monkeypatch.setattr(c, "admission", lambda _: {})
+    path = Path(plan["scientific_claim"])
+    path.parent.mkdir(parents=True)
+    path.write_text("{}")
+    monkeypatch.setattr(c, "run", lambda *_: pytest.fail("must not submit"))
+    proof = dict(dry_run=True, blockers=[], plan_sha256=c.sha(c.canonical(plan)), argv=c.sbatch(plan))
+    with pytest.raises(FileExistsError):
+        c.remote_action(dict(plan=plan, action="submit", authorize=True, dry_run=proof))
+
+
+def test_gpu_ceiling_counts_two_new_gpus(c, monkeypatch):
+    monkeypatch.setattr(c, "run", lambda _: dict(returncode=0, stdout="100|RUNNING|N/A\n", stderr=""))
+    monkeypatch.setattr(c._initial, "live_gpu_request", lambda *a, **k: dict(allocatable_gpus=3))
+    with pytest.raises(ValueError, match="four allocatable"):
+        c.check_gpu_ceiling()
+
+
+def test_completed_own_jobs_use_live_tres_helper(c, monkeypatch):
+    seen = []
+    monkeypatch.setattr(c, "run", lambda _: dict(returncode=0, stdout="100|COMPLETED|N/A\n", stderr=""))
+
+    def helper(job, user, gres, queue_state):
+        seen.append((job, gres, queue_state))
+        return dict(allocatable_gpus=0)
+
+    monkeypatch.setattr(c._initial, "live_gpu_request", helper)
+    assert c.check_gpu_ceiling()["existing_allocatable_gpus"] == 0
+    assert seen == [("100", "N/A", "COMPLETED")]
+
+
+def test_checkpoint_full_copy_readback_and_no_overwrite(c, n, tmp_path):
+    source = tmp_path / "source"
+    source.write_bytes(b"actual state\0" * 500)
+    row = dict(path="resume/rank-0.pt", size=source.stat().st_size, sha256=c.sha(source.read_bytes()))
+    target = tmp_path / "output" / "rank-0.pt"
+    assert n.copy_checkpoint(source, target, row, c) == row
+    assert target.read_bytes() == source.read_bytes()
+    with pytest.raises(FileExistsError):
+        n.copy_checkpoint(source, target, row, c)
+
+
+@pytest.mark.parametrize("bad", ["hash", "size", "symlink"])
+def test_checkpoint_rejects_bad_input(c, n, tmp_path, bad):
+    path = tmp_path / "input"
+    path.write_bytes(b"state")
+    row = dict(path="checkpoints/state.pt", size=5, sha256=c.sha(b"state"))
+    if bad == "hash":
+        row["sha256"] = "a" * 64
+    elif bad == "size":
+        row["size"] = 4
+    else:
+        link = tmp_path / "link"
+        link.symlink_to(path)
+        path = link
+    with pytest.raises(ValueError):
+        n.copy_checkpoint(path, tmp_path / "output", row, c)
+
+
+def test_large_inventory_rejects_external_symlink(c, n, tmp_path):
+    root = tmp_path / "artifacts"
+    (root / "resume").mkdir(parents=True)
+    (root / "resume" / "unsafe").symlink_to("/etc/passwd")
+    with pytest.raises(ValueError):
+        n.large_inventory(root, c)
+
+
+def test_worker_starts_science_cwd_and_preserves_cuda(c, n, plan, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    science = tmp_path / "science"
+    science.mkdir()
+    source.mkdir()
+    capture = {}
+
+    def popen(argv, **kwargs):
+        capture.update(argv=argv, **kwargs)
+        return object()
+
+    monkeypatch.setattr(n.subprocess, "Popen", popen)
+    environment = {"CUDA_VISIBLE_DEVICES": "GPU-uuid-2,GPU-uuid-7"}
+    n.start_worker(plan, source, science, tmp_path / "inputs", tmp_path / "artifacts", environment, None)
+    assert capture["cwd"] == science and capture["start_new_session"] is True
+    assert capture["env"] == environment and "--num_processes" in capture["argv"]
+    assert capture["argv"][capture["argv"].index("--config_file") + 1] == str(
+        science / "configs/accelerate/fsdp_2gpu_adapted_student_v2.yaml"
+    )
+
+
+def test_no_teacher_store_in_worker_inputs(c, n, plan, tmp_path):
+    science = tmp_path / "science"
+    (science / c.PROTOCOL_PATH).parent.mkdir(parents=True)
+    (science / c.PROTOCOL_PATH).write_text("{}")
+    inputs = n.build_worker_inputs(
+        plan, tmp_path, science, {"job_id": "123"}, dict.fromkeys((str(i) for i in range(49)), "a" * 64), c
+    )
+    assert inputs["mode"] == "preflight" and inputs["initial_checkpoint"]["sha256"] == c.INITIAL_SHA
+    assert inputs["original_config"]["sha256"] == c.CONFIG_SHA
+    assert "teacher_bundle_root" not in inputs
+
+
+def report(c, plan):
+    return dict(
+        schema="quest-sdsc-student-prepare-report-v1",
+        mode="preflight",
+        passed=True,
+        execution_complete=True,
+        preparation_complete=False,
+        job_id="123",
+        run_id=plan["run_id"],
+        source_code_sha256=plan["code_sha256"],
+        plan_sha256=c.sha(c.canonical(plan)),
+        protocol_sha256=plan["protocol"]["protocol_sha256"],
+        initial_checkpoint_sha256=c.INITIAL_SHA,
+        optimizer_steps=4,
+        global_batch_size=64,
+        world_size=2,
+        learning_rate=5e-5,
+        data_audit={
+            "passed": True,
+            "isolation": dict(
+                passed=True,
+                counts=dict(original_family=144000, teacher_fit=8192, teacher_dev=512),
+                dimensions=["semantic", "example_id", "pair_group_id", "pair_seed"],
+                preparation_manifest_sha256="274e5f303d1a44b69790db687fc9fdde43bfae5c27cc2e5c5f656cdd0bf28cc6",
+            ),
+            "token_envelope": dict(
+                window_input_tokens=[192] * 32,
+                fit_rows=2048,
+                optimizer_windows=32,
+                token_budget=2000000,
+                total_input_tokens=6144,
+            ),
+        },
+        training_input_tokens=768,
+        development=[],
+        selected_checkpoint=None,
+        protocol_artifact_sha256=plan["protocol"]["artifact_sha256"],
+        teacher_data_required=False,
+        source_kind="symbolic_canonical",
+        checkpoint_restore={
+            "passed": True,
+            "ranks": [
+                dict(
+                    rank=i,
+                    step=4,
+                    passed=True,
+                    actual_accelerate_save_load=True,
+                    model_sha256="e" * 64,
+                    optimizer_sha256="f" * 64,
+                    runtime_sha256="a" * 64,
+                )
+                for i in range(2)
+            ],
+        },
+        checkpoints=[
+            dict(
+                path="checkpoints/step-00000004.pt",
+                step=4,
+                size=12,
+                sha256="c" * 64,
+                scope="common_student_preparation_model_only",
+                reload_by_rank=[
+                    dict(
+                        rank=i,
+                        exact_saved_master_reload=dict(
+                            all_tensors_exact=True, loaded_before_bf16_copy=True, key_count=311
+                        ),
+                        root_export_logits=[
+                            dict(bitwise_equal=True, max_abs_error=0, rms_error=0, argmax_mismatches=0)
+                        ]
+                        * 2,
+                    )
+                    for i in range(2)
+                ],
+            )
+        ],
+        raw_artifacts=[dict(path="prepare-updates.jsonl", size=3, sha256="b" * 64)],
+        **dict.fromkeys(c.FLAGS, False),
+    )
+
+
+def test_preflight_execution_does_not_claim_prepared_initial(c, plan):
+    value = report(c, plan)
+    c.validate_worker_report(value, plan, "123", {r["path"]: r for r in value["raw_artifacts"]})
+    value["formal_initial_accepted"] = True
+    with pytest.raises(ValueError):
+        c.validate_worker_report(value, plan, "123", {})
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("optimizer_steps", 3),
+        ("learning_rate", 5e-4),
+        ("protocol_sha256", "a" * 64),
+        ("world_size", 1),
+        ("preparation_complete", True),
+    ],
+)
+def test_report_rejects_wrong_experiment(c, plan, field, value):
+    payload = report(c, plan)
+    payload[field] = value
+    with pytest.raises(ValueError):
+        c.validate_worker_report(payload, plan, "123", {})
+
+
+def test_fetch_never_accepts_checkpoint_bytes(c, plan):
+    receipt = c.make_receipt(plan, "123")
+    value = dict(
+        receipt=receipt,
+        files={"checkpoints/model.pt": base64.b64encode(b"weights").decode()},
+        bytes=7,
+        status={"publication_verified": False},
+    )
+    with pytest.raises(ValueError):
+        c.validate_download(value, plan)
+
+
+def test_memory_own_job_oom_rejected(c):
+    raw = {"ancestors": [{"path": "/slurm/job_123/step_batch", "memory_events": {"oom": 1}}]}
+    with pytest.raises(ValueError, match="nonzero"):
+        c.validate_job_memory_events(raw, "123")
+
+
+@pytest.mark.parametrize(
+    "change", ["token_total", "missing_population", "missing_rank", "parity", "selection"]
+)
+def test_report_rejects_missing_real_evidence(c, plan, change):
+    value = report(c, plan)
+    if change == "token_total":
+        value["training_input_tokens"] -= 1
+    elif change == "missing_population":
+        value["data_audit"]["isolation"]["counts"]["original_family"] = 256
+    elif change == "missing_rank":
+        value["checkpoint_restore"]["ranks"].pop()
+    elif change == "parity":
+        value["checkpoints"][0]["reload_by_rank"][0]["root_export_logits"][0]["bitwise_equal"] = False
+    else:
+        value["selected_checkpoint"] = {"step": 4}
+    with pytest.raises(ValueError):
+        c.validate_worker_report(value, plan, "123", {r["path"]: r for r in value["raw_artifacts"]})
+
+
+def test_fixed_runtime_checks_all_nineteen_packages(c, plan, monkeypatch):
+    identity = dict(python="3.12.13", executable=plan["python"], packages=dict(c.RUNTIME_PACKAGES))
+    monkeypatch.setattr(c, "run", lambda *a, **kw: dict(returncode=0, stdout=json.dumps(identity), stderr=""))
+    assert c.verify_runtime(plan) == identity and len(identity["packages"]) == 19
+    identity["packages"]["accelerate"] = "new-version"
+    with pytest.raises(ValueError, match="package identity"):
+        c.verify_runtime(plan)
+
+
+def test_deployed_worker_must_match_reviewed_implementation(c, plan):
+    plan["control_sha256"]["tools/sdsc_student_prepare_worker.py"] = "8" * 64
+    bind(c, plan)
+    with pytest.raises(ValueError, match="accepted scientific byte"):
+        c.validate_plan(plan)
+
+
+def test_missing_executed_science_inventory_rejected(c, plan):
+    plan["protocol"]["science_file_sha256"].pop("tools/sdsc_student_lr_probe.py")
+    with pytest.raises(ValueError, match="lacks executed"):
+        c.validate_plan(plan)
+
+
+def test_new_raw_read_bound_does_not_change_old_helper(c, tmp_path):
+    path = tmp_path / "complete-raw.jsonl"
+    raw = b"x" * (8 * c.CAP + 1)
+    path.write_bytes(raw)
+    assert c.read(path) == raw
+    with pytest.raises(ValueError):
+        c._io.read(path)
+    assert c.MAX_FILE == 16 * c.CAP and c.MAX_FETCH == 48 * c.CAP
+
+
+def test_new_raw_read_still_rejects_above_bound(c, tmp_path):
+    path = tmp_path / "oversized.jsonl"
+    with path.open("wb") as stream:
+        stream.truncate(c.MAX_FILE + 1)
+    with pytest.raises(ValueError):
+        c.read(path)
+
+
+def test_new_json_read_bound_and_hash_keep_old_document_immutable(c, tmp_path):
+    path = tmp_path / "memory.json"
+    raw = b'{"ok":true}' + b" " * (8 * c.CAP)
+    path.write_bytes(raw)
+    assert c.document(path, c.sha(raw)) == {"ok": True}
+    with pytest.raises(ValueError):
+        c._io.document(path)
+    with pytest.raises(ValueError, match="SHA differs"):
+        c.document(path, "a" * 64)

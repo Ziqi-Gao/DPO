@@ -1,12 +1,29 @@
 # OPD current handoff
 
-Last updated: 2026-10-01 UTC. **Both diagnostics completed and were independently
-audited; the original student fails its base criterion at0/128 versus13 required.**
-LR job54560292 supports a lower5e-5 training rate, but cannot repair the fixed
-original initial. Native check54560398 completed0:0 in12m38s; all128 responses
-were replayed. Model/G0 remain unaccepted. Both finite observers have exited;
-do not re-arm them or repeat the completed jobs. The next decision is a separately
-declared student successor, not more retries of the original frozen initial.
+Last updated: 2026-10-01 UTC. **The user selected keeping1.7B and preparing one
+common initial model for all methods, and authorized repair and submission.**
+The proposed successor is `prereg/amendments/qwen3_student_preparation_v1.json`;
+see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
+and prepares fresh native weights on2048 independent symbolic-canonical examples,
+with512 independent development examples and a prospective checkpoint rule.
+No teacher-generated targets are required. Preserve the original failed initial
+and every original scientific threshold. This preparation has not yet run onGPU
+and does not accept a model/G0. Implementation and distinct independent review
+must precede the new2-H100 preflight, then the matching fresh32-update fit.
+
+CPU tests cover genuine two-process global64 loss/update equivalence and actual
+full-state save/restore with identical next update. Exact pinned tokenization
+finds1,856,564 fit tokens, max1417 per training sequence. Preserve six longer
+development prefixes by declaring preparation-only1600-token inference before
+GPU execution; FSDP training and downstream limits remain1536. Provenance export
+now bounds128 unpublished commits instead of64, retaining genuine history,
+per-tree audits and unchanged byte limits; no public ref or history is rewritten.
+
+Both diagnostics completed and were independently audited: original student
+fails its base criterion at0/128 versus13 required. LR job54560292 supports
+lower5e-5 updates but cannot repair the fixed original initial. Native check
+54560398 completed0:0 in12m38s; all128 responses were replayed. Both finite
+observers exited; do not re-arm them or repeat their completed jobs.
 
 Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
@@ -373,11 +390,12 @@ A reviewable direction proposal is
 `docs/refactor/sdsc_student_acceptance_recovery_options_20261001.md`: one
 prospectively fixed larger native student, or a separately prepared common1.7B
 baseline. Both retain original numerical gates and require distinct scientific
-protocol/implementation/independent acceptance and actual results. The user has
-been asked which scientific direction to take; there is **no answer/authorization
-for either replacement yet**. Existing compute-resource authorization remains
-valid, but does not choose between these different research subjects. No new
-student-model experiment was submitted and no LR successor was silently accepted.
+protocol/implementation/independent acceptance and actual results. The user
+explicitly chose **keep1.7B and prepare a common initial model**. Existing
+compute-resource authorization covers the necessary preparation, preflight and
+gated continuation without per-stage confirmation. The new prospective
+preparation protocol above implements this direction; original-native failure
+is not retroactively accepted. No preparation job has been submitted yet.
 The reviewed paired-loss table, train-only response metrics and numerical-audit
 limits are in `docs/refactor/sdsc_student_optimization_findings_20261001.md`.
 
