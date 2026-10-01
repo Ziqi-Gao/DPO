@@ -1,6 +1,10 @@
 # OPD current handoff
 
-Last updated: 2026-09-30 UTC. Adapted teacher fit 54494742, qualification
+Last updated: 2026-10-01 UTC. **Active: train-only LR diagnostic54560005,
+RUNNING at00:05:35Z; model/G0 remain unaccepted.** Continue its fixed plan and
+read-only observer below; do not resubmit or change its pinned controls.
+
+Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
 teacher-only 256-token protocol. V5 preflight 54533796 passed; calibration
 54533934 completed 33 updates and saved step-20/33 checkpoints but failed the
@@ -159,14 +163,34 @@ helper only collected them. Preserve old job evidence and all old controls.
 The three focused CPU suites pass **153 tests** (40 worker,85 transport,28 node),
 including real tiny-Qwen loss, original trainer updates, actual AdamW hooks,
 node-to-worker admission, failure publication and OOM negative fixtures.
-Independent final implementation reviews are in progress; **no LR release,
-plan or GPU submission yet exists**. Fresh SSH on quser43 passed at23:41:59Z;
-the discovered Python3.12.13 executable and all19 fixed package versions match
-(`lr-runtime-check.json`, SHA
-`f9b2b5d7eaf84d29ec56e35cf63e8c4fc01ad8386b76043d257739e65543cffc`).
-Next: complete independent review, matching source preview/sync, actual plan and
-remote dry-run/deployment review, then one authorized fresh submission. No
-renewed user permission is needed; missing acknowledgement requires reconcile.
+Implementation **5fb83bb** received independent worker review
+`6b253737f232641076d6bc180bd5d9cc1214379bc913e50db4fd3da7c426c1c4`, control/node
+review `adeb7e2338e32a12f927c8285e8a29d3f0a4657548e2a327933acac6119e0b6d`, and actual
+deployment review `2602e77191e97b3b646712808acaff39d92425b84aa7e90466c7b51ae857c267`.
+All accepted only this diagnosis, not scientific or model success. Runtime
+Python3.12.13 and all19 fixed package versions were freshly verified.
+
+Exactly one LR job, **54560005**, was acknowledged at **2026-10-01T00:04:57Z**;
+first verified status is **RUNNING at00:05:35Z**. It is not completed/accepted.
+Run `20260930T235843Z-d00427625f69-bde6da4a` contains632 files/7,507,811 source
+bytes, source SHA `d00427625f69514edfd1c3530dc9e9f68a634973776d99be0f269cd6f1a81ee0`.
+Plan `.sdsc/student-lr/e37a9af579142b7e06f02436e6f4dfe9/plan.json` has SHA
+`7bbb9b4a6e308b6727968e3807c659be13f1fbe1cc55dfaedc0c53e161680e9e`.
+The remote dry-run verified parent/source/CPU audit/runtime and0+2 requested
+GPUs within the four-GPU ceiling. Immutable submit records and both permanent
+claims are authoritative; never delete them or blindly submit this diagnosis
+again. Results remain under project Lustre `student-lr/<intent>/`.
+
+The finite foreground Quest observer on quser43 is
+`.sdsc/diagnostics/student-lr-v1/observe.py`, with started/status records in that
+directory. It pins this plan/controls, queries every300 seconds for at most8
+hours, stops on SSH loss/unknown state/changed controls, and fetches bounded
+terminal evidence once. It cannot submit/retry/cancel or advance G0. Inspect
+its state before launching another observer; the active tool session is55793.
+Do not edit any plan `control_sha256` file while this job is active. A separate
+independent raw auditor is being prepared before reading the future result.
+Continue monitoring and diagnose the actual evidence; user authorization
+persists, but all scientific gates and original failed results remain intact.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
