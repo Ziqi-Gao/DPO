@@ -1,9 +1,9 @@
 # OPD current handoff
 
-Last updated: 2026-10-01 UTC. **LR diagnostic54560005 failed before training;
-its observer exited. A reviewed startup-directory recovery is being prepared;
-no replacement has been submitted. Model/G0 remain unaccepted.** Preserve the
-failed plan, claims, immutable release and frozen controls below.
+Last updated: 2026-10-01 UTC. **LR recovery diagnostic54560292 is RUNNING,
+verified00:52:58Z. Model/G0 remain unaccepted.** Continue its finite read-only
+observer and frozen plan below; do not edit its12 controls or resubmit. Preserve
+the preceding empty startup failure54560005 and all old claims/evidence.
 
 Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
@@ -222,7 +222,7 @@ Remote dry-run rejected before claims because old54560005 aged out of the
 `squeue --jobs` cache (rc1 Invalid job id), while fresh `sacct` still showed
 exact FAILED1:0 evidence. Preserve this draft and
 `.sdsc/diagnostics/student-lr-v2/dry-run-query-diagnosis.json`.
-The controller candidate now uses a successful complete-owner queue query,
+Queue repair **502d393** now uses a successful complete-owner queue query,
 checks all rows/owners and retains its raw receipt before filtering the one
 job; it never suppresses a failed query. Frozen v1 accounting/publication
 validators still enforce the original failure identity. V2 status uses the
@@ -230,9 +230,42 @@ same query so terminal cache expiry cannot masquerade as a transport outage.
 The query uses explicit local/all-states/array expansion and strips inherited
 SQUEUE_/SACCT_/SBATCH_ selectors. Its130 transport tests pass, including
 real-Slurm rejection guards on Quest; unchanged node/worker retain their71
-passing tests. No replacement is submitted yet; independent review, fresh sync,
-remote dry-run and actual-deployment review are required first. Scientific
-inputs, LR arms and all acceptance gates remain unchanged.
+passing tests. Independent queue review SHA is
+`9038413dc5e90c58d6ea10b3d814c4183ede91b0f41c2b02413de3b2e4bc6572`;
+actual deployment review SHA is
+`2c6a122427f6c2ee5852167e3e764606f856d258cd6cb9bfa93e84f51e3ccec1`.
+
+Exactly one new recovery, **54560292**, was acknowledged at **00:52:21Z** and
+is **RUNNING at00:52:58Z**. It uses the same2 H100/24 CPU/384 GiB/1h envelope.
+Plan `.sdsc/student-lr/c6de75d4811b00d8765eede76f4a1ece/plan.json` has SHA
+`de917729029b93e1c1097757d3ca01a633e076a53471555d27b4afa3743e2c73`.
+Run `20261001T004338Z-669fc878fe08-8727a1d7` contains637 files/7,630,392 source
+bytes, code SHA `669fc878fe0838a6bc71023cbe1c2d05c7b958265e607e70212e643f08622d4c`.
+Its remote dry-run at00:45:19Z freshly confirmed the exact old failed accounting,
+three hashed empty-result files, original source/parent/data audit/runtime and
+0+2 GPUs within the ceiling. The new permanent claims and actual receipt are
+authoritative; no duplicate or unknown-intent retry is permitted. Results belong
+to project Lustre `student-lr/c6de75d4811b00d8765eede76f4a1ece/`.
+
+The finite Quest observer is `.sdsc/diagnostics/student-lr-v2/observe.py`, SHA
+`bf3a0a2ea3e243d050c51374bad3afb1c6d515050fdd6bf5b97f7501963b9c6c`;
+started/status records are beside it, active tool session70400 on quser43.
+It queries every300s for at most8h, stops on SSH loss/unknown state/changed pins,
+and fetches bounded terminal results once. It cannot submit/retry/cancel.
+Do not edit plan control files while it is active. The independent v2 raw auditor
+is being frozen before reading any new scientific outputs. Scientific inputs,
+LR arms and all acceptance gates remain unchanged.
+
+A separate original-native-initial check is only an **unsubmitted implementation
+candidate**, under `tools/sdsc_student_initial{,_job,_probe}.py` and
+`docs/refactor/sdsc_student_initial_native_check_20261001.md`; the controller is
+still being prepared. It reuses the original scorer on unscreened validation128
+without the extra autocast, original initial/config/instruction and 256-token
+cap. Proposed resources are1 H100/8 CPU/64 GiB/30m. Its one base-gate observation
+cannot accept the model or G0. The candidate node/worker have CPU fixture
+evidence but still need complete controller/runtime/deployment review and an
+independent raw replay. Its unused candidate files in the LR snapshot do not
+mean it has been launched. Keep all12 active LR controls unchanged.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
