@@ -180,6 +180,15 @@ FAILED1:0 and extern COMPLETED0:0. The exact three hashed failure files must
 show the same two-rank metadata error, no raw responses, arms or checkpoints.
 Missing/unknown/active/successful or partially trained evidence rejects recovery.
 
+An aged terminal job may return `Invalid job id specified` to `squeue --jobs`
+after leaving the controller cache while remaining in accounting. That error
+is never treated as an empty queue. Query the actual user's complete queue
+successfully, verify every row's owner and identity, preserve the full command
+receipt, and derive only the requested job's entries. Combine this fresh
+queue evidence with `sacct` through the frozen original identity validator.
+Any unavailable, oversized, malformed or ambiguous queue still stops recovery.
+The same complete-user query is used for v2 status after completion.
+
 Keep the old release, both permanent claims, plan, receipt, failure and observer
 exit record. Original controls are additionally frozen locally under
 `.sdsc/diagnostics/student-lr-v1/frozen-controls/`. The v2 claim permanently binds

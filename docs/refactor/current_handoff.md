@@ -212,9 +212,27 @@ reproduce old source-cwd rejection and science-cwd acceptance; a missing teacher
 inventory remains rejected. No GPU/model success is inferred. Reproduction SHA
 is `b17741ab73400fcfd33c463c9a5b1a481f41c48de03b0733f9cfd0d1a32dbec8` under
 `.sdsc/diagnostics/student-lr-v1/cwd_failure_repro_result.json`.
-No replacement is submitted yet; independent review, fresh sync, remote dry-run
-and actual-deployment review are required first. Scientific inputs, LR arms and
-all acceptance gates remain unchanged.
+Startup implementation **395124b** received independent review SHA
+`479a8f6274f8c4d0557a2b7bc6c9ca61d7225a43a5ff135b4d9f0042f97e8897`.
+Its first v2 draft remains **unsubmitted**: intent
+`0e4ffde51abef1713fca367b7fc9da1a`, run
+`20261001T002828Z-8efeff9d77e3-5cdc400d`, plan SHA
+`fd39821b3842d04a7402911c670dc7f695ab6616e5f7e6d0f56f3926f507601e`.
+Remote dry-run rejected before claims because old54560005 aged out of the
+`squeue --jobs` cache (rc1 Invalid job id), while fresh `sacct` still showed
+exact FAILED1:0 evidence. Preserve this draft and
+`.sdsc/diagnostics/student-lr-v2/dry-run-query-diagnosis.json`.
+The controller candidate now uses a successful complete-owner queue query,
+checks all rows/owners and retains its raw receipt before filtering the one
+job; it never suppresses a failed query. Frozen v1 accounting/publication
+validators still enforce the original failure identity. V2 status uses the
+same query so terminal cache expiry cannot masquerade as a transport outage.
+The query uses explicit local/all-states/array expansion and strips inherited
+SQUEUE_/SACCT_/SBATCH_ selectors. Its130 transport tests pass, including
+real-Slurm rejection guards on Quest; unchanged node/worker retain their71
+passing tests. No replacement is submitted yet; independent review, fresh sync,
+remote dry-run and actual-deployment review are required first. Scientific
+inputs, LR arms and all acceptance gates remain unchanged.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must

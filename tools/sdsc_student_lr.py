@@ -551,7 +551,7 @@ def validate_recovery_evidence(previous, old_plan, status, raw):
 def verify_recovery(plan):
     require(canonical(plan.get("recovery_from")) == canonical(RECOVERY), "unreviewed recovery predecessor")
     previous, old_plan, receipt = recovery_context()
-    status = previous.inspect_job(old_plan, receipt)
+    status = inspect_recovery_status(previous, old_plan, receipt)
     result_root = safe(old_plan["result_dir"])
     publication_raw = read(result_root / "receipt.json")
     require(sha(publication_raw) == RECOVERY["publication_sha256"], "sealed failure receipt changed")
@@ -568,6 +568,134 @@ def verify_recovery(plan):
         no_training_evidence=True,
         checked_at=now(),
     )
+
+
+def job_queue(job):
+    """Filter a successful complete owner query; never hide an expired-ID error."""
+    require(isinstance(job, str) and re.fullmatch(r"[1-9][0-9]*", job), "numeric job ID required")
+    uid = os.getuid()
+    user = pwd.getpwuid(uid).pw_name
+    argv = [
+        "squeue",
+        "--noheader",
+        "--array",
+        "--local",
+        "--states=all",
+        "--user=" + str(uid),
+        "--format=%i|%T|%u",
+    ]
+    raw = run(argv)
+    require(
+        type(raw.get("returncode")) is int
+        and raw["returncode"] == 0
+        and isinstance(raw.get("stdout"), str)
+        and isinstance(raw.get("stderr"), str)
+        and len(raw["stdout"].encode()) <= CAP
+        and len(raw["stderr"].encode()) <= 65536,
+        "complete owner queue query failed or exceeded its bound",
+    )
+    states = {
+        "PENDING",
+        "RUNNING",
+        "CONFIGURING",
+        "COMPLETING",
+        "SUSPENDED",
+        "STOPPED",
+        "RESIZING",
+        "REQUEUED",
+        "REQUEUE_FED",
+        "REQUEUE_HOLD",
+        "RESV_DEL_HOLD",
+        "SIGNALING",
+        "SPECIAL_EXIT",
+        "STAGE_OUT",
+        "BOOT_FAIL",
+        "CANCELLED",
+        "COMPLETED",
+        "DEADLINE",
+        "FAILED",
+        "NODE_FAIL",
+        "OUT_OF_MEMORY",
+        "PREEMPTED",
+        "REVOKED",
+        "TIMEOUT",
+    }
+    seen, selected = set(), []
+    for line in raw["stdout"].splitlines():
+        fields = line.split("|")
+        require(
+            len(fields) == 3
+            and re.fullmatch(r"[1-9][0-9]*(?:_[0-9]+)?", fields[0])
+            and fields[0] not in seen
+            and fields[1] in states
+            and fields[2] == user,
+            "owner queue has malformed, duplicate, unknown or foreign rows",
+        )
+        seen.add(fields[0])
+        require(not fields[0].startswith(job + "_"), "unexpected array identity for scalar diagnostic job")
+        if fields[0] == job:
+            selected.append("|".join(fields[:2]))
+    return dict(
+        returncode=raw["returncode"],
+        stdout="\n".join(selected),
+        stderr=raw["stderr"],
+        query_scope="all_jobs_for_effective_uid",
+        query_uid=uid,
+        query_user=user,
+        query_argv=argv,
+        query_raw=raw,
+    )
+
+
+def job_accounting(job):
+    return run(
+        [
+            "sacct",
+            "--noheader",
+            "--parsable2",
+            "--jobs=" + job,
+            "--format=JobIDRaw,State,ExitCode,JobName%100,Account,Partition,QOS,AllocCPUS,ReqMem,"
+            "ElapsedRaw,AllocTRES%200,Comment%100",
+        ]
+    )
+
+
+def inspect_recovery_status(previous, old_plan, receipt):
+    """Read fresh queue/accounting with unchanged v1 identity/artifact validators."""
+    job = receipt["job_id"]
+    queue, account = job_queue(job), job_accounting(job)
+    observed = document(safe(old_plan["submission_dir"]) / "live-binding.json")
+    result = previous.validate_accounting(old_plan, job, queue, account, observed)
+    result.update(
+        success=False,
+        diagnostic_complete=False,
+        publication_verified=False,
+        artifact_hashes_verified=False,
+        **dict.fromkeys(FLAGS, False),
+    )
+    result_root = safe(old_plan["result_dir"])
+    publication_raw = read(result_root / "receipt.json")
+    require(sha(publication_raw) == RECOVERY["publication_sha256"], "old failure publication changed")
+    published = json.loads(publication_raw)
+    inventory = previous.publication_records(published, old_plan, job)
+    require(
+        set(inventory) == {"lr-probe.json", "node-result.json", "memory.json"}
+        and {name for name in NAMES if (result_root / name).exists()} == set(inventory)
+        and published.get("passed") is False
+        and published.get("diagnostic_complete") is False
+        and published.get("large_files") == [],
+        "old failure has unexpected training or checkpoint evidence",
+    )
+    for name, row in inventory.items():
+        raw = read(result_root / name)
+        require(len(raw) == row["size"] and sha(raw) == row["sha256"], "old failed artifact hash differs")
+    result.update(
+        publication_verified=True,
+        artifact_hashes_verified=True,
+        publication=published,
+        publication_sha256=sha(publication_raw),
+    )
+    return result
 
 
 def verify_parent(plan, *, accounting=False):
@@ -802,7 +930,7 @@ def job_script(plan):
 
 
 def run(argv, timeout=45):
-    environment = {k: v for k, v in os.environ.items() if not k.startswith("SBATCH_")}
+    environment = {k: v for k, v in os.environ.items() if not k.startswith(("SBATCH_", "SQUEUE_", "SACCT_"))}
     result = subprocess.run(argv, capture_output=True, timeout=timeout, env=environment)
     require(len(result.stdout) <= CAP and len(result.stderr) <= CAP, "command output exceeds bound")
     return dict(returncode=result.returncode, stdout=result.stdout.decode(), stderr=result.stderr.decode())
@@ -1361,17 +1489,7 @@ def publication_records(published, plan, job):
 
 def inspect_job(plan, receipt):
     job = receipt["job_id"]
-    queue = run(["squeue", "--noheader", "--jobs=" + job, "--format=%i|%T"])
-    account = run(
-        [
-            "sacct",
-            "--noheader",
-            "--parsable2",
-            "--jobs=" + job,
-            "--format=JobIDRaw,State,ExitCode,JobName%100,Account,Partition,QOS,AllocCPUS,ReqMem,"
-            "ElapsedRaw,AllocTRES%200,Comment%100",
-        ]
-    )
+    queue, account = job_queue(job), job_accounting(job)
     observed_path = Path(plan["submission_dir"]) / "live-binding.json"
     observed = document(observed_path) if observed_path.exists() else None
     result = validate_accounting(plan, job, queue, account, observed)

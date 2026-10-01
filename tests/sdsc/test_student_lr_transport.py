@@ -14,7 +14,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
-def c():
+def c(monkeypatch):
+    original_run = subprocess.run
+
+    def guarded_run(argv, *args, **kwargs):
+        command = argv[0] if isinstance(argv, list | tuple) else argv.split()[0]
+        if Path(command).name in {"squeue", "sacct", "sbatch", "scancel", "scontrol", "srun"}:
+            pytest.fail("CPU transport fixtures must never execute real Slurm commands")
+        return original_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", guarded_run)
     spec = importlib.util.spec_from_file_location("sdsc_student_lr", ROOT / "tools/sdsc_student_lr.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -864,7 +873,16 @@ def recovery_case(c, tmp_path, monkeypatch):
         **dict.fromkeys(c.FLAGS, False),
     )
     raw = {"lr-probe.json": failure_raw, "node-result.json": c.canonical(node), "memory.json": b"{}"}
-    old_plan = dict(result_dir=str(tmp_path / "old-result"))
+    old_plan = dict(
+        result_dir=str(tmp_path / "old-result"),
+        submission_dir=str(tmp_path / "old-submission"),
+        job_name="opd-slr-fixture",
+        intent_id=c.RECOVERY["intent_id"],
+    )
+    Path(old_plan["submission_dir"]).mkdir()
+    (Path(old_plan["submission_dir"]) / "live-binding.json").write_bytes(
+        c.canonical(fake_live(c, old_plan, "54560005"))
+    )
     Path(old_plan["result_dir"]).mkdir()
     published = dict(
         passed=False,
@@ -896,7 +914,7 @@ def recovery_case(c, tmp_path, monkeypatch):
     # Transport/identity is the already-reviewed v1 controller's responsibility.
     previous = SimpleNamespace(
         publication_records=lambda p, plan, job: {r["path"]: r for r in p["files"]},
-        inspect_job=lambda plan, receipt: status,
+        validate_accounting=c.validate_accounting,
     )
     for name, data in raw.items():
         (Path(old_plan["result_dir"]) / name).write_bytes(data)
@@ -907,7 +925,14 @@ def recovery_case(c, tmp_path, monkeypatch):
 def test_exact_startup_failure_is_admissible_and_no_checkpoint_allowed(c, recovery_case, monkeypatch):
     previous, old_plan, status, raw = recovery_case
     c.validate_recovery_evidence(previous, old_plan, status, raw)
-    monkeypatch.setattr(c, "recovery_context", lambda: (previous, old_plan, {}))
+    monkeypatch.setattr(c, "recovery_context", lambda: (previous, old_plan, {"job_id": "54560005"}))
+    monkeypatch.setattr(
+        c,
+        "run",
+        lambda argv: (
+            dict(returncode=0, stdout="", stderr="") if argv[0] == "squeue" else status["accounting"]
+        ),
+    )
     result = c.verify_recovery(dict(recovery_from=c.RECOVERY))
     assert result["verified"] and result["no_training_evidence"] and result["job_id"] == "54560005"
     (Path(old_plan["result_dir"]) / "checkpoints").mkdir()
@@ -1007,3 +1032,147 @@ def test_v2_cannot_select_another_recovery_predecessor(c, plan, field, value):
     plan["recovery_from"][field] = value
     with pytest.raises(ValueError):
         c.validate_plan(plan)
+
+
+@pytest.fixture
+def queue_owner(c, monkeypatch):
+    monkeypatch.setattr(c.os, "getuid", lambda: 12345)
+    monkeypatch.setattr(c.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_name="zgao12"))
+    return "zgao12"
+
+
+def test_archived_job_uses_genuine_full_owner_query_not_invalid_id(c, queue_owner, monkeypatch):
+    calls = []
+    raw = dict(returncode=0, stdout="777_0|RUNNING|zgao12\n888|PENDING|zgao12\n", stderr="")
+
+    def runner(argv):
+        calls.append(argv)
+        if "--jobs=54560005" in argv:
+            return dict(returncode=1, stdout="", stderr="slurm_load_jobs error: Invalid job id specified\n")
+        return raw
+
+    monkeypatch.setattr(c, "run", runner)
+    result = c.job_queue("54560005")
+    assert result["returncode"] == 0 and result["stdout"] == ""
+    assert result["query_raw"] == raw and result["query_argv"] == calls[0]
+    assert result["query_uid"] == 12345 and result["query_user"] == queue_owner
+    assert result["query_scope"] == "all_jobs_for_effective_uid"
+    assert {"--array", "--local", "--states=all", "--user=12345", "--format=%i|%T|%u"} <= set(calls[0])
+    assert len(calls) == 1 and not any(a.startswith("--jobs=") for a in calls[0])
+
+
+def test_owner_queue_filters_exact_scalar_target(c, queue_owner, monkeypatch):
+    raw = dict(returncode=0, stderr="", stdout="545600050|PENDING|zgao12\n54560005|COMPLETING|zgao12\n")
+    monkeypatch.setattr(c, "run", lambda argv: raw)
+    result = c.job_queue("54560005")
+    assert result["stdout"] == "54560005|COMPLETING" and result["query_raw"] == raw
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "error",
+        "bool_rc",
+        "oversized_stdout",
+        "oversized_stderr",
+        "nontext",
+        "blank",
+        "truncated",
+        "duplicate",
+        "foreign",
+        "unknown_state",
+        "array_range",
+        "target_array",
+        "extra_column",
+    ],
+)
+def test_owner_queue_never_turns_incomplete_or_foreign_query_into_absence(
+    c, queue_owner, monkeypatch, defect
+):
+    raw = dict(returncode=0, stdout="777|RUNNING|zgao12\n", stderr="")
+    changes = {
+        "error": dict(returncode=1, stdout="", stderr="slurm_load_jobs error: Invalid job id specified\n"),
+        "bool_rc": dict(returncode=False),
+        "oversized_stdout": dict(stdout="x" * (c.CAP + 1)),
+        "oversized_stderr": dict(stderr="x" * 65537),
+        "nontext": dict(stdout=None),
+        "blank": dict(stdout="\n"),
+        "truncated": dict(stdout="777|RUNNING|"),
+        "duplicate": dict(stdout="777|RUNNING|zgao12\n777|RUNNING|zgao12\n"),
+        "foreign": dict(stdout="777|RUNNING|someone_else\n"),
+        "unknown_state": dict(stdout="777|UNRECOGNIZED|zgao12\n"),
+        "array_range": dict(stdout="777_[1-7]|PENDING|zgao12\n"),
+        "target_array": dict(stdout="54560005_0|PENDING|zgao12\n"),
+        "extra_column": dict(stdout="777|RUNNING|zgao12|extra\n"),
+    }
+    raw.update(changes[defect])
+    monkeypatch.setattr(c, "run", lambda argv: raw)
+    with pytest.raises(ValueError):
+        c.job_queue("54560005")
+
+
+def test_slurm_query_and_submission_environment_cannot_inject_selectors(c, monkeypatch):
+    for name in ("SQUEUE_PARTITION", "SQUEUE_STATES", "SQUEUE_USERS", "SACCT_FORMAT", "SBATCH_MEM"):
+        monkeypatch.setenv(name, "injected")
+    monkeypatch.setenv("KEEP_NORMAL_ENV", "preserved")
+    captured = {}
+
+    def runner(argv, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(c.subprocess, "run", runner)
+    assert c.run(["squeue"])["returncode"] == 0
+    assert not any(k.startswith(("SQUEUE_", "SACCT_", "SBATCH_")) for k in captured["env"])
+    assert captured["env"]["KEEP_NORMAL_ENV"] == "preserved"
+
+
+@pytest.mark.parametrize("action", ["dry-run", "submit"])
+@pytest.mark.parametrize("defect", ["active", "query_failure", "malformed"])
+def test_real_recovery_queue_adapter_stops_before_any_new_claim(
+    c, plan, recovery_case, queue_owner, monkeypatch, action, defect
+):
+    previous, old_plan, status, raw = recovery_case
+    real_verify = c.verify_recovery
+    stubs(c, monkeypatch)
+    monkeypatch.setattr(c, "verify_recovery", real_verify)
+    monkeypatch.setattr(c, "recovery_context", lambda: (previous, old_plan, {"job_id": "54560005"}))
+    queue = {
+        "active": dict(returncode=0, stdout="54560005|RUNNING|zgao12\n", stderr=""),
+        "query_failure": dict(returncode=1, stdout="", stderr="unavailable"),
+        "malformed": dict(returncode=0, stdout="truncated", stderr=""),
+    }[defect]
+
+    def runner(argv):
+        if argv[0] == "squeue":
+            return queue
+        if argv[0] == "sacct":
+            return status["accounting"]
+        pytest.fail("queue rejection must precede sbatch")
+
+    monkeypatch.setattr(c, "run", runner)
+    with pytest.raises(ValueError):
+        c.remote_action(dict(action=action, plan=plan, authorize=True))
+    assert not Path(plan["scientific_claim"]).exists() and not Path(plan["claim"]).exists()
+    assert not Path(plan["submission_dir"]).exists()
+
+
+def test_v2_failed_terminal_inspection_uses_owner_query(c, plan, queue_owner, monkeypatch):
+    account = accounting(plan, comment=plan["intent_id"])
+    account["stdout"] = account["stdout"].replace("COMPLETED|0:0", "FAILED|1:0")
+    calls = []
+
+    def runner(argv):
+        calls.append(argv)
+        if argv[0] == "squeue":
+            assert not any(a.startswith("--jobs=") for a in argv)
+            return dict(returncode=0, stdout="777_1|RUNNING|zgao12\n", stderr="")
+        assert argv[0] == "sacct"
+        return account
+
+    monkeypatch.setattr(c, "run", runner)
+    result = c.inspect_job(plan, {"job_id": "123"})
+    assert result["state"] == "FAILED" and not result["success"]
+    assert result["evidence_state"] == "unpublished_logs_only"
+    assert result["queue"]["query_raw"]["stdout"] == "777_1|RUNNING|zgao12\n"
+    assert len(calls) == 2
