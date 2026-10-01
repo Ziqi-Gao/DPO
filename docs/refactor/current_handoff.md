@@ -2,14 +2,17 @@
 
 Last updated: 2026-10-01 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, and authorized repair and submission.**
-The proposed successor is `prereg/amendments/qwen3_student_preparation_v1.json`;
+The successor is `prereg/amendments/qwen3_student_preparation_v1.json`;
 see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
 and prepares fresh native weights on2048 independent symbolic-canonical examples,
 with512 independent development examples and a prospective checkpoint rule.
 No teacher-generated targets are required. Preserve the original failed initial
-and every original scientific threshold. This preparation has not yet run onGPU
-and does not accept a model/G0. Implementation and distinct independent review
-must precede the new2-H100 preflight, then the matching fresh32-update fit.
+and every original scientific threshold. Implementation **625c65d** and separate
+non-author protocol/worker/transport/auditor/provenance reviews are complete.
+The focused CPU suites pass **149 tests**, including2048 actual-tokenizer response
+replays and9 corrupted-evidence rejections. The distinct review-only acceptance
+records implementation readiness, not a model/G0 result. Preparation has not yet
+run onGPU; next is the new2-H100 preflight, then the matching fresh32-update fit.
 
 CPU tests cover genuine two-process global64 loss/update equivalence and actual
 full-state save/restore with identical next update. Exact pinned tokenization
