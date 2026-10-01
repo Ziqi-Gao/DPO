@@ -1,9 +1,11 @@
 # OPD current handoff
 
-Last updated: 2026-10-01 UTC. **LR recovery diagnostic54560292 is RUNNING,
-verified00:52:58Z. Model/G0 remain unaccepted.** Continue its finite read-only
-observer and frozen plan below; do not edit its12 controls or resubmit. Preserve
-the preceding empty startup failure54560005 and all old claims/evidence.
+Last updated: 2026-10-01 UTC. **LR recovery diagnostic54560292 completed0:0
+and passed independent raw replay; model/G0 remain unaccepted.** The paired
+train-only result identifies excessive5e-4 step size;5e-5 improves4-step training
+quality but is not yet an accepted scientific successor. The original-native
+initial128 check is implemented/reviewed but unsubmitted. Preserve all old
+claims, checkpoints and failures; never re-arm completed observers.
 
 Adapted teacher fit 54494742, qualification
 54496291 and independent CPU audit 54497294 remain accepted under the reviewed
@@ -236,7 +238,9 @@ actual deployment review SHA is
 `2c6a122427f6c2ee5852167e3e764606f856d258cd6cb9bfa93e84f51e3ccec1`.
 
 Exactly one new recovery, **54560292**, was acknowledged at **00:52:21Z** and
-is **RUNNING at00:52:58Z**. It uses the same2 H100/24 CPU/384 GiB/1h envelope.
+completed in **18m18s**, with job/batch/extern **COMPLETED0:0**. Final accounting
+and semantic publication validation passed at **01:18:20Z**. It used the same
+2 H100/24 CPU/384 GiB/1h envelope.
 Plan `.sdsc/student-lr/c6de75d4811b00d8765eede76f4a1ece/plan.json` has SHA
 `de917729029b93e1c1097757d3ca01a633e076a53471555d27b4afa3743e2c73`.
 Run `20261001T004338Z-669fc878fe08-8727a1d7` contains637 files/7,630,392 source
@@ -247,25 +251,57 @@ three hashed empty-result files, original source/parent/data audit/runtime and
 authoritative; no duplicate or unknown-intent retry is permitted. Results belong
 to project Lustre `student-lr/c6de75d4811b00d8765eede76f4a1ece/`.
 
-The finite Quest observer is `.sdsc/diagnostics/student-lr-v2/observe.py`, SHA
-`bf3a0a2ea3e243d050c51374bad3afb1c6d515050fdd6bf5b97f7501963b9c6c`;
-started/status records are beside it, active tool session70400 on quser43.
-It queries every300s for at most8h, stops on SSH loss/unknown state/changed pins,
-and fetches bounded terminal results once. It cannot submit/retry/cancel.
-Do not edit plan control files while it is active. The independent v2 raw auditor
-is being frozen before reading any new scientific outputs. Scientific inputs,
-LR arms and all acceptance gates remain unchanged.
+The finite Quest observer under `.sdsc/diagnostics/student-lr-v2/` fetched
+terminal evidence and exited at01:13:07Z; tool session70400 is finished. Its
+initial accounting result was conservatively false while `squeue --states=all`
+still cached the COMPLETED row. The unchanged frozen controller confirmed
+success after that cache cleared; no job was retried. Final fetch is
+`.sdsc/fetched/54560292/fetch-5e1mw600/`, publication SHA
+`8625d8264f3d9b7fee3081cd63cff013d6cb10ab515d21756699cfe583afeaf7`.
+The pre-frozen, independently reviewed raw auditor passed on the actual files:
+`actual-independent-audit-54560292.json`, SHA
+`c9c5c0c1c3a2ff4e1fec85c41dc603ee639941c7f1270142b6628a4840ca7a45`.
+It replayed32 prompts,128 complete responses and16 batch records against original
+source/tokenizer/verifier and the first64 CPU data audit. GPU logits/weight and
+AdamW measurements remain hash-bound producer evidence, not CPU GPU-math replay.
 
-A separate original-native-initial check is only an **unsubmitted implementation
-candidate**, under `tools/sdsc_student_initial{,_job,_probe}.py` and
-`docs/refactor/sdsc_student_initial_native_check_20261001.md`; the controller is
-still being prepared. It reuses the original scorer on unscreened validation128
-without the extra autocast, original initial/config/instruction and 256-token
-cap. Proposed resources are1 H100/8 CPU/64 GiB/30m. Its one base-gate observation
-cannot accept the model or G0. The candidate node/worker have CPU fixture
-evidence but still need complete controller/runtime/deployment review and an
-independent raw replay. Its unused candidate files in the LR snapshot do not
-mean it has been launched. Keep all12 active LR controls unchanged.
+Both arms start with identical model/RNG and fixed64 teacher CE1.055534. At5e-4,
+first-step CE rises to4.957614 and step4 is6.939187; train32 proof/answer remain0
+and all32 final generations hit the256 cap malformed. At5e-5, fixed CE falls
+0.518697→0.304089→0.109616→0.072471; step4 has **5/32 full proof and answer,
+31/32 valid format and32/32 EOS**. Each arm consumes237,754 tokens/256 samples in
+exactly4 optimizer calls. First-step AdamW coordinate checks havezero violations,
+with8 microsteps per call and a negative gradient/update inner product. Four
+root/export logit comparisons per arm are bitwise equal. The matched LR-only
+comparison supports optimization overshoot, not a demonstrated optimizer/math
+implementation bug. It is training-only evidence; no validation/test selection
+or scientific threshold changed. A reviewed LR successor remains required.
+
+Peak job memory was65,098,821,632 bytes (about60.63 GiB), with no own-job OOM or
+failcnt event. Both8,127,108,761-byte model-only checkpoints were read-back hashed
+on persistent project storage; they were not fetched. Preserve all12 controls,
+all original/v2 plans/claims and the two unused drafts. No G0/pilot was started.
+
+The original-native-initial check is implemented under
+`tools/sdsc_student_initial{,_job,_probe}.py` and
+`docs/refactor/sdsc_student_initial_native_check_20261001.md`, still **unsubmitted**.
+It reuses the original scorer on unscreened validation128 without extra autocast,
+original initial/config/instruction and256-token cap. Fixed resources are
+1 H100/8 CPU/64 GiB/30m. Its single base-gate observation cannot accept model/G0.
+The final CPU surface has125 passing cases (86 transport,12 node,27 worker), plus
+55 independent raw-core cases and actual historical128 tokenizer re-encoding.
+Independent worker/node/controller reviews are under
+`.sdsc/diagnostics/student-initial-native-v1/`; controller review SHA is
+`33006f01cb55fa9289d3cf8f4f35915a70ff94b899a7d8903c99f4f0b09d861f`.
+The controller preserves original49 science files plus9 inference-entry pins,
+full family staging, permanent scientific claim, complete-owner queue evidence,
+current-job64-GiB/five-phase memory and bounded5-file publication. It handles
+terminal queue cache only with matching scontrol/sacct state/exit/owner and
+keeps historical requested GPUs separate from currently allocatable GPUs.
+Fresh connection and all19 installed runtime versions passed at01:11Z/01:15Z.
+Raw replay core was independently accepted before GPU output; actual deployment
+and result admission remain required. Unused candidate files in the older LR
+snapshot do not mean this check was launched.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
