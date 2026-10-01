@@ -49,9 +49,8 @@ accuracy are different metrics. See
 [scorer](../../src/posttrain_circuits/cli/score_probe_candidates.py) and
 [G0 finalizer](../../src/posttrain_circuits/cli/finalize_g0.py).
 
-If independently replayed native results reach13, continue the reviewed LR
-successor and the remaining original gates. If they do not, the fixed original
-initial cannot satisfy G0. Training later weights or adding GPUs does not alter
+The independently replayed native result is0/128, so the fixed original initial
+cannot satisfy G0. Training later weights or adding GPUs does not alter
 that initial result. Keep the failed original track; do not replace its initial,
 filter the128 examples, change thresholds, or promote the failed instruction
 candidate. A new student track then requires a scientific choice:
@@ -62,13 +61,34 @@ candidate. A new student track then requires a scientific choice:
 | Prepared 1.7B baseline | A separately trained and qualified Qwen3-1.7B baseline shared by every later method. The comparison then concerns capability after task preparation, rather than native instruction-tuned capability. Preparation may itself influence later method effects and must be reported. | Before training, freeze genuinely disjoint preparation train/dev data, budget, optimizer and development-only checkpoint-selection rule, with overlap checks against evaluation/circuit populations. Produce new weights and independent provenance; never rename existing step4/20/33 weights as initial. Requalify all original gates and both paired cohorts; preparation that eliminates the challenge cohort fails rather than changing its definition. |
 
 The larger-native direction is the first discussion choice because it preserves
-the original interpretation more closely. It is not a claim that8B will pass.
+the native starting point. It changes model scale and removes the original
+student/teacher size gap: both would derive from the same8B base. It is closer
+to the original design only on the native-start dimension, not every scientific
+dimension, and is not a claim that8B will pass.
 The previous raw8B v7 training probe (job54489646) accepted42/256 sampled
 candidates and covered7/32 training prompts; its complete-coverage teacher gate
 failed. These are different populations and sampling criteria, not the proposed
 student's greedy validation128 score. They are relevant uncertainty, not proof
 that the separate student base criterion would pass or fail. Prepared baseline remains a distinct, explicit
 research alternative rather than an invisible repair.
+
+For a prepared baseline, retain the original ProofGraph generator, task
+distribution and complete sibling pairs. Use separate preparation train/dev
+seed namespaces and verify isolation by semantic identity, example_id,
+pair_group_id and raw pair seed against all144,000 original family rows and
+teacher fit/dev data. The already exposed validation128 population must not
+select preparation checkpoints or be described as a new holdout. Preparation
+may also saturate initial accuracy so that later calibration cannot strictly
+improve it. This and loss of the challenge cohort remain failures under the
+original gates.
+
+Either successor requires independent implementation review and a separate
+review-only acceptance commit before its experiment. All subsequent methods
+must share identical newly frozen initial bytes; regenerate baseline-dependent
+rollouts, cohorts, circuits and artifact bindings. Success of that successor
+would not retroactively accept the failed original G0 track. Detailed LR
+measurements and their limits are recorded in
+[optimization findings](sdsc_student_optimization_findings_20261001.md).
 
 ## Authorization and stopping conditions
 

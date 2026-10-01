@@ -358,6 +358,14 @@ must first check the master on its own actual Quest host; authentication on one
 host does not establish a master on another. Preserve every completed plan,
 claim, release and frozen auditor/control byte.
 
+Following manual authentication, **quser33** `tools/sdsc check` succeeded at
+**01:46:08Z**, and again at **01:56:22Z**, using its runtime-derived shared
+ControlPath. Remote identity was zgao12/login01; required commands, project
+source path and account/partition/QoS checks passed. SSH is no longer the blocker
+at this observation. The original128-response audit was also independently
+replayed on quser33 with byte-identical output; the unique
+`actual-independent-audit-54560398-quser33-replay.json` preserves that replay.
+
 The original1.7B track is blocked by its fixed-initial scientific condition,
 even if lower-LR calibration later improves trained quality. Do not submit G0 or
 pilot, replace initial with trained weights, or call this complete-model acceptance.
@@ -370,6 +378,8 @@ been asked which scientific direction to take; there is **no answer/authorizatio
 for either replacement yet**. Existing compute-resource authorization remains
 valid, but does not choose between these different research subjects. No new
 student-model experiment was submitted and no LR successor was silently accepted.
+The reviewed paired-loss table, train-only response metrics and numerical-audit
+limits are in `docs/refactor/sdsc_student_optimization_findings_20261001.md`.
 
 Complete G0 still needs migrated adapters, two real step20→33 resumes,
 adapted-teacher scoring and all26 original gates. The initial checkpoint must
