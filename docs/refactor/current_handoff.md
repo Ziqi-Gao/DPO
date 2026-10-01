@@ -10,9 +10,20 @@ No teacher-generated targets are required. Preserve the original failed initial
 and every original scientific threshold. Implementation **625c65d** and separate
 non-author protocol/worker/transport/auditor/provenance reviews are complete.
 The focused CPU suites pass **149 tests**, including2048 actual-tokenizer response
-replays and9 corrupted-evidence rejections. The distinct review-only acceptance
-records implementation readiness, not a model/G0 result. Preparation has not yet
-run onGPU; next is the new2-H100 preflight, then the matching fresh32-update fit.
+replays and9 corrupted-evidence rejections. Distinct acceptance **ba8d357** records
+implementation readiness, not a model/G0 result. Preflight **54562489** was
+submitted exactly once at05:27:03Z and observed **RUNNING** at05:27:39Z with
+2H100/24CPU/384GiB/1h. Its intent is `39af4ea3f267d92dca306664e6d2f432`; plan and
+submission receipts are under `.sdsc/student-prepare/39af4ea3f267d92dca306664e6d2f432/`.
+No observer or automatic continuation is active. The immutable deployed release
+is `20261001T052044Z-dffd4aa0a3f4-ca7b712b`, genuine science HEADba8d357.
+The matching32-update fit has only a local plan, intent
+`524f6a6e8f1541502f315b820880ea4c`, under `.sdsc/student-prepare/`; it is **not
+submitted**. Verify accounting, persistent artifacts and independent eight-response
+preflight replay before its fresh remote dry-run and one authorized submission.
+Fit resources are2H100/24CPU/384GiB/4h, subject to preflight timing evidence.
+Do not duplicate either intent or modify their pinned controls. See bounded
+review/deployment records in `.sdsc/diagnostics/student-preparation-v1/`.
 
 CPU tests cover genuine two-process global64 loss/update equivalence and actual
 full-state save/restore with identical next update. Exact pinned tokenization
@@ -398,7 +409,8 @@ explicitly chose **keep1.7B and prepare a common initial model**. Existing
 compute-resource authorization covers the necessary preparation, preflight and
 gated continuation without per-stage confirmation. The new prospective
 preparation protocol above implements this direction; original-native failure
-is not retroactively accepted. No preparation job has been submitted yet.
+is not retroactively accepted. Only its preflight54562489 has been submitted;
+full preparation remains gated as described at the top of this handoff.
 The reviewed paired-loss table, train-only response metrics and numerical-audit
 limits are in `docs/refactor/sdsc_student_optimization_findings_20261001.md`.
 
