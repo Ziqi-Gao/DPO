@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-10-01 UTC. **The user selected keeping1.7B and preparing one
+Last updated: 2026-10-02 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, and authorized repair and submission.**
 The successor is `prereg/amendments/qwen3_student_preparation_v1.json`;
 see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
@@ -21,12 +21,36 @@ Required30.02GB of dense/full-state artifacts were persistently read-back hashed
 Small results: `.sdsc/fetched/54562489/fetch-oz9q5io5/`; receipt SHA
 `630e210be904f41c4bcfe26f58a3569348836925dd8b8e0d5506fccb25526eae`.
 
-Matching complete preparation **54562507** was submitted exactly once at
-05:48:11Z and observed **RUNNING** at05:49:22Z. Resources are
-**2H100/24CPU/384GiB/4h**, accountnwu181/shared partition and QoS. It starts fresh
-from original native weights, with32 updates and all four512-example development
-reports. Four-hour timing is supported by actual preflight generation evidence,
-but is not a completion guarantee. The fit intent is
+Matching complete preparation **54562507 PASSED**: fresh accounting at
+**2026-10-02T22:55:39Z** confirms job/batch/extern **COMPLETED/0:0**, elapsed
+**42m20s**, with an empty queue. It completed all32 updates/1,856,564 input tokens
+and four complete512-example development evaluations, using
+**2H100/24CPU/384GiB/4h** and fresh original native weights. Development answer
+counts at steps4/8/16/32 are **175/366/462/503 of512**; full-proof counts are
+**175/365/462/503** and format counts **507/508/509/512**. The frozen earliest
+52-through307 selection rule selects **step4**, answer/proof175/512 (34.18%).
+Freeze `checkpoints/step-00000004.pt`, SHA
+`23854ce0d6db4cb01cae898beccf1ac7be7613e5ee01ff5b1626daafb8349d31`,
+8,127,108,889 bytes, under the fit intent's persistent result directory. Do not
+replace it with later stronger checkpoints after formal exposure. This is
+preparation selection only; all formal-initial/student/G0/pilot/factorial and
+execution-class acceptance flags remain false.
+
+All checkpoints passed exact saved-master reload and native-BF16 export parity;
+step4 full-state restoration passed on both ranks. These observations are not
+complete G0 resume or cross-run bitwise-reproducibility evidence: logs retain
+CuBLAS/attention determinism warnings. Peak own-job memory after publication was
+**111.624GiB**, leaving272.376GiB headroom, with noOOM/failcnt event. Required
+54,400,439,960 bytes of dense/full-state artifacts were persistently read-back
+hashed. Small results: `.sdsc/fetched/54562507/fetch-hmcmblh_/`; publication SHA
+`98aff58e27bc88653453047d7610d5c1b2b648482b1ad72616f3628c8613b1bc`.
+The independent raw audit replayed all512 prompts/2048 responses, verifier
+traces, four summaries and the exact selection; GPU arithmetic was not
+independently recomputed. Audit:
+`.sdsc/diagnostics/student-preparation-v1/fit-actual-independent-audit-20261002.json`,
+SHA `411fd1f2bb4c0de4fcf30f37c3bc701b25c2edad38da651182bc0012a014cdaf`.
+
+The fit intent is
 `524f6a6e8f1541502f315b820880ea4c`; preflight intent is
 `39af4ea3f267d92dca306664e6d2f432`. Their immutable plans and submission receipts
 are under `.sdsc/student-prepare/`; do not duplicate or re-arm either. No observer
@@ -36,10 +60,10 @@ handoff-only commits do not change that deployment. Controls remain pinned.
 Bounded reviews, runtime evidence and independent raw audit are in
 `.sdsc/diagnostics/student-preparation-v1/`.
 
-Next: status/fetch the existing fit, validate terminal accounting and persistent
-outputs, then independently replay all2048 development responses and freeze only
-the protocol-selected checkpoint. No candidate may be changed after formal
-exposure. Initial qualification and downstream calibration/G0 remain unexecuted.
+Next: qualify the frozen step4 candidate on the original validation128 and
+anti-shortcut checks, then complete the reviewed successor adapters and remaining
+calibration/cohort/circuit gates. Initial qualification and downstream
+calibration/G0 remain unexecuted; no formal OPD/RL comparison is running.
 Successor adapters must explicitly load the prepared student and accepted dense
 teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
 `score_teacher.py` load native HF models; existing `train.py` loads BF16 before
