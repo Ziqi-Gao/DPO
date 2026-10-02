@@ -60,8 +60,24 @@ handoff-only commits do not change that deployment. Controls remain pinned.
 Bounded reviews, runtime evidence and independent raw audit are in
 `.sdsc/diagnostics/student-preparation-v1/`.
 
-Next: qualify the frozen step4 candidate on the original validation128 and
-anti-shortcut checks, then complete the reviewed successor adapters and remaining
+The user authorized continuing the gated workflow. The additive qualification
+candidate is `prereg/amendments/qwen3_student_qualification_v1.json`, described
+in `docs/refactor/sdsc_student_qualification_20261002.md`. Non-author reviews of
+worker, transport, auditor and protocol found no blocker; all159 focused CPU
+checks and Ruff pass, including the actual node-to-fresh-worker input seam.
+These checks are implementation evidence, not GPU/model acceptance. The proposed
+protocol is not yet accepted or submitted. Preserve all110 named parent
+scientific files. The worker restores
+the frozen step4 FP32 masters exactly before native-BF16 inference and retains
+all896 original responses: validation128 plus anti-shortcut IID128 and640
+transformations. Base requires13 original answer-correct results; anti uses
+complete-proof reward with unchanged .10/.08/.05 floors and signed gap<=.05.
+Actual pinned tokenization requires2244 auxiliary inference tokens, matching the
+original untruncated anti-shortcut evaluator; training1536 is unchanged.
+Resources are1H100/24CPU/192GiB/2h; no teacher data or new training is involved.
+
+Next: complete distinct implementation/acceptance, deploy and submit this one
+qualification; only after independently verified success continue remaining
 calibration/cohort/circuit gates. Initial qualification and downstream
 calibration/G0 remain unexecuted; no formal OPD/RL comparison is running.
 Successor adapters must explicitly load the prepared student and accepted dense
@@ -70,6 +86,11 @@ teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
 the FP32 prepared checkpoint and would round masters. Reuse reviewed exact-FP32
 load semantics in additive adapters, regenerate initial-dependent artifacts,
 and retain original validation128/anti-shortcut/cohort/circuit/calibration gates.
+Later OPD/GRPO configurations still inherit5e-4; they need an explicit prospective
+LR repair rather than assuming preparation's5e-5 propagates. Preserve method
+semantics: OPD trainer completion128 differs from GRPO supervision completion256,
+eight generations and its own batch/accumulation settings. Do not apply the
+preparation/G0 global64 or length contract indiscriminately to every method.
 
 CPU tests cover genuine two-process global64 loss/update equivalence and actual
 full-state save/restore with identical next update. Exact pinned tokenization
