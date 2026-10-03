@@ -3,7 +3,47 @@
 Last updated: 2026-10-03 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** The failed V2 candidate
+and immediate evidence-led repair of new failures.** The active prospective successor is
+`prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
+`docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 remains proposed:
+all205 focused CPU tests, Ruff, pinned-Python AST and diff checks pass. Independent
+source reviews found no blocker; distinct exact-commit acceptance still precedes
+any new job. It starts
+fresh native1.7B with unchanged full-parameter FP32/W2 FULL_SHARD/global64/5e-5.
+Every64-slot window has two complete signed branch pairs, one chain pair and one
+DAG pair, each in eight views. Fit distractors4..8 and rotating depths2..4 are
+explicit new training choices;75% of fit views are renamed and one is paraphrased.
+Negative siblings rotate view order to balance every view across both ranks.
+The new worker preserves actual augmented prompt text and tokens; the historical
+canonical-record helper would re-render paraphrases and cannot be reused there.
+
+V3 has256 fit bases/2048 views/32 updates, fixed2M budget, measured1,652,820
+input tokens and max1173 within1536. All prior base populations and V2's complete
+8192/1536 transformed views are explicitly excluded. New development256 bases
+has86 chain/110 branch/60 DAG cases, six original views and the original difficulty;
+maxprefix2196+generation256 fits preparation2454. Formal qualification2244 is
+unchanged. Checkpoints1/2/3/4/5/6/7/8/12/16/24/32 retain18432 raw responses.
+Earliest selection preserves all V2 numerical gates, including26..153 IID answers,
+each-view gap<=.05 and each-structure proof>=.10. Complete all32 updates; failure
+never permits extension or post-hoc reselection. No formal/G0/pilot acceptance.
+
+New `tools/sdsc_student_branch*.py` controls and namespace preserve all120 parent
+scientific files and three accepted historical protocols. Resources remain
+2H100/24CPU/384GiB, preflight<=1h/fit<=8h, at most four allocatable GPUs.
+Preflight saves/restores onlystep4 and never evaluates development. Fit requires
+its matching actual preflight and independent raw audit, then restarts native
+weights. Twelve dense checkpoints plus full-state files require about119.4GB,
+within128GiB; node-local free192GiB and existing memory/headroom gates remain.
+Publication reserve is300s for preflight/600s for fit. Bounded small fetch224MiB,
+prompt32MiB/other16MiB, encoded transport320MiB; weights stay remote.
+The new finite fit observer is prepared with43 passing CPU fixtures under
+`.sdsc/diagnostics/student-branch-v3/`; it is not running. Old observers are terminal.
+No V3 intent/job has been submitted. Do not start a duplicate or edit pinned
+controls once a job is active. Keep accepted HEAD stable through matching
+preflight/fit preparation; handoff-only HEAD changes otherwise require the
+reviewed unmodified-provenance-restore procedure, not resetting the checkout.
+
+Historical V2: The failed V2 candidate
 is `prereg/amendments/qwen3_student_invariance_v2.json`; implementation/design
 is documented in `docs/refactor/sdsc_student_invariance_20261003.md`. Preserve
 failed v1 qualification and all original formal gates; never reselect its later
@@ -80,25 +120,16 @@ The finite foreground observer ended at08:38:52Z after155 one-minute polls with
 terminal_failure/exit2. Its records are under diagnostics
 `student-invariance-v2/watch-fit-54613837/`; no observer or new job is active.
 No persistent model wakeup after conversation/SSH interruption is claimed.
-Preserve all failed evidence and accepted V2 bytes. A prospectively reviewed
-successor is being designed to balance branch coverage, increase renamed
-training views and inspect early checkpoints more densely, with all original
-and V2 selection thresholds unchanged. It is not yet accepted or submitted.
+Preserve all failed evidence and accepted V2 bytes. The proposed V3 repair above
+preserves all original and V2 selection thresholds; no V2 checkpoint qualifies.
 Diagnostics/reviews: `.sdsc/diagnostics/student-invariance-v2/`.
 
-For fit preparation after handoff-only commits, use the existing verified
-provenance restore `.../student-invariance-v2/accepted-fit-source` at genuine
-e53b606, with its read-only source/.git and two byte-identical `.sdsc` control
-records. The accepted CLI intentionally requires exact HEAD and exact matching
-preflight binding. Do not reset the main checkout or edit pinned controls.
-The independently tested procedure is in
-`.sdsc/diagnostics/student-invariance-v2/fit-preparation-restored-source-workflow-review.json`:
-only run unmodified restored `prepare` after the real preflight/raw audit passes,
-then exclusively copy its exact generated plan into the main `.sdsc` namespace.
-Run submit/status/fetch from the main repository. Never run generic sync/remote
-from the restored directory, whose basename would select a different remote root.
-The separate qualification-successor read-only plan in that diagnostics directory
-lists the later adapter requirements; it creates no new scientific acceptance.
+The historical V2 fit preparation used an unmodified provenance restore at
+e53b606 after a handoff-only HEAD change. Its reviewed procedure remains in
+`.../student-invariance-v2/fit-preparation-restored-source-workflow-review.json`.
+It is not authorization to re-arm failed V2. The qualification-successor read-only
+plan in that directory is conditional on a newly successful preparation and
+creates no model acceptance.
 
 Historical preparation v1 is `prereg/amendments/qwen3_student_preparation_v1.json`;
 see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
