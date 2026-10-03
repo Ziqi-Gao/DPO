@@ -236,11 +236,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Exact committed implementation independently reviewed; all120 parent scientific files and3 historical protocols preserved. All205 focused CPU tests pass, including actual augmented-prompt/token binding for2048 training views, complete18432-record worker-to-independent-auditor replay, two-process global64 semantics and checkpoint restoration fixtures. Original development/formal thresholds unchanged. Accepts implementation readiness only, not actual GPU execution, common-initial qualification, G0 or pilot success.",
+    "reviewed_at_utc": "2026-10-03T09:18:13Z",
+    "reviewed_implementation_commit": "d163d3f8d6a7f03576767aa3203ed76e89b07e7c",
+    "reviewer": "Independent non-author invariance_transport_design (protocol/worker/auditor), invariance_diagnosis (protocol/controller/node), invariance_worker_design (controller/node/worker/auditor)",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [

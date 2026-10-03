@@ -5,10 +5,10 @@ common initial model for all methods, authorized repair/submission, and requeste
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** The active prospective successor is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
-`docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 remains proposed:
-all205 focused CPU tests, Ruff, pinned-Python AST and diff checks pass. Independent
-source reviews found no blocker; distinct exact-commit acceptance still precedes
-any new job. It starts
+`docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**
+has exact-commit non-author review and a distinct review-only acceptance. All205
+focused CPU tests, Ruff, pinned-Python AST and diff checks pass. This accepts
+implementation readiness only; no V3 GPU or model result exists yet. It starts
 fresh native1.7B with unchanged full-parameter FP32/W2 FULL_SHARD/global64/5e-5.
 Every64-slot window has two complete signed branch pairs, one chain pair and one
 DAG pair, each in eight views. Fit distractors4..8 and rotating depths2..4 are
