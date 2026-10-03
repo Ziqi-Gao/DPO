@@ -1,8 +1,38 @@
 # OPD current handoff
 
 Last updated: 2026-10-03 UTC. **The user selected keeping1.7B and preparing one
-common initial model for all methods, and authorized repair and submission.**
-The successor is `prereg/amendments/qwen3_student_preparation_v1.json`;
+common initial model for all methods, authorized repair/submission, and requested
+improvement after qualification54606205 failed.** The new prospective candidate
+is `prereg/amendments/qwen3_student_invariance_v2.json`; implementation/design
+is documented in `docs/refactor/sdsc_student_invariance_20261003.md`. Preserve
+failed v1 qualification and all original formal gates; never reselect its later
+checkpoints. Independent replay found old development branch0/178 hidden by
+aggregate175/512; sorted displays and predominantly antecedent-mismatch failures
+support testing presentation augmentation, without proving a unique cause.
+
+V2 starts fresh native1.7B at constant5e-5, with2048 new independent base fit
+examples and four fixed views each (8192 sequences), plus256 new independent
+development bases evaluated in all six original views. W2 FULL_SHARD/global64,
+128 complete windows, preparation-only8M token budget, checkpoints4/8/16/32/64/128.
+Pinned fit tokens total7,777,131, max1535 within1536; auxiliary development alone
+uses2454 tokens. Complete base blocks balance each view across both ranks.
+All9216 development responses are retained. Select the earliest checkpoint
+passing original development floors/gap, the26..153/256 answer band, each-view
+signed gap<=.05, and>=.10 IID proof accuracy in each structure. No eligible
+checkpoint means failure; all formal-initial/G0/pilot acceptance flags stay false.
+
+New controller/node/worker/auditor and claim namespace preserve115 parent science
+files plus both old protocol JSONs. CPU fixtures cover exact checkpoint export,
+full-state restoration, two-process global64 semantics, actual worker-to-auditor
+9216-record replay, per-view/structure rejection and genuine Git acceptance.
+Independent non-author reviews precede distinct implementation/acceptance commits.
+The reviewed resources are2H100/24CPU/384GiB, preflight<=1h and fit<=8h;
+fit requires matching real preflight and an independent raw audit. At most four
+allocatable GPUs, fresh intents, bounded fetch and no automatic retry remain
+mandatory. No v2 GPU job has been submitted yet; old observers are terminal.
+Diagnostics/reviews: `.sdsc/diagnostics/student-invariance-v2/`.
+
+Historical preparation v1 is `prereg/amendments/qwen3_student_preparation_v1.json`;
 see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
 and prepares fresh native weights on2048 independent symbolic-canonical examples,
 with512 independent development examples and a prospective checkpoint rule.
@@ -106,13 +136,14 @@ GPU arithmetic was not independently recomputed. The same directory preserves
 submission, fresh terminal fetch and independent result review. No observer or
 automatic continuation is active; never duplicate or blindly retry this job.
 
-Next: stop promotion of this fixed step4 candidate under the accepted protocol.
-A different preparation design requires a new prospective scientific protocol
-and independent review; do not reselect later checkpoints after formal exposure,
-relax the gap, automatically extend training or reuse this failed qualification.
-New prepared-initial calibration/G0 remain unexecuted; no formal OPD/RL comparison
-is running. The following calibration adapter requirements remain conditional
-on a future independently qualified common initial model.
+Next: finish independent acceptance and deploy the new v2 preparation above,
+then complete its real preflight/raw audit before starting its fresh fit. The
+fixed v1 step4 candidate remains rejected; do not reselect later checkpoints,
+relax the gap, automatically extend training or reuse failed qualification.
+A successful v2 preparation still needs a new qualification adapter binding its
+selected bytes and preserving the original gates. Prepared-initial calibration/G0
+remain unexecuted; no formal OPD/RL comparison is running. The following adapter
+requirements remain conditional on a newly qualified common initial model.
 Successor adapters must explicitly load the prepared student and accepted dense
 teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
 `score_teacher.py` load native HF models; existing `train.py` loads BF16 before
@@ -124,7 +155,7 @@ LR repair rather than assuming preparation's5e-5 propagates. Preserve method
 semantics: OPD trainer completion128 differs from GRPO supervision completion256,
 eight generations and its own batch/accumulation settings. Do not apply the
 preparation/G0 global64 or length contract indiscriminately to every method.
-The next calibration must load step4 weights with a fresh optimizer/scheduler,
+The next calibration must load newly qualified selected weights with a fresh optimizer/scheduler,
 RNG and demo cursor; it must not resume preparation's optimizer/token counters.
 Preserve SFT global64/1536,2M tokens/120 steps, original validation128 strict
 answer-improvement and two independent same-world step20 resumes. A matching
