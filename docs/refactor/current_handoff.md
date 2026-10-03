@@ -190,13 +190,30 @@ Plan `.sdsc/cuda-diagnostic/36da1a433a8db07a2df99f2032651275/plan.json`, SHA
 `d8c40f45e61d50ff25182b7870d4224f07ed342eaec9c53eb430074512bfefda`;
 receipt is under that same intent directory. After manual SSH restoration,
 continue status/fetch, never resubmit. A PASS on exp-19-01 cannot identify the
-missing predicate on exp-19-05. The local execution-only recovery implementation
-is underway: early CUDA child before large staging, per-rank predicate evidence,
-unchanged130 science files/five protocols and original numerical gates. It needs
-independent implementation/acceptance review and one fresh instrumented preflight;
-no recovery job has been submitted. See
-`docs/refactor/sdsc_student_order_execution_recovery_20261003.md` (currently proposed).
-The new
+missing predicate on exp-19-05. The execution-only recovery implementation is
+complete:103 focused CPU tests pass (34 contract,32 startup worker,37 transport/
+node), with Ruff/format/Python3.12 AST checks. New execution contract/controller/
+node/worker preserve all130 science files/five protocols and original numerical
+gates. Early120s CUDA child exits before large staging; each rank records raw
+predicates then calls the exact original V4 worker with its original13 inputs.
+Combined completion requires startup evidence, both rank exit0 records, original
+science publication and accounting. Failed/diagnostic permanent claims are checked;
+fit needs the matching preflight paired execution/scientific receipts and original
+unique V4 fit claim. Small fetch remains224MiB. Missing acknowledgements never retry.
+The proposed contract is
+`prereg/amendments/qwen3_student_order_execution_recovery_v1.json`; core SHA
+`4f745b038209cd5cdcd884e0acf3cf76b136e4699a41d6c6af6af62ef4aec06e`.
+Next: exact implementation-commit review and distinct review-only acceptance,
+then after manual SSH restoration fresh diagnostic terminal reconciliation and
+check/sync/provenance/dry-run before one new instrumented preflight. No recovery
+plan/deployment/job exists yet. See
+`docs/refactor/sdsc_student_order_execution_recovery_20261003.md`.
+The new finite foreground observer in diagnostics`student-order-v4/
+watch_execution_readonly.py` has22 independently passing fixtures; SHA
+`9f07640178d35268dfaeb84f1b26a59efe0e5e9f9bdc6240e9561d0e20fcce19`,
+review SHA`1efd8a1e6d0791762b20e0e624eefa8b18e465832052546ea64f52b6c8e1749d`.
+It checks only receipted job status every60s, for at most3h preflight/12h fit;
+SSH/hash/unknown-state/deadline errors stop it. It has not been activated.
 V4 qualification scaffold is paused and has no candidate JSON; it cannot admit
 the failed preflight or replace the required successful full fit.
 

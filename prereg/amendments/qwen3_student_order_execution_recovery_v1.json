@@ -1,0 +1,79 @@
+{
+  "claims": {
+    "failed_or_unknown_claims_never_deleted_or_rearmed": true,
+    "fresh_failed_and_diagnostic_terminal_reconciliation_required": true,
+    "matching_recovery_preflight_and_independent_8_response_audit_required": true,
+    "maximum_fit_submissions": 1,
+    "maximum_preflight_submissions": 1,
+    "original_v4_fit_scientific_claim_also_required": true,
+    "preflight_key": "original_science_identity_with_stage+accepted_execution_core"
+  },
+  "contract_id": "qwen3-student-order-execution-recovery-v1",
+  "controls": [
+    "tools/sdsc_student_order_execution_contract.py",
+    "tools/sdsc_student_order_execution.py",
+    "tools/sdsc_student_order_execution_job.py",
+    "tools/sdsc_student_order_execution_worker.py"
+  ],
+  "diagnostic": {
+    "job_id": "54626913",
+    "memory_sha256": "0230292a345dda3c3db28d8974af6a9de8183391643dd9cba895f767ba9891c9",
+    "node_sha256": "41f1cf6526af04c14c84b3a9ec904789ee536265b8d7a5c6954c33cfa5a5ff7a",
+    "plan_sha256": "d8c40f45e61d50ff25182b7870d4224f07ed342eaec9c53eb430074512bfefda",
+    "publication_sha256": "f90a64d4085b77326cd346f374491cd6bb51820f21a459544563574f497eae84",
+    "report_sha256": "1bc3c15fe285e9fd1ed28158309124c504774463f26fc28be6e7ec8e81867a60"
+  },
+  "execution": {
+    "early_probe_before_large_input_staging": true,
+    "early_probe_separate_child_reaped_before_training": true,
+    "early_probe_timeout_seconds": 120,
+    "inner_science_and_outer_execution_plan_hashes_distinct": true,
+    "original_resources_walltime_publication_reserves_unchanged": true,
+    "original_scientific_auditor_required": true,
+    "preserve_original_cuda_visible_devices": true,
+    "preserve_original_scientific_report_and_raw_inventory": true,
+    "preserve_original_worker_13_input_keys": true,
+    "rank_startup_predicates_before_unchanged_worker": true,
+    "separate_execution_receipt_required": true
+  },
+  "failed_preflight": {
+    "job_id": "54623814",
+    "plan_sha256": "579e9e029568fca662a830c3e50496dac33b40ee8d71d0c91f7027ea1ff16630",
+    "publication_sha256": "cf75c0bc2c533b148113103353a9c3e7982972c1235c10160bf800ce7272c396",
+    "report_sha256": "de0f3152885fb97e15f46c4fb840bfa03dd805da4f90b617edf257ae01476ae6"
+  },
+  "frozen_dependencies": {
+    "tools/sdsc_cuda_diagnostic.py": "b7b082ddad9595d8365522834ec02b691b92287c72f0a506b5ef2ed0871f181c",
+    "tools/sdsc_cuda_diagnostic_job.py": "9572e9bcaa572a6d7995d483da0d24e8ce81f7ff496139d7f36119d669149e4b",
+    "tools/sdsc_cuda_diagnostic_worker.py": "709b9732acdff7c027b91d8762d6a164e0649f6a1e7b4fdd1d87287a30f40e5b"
+  },
+  "parent_science": {
+    "acceptance_commit": "d4db85327f0165f2aec1ea53caefd1693663f9b2",
+    "artifact_sha256": "0642a565f0ec3c1d3d12c5aedf1157adc848a2ca6c766af9c7e439c06c86f55d",
+    "implementation_commit": "8036f8af6cbb67edef6df1c8d8ff0cee65a1d84b",
+    "protocol_path": "prereg/amendments/qwen3_student_order_preparation_v4.json",
+    "protocol_sha256": "b3517d592adfa25247072c6f7e39c703ce01cff272c47b9a49383af7890906d8"
+  },
+  "review": {
+    "rationale": null,
+    "reviewed_at_utc": null,
+    "reviewed_implementation_commit": null,
+    "reviewer": null,
+    "status": "proposed"
+  },
+  "schema": "opd-student-order-execution-recovery-v1",
+  "scope": {
+    "automatic_retry": false,
+    "diagnostic_identifies_original_node_cause": false,
+    "diagnostic_substitutes_for_recovery_preflight": false,
+    "execution_class_certified": false,
+    "factorial_ready": false,
+    "formal_initial_accepted": false,
+    "g0_passed": false,
+    "model_data_seed_threshold_change": false,
+    "pilot_passed": false,
+    "scientific_change": false,
+    "student_accepted": false,
+    "teacher_or_formal_protocol_change": false
+  }
+}

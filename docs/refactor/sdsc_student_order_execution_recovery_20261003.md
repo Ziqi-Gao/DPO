@@ -78,5 +78,35 @@ transformation-gap limits. Any scientific failure stops progression.
   1bc3c15fe285e9fd1ed28158309124c504774463f26fc28be6e7ec8e81867a60.
 - Diagnostic fetch: `.sdsc/fetched/54626913/fetch-cmlk843u/`,61,626 bytes.
 
-This document describes the proposed recovery. No recovery job has been
-submitted; actual source acceptance and deployment must precede submission.
+## Implementation and verification
+
+The new execution contract, controller, node and startup wrapper compose the
+unchanged V4 implementation. The existing local science-plan builder creates
+an inner plan; the execution controller wraps it with the separate review and
+recovery claim. Both plan hashes remain distinct. Original scientific receipts,
+13-key worker inputs, validators and independent raw-audit inventory are reused.
+Missing paired execution/scientific acknowledgements must be reconciled before
+fit admission. Failed and diagnostic permanent claims are checked through their
+original guarded entrypoints.
+
+All103 focused CPU tests pass:34 contract,32 worker and37 transport/node. They
+include genuine Git implementation/review-only histories, typed raw startup
+rejection, actual node-to-fresh-CPU-worker/Accelerate interfaces, exact original
+worker argument forwarding, early failure/timeout/shutdown log retention without
+large staging, unique claims and partial acknowledgement rejection. Ruff,
+formatting and Python3.12 AST checks pass. Original130 science files and all five
+historical protocols retain their accepted bytes. Successful CUDA fixtures are
+mocks; real CPU subprocesses establish rejection, not real W2 GPU arithmetic.
+
+The separate read-only observer has22 independently passing fixtures, including
+strict combined completion and no query after a deadline or changed control.
+It only polls status every60s in a finite foreground process; it does not submit,
+retry, fetch, cancel or reconnect SSH. It is not active without an actual new
+plan and receipt. A conversation or SSH interruption does not preserve agent
+monitoring or automatic error repair.
+
+The contract review block and current handoff are authoritative for implementation
+acceptance and execution state. Source acceptance, fresh prerequisite reconciliation
+and deployment must precede a recovery submission. At implementation completion,
+SSH is absent, the user has been asked to authenticate on quser34, and no recovery
+job has been submitted.
