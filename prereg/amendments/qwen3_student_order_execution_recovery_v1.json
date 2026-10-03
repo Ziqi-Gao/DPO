@@ -55,11 +55,11 @@
     "protocol_sha256": "b3517d592adfa25247072c6f7e39c703ce01cff272c47b9a49383af7890906d8"
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Exact implementation binding b446e114844cbb29b7d22b3973c0f57b2811efc3bf82b08797cf6c79991b1df6 confirms five non-author source reviews and 103 focused CPU cases. Accept only the bounded execution recovery around unchanged V4 science; 130 science files, five historical protocols, original gates and unique scientific fit claim are preserved. This is implementation readiness, not an actual recovery preflight/model/G0 result. Fresh terminal prerequisite reconciliation and deployment remain required after manual SSH restoration.",
+    "reviewed_at_utc": "2026-10-03T18:32:40Z",
+    "reviewed_implementation_commit": "8086b38a1b7a8ad72f8acded8ef05157972c4613",
+    "reviewer": "Independent controller review: invariance_worker_design; node: order_worker; startup: root; contract: root and invariance_transport_design",
+    "status": "accepted"
   },
   "schema": "opd-student-order-execution-recovery-v1",
   "scope": {

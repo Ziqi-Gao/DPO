@@ -200,13 +200,19 @@ Combined completion requires startup evidence, both rank exit0 records, original
 science publication and accounting. Failed/diagnostic permanent claims are checked;
 fit needs the matching preflight paired execution/scientific receipts and original
 unique V4 fit claim. Small fetch remains224MiB. Missing acknowledgements never retry.
-The proposed contract is
+The accepted execution contract is
 `prereg/amendments/qwen3_student_order_execution_recovery_v1.json`; core SHA
 `4f745b038209cd5cdcd884e0acf3cf76b136e4699a41d6c6af6af62ef4aec06e`.
-Next: exact implementation-commit review and distinct review-only acceptance,
-then after manual SSH restoration fresh diagnostic terminal reconciliation and
-check/sync/provenance/dry-run before one new instrumented preflight. No recovery
-plan/deployment/job exists yet. See
+Implementation commit8086b38a1b7a8ad72f8acded8ef05157972c4613 has exact-commit
+non-author review, evidence SHA
+`b446e114844cbb29b7d22b3973c0f57b2811efc3bf82b08797cf6c79991b1df6`.
+The distinct review-only acceptance binds that implementation and changes no
+scientific or execution code. It grants implementation readiness only.
+Next after manual SSH restoration: fresh diagnostic terminal reconciliation,
+check/sync/provenance/dry-run, then one new instrumented preflight. No recovery
+plan/deployment/job exists yet. Keep accepted HEAD/provenance fixed through both
+preflight and matching fit-plan preparation; later handoff-only changes can be
+committed after those plans are frozen. Do not rewrite/reset Git to achieve this. See
 `docs/refactor/sdsc_student_order_execution_recovery_20261003.md`.
 The new finite foreground observer in diagnostics`student-order-v4/
 watch_execution_readonly.py` has22 independently passing fixtures; SHA
