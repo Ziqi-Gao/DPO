@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-10-02 UTC. **The user selected keeping1.7B and preparing one
+Last updated: 2026-10-03 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, and authorized repair and submission.**
 The successor is `prereg/amendments/qwen3_student_preparation_v1.json`;
 see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
@@ -65,10 +65,11 @@ candidate is `prereg/amendments/qwen3_student_qualification_v1.json`, described
 in `docs/refactor/sdsc_student_qualification_20261002.md`. Non-author reviews of
 worker, transport, auditor and protocol found no blocker; all159 focused CPU
 checks and Ruff pass, including the actual node-to-fresh-worker input seam.
-Implementation **48951c1** has distinct non-author exact-commit acceptance;
-this review-only commit accepts the qualification implementation, not a GPU or
-model result. The job is not yet submitted. Preserve all110 named parent
-scientific files. The worker restores
+Implementation **48951c1** and distinct non-author acceptance **65c689a** accept
+only implementation readiness. Qualification **54606205** was submitted once at
+**2026-10-03T00:10:48Z**; fresh status at00:11:03Z is **RUNNING**, with the correct
+1H100/24CPU/192GiB allocation. No scientific result is available. Preserve all110
+named parent scientific files. The worker restores
 the frozen step4 FP32 masters exactly before native-BF16 inference and retains
 all896 original responses: validation128 plus anti-shortcut IID128 and640
 transformations. Base requires13 original answer-correct results; anti uses
@@ -77,9 +78,24 @@ Actual pinned tokenization requires2244 auxiliary inference tokens, matching the
 original untruncated anti-shortcut evaluator; training1536 is unchanged.
 Resources are1H100/24CPU/192GiB/2h; no teacher data or new training is involved.
 
-Next: deploy the accepted implementation and submit this one
-qualification; only after independently verified success continue remaining
-calibration/cohort/circuit gates. Initial qualification and downstream
+The immutable qualification intent is `a9fcf32baaab3cfdbc1773948c945668`, plan
+`.sdsc/student-qualify/a9fcf32baaab3cfdbc1773948c945668/plan.json`, SHA
+`6ce7e6b0dd4aaca5c8587a493cd6da277cef41b36df1ef8c081b515879a7c07a`.
+Release `20261003T000122Z-908343e3ec37-ac13e8dd` binds genuine science HEAD65c689a
+and provenance manifest
+`525df7b86fb6a42b834638db6a479e734c91299a82b4d653738ce35b624ebe99`.
+Fresh parent accounting, fixed19-package runtime, source/provenance, empty
+pre-submit GPU queue and exact argv passed independent deployment review.
+Evidence and the submission receipt are in
+`.sdsc/diagnostics/student-qualification-v1/`; startup fetch is
+`.sdsc/fetched/54606205/fetch-0noyxf4r/`. No observer/automatic continuation is
+active. Never edit pinned controls, duplicate this intent or blindly retry.
+
+Next: status/fetch this job, require terminal accounting and hash-verified
+publication, then independently replay all896 records with
+`tools/sdsc_student_qualify_audit.py`. Failure stops progression without checkpoint
+reselection or threshold changes. Only after verified qualification success
+continue the remaining calibration/cohort/circuit gates. New prepared-initial
 calibration/G0 remain unexecuted; no formal OPD/RL comparison is running.
 Successor adapters must explicitly load the prepared student and accepted dense
 teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
@@ -92,6 +108,13 @@ LR repair rather than assuming preparation's5e-5 propagates. Preserve method
 semantics: OPD trainer completion128 differs from GRPO supervision completion256,
 eight generations and its own batch/accumulation settings. Do not apply the
 preparation/G0 global64 or length contract indiscriminately to every method.
+The next calibration must load step4 weights with a fresh optimizer/scheduler,
+RNG and demo cursor; it must not resume preparation's optimizer/token counters.
+Preserve SFT global64/1536,2M tokens/120 steps, original validation128 strict
+answer-improvement and two independent same-world step20 resumes. A matching
+W2 real preflight must validate the new FP32-loading/LR boundary; preserve the
+384GiB memory envelope. The bounded read-only adapter review is
+`.sdsc/diagnostics/student-qualification-v1/next-calibration-readonly-review.txt`.
 
 CPU tests cover genuine two-process global64 loss/update equivalence and actual
 full-state save/restore with identical next update. Exact pinned tokenization
