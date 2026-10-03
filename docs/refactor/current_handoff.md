@@ -142,7 +142,7 @@ required". Its three predicates are CUDA availability, exactly two visible
 devices, and both device names containing H100. Existing evidence does not
 identify which predicate failed; no learning-rate/data/model-quality conclusion
 is possible. Accelerator, data generation, model loading and updates had not
-begun. Node/source/runtime metadata,8,618,275,331 staged input bytes and all16
+begun. Node/source/runtime metadata,8,618,283,254 staged input bytes and all16
 memory samples pass (peak16.064/384GiB), but metadata is not actual CUDA proof.
 Slurm records exp-19-05 and gpu:h100:2; previous V3 preflight/fit used exp-19-03/
 exp-19-13. No physical placement or host changes are authorized by this finding.
@@ -161,10 +161,17 @@ installed Accelerate1.10.1 confirms implicit gpu_ids=all preserves supplied CVD;
 the same guard AST was used by the previously successful V3 preflight.
 See `docs/refactor/sdsc_student_cuda_failure_20261003.md`.
 
-Next: finish/review a separate bounded CUDA infrastructure diagnostic with a
-fresh identity,2H100/4CPU/16GiB/5min and the same pinned runtime. Collect each GPU
-predicate and initialization error before any large staging, preserve assigned
-CVD and every original gate, and keep all scientific acceptance flags false.
+The separate bounded CUDA infrastructure diagnostic implementation and independent
+controller/worker/node review are complete:81 unique focused CPU tests pass, with
+Ruff/format/Python3.12 AST checks. New tools/sdsc_cuda_diagnostic*.py preserve
+all130 science files and19 old control pins. Fixed2H100/4CPU/16GiB/5min uses the
+same runtime, individual CUDA predicates/init errors and tiny logical0/1 sums;
+no model/data staging or training. Own16GiB memory gate requires1GiB headroom;
+failed/timeout/malformed reports retain bounded logs and false scientific flags.
+Non-author controller/worker review SHA
+`5fc36e40b7580d1dbadfa0c80f1189f0fc8764e19ed5e0ea269aa048904e4b2c`;
+node review SHA`322384cb34e3f1a22f3f608c37d02dce6651c92d6dbc9656be04a9952e6cbaf7`.
+Next: deploy and submit this once-only diagnostic with its own fresh identity.
 No diagnostic job has yet been submitted. Actual evidence must determine the
 engineering recovery; do not blindly retry V4 or mutate its old claim. Preserve
 all V4 data/seeds/thresholds until a reviewed execution repair exists. The new

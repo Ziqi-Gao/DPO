@@ -31,7 +31,7 @@ visibility inside either failed process.
 
 The fixed Python3.12.13/runtime package metadata, source/provenance restore,
 persistent Lustre mounts, node-local ext4 workspace and staged input hashes
-passed. Before the GPU guard, the node staged8,618,275,331 bytes of checkpoint,
+passed. Before the GPU guard, the node staged8,618,283,254 bytes of checkpoint,
 configuration, dataset and model/tokenizer files. All16 memory samples pass,
 peak16.064/384GiB, with no recorded own-job OOM/failure counters.
 These checks cannot substitute for actual CUDA availability.
@@ -57,6 +57,30 @@ select physical GPUs/nodes, modify host services or relax device/scientific gate
 An explicit engineering recovery should follow the observed cause and preserve
 all V4 scientific data, seeds and thresholds. The partial new qualification
 scaffold remains paused and has no candidate protocol JSON.
+
+## Diagnostic implementation review
+
+The new controller, node and worker are independently reviewed at their exact
+source bytes.81 unique focused CPU tests pass (59 transport/node and22 worker);
+Ruff, formatting and Python3.12 AST checks pass. A fresh CPU subprocess exercises
+the actual node-to-worker interface. Successful GPU paths in CPU fixtures are
+mocked; they establish no real CUDA readiness. All130 accepted science files,
+19 original controls and five historical protocols remain unchanged.
+
+The new task binds the actual failed plan/publication/report and has one permanent
+claim across releases. Unknown submission acknowledgements require reconciliation.
+Its16GiB memory gate recomputes raw cgroup limit/peak and requires1GiB headroom;
+it does not weaken the training memory contract. Each CUDA call records flushed
+progress and a separate raw result/error. Availability, count, initialization,
+properties and tiny tensor operations independently determine readiness.
+Timeouts and malformed reports cannot promote success and preserve bounded logs.
+
+Non-author controller/worker review:
+`5fc36e40b7580d1dbadfa0c80f1189f0fc8764e19ed5e0ea269aa048904e4b2c`.
+Non-author node review:
+`322384cb34e3f1a22f3f608c37d02dce6651c92d6dbc9656be04a9952e6cbaf7`.
+A diagnostic PASS on another node cannot retrospectively identify the missing
+predicate on exp-19-05 or automatically admit an unchanged training retry.
 
 ## Bound evidence
 
