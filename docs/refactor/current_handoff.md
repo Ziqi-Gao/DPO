@@ -171,8 +171,15 @@ failed/timeout/malformed reports retain bounded logs and false scientific flags.
 Non-author controller/worker review SHA
 `5fc36e40b7580d1dbadfa0c80f1189f0fc8764e19ed5e0ea269aa048904e4b2c`;
 node review SHA`322384cb34e3f1a22f3f608c37d02dce6651c92d6dbc9656be04a9952e6cbaf7`.
-Next: deploy and submit this once-only diagnostic with its own fresh identity.
-No diagnostic job has yet been submitted. Actual evidence must determine the
+Diagnostic implementation commit is a3f82aa4df79f4e232adc67cee5f873bded18701.
+Deployment `20261003T174323Z-c7c893869642-487e9537` has724 files/9,784,335 bytes;
+independent actual deployment review SHA
+`78875e6a2cf96410492b97353eb728ebddb7188aa421d92821b47ba173609628` passes.
+Diagnostic **54626913** submitted once at2026-10-03T17:48:40Z; fresh status
+at17:49:02Z was RUNNING, not completed. Root is actively checking this short job.
+Plan `.sdsc/cuda-diagnostic/36da1a433a8db07a2df99f2032651275/plan.json`, SHA
+`d8c40f45e61d50ff25182b7870d4224f07ed342eaec9c53eb430074512bfefda`;
+receipt is under that same intent directory. Continue status/fetch, never resubmit. Actual evidence must determine the
 engineering recovery; do not blindly retry V4 or mutate its old claim. Preserve
 all V4 data/seeds/thresholds until a reviewed execution repair exists. The new
 V4 qualification scaffold is paused and has no candidate JSON; it cannot admit
