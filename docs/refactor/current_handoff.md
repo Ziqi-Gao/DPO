@@ -8,7 +8,8 @@ and immediate evidence-led repair of new failures.** The active prospective succ
 `docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**
 has exact-commit non-author review and a distinct review-only acceptance. All205
 focused CPU tests, Ruff, pinned-Python AST and diff checks pass. This accepts
-implementation readiness only; no V3 GPU or model result exists yet. It starts
+implementation readiness. Actual V3 engineering preflight passed; the complete
+fit is running and no V3 model has been accepted. It starts
 fresh native1.7B with unchanged full-parameter FP32/W2 FULL_SHARD/global64/5e-5.
 Every64-slot window has two complete signed branch pairs, one chain pair and one
 DAG pair, each in eight views. Fit distractors4..8 and rotating depths2..4 are
@@ -36,12 +37,63 @@ weights. Twelve dense checkpoints plus full-state files require about119.4GB,
 within128GiB; node-local free192GiB and existing memory/headroom gates remain.
 Publication reserve is300s for preflight/600s for fit. Bounded small fetch224MiB,
 prompt32MiB/other16MiB, encoded transport320MiB; weights stay remote.
-The new finite fit observer is prepared with43 passing CPU fixtures under
-`.sdsc/diagnostics/student-branch-v3/`; it is not running. Old observers are terminal.
-No V3 intent/job has been submitted. Do not start a duplicate or edit pinned
-controls once a job is active. Keep accepted HEAD stable through matching
-preflight/fit preparation; handoff-only HEAD changes otherwise require the
-reviewed unmodified-provenance-restore procedure, not resetting the checkout.
+Distinct acceptance is **d54749a**. Release
+`20261003T091928Z-b616a06ac18f-fa50dda0` contains685 eligible files/8,834,439 bytes,
+only11 V3 additions and the handoff delta versus the prior release. Provenance
+`4c8735069ad6e4d74205463aee3b4a84a2c238ccf6b85f716dd42e5c1e90506e`
+was uploaded and verified against genuine accepted HEAD. Source/parent/protocol,
+all19 runtime packages and empty pre-submit GPU queue passed independent review.
+Preflight **54615006 PASSED**: fresh **2026-10-03T09:55:11Z** accounting
+confirmed job/batch/extern COMPLETED0:0, elapsed836s, empty queue. Actual W2
+completed4 updates/205,192 input tokens, full-state restore, exact311-key FP32
+reload/native-BF16 parity and both2454-token finite forwards. All27 own-job memory
+samples pass, peak83.206/384GiB, noOOM/failcnt. Required30,019,126,765 large bytes
+were persistently read-back hashed. Small results are
+`.sdsc/fetched/54615006/fetch-ade007ph/`; publication SHA
+`d075906821fe4936ac627455f106132de7042e3d98dc09caf5b3fc36b04b952c`.
+Independent eight-response replay passed, audit SHA
+`c13eba04f18b4f3b332271d71ce9bce5e675ce34db4b7effb9de56fbd952da7c`;
+execution/timing review SHA
+`7fc8f67281c29707bf131e786fc03eb4b12251a8e687aee34e18d424b815750e`.
+These eight training-only responses make no capability/selection claim.
+Preflight intent `0807711636a2de98bcfe042f67ca1a7f` and plan SHA
+`1baa08c6074278a26b38e7bd5717426b62c23160ca0779ecda707136652e3fc5`
+remain immutable. Its observer ended09:52:15Z with verified_preflight_complete,
+exit0,19 polls; never restart it.
+
+Matching full fit **54615110** was submitted once at **2026-10-03T10:01:19Z**.
+Fresh **10:01:43Z** status confirms **RUNNING**,2H100/24CPU/384GiB/8h.
+Canonical intent `44d1ca080d7f0cb075a8d35f8934fb55`, plan
+`.sdsc/student-branch/44d1ca080d7f0cb075a8d35f8934fb55/plan.json`, SHA
+`d0fcac224a5cd09f1c9ddd79af12f859e153f30d44cf44d046e575b5d5e93cd9`;
+known receipt `submit-20261003T100119952970Z.json`. Never resubmit/re-arm it.
+It binds the same immutable release/provenance and accepted HEADd54749a, restarts
+native weights, and retains all32 updates/12 checkpoints/18432-response gates.
+Independent fit deployment review SHA
+`1dd8d46519e2fc660a0fc7224fb1797f27806d1b61aff67885e7311aad899bed`;
+actual preflight plus historical full development timing supports the8h envelope
+(planning5.81h, not a guarantee). Expected119,417,324,544 large bytes are below128GiB.
+The finite foreground fit observer is active at Quest PID2293020/tool session96050
+under `.sdsc/diagnostics/student-branch-v3/watch-fit-54615110/`. It checks every60s
+for at most10h including queue, pins itself/plan/receipt/19controls, and stops on
+failure, SSH loss or changed pins without submission/retry/cancellation. Its43
+fixtures passed independent review; first own-job initial memory sample passed.
+Do not edit pinned controls or start a competing observer. Other observers are terminal.
+
+Next: monitor this receipted fit to terminal accounting and persistent publication,
+then independently replay all18432 responses and verify the unchanged earliest
+selection. No fit/qualification/model acceptance has occurred. Generic additive
+qualification scaffolding may be prepared while it runs, but its accepted protocol
+must bind one actual selected/audited V3 fit before any qualification submission.
+The matching preflight and fit plans are now frozen; later handoff-only commits do
+not alter their deployed source/provenance. No historical checkpoint reselection.
+The inherited Slurm TERM signal is180s before walltime, so the nominal300s/600s
+worker reserves leave120s/420s before TERM if the worker reaches its deadline;
+actual admission must retain timing headroom. No persistent model wakeup after
+conversation/SSH interruption is claimed. Qualification successor design is
+`.sdsc/diagnostics/student-branch-v3/qualification-successor-readonly-plan.md`;
+it is conditional on an actual selected/audited V3 fit and preserves the original
+896 prompts/2244 context/gates with prior exposure disclosed.
 
 Historical V2: The failed V2 candidate
 is `prereg/amendments/qwen3_student_invariance_v2.json`; implementation/design
