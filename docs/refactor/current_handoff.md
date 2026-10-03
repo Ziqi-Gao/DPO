@@ -101,13 +101,39 @@ observed mechanism, not the entire failure. Valid canonical targets and the
 actual export/restore checks do not show a target-mapping or optimizer defect.
 See `docs/refactor/sdsc_student_branch_failure_20261003.md`.
 
-Next: implement and independently review a new order-preparation V4 protocol,
-keeping all thresholds and fresh native1.7B. The candidate replaces repeated
-renameB/jointB views with pure fact/rule permutations: eight views remain, renamed
-coverage changes75% to50%, and fact/rule permutations each remain37.5%. New fit,
-dev and transform seeds must exclude every prior base/transformed population.
-No V4 protocol is accepted, deployed or submitted yet. Preserve all failed runs;
-no historical checkpoint reselection, threshold relaxation or blind retry.
+The new order-preparation V4 implementation is complete and independently
+reviewed, with226 focused CPU tests passing (45 protocol,99 transport,82 worker/
+auditor), Ruff/format/AST/diff checks, and89 observer fixtures separately reviewed.
+Protocol `prereg/amendments/qwen3_student_order_preparation_v4.json` is still
+proposed until exact-implementation review and distinct review-only acceptance.
+See `docs/refactor/sdsc_student_order_preparation_20261003.md`.
+It replaces repeated renameB/jointB views with pure fact/rule permutations:
+eight views remain, renamed coverage changes75% to50%, and fact/rule permutations
+each remain37.5%. Fresh native1.7B, all training/development/execution numerical
+settings and gates remain unchanged. New fit/dev/transform seeds yield256/256
+bases,2048/1536 views,1,614,932 complete fit tokens, maxinput1161/1536 and
+maxdevelopment2450/2454. The256 development bases contain88 chain/70 branch/98 DAG.
+Manifest SHA`ec65903bc92fa34ac40b8434b1c558aedc85758bd32220d7f642520c5479a1dd`.
+
+Full deterministic CPU regeneration checks original144000, teacher8192/512,
+V1 student2048/512, V2 bases2048/256 and views8192/1536, and V3 bases256/256 and
+views2048/1536 with no semantic/ID/pair-group/pair-seed overlap. Evidence SHA
+`5b605096355ebcefac33958dfad112ef7ed365653f8da381f62015e8888e5470`.
+This is not verification of remote persisted family bytes; production must
+hash and check those actual inputs again. All125 historical science files and
+four historical protocols remain unchanged. V4 adds five science paths and
+new controller/node/worker/auditor namespace; independent reviews include real
+CPU producer-to-auditor and node-to-isolated-worker interfaces. No GPU/model,
+formal qualification, G0 or pilot acceptance follows from these CPU checks.
+
+Next: commit this proposed implementation, bind independent reviews to that
+exact commit, and make its separate review-only acceptance. Then deploy a new
+hashed release/provenance, submit a fresh2H100/24CPU/384GiB,<=1h V4 preflight;
+only its matching actual PASS and raw audit permit the fresh-native<=8h fit.
+One-minute read-only observers are reviewed but unstarted; no V4 job exists yet.
+Preserve all failed runs; no historical checkpoint reselection, threshold
+relaxation or blind retry. New V4 candidates require a new qualification binding;
+the V3-only scaffold below cannot admit or relabel them.
 
 The additive V3-only
 `student_branch_qualification` module and `tools/sdsc_student_branch_qualify*.py`
