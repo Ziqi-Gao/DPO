@@ -66,10 +66,19 @@ in `docs/refactor/sdsc_student_qualification_20261002.md`. Non-author reviews of
 worker, transport, auditor and protocol found no blocker; all159 focused CPU
 checks and Ruff pass, including the actual node-to-fresh-worker input seam.
 Implementation **48951c1** and distinct non-author acceptance **65c689a** accept
-only implementation readiness. Qualification **54606205** was submitted once at
-**2026-10-03T00:10:48Z**; fresh status at00:11:03Z is **RUNNING**, with the correct
-1H100/24CPU/192GiB allocation. No scientific result is available. Preserve all110
-named parent scientific files. The worker restores
+only implementation readiness. Qualification **54606205 FAILED its scientific
+anti-shortcut gate**. Fresh accounting at **2026-10-03T04:16:46Z** confirms job
+and batch **FAILED/1:0**, extern **COMPLETED/0:0**, elapsed **48m26s**, empty queue.
+All896 responses completed; this was a gate rejection, not OOM or interrupted
+inference. Validation answer/proof **55/128 (42.97%)**, format128/128, passes
+base>=13. Anti IID **49/128 (38.28125%)**, transformed **144/640 (22.5%)**, so
+signed gap **0.1578125>0.05** fails. All three minimum-capability floors pass.
+Transformation successes: rename28, fact-order17, rule-order16, paraphrase45,
+distractor38, each out of128. Equivalent ordering changes expose substantial
+sensitivity; the report does not independently establish a causal mechanism.
+All87 own-job memory samples pass: peak38.73023GiB, headroom153.26977GiB,
+failcnt/oom_kill/under_oom all0. Preserve all110 named parent scientific files.
+The worker restored
 the frozen step4 FP32 masters exactly before native-BF16 inference and retains
 all896 original responses: validation128 plus anti-shortcut IID128 and640
 transformations. Base requires13 original answer-correct results; anti uses
@@ -86,17 +95,24 @@ and provenance manifest
 `525df7b86fb6a42b834638db6a479e734c91299a82b4d653738ce35b624ebe99`.
 Fresh parent accounting, fixed19-package runtime, source/provenance, empty
 pre-submit GPU queue and exact argv passed independent deployment review.
-Evidence and the submission receipt are in
-`.sdsc/diagnostics/student-qualification-v1/`; startup fetch is
-`.sdsc/fetched/54606205/fetch-0noyxf4r/`. No observer/automatic continuation is
-active. Never edit pinned controls, duplicate this intent or blindly retry.
+Terminal small results: `.sdsc/fetched/54606205/fetch-r5cfkzsc/`; all5 published
+files passed persistent/local hash verification. Publication SHA
+`8e9f66fb7336b974562cd3e4ba2ed7602220dc49ac4573ccbcb47b544a922df8`.
+The independently reviewed auditor replayed all896 prompts/responses and original
+verifier outcomes; raw_replay_passed=true, qualification_passed=false. Audit:
+`.sdsc/diagnostics/student-qualification-v1/actual-independent-audit.json`, SHA
+`73a9df07da8d8512e2d376ff53a418c8e5666f45d8de52f420d2fe84f1b82b9b`.
+GPU arithmetic was not independently recomputed. The same directory preserves
+submission, fresh terminal fetch and independent result review. No observer or
+automatic continuation is active; never duplicate or blindly retry this job.
 
-Next: status/fetch this job, require terminal accounting and hash-verified
-publication, then independently replay all896 records with
-`tools/sdsc_student_qualify_audit.py`. Failure stops progression without checkpoint
-reselection or threshold changes. Only after verified qualification success
-continue the remaining calibration/cohort/circuit gates. New prepared-initial
-calibration/G0 remain unexecuted; no formal OPD/RL comparison is running.
+Next: stop promotion of this fixed step4 candidate under the accepted protocol.
+A different preparation design requires a new prospective scientific protocol
+and independent review; do not reselect later checkpoints after formal exposure,
+relax the gap, automatically extend training or reuse this failed qualification.
+New prepared-initial calibration/G0 remain unexecuted; no formal OPD/RL comparison
+is running. The following calibration adapter requirements remain conditional
+on a future independently qualified common initial model.
 Successor adapters must explicitly load the prepared student and accepted dense
 teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
 `score_teacher.py` load native HF models; existing `train.py` loads BF16 before
