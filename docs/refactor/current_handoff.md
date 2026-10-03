@@ -166,8 +166,17 @@ reproduced every response/summary and selected_checkpoint=null. Step4 IID50/256
 was in the26..153 band but branch1/58, DAG4/98 and paraphrase8/256 failed.
 IID answers at steps8/16/32/64/128 were196/200/251/255/251, all above153; those
 checkpoints also failed the individual renaming gap. At step64 IID branch57/58
-became37/58 after renaming. Trace inspection shows omitted branch premises,
-not malformed output or copied-symbol errors. No checkpoint may be promoted.
+became37/58 after renaming. The22 renaming failures are21 antecedent_mismatch
+and1 unknown_citation;20 specifically omit an unestablished premise at the
+terminal branch merge. The other two citation errors remain distinct. All22
+outputs have valid format; graph symbols and referenced-rule conclusions match.
+No checkpoint may be promoted. A post-audit explanation tool under diagnostics
+`student-branch-v3/diagnose_preparation_results.py` reproduces all9216 original
+parser/verifier results, counts, integer gates and null selection. Eight fixtures
+and an independent complete-record cross-check pass; review SHA
+`5fae22e7da0d8a7314c3d39d96d8a71786a6340594449bb090146ea29997efb3`.
+It requires a complete formal raw audit and does not replace token/Git/GPU or
+accounting validation; no V3 result is inferred from this historical replay.
 
 The independent execution audit found128 finite nonzero global updates, all
 six exact FP32 reloads/native-BF16 parity checks and complete raw partitions.
@@ -189,7 +198,7 @@ Its intent remains `c7d5dc591ea0f5b278e39384c93cca8a`, canonical plan
 known receipt `submit-20261003T054952558830Z.json`. Never re-arm or resubmit it.
 The finite foreground observer ended at08:38:52Z after155 one-minute polls with
 terminal_failure/exit2. Its records are under diagnostics
-`student-invariance-v2/watch-fit-54613837/`; no observer or new job is active.
+`student-invariance-v2/watch-fit-54613837/`; that V2 flow has no active observer or job.
 No persistent model wakeup after conversation/SSH interruption is claimed.
 Preserve all failed evidence and accepted V2 bytes. The proposed V3 repair above
 preserves all original and V2 selection thresholds; no V2 checkpoint qualifies.
@@ -359,7 +368,9 @@ and GRPO group/verifier evidence; it is not formal learning/G0 acceptance.
 Read-only additive and prerequisite plans are under diagnostics`student-branch-v3/`:
 `downstream-opd-grpo-additive-plan.md` and
 `downstream-prerequisite-execution-readonly-plan.md`. They create no runtime or
-model acceptance and leave old stopped flows/claims untouched. Full pilot inputs
+model acceptance and leave old stopped flows/claims untouched. The durable design
+summary is `docs/refactor/prepared_method_preflight_draft_20261003.md`; actual
+optimizer/TRL integration remains unimplemented. Full pilot inputs
 remain4096x8 teacher attempts and4096x4 common-bank trajectories, not32768 bank rows.
 The next calibration must load newly qualified selected weights with a fresh optimizer/scheduler,
 RNG and demo cursor; it must not resume preparation's optimizer/token counters.
