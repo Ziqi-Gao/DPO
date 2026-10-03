@@ -359,6 +359,18 @@ complete. It is currently unused by old CLIs and supplies no qualification/G0
 admission or real native1.7B/GPU evidence. See
 `docs/refactor/prepared_student_loader_20261003.md`. Existing130 science/control
 files are unchanged; downstream method adapters and real evidence remain required.
+The additive `learning/training/prepared_method_settings.py` now constructs real
+OPD AdamW/constant-scheduler objects or the original GRPO backend with explicit
+5e-5/120/2M settings. Nine CPU behavior tests pass, including actual official
+TRL0.22.2 optimizer creation and its first two linear-scheduler values. OPD
+retains beta2=.95; GRPO retains.999 and actual parameter-group weight_decay=0.
+These helpers are not connected to existing CLIs. The GRPO test uses W1 CPU and
+a local parameter objective, not actual GRPO rollouts or W4 execution; optimizer
+state continuation is not complete scientific checkpoint/resume evidence.
+Transformers4.56.2 re-enables checkpointing at training start with the old
+backend's `gradient_checkpointing_kwargs=None`, defaulting to use_reentrant=True.
+That would override the prepared loader's False setting. The future explicit
+engine adapter must review/bind the actual policy and test it in real W4 training.
 `GrpoTokenBudgetCallback.state_dict()` labels an unset reason
 `max_steps_safety_limit`; a short diagnostic must record its actual nonterminal
 or boundary-stop cause separately and retain the120-step linear scheduler horizon.
@@ -370,7 +382,7 @@ Read-only additive and prerequisite plans are under diagnostics`student-branch-v
 `downstream-prerequisite-execution-readonly-plan.md`. They create no runtime or
 model acceptance and leave old stopped flows/claims untouched. The durable design
 summary is `docs/refactor/prepared_method_preflight_draft_20261003.md`; actual
-optimizer/TRL integration remains unimplemented. Full pilot inputs
+entrypoint integration and method-shaped GPU checks remain outstanding. Full pilot inputs
 remain4096x8 teacher attempts and4096x4 common-bank trajectories, not32768 bank rows.
 The next calibration must load newly qualified selected weights with a fresh optimizer/scheduler,
 RNG and demo cursor; it must not resume preparation's optimizer/token counters.
