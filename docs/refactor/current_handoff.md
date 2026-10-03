@@ -128,13 +128,48 @@ new controller/node/worker/auditor namespace; independent reviews include real
 CPU producer-to-auditor and node-to-isolated-worker interfaces. No GPU/model,
 formal qualification, G0 or pilot acceptance follows from these CPU checks.
 
-Next: deploy the accepted implementation through a new hashed release/provenance,
-then submit a fresh2H100/24CPU/384GiB,<=1h V4 preflight;
-only its matching actual PASS and raw audit permit the fresh-native<=8h fit.
-One-minute read-only observers are reviewed but unstarted; no V4 job exists yet.
-Preserve all failed runs; no historical checkpoint reselection, threshold
-relaxation or blind retry. New V4 candidates require a new qualification binding;
-the V3-only scaffold below cannot admit or relabel them.
+V4 review-only acceptance is d4db85327f0165f2aec1ea53caefd1693663f9b2.
+Release `20261003T163957Z-660e99a2d8fc-ef03bdd3` contains713 eligible files,
+9,512,984 bytes; deployment and genuine provenance
+`6bfe20b6a0fccea40ab8ca5c576ac4cda25823c94f93b4f08599d92d2b22b8dd`
+are verified. Independent exact deployment review passes all130 science/19control
+pins,713 source hashes,19 runtime packages, native initial and empty GPU queue.
+
+V4 preflight **54623814 FAILED before any training**. Terminal accounting at
+2026-10-03T17:03:41Z is job/batch FAILED1:0, externCOMPLETED0:0, elapsed435s.
+Both ranks stopped at the unchanged compound GPU guard: "two assigned H100s
+required". Its three predicates are CUDA availability, exactly two visible
+devices, and both device names containing H100. Existing evidence does not
+identify which predicate failed; no learning-rate/data/model-quality conclusion
+is possible. Accelerator, data generation, model loading and updates had not
+begun. Node/source/runtime metadata,8,618,275,331 staged input bytes and all16
+memory samples pass (peak16.064/384GiB), but metadata is not actual CUDA proof.
+Slurm records exp-19-05 and gpu:h100:2; previous V3 preflight/fit used exp-19-03/
+exp-19-13. No physical placement or host changes are authorized by this finding.
+
+Intent `51918b108ce0b189c770de98da971b22`; plan
+`.sdsc/student-order/51918b108ce0b189c770de98da971b22/plan.json`, SHA
+`579e9e029568fca662a830c3e50496dac33b40ee8d71d0c91f7027ea1ff16630`;
+receipt `submit-20261003T165554344897Z.json`. Never resubmit/re-arm this intent.
+The one-minute observer stopped at17:03:24Z with terminal_failure (child exit2);
+its foreground parent returned1. No V4 observer or fit is active.
+Fetch143,229 bytes: `.sdsc/fetched/54623814/fetch-y_1imwlu/`; publication SHA
+`cf75c0bc2c533b148113103353a9c3e7982972c1235c10160bf800ce7272c396`,
+report SHA`de0f3152885fb97e15f46c4fb840bfa03dd805da4f90b617edf257ae01476ae6`.
+No checkpoints or optimizer updates were produced. Independent CPU replay of
+installed Accelerate1.10.1 confirms implicit gpu_ids=all preserves supplied CVD;
+the same guard AST was used by the previously successful V3 preflight.
+See `docs/refactor/sdsc_student_cuda_failure_20261003.md`.
+
+Next: finish/review a separate bounded CUDA infrastructure diagnostic with a
+fresh identity,2H100/4CPU/16GiB/5min and the same pinned runtime. Collect each GPU
+predicate and initialization error before any large staging, preserve assigned
+CVD and every original gate, and keep all scientific acceptance flags false.
+No diagnostic job has yet been submitted. Actual evidence must determine the
+engineering recovery; do not blindly retry V4 or mutate its old claim. Preserve
+all V4 data/seeds/thresholds until a reviewed execution repair exists. The new
+V4 qualification scaffold is paused and has no candidate JSON; it cannot admit
+the failed preflight or replace the required successful full fit.
 
 The additive V3-only
 `student_branch_qualification` module and `tools/sdsc_student_branch_qualify*.py`
