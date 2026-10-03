@@ -3,7 +3,7 @@
 Last updated: 2026-10-03 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** The new prospective candidate
+and immediate evidence-led repair of new failures.** The failed V2 candidate
 is `prereg/amendments/qwen3_student_invariance_v2.json`; implementation/design
 is documented in `docs/refactor/sdsc_student_invariance_20261003.md`. Preserve
 failed v1 qualification and all original formal gates; never reselect its later
@@ -47,27 +47,43 @@ Its intent is `cc148b1944a930dd1acba1a69733c610`; immutable plan:
 `c7cb13c27ac1ffa6be751753b90b1e6bd97cd34653e0ad8f4c2f7e7f8e67a0b3`.
 Deployed release `20261003T045846Z-ce79034f92ae-c92b6a76` binds scienceHEADe53b606
 and provenance `f024edd3f02234d3a98ef4f3442c43aec5e599a4faa318b5e7ecbfe9f9e2bee9`.
-Matching complete fit **54613837** was submitted once at **2026-10-03T05:49:52Z**;
-fresh06:04:52Z accounting confirms **RUNNING**, actual2H100/24CPU/384GiB/8h.
-Its intent is `c7d5dc591ea0f5b278e39384c93cca8a`, canonical plan
+Matching complete fit **54613837 FAILED scientific selection**. Fresh terminal
+accounting at **2026-10-03T08:44:10Z** confirms job/batch FAILED1:0, extern
+COMPLETED0:0, elapsed10101s, empty queue. All128 updates/7,777,131 input tokens,
+six checkpoints and9216 development responses completed. Independent raw replay
+reproduced every response/summary and selected_checkpoint=null. Step4 IID50/256
+was in the26..153 band but branch1/58, DAG4/98 and paraphrase8/256 failed.
+IID answers at steps8/16/32/64/128 were196/200/251/255/251, all above153; those
+checkpoints also failed the individual renaming gap. At step64 IID branch57/58
+became37/58 after renaming. Trace inspection shows omitted branch premises,
+not malformed output or copied-symbol errors. No checkpoint may be promoted.
+
+The independent execution audit found128 finite nonzero global updates, all
+six exact FP32 reloads/native-BF16 parity checks and complete raw partitions.
+All310 memory samples passed; peak134.745/384GiB, no own-job OOM/failcnt.
+The intentional worker exit2 for no eligible checkpoint becomes node exit1;
+launcher teardown is a consequence, not the cause. Controller accounting_complete
+means successful accounting, so false is expected for this terminal failure.
+All70,654,668,618 required large-artifact bytes have persistent read-back evidence;
+no weights were fetched. Small results: `.sdsc/fetched/54613837/fetch-_y28hpza/`.
+Publication SHA `811497f12df452aff066e433f08375c14cc2a427c15fd4dff3c5dedaabedce7a`;
+independent9216-response audit SHA
+`13d31dff1f41a715cd25550dde8154115cb81f65a17920d1036198769b989fd5`.
+Execution audit SHA `8e8d7d723641bcd8347e31dd83a866a6cb891391569c8d829231bd12b9701ae8`.
+These establish complete rejected evidence, not student readiness.
+
+Its intent remains `c7d5dc591ea0f5b278e39384c93cca8a`, canonical plan
 `.sdsc/student-invariance/c7d5dc591ea0f5b278e39384c93cca8a/plan.json`, SHA
-`6a12e8bc3616ebfc889d60517e119aa84e749f648c59ae3d2fe5b177c1e2c556`.
-The canonical submission receipt is the adjacent
-`submit-20261003T054952558830Z.json`; its acknowledgement is known, not uncertain.
-Independent actual-preflight, resource-estimate and deployment reviews passed.
-Fresh19-package runtime/parent/source checks passed; pre-submit queue was empty.
-Keep pinned controls unchanged, continue this job with status/fetch, never
-resubmit either intent. Old observers are terminal. A new finite foreground
-read-only observer started at **06:04:51Z**, Quest PID1726539/tool session49601,
-under `.../student-invariance-v2/watch-fit-54613837/`. Its launch/status/memory
-records confirm active60-second polling of this one receipted job, at most10h.
-Observer SHA `5b0855ed0caa0a7415da9eb1f63d039360a8c7ddc822834e32ae8f4d534e16d3`;
-43 fixtures and45 actual memory-sample replays passed independent review.
-It pins itself, plan/receipt and19 controls, stops on error/SSH loss or changed
-pins, and cannot submit/retry/cancel. Do not start a competing observer or edit
-its script/controls while active. Latest memory peak84.416GiB, noOOM/failcnt.
-The agent is actively awaiting this foreground process; no persistent model
-wakeup or monitoring after conversation/SSH interruption is claimed.
+`6a12e8bc3616ebfc889d60517e119aa84e749f648c59ae3d2fe5b177c1e2c556`;
+known receipt `submit-20261003T054952558830Z.json`. Never re-arm or resubmit it.
+The finite foreground observer ended at08:38:52Z after155 one-minute polls with
+terminal_failure/exit2. Its records are under diagnostics
+`student-invariance-v2/watch-fit-54613837/`; no observer or new job is active.
+No persistent model wakeup after conversation/SSH interruption is claimed.
+Preserve all failed evidence and accepted V2 bytes. A prospectively reviewed
+successor is being designed to balance branch coverage, increase renamed
+training views and inspect early checkpoints more densely, with all original
+and V2 selection thresholds unchanged. It is not yet accepted or submitted.
 Diagnostics/reviews: `.sdsc/diagnostics/student-invariance-v2/`.
 
 For fit preparation after handoff-only commits, use the existing verified
@@ -188,11 +204,11 @@ GPU arithmetic was not independently recomputed. The same directory preserves
 submission, fresh terminal fetch and independent result review. No observer or
 automatic continuation is active; never duplicate or blindly retry this job.
 
-Next: monitor the existing full fit54613837, then verify terminal accounting,
-persistent publication and independent replay of all9216 development responses. The
-fixed v1 step4 candidate remains rejected; do not reselect later checkpoints,
+Next: implement and independently review a fresh branch/renaming preparation
+successor before new preflight/submission. V2 fit54613837 is fully audited and
+rejected; the fixed v1 step4 candidate also remains rejected; do not reselect later checkpoints,
 relax the gap, automatically extend training or reuse failed qualification.
-A successful v2 preparation still needs a new qualification adapter binding its
+Any successful successor preparation still needs a new qualification adapter binding its
 selected bytes and preserving the original gates. Explicitly disclose the prior
 54606205 exposure to all896 formal responses when retesting the new candidate;
 these prompts are not a fresh unexposed holdout. Prepared-initial calibration/G0
