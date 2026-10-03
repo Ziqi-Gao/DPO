@@ -340,6 +340,16 @@ Further source inspection confirms that `ExperimentBinding` admits
 `artifacts/runs.py` resolves only historical amendment paths. New OPD/GRPO
 entrypoints need explicit compound dense-model binding/manifest/readiness adapters;
 wrapping old `main`, overriding LR alone or monkeypatching globals is insufficient.
+The additive `models/prepared_student.py` low-level loader now constructs the
+pinned offline CPU FP32 architecture directly and restores311 exact trainable
+masters before optimizer/FSDP. It checks supplied dense metadata/file size<=8GiB,
+double streamed file hashes, finite tensors, tied aliases and bitwise master state,
+while preserving caller config/CPU RNG. All91 CPU tests pass, including genuine
+tiny-Qwen forward/backward/AdamW and negative fixtures; independent review is
+complete. It is currently unused by old CLIs and supplies no qualification/G0
+admission or real native1.7B/GPU evidence. See
+`docs/refactor/prepared_student_loader_20261003.md`. Existing130 science/control
+files are unchanged; downstream method adapters and real evidence remain required.
 `GrpoTokenBudgetCallback.state_dict()` labels an unset reason
 `max_steps_safety_limit`; a short diagnostic must record its actual nonterminal
 or boundary-stop cause separately and retain the120-step linear scheduler horizon.
