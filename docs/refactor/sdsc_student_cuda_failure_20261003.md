@@ -82,6 +82,27 @@ Non-author node review:
 A diagnostic PASS on another node cannot retrospectively identify the missing
 predicate on exp-19-05 or automatically admit an unchanged training retry.
 
+## Actual bounded diagnostic
+
+Job54626913 completed on exp-19-01 in59s with job/batch/extern exit0.
+All13 raw checks passed: unchanged CVD0,1, two H10080GBHBM3 devices, CUDA
+available, initialization successful and correct tiny FP32 sums on logical0/1.
+Six memory samples passed; peak0.8891/16GiB. Fetch61,626 bytes is retained in
+`.sdsc/fetched/54626913/fetch-cmlk843u/`. Publication SHA is
+`f90a64d4085b77326cd346f374491cd6bb51820f21a459544563574f497eae84`;
+raw report SHA is
+`1bc3c15fe285e9fd1ed28158309124c504774463f26fc28be6e7ec8e81867a60`.
+
+At17:54:45Z squeue still retained the COMPLETED row, so the strict terminal
+validator had not yet accepted empty-queue completion. The SSH master then
+vanished on quser34. No login retry or new submission followed; manual same-host
+authentication was requested. Fresh terminal reconciliation remains required.
+
+This result supports one proposed instrumented execution recovery with an early
+CUDA check in its actual allocation. It does not establish why exp-19-05 failed.
+See `sdsc_student_order_execution_recovery_20261003.md`; all V4 science and
+historical claims remain unchanged.
+
 ## Bound evidence
 
 - V4 implementation:8036f8af6cbb67edef6df1c8d8ff0cee65a1d84b;

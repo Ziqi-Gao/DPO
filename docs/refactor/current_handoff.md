@@ -175,13 +175,28 @@ Diagnostic implementation commit is a3f82aa4df79f4e232adc67cee5f873bded18701.
 Deployment `20261003T174323Z-c7c893869642-487e9537` has724 files/9,784,335 bytes;
 independent actual deployment review SHA
 `78875e6a2cf96410492b97353eb728ebddb7188aa421d92821b47ba173609628` passes.
-Diagnostic **54626913** submitted once at2026-10-03T17:48:40Z; fresh status
-at17:49:02Z was RUNNING, not completed. Root is actively checking this short job.
+Diagnostic **54626913** ran once on exp-19-01: job/batch/extern COMPLETED0:0,
+59s. Raw report confirms13/13 CUDA checks, two H10080GBHBM3 devices, successful
+init and tiny logical0/1 FP32 sums; CVD0,1 unchanged. Six memory samples pass,
+peak0.8891/16GiB. Fetch61,626 bytes is `.sdsc/fetched/54626913/fetch-cmlk843u/`.
+Publication SHA`f90a64d4085b77326cd346f374491cd6bb51820f21a459544563574f497eae84`;
+report SHA`1bc3c15fe285e9fd1ed28158309124c504774463f26fc28be6e7ec8e81867a60`.
+Last status17:54:45Z still had the COMPLETED row retained in squeue, so overall
+terminal/success flags remained false pending fresh empty-queue reconciliation.
+Then the SSH master vanished on quser34; remote operations stopped without retry.
+The user was asked to manually authenticate on the same host. No training job
+is active at last observation. Do not claim monitoring persists through SSH loss.
 Plan `.sdsc/cuda-diagnostic/36da1a433a8db07a2df99f2032651275/plan.json`, SHA
 `d8c40f45e61d50ff25182b7870d4224f07ed342eaec9c53eb430074512bfefda`;
-receipt is under that same intent directory. Continue status/fetch, never resubmit. Actual evidence must determine the
-engineering recovery; do not blindly retry V4 or mutate its old claim. Preserve
-all V4 data/seeds/thresholds until a reviewed execution repair exists. The new
+receipt is under that same intent directory. After manual SSH restoration,
+continue status/fetch, never resubmit. A PASS on exp-19-01 cannot identify the
+missing predicate on exp-19-05. The local execution-only recovery implementation
+is underway: early CUDA child before large staging, per-rank predicate evidence,
+unchanged130 science files/five protocols and original numerical gates. It needs
+independent implementation/acceptance review and one fresh instrumented preflight;
+no recovery job has been submitted. See
+`docs/refactor/sdsc_student_order_execution_recovery_20261003.md` (currently proposed).
+The new
 V4 qualification scaffold is paused and has no candidate JSON; it cannot admit
 the failed preflight or replace the required successful full fit.
 
