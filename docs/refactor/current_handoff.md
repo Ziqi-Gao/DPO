@@ -335,6 +335,22 @@ training; new production-shaped method updates/resume still need actual evidence
 The bounded code/line audit is
 `.sdsc/diagnostics/student-invariance-v2/downstream-opd-grpo-lr-readonly-review.md`.
 Do not apply preparation/G0 batch or length contracts indiscriminately.
+Further source inspection confirms that `ExperimentBinding` admits
+`adapted_teacher` only for canonical-SFT with its accepted demo view, and
+`artifacts/runs.py` resolves only historical amendment paths. New OPD/GRPO
+entrypoints need explicit compound dense-model binding/manifest/readiness adapters;
+wrapping old `main`, overriding LR alone or monkeypatching globals is insufficient.
+`GrpoTokenBudgetCallback.state_dict()` labels an unset reason
+`max_steps_safety_limit`; a short diagnostic must record its actual nonterminal
+or boundary-stop cause separately and retain the120-step linear scheduler horizon.
+The reviewed prospective minimum is two real windows plus one independent
+same-world window2 replay from window1 (three physical windows), with raw OPD KL
+and GRPO group/verifier evidence; it is not formal learning/G0 acceptance.
+Read-only additive and prerequisite plans are under diagnostics`student-branch-v3/`:
+`downstream-opd-grpo-additive-plan.md` and
+`downstream-prerequisite-execution-readonly-plan.md`. They create no runtime or
+model acceptance and leave old stopped flows/claims untouched. Full pilot inputs
+remain4096x8 teacher attempts and4096x4 common-bank trajectories, not32768 bank rows.
 The next calibration must load newly qualified selected weights with a fresh optimizer/scheduler,
 RNG and demo cursor; it must not resume preparation's optimizer/token counters.
 Preserve SFT global64/1536,2M tokens/120 steps, original validation128 strict
