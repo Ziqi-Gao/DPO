@@ -62,7 +62,8 @@ remain immutable. Its observer ended09:52:15Z with verified_preflight_complete,
 exit0,19 polls; never restart it.
 
 Matching full fit **54615110** was submitted once at **2026-10-03T10:01:19Z**.
-Fresh **10:01:43Z** status confirms **RUNNING**,2H100/24CPU/384GiB/8h.
+Fresh **10:29:43Z** status confirms **RUNNING**,2H100/24CPU/384GiB/8h;
+latest own-job memory peak75.622GiB, noOOM/failcnt.
 Canonical intent `44d1ca080d7f0cb075a8d35f8934fb55`, plan
 `.sdsc/student-branch/44d1ca080d7f0cb075a8d35f8934fb55/plan.json`, SHA
 `d0fcac224a5cd09f1c9ddd79af12f859e153f30d44cf44d046e575b5d5e93cd9`;
@@ -82,9 +83,27 @@ Do not edit pinned controls or start a competing observer. Other observers are t
 
 Next: monitor this receipted fit to terminal accounting and persistent publication,
 then independently replay all18432 responses and verify the unchanged earliest
-selection. No fit/qualification/model acceptance has occurred. Generic additive
-qualification scaffolding may be prepared while it runs, but its accepted protocol
-must bind one actual selected/audited V3 fit before any qualification submission.
+selection. No fit/qualification/model acceptance has occurred. The additive
+`student_branch_qualification` module and `tools/sdsc_student_branch_qualify*.py`
+scaffolding is complete, with337 focused CPU tests passing together in149.97s,
+Ruff/AST/diff checks and independent protocol/worker/auditor/transport/node reviews.
+It preserves all125 parent science files/four protocols and original896 prompts,
+2244 envelope/gates, with prior896 formal exposure explicitly disclosed.
+Dynamic selected-step/path/size/SHA/two-rank master bindings replace the old step4
+assumption. Strict18432-response parent audit, parentW2/384GiB vs childW1/192GiB
+accounting, parent32/224MiB vs child16/48MiB reads, exact FP32 loading and original
+scorers have CPU rejection and node-to-isolated-worker fixtures. No candidate JSON
+exists: unbound/proposed protocols cannot run. Actual successful fit, full raw
+audit, one bound candidate implementation commit and a distinct review-only
+acceptance are still required before qualification deployment or submission.
+See `docs/refactor/sdsc_student_branch_qualification_20261003.md`.
+The unstarted qualification observer under diagnostics`student-branch-qualify-v1/`
+has49 independently passing fixtures. Cross-node review caught and fixed its
+`after_inference` memory-phase whitelist before activation; final observer SHA
+`d1dd7058897ceab51f8f918f5e5c40b18f082bec3d19b54545ac98a50e0f1826`,
+review-v2 SHA`63aafa213d5a03966a0147726a98d306992b4c076fbf7b2cc649a64170be4906`.
+Its prospective scope is one receipted qualification, every60s/at most4h, no job
+mutations. It must not be activated without a future actual plan and receipt.
 The matching preflight and fit plans are now frozen; later handoff-only commits do
 not alter their deployed source/provenance. No historical checkpoint reselection.
 The inherited Slurm TERM signal is180s before walltime, so the nominal300s/600s
