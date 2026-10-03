@@ -3,13 +3,13 @@
 Last updated: 2026-10-03 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** The active prospective successor is
+and immediate evidence-led repair of new failures.** Latest completed preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
 `docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**
 has exact-commit non-author review and a distinct review-only acceptance. All205
 focused CPU tests, Ruff, pinned-Python AST and diff checks pass. This accepts
-implementation readiness. Actual V3 engineering preflight passed; the complete
-fit is running and no V3 model has been accepted. It starts
+implementation readiness. Actual V3 engineering preflight passed, but complete
+fit54615110 failed scientific selection; no V3 model is accepted. It started
 fresh native1.7B with unchanged full-parameter FP32/W2 FULL_SHARD/global64/5e-5.
 Every64-slot window has two complete signed branch pairs, one chain pair and one
 DAG pair, each in eight views. Fit distractors4..8 and rotating depths2..4 are
@@ -61,29 +61,55 @@ Preflight intent `0807711636a2de98bcfe042f67ca1a7f` and plan SHA
 remain immutable. Its observer ended09:52:15Z with verified_preflight_complete,
 exit0,19 polls; never restart it.
 
-Matching full fit **54615110** was submitted once at **2026-10-03T10:01:19Z**.
-Fresh **10:29:43Z** status confirms **RUNNING**,2H100/24CPU/384GiB/8h;
-latest own-job memory peak75.622GiB, noOOM/failcnt.
-Canonical intent `44d1ca080d7f0cb075a8d35f8934fb55`, plan
+Matching full fit **54615110 FAILED scientific selection**. Fresh terminal
+accounting at **2026-10-03T16:02:09Z** confirms job/batch FAILED1:0, extern
+COMPLETED0:0, elapsed21142s and empty queue. All32 updates/1,652,820 input tokens,
+12 dense checkpoints and18432 raw development responses completed. Independent
+replay reproduced every response/summary and selected_checkpoint=null. At step8,
+IID/rename/fact-order/rule-order/paraphrase/distractor proof counts are
+133/134/69/107/136/107 out of256. Step12 gives150/153/94/121/157/142; both meet
+the capability band and structure floors but fail permutation/mean-gap gates.
+Steps16/24/32 exceed the153 IID answer ceiling and retain permutation failures.
+No checkpoint may be promoted or sent to the V3 qualification scaffold.
+
+Independent execution review verifies64 finite nonzero rank-updates, all24 exact
+311-key FP32 reloads,48 native-BF16 parity observations, and step4 actual W2
+full-state restoration. All683 memory samples pass; peak168.229/384GiB, no own-job
+OOM/failcnt. All119,417,324,544 required large bytes have persistent read-back
+hash evidence; publication took390.16s within600s. The worker intentionally exits2
+for no eligible model, then the node publishes complete rejected evidence and
+exits1. Launcher shutdown is a consequence, not an observed infrastructure cause.
+Small fetch139,356,887 bytes: `.sdsc/fetched/54615110/fetch-19byha9l/`.
+Publication SHA`5aa13b37658d807e1beede498bf22feba66b1ba75c80e55f3f246c281d9f4706`;
+raw audit SHA`be9964301c0a6a09957e63c2ba84b923e4237fd0be243ff37df5a5c61b223b9c`;
+execution review SHA`9bbd337ab3c0bf1768d34977030717878a88f3bb4d21fc3f96fada2e3c4025ca`.
+These audits do not independently rerun GPU arithmetic or fetch large weights.
+
+Canonical intent remains `44d1ca080d7f0cb075a8d35f8934fb55`, plan
 `.sdsc/student-branch/44d1ca080d7f0cb075a8d35f8934fb55/plan.json`, SHA
 `d0fcac224a5cd09f1c9ddd79af12f859e153f30d44cf44d046e575b5d5e93cd9`;
-known receipt `submit-20261003T100119952970Z.json`. Never resubmit/re-arm it.
-It binds the same immutable release/provenance and accepted HEADd54749a, restarts
-native weights, and retains all32 updates/12 checkpoints/18432-response gates.
-Independent fit deployment review SHA
-`1dd8d46519e2fc660a0fc7224fb1797f27806d1b61aff67885e7311aad899bed`;
-actual preflight plus historical full development timing supports the8h envelope
-(planning5.81h, not a guarantee). Expected119,417,324,544 large bytes are below128GiB.
-The finite foreground fit observer is active at Quest PID2293020/tool session96050
-under `.sdsc/diagnostics/student-branch-v3/watch-fit-54615110/`. It checks every60s
-for at most10h including queue, pins itself/plan/receipt/19controls, and stops on
-failure, SSH loss or changed pins without submission/retry/cancellation. Its43
-fixtures passed independent review; first own-job initial memory sample passed.
-Do not edit pinned controls or start a competing observer. Other observers are terminal.
+receipt `submit-20261003T100119952970Z.json`. Never resubmit/re-arm it.
+The finite foreground observer ended at15:53:44Z with terminal_failure/exit2 after
+353 one-minute polls. Its evidence remains under diagnostics
+`student-branch-v3/watch-fit-54615110/`; no V3 observer or job is active.
 
-Next: monitor this receipted fit to terminal accounting and persistent publication,
-then independently replay all18432 responses and verify the unchanged earliest
-selection. No fit/qualification/model acceptance has occurred. The additive
+The actual failed run exposes a fit-coverage interaction: all V3 fact/rule
+permutations were renamed, leaving zero original-symbol-only permutation views.
+Step8/12 lose66/62 formerly correct IID responses after fact permutation. Wrong
+first steps cite the first displayed fact in17/14 of those losses; this is one
+observed mechanism, not the entire failure. Valid canonical targets and the
+actual export/restore checks do not show a target-mapping or optimizer defect.
+See `docs/refactor/sdsc_student_branch_failure_20261003.md`.
+
+Next: implement and independently review a new order-preparation V4 protocol,
+keeping all thresholds and fresh native1.7B. The candidate replaces repeated
+renameB/jointB views with pure fact/rule permutations: eight views remain, renamed
+coverage changes75% to50%, and fact/rule permutations each remain37.5%. New fit,
+dev and transform seeds must exclude every prior base/transformed population.
+No V4 protocol is accepted, deployed or submitted yet. Preserve all failed runs;
+no historical checkpoint reselection, threshold relaxation or blind retry.
+
+The additive V3-only
 `student_branch_qualification` module and `tools/sdsc_student_branch_qualify*.py`
 scaffolding is complete, with337 focused CPU tests passing together in149.97s,
 Ruff/AST/diff checks and independent protocol/worker/auditor/transport/node reviews.
@@ -93,9 +119,10 @@ Dynamic selected-step/path/size/SHA/two-rank master bindings replace the old ste
 assumption. Strict18432-response parent audit, parentW2/384GiB vs childW1/192GiB
 accounting, parent32/224MiB vs child16/48MiB reads, exact FP32 loading and original
 scorers have CPU rejection and node-to-isolated-worker fixtures. No candidate JSON
-exists: unbound/proposed protocols cannot run. Actual successful fit, full raw
-audit, one bound candidate implementation commit and a distinct review-only
-acceptance are still required before qualification deployment or submission.
+exists: unbound/proposed protocols cannot run, and the failed V3 parent cannot
+be bound. Any new preparation needs its own reviewed qualification binding, full
+raw audit and distinct candidate implementation/review-only acceptance before
+qualification deployment or submission.
 See `docs/refactor/sdsc_student_branch_qualification_20261003.md`.
 The unstarted qualification observer under diagnostics`student-branch-qualify-v1/`
 has49 independently passing fixtures. Cross-node review caught and fixed its
