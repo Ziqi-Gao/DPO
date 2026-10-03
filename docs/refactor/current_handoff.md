@@ -104,8 +104,10 @@ See `docs/refactor/sdsc_student_branch_failure_20261003.md`.
 The new order-preparation V4 implementation is complete and independently
 reviewed, with226 focused CPU tests passing (45 protocol,99 transport,82 worker/
 auditor), Ruff/format/AST/diff checks, and89 observer fixtures separately reviewed.
-Protocol `prereg/amendments/qwen3_student_order_preparation_v4.json` is still
-proposed until exact-implementation review and distinct review-only acceptance.
+Protocol `prereg/amendments/qwen3_student_order_preparation_v4.json` binds
+implementation8036f8af6cbb67edef6df1c8d8ff0cee65a1d84b. Both exact-commit
+non-author reviews pass; this separate review-only acceptance grants
+implementation readiness only, not a GPU result or qualified model.
 See `docs/refactor/sdsc_student_order_preparation_20261003.md`.
 It replaces repeated renameB/jointB views with pure fact/rule permutations:
 eight views remain, renamed coverage changes75% to50%, and fact/rule permutations
@@ -126,9 +128,8 @@ new controller/node/worker/auditor namespace; independent reviews include real
 CPU producer-to-auditor and node-to-isolated-worker interfaces. No GPU/model,
 formal qualification, G0 or pilot acceptance follows from these CPU checks.
 
-Next: commit this proposed implementation, bind independent reviews to that
-exact commit, and make its separate review-only acceptance. Then deploy a new
-hashed release/provenance, submit a fresh2H100/24CPU/384GiB,<=1h V4 preflight;
+Next: deploy the accepted implementation through a new hashed release/provenance,
+then submit a fresh2H100/24CPU/384GiB,<=1h V4 preflight;
 only its matching actual PASS and raw audit permit the fresh-native<=8h fit.
 One-minute read-only observers are reviewed but unstarted; no V4 job exists yet.
 Preserve all failed runs; no historical checkpoint reselection, threshold

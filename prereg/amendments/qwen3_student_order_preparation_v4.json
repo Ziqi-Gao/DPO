@@ -248,11 +248,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Independent exact-commit reviews 1b0a4441b5b20bef932a5ba4ae68d95cde2bd984f22ea717835b90502f0c85bb and e21fc168b9a7f95fbb77537c71d925a6e00476826d10a8ec9c190bcebca106c4 accept implementation readiness after 226 focused CPU tests, full deterministic historical isolation and separately reviewed 89 observer fixtures. New original-symbol permutation coverage and 50 percent renamed views are prospective treatment; native initialization, W2 training, all numeric gates, 125 parent science files and four historical protocols are preserved. No actual GPU, student, formal qualification, G0, pilot or factorial acceptance is granted; a fresh matching GPU preflight and independent raw audit remain required.",
+    "reviewed_at_utc": "2026-10-03T16:39:02.289217Z",
+    "reviewed_implementation_commit": "8036f8af6cbb67edef6df1c8d8ff0cee65a1d84b",
+    "reviewer": "/root/invariance_transport_design (non-author protocol/worker/auditor) and /root/invariance_worker_design (non-author controller/node/observers)",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [
