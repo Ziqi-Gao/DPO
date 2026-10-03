@@ -200,15 +200,23 @@ remain unexecuted; no formal OPD/RL comparison is running. The following adapter
 requirements remain conditional on a newly qualified common initial model.
 Successor adapters must explicitly load the prepared student and accepted dense
 teacher: existing `build_rollout_bank.py`, `evaluate_teacher_readiness.py` and
-`score_teacher.py` load native HF models; existing `train.py` loads BF16 before
-the FP32 prepared checkpoint and would round masters. Reuse reviewed exact-FP32
+`score_teacher.py` load native HF models; existing `train.py` and `run_grpo.py`
+load BF16 before the FP32 prepared checkpoint and would round masters. Reuse reviewed exact-FP32
 load semantics in additive adapters, regenerate initial-dependent artifacts,
 and retain original validation128/anti-shortcut/cohort/circuit/calibration gates.
 Later OPD/GRPO configurations still inherit5e-4; they need an explicit prospective
-LR repair rather than assuming preparation's5e-5 propagates. Preserve method
-semantics: OPD trainer completion128 differs from GRPO supervision completion256,
-eight generations and its own batch/accumulation settings. Do not apply the
-preparation/G0 global64 or length contract indiscriminately to every method.
+LR repair rather than assuming preparation's5e-5 propagates or establishes RL
+effectiveness. OPD uses constant LR, response-position top128 forward KL and
+current-student states; GRPO uses linear/zero-warmup LR and exact verifier reward.
+Preserve method semantics: OPD completion128 and W4/global64 differ from GRPO
+completion256/eight generations. The actual SDSC pilot overrides GRPO per-rank
+batch to8; supervision accumulation8 gives W4/global256 completions (32 groups),
+with589824-token conservative next-window reservation. The generic pilot profile
+alone gives128, not64. Old four-H100 preflight explicitly excludes real TRL GRPO
+training; new production-shaped method updates/resume still need actual evidence.
+The bounded code/line audit is
+`.sdsc/diagnostics/student-invariance-v2/downstream-opd-grpo-lr-readonly-review.md`.
+Do not apply preparation/G0 batch or length contracts indiscriminately.
 The next calibration must load newly qualified selected weights with a fresh optimizer/scheduler,
 RNG and demo cursor; it must not resume preparation's optimizer/token counters.
 Preserve SFT global64/1536,2M tokens/120 steps, original validation128 strict
