@@ -44,6 +44,20 @@ Keep pinned controls unchanged, continue this job with status/fetch, never
 resubmit its intent. Old observers are terminal; no new automatic flow is active.
 Diagnostics/reviews: `.sdsc/diagnostics/student-invariance-v2/`.
 
+For fit preparation after handoff-only commits, use the existing verified
+provenance restore `.../student-invariance-v2/accepted-fit-source` at genuine
+e53b606, with its read-only source/.git and two byte-identical `.sdsc` control
+records. The accepted CLI intentionally requires exact HEAD and exact matching
+preflight binding. Do not reset the main checkout or edit pinned controls.
+The independently tested procedure is in
+`.sdsc/diagnostics/student-invariance-v2/fit-preparation-restored-source-workflow-review.json`:
+only run unmodified restored `prepare` after the real preflight/raw audit passes,
+then exclusively copy its exact generated plan into the main `.sdsc` namespace.
+Run submit/status/fetch from the main repository. Never run generic sync/remote
+from the restored directory, whose basename would select a different remote root.
+The separate qualification-successor read-only plan in that diagnostics directory
+lists the later adapter requirements; it creates no new scientific acceptance.
+
 Historical preparation v1 is `prereg/amendments/qwen3_student_preparation_v1.json`;
 see `docs/refactor/sdsc_student_preparation_20261001.md`. It fixes constantLR5e-5
 and prepares fresh native weights on2048 independent symbolic-canonical examples,
