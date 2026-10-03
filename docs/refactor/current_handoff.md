@@ -65,8 +65,9 @@ candidate is `prereg/amendments/qwen3_student_qualification_v1.json`, described
 in `docs/refactor/sdsc_student_qualification_20261002.md`. Non-author reviews of
 worker, transport, auditor and protocol found no blocker; all159 focused CPU
 checks and Ruff pass, including the actual node-to-fresh-worker input seam.
-These checks are implementation evidence, not GPU/model acceptance. The proposed
-protocol is not yet accepted or submitted. Preserve all110 named parent
+Implementation **48951c1** has distinct non-author exact-commit acceptance;
+this review-only commit accepts the qualification implementation, not a GPU or
+model result. The job is not yet submitted. Preserve all110 named parent
 scientific files. The worker restores
 the frozen step4 FP32 masters exactly before native-BF16 inference and retains
 all896 original responses: validation128 plus anti-shortcut IID128 and640
@@ -76,7 +77,7 @@ Actual pinned tokenization requires2244 auxiliary inference tokens, matching the
 original untruncated anti-shortcut evaluator; training1536 is unchanged.
 Resources are1H100/24CPU/192GiB/2h; no teacher data or new training is involved.
 
-Next: complete distinct implementation/acceptance, deploy and submit this one
+Next: deploy the accepted implementation and submit this one
 qualification; only after independently verified success continue remaining
 calibration/cohort/circuit gates. Initial qualification and downstream
 calibration/G0 remain unexecuted; no formal OPD/RL comparison is running.
