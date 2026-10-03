@@ -26,12 +26,22 @@ files plus both old protocol JSONs. CPU fixtures cover exact checkpoint export,
 full-state restoration, two-process global64 semantics, actual worker-to-auditor
 9216-record replay, per-view/structure rejection and genuine Git acceptance.
 Implementation **4fd79be** and exact-commit independent non-author reviews are
-complete. All **183 focused CPU tests**, Ruff and AST checks pass. The distinct
-review-only acceptance accepts implementation readiness, not a model/GPU result.
+complete. All **183 focused CPU tests**, Ruff and AST checks pass. Distinct
+review-only acceptance **e53b606** accepts implementation readiness, not a model/GPU result.
 The reviewed resources are2H100/24CPU/384GiB, preflight<=1h and fit<=8h;
 fit requires matching real preflight and an independent raw audit. At most four
 allocatable GPUs, fresh intents, bounded fetch and no automatic retry remain
-mandatory. No v2 GPU job has been submitted yet; old observers are terminal.
+mandatory. Preflight **54613314** was submitted once at **2026-10-03T05:07:21Z**,
+intent `cc148b1944a930dd1acba1a69733c610`; accounting at05:07:50Z confirms
+**RUNNING**, actual2H100/24CPU/384GiB. Plan:
+`.sdsc/student-invariance/cc148b1944a930dd1acba1a69733c610/plan.json`, SHA
+`c7cb13c27ac1ffa6be751753b90b1e6bd97cd34653e0ad8f4c2f7e7f8e67a0b3`.
+Deployed release `20261003T045846Z-ce79034f92ae-c92b6a76` binds scienceHEADe53b606
+and provenance `f024edd3f02234d3a98ef4f3442c43aec5e599a4faa318b5e7ecbfe9f9e2bee9`.
+Fresh19-package runtime/parent/source checks passed; pre-submit queue was empty.
+The exact deployment/argv received independent review. No fit is submitted yet.
+Keep pinned controls unchanged, continue this job with status/fetch, never
+resubmit its intent. Old observers are terminal; no new automatic flow is active.
 Diagnostics/reviews: `.sdsc/diagnostics/student-invariance-v2/`.
 
 Historical preparation v1 is `prereg/amendments/qwen3_student_preparation_v1.json`;
@@ -138,8 +148,8 @@ GPU arithmetic was not independently recomputed. The same directory preserves
 submission, fresh terminal fetch and independent result review. No observer or
 automatic continuation is active; never duplicate or blindly retry this job.
 
-Next: finish independent acceptance and deploy the new v2 preparation above,
-then complete its real preflight/raw audit before starting its fresh fit. The
+Next: verify terminal accounting and published artifacts of preflight54613314,
+then independently replay its raw results before starting the matching fresh fit. The
 fixed v1 step4 candidate remains rejected; do not reselect later checkpoints,
 relax the gap, automatically extend training or reuse failed qualification.
 A successful v2 preparation still needs a new qualification adapter binding its
