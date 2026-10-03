@@ -25,7 +25,9 @@ New controller/node/worker/auditor and claim namespace preserve115 parent scienc
 files plus both old protocol JSONs. CPU fixtures cover exact checkpoint export,
 full-state restoration, two-process global64 semantics, actual worker-to-auditor
 9216-record replay, per-view/structure rejection and genuine Git acceptance.
-Independent non-author reviews precede distinct implementation/acceptance commits.
+Implementation **4fd79be** and exact-commit independent non-author reviews are
+complete. All **183 focused CPU tests**, Ruff and AST checks pass. The distinct
+review-only acceptance accepts implementation readiness, not a model/GPU result.
 The reviewed resources are2H100/24CPU/384GiB, preflight<=1h and fit<=8h;
 fit requires matching real preflight and an independent raw audit. At most four
 allocatable GPUs, fresh intents, bounded fetch and no automatic retry remain
