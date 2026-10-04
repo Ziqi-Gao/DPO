@@ -1,0 +1,112 @@
+{
+  "claims": {
+    "failed_or_unknown_claims_never_deleted_or_rearmed": true,
+    "fresh_failed_and_diagnostic_terminal_reconciliation_required": true,
+    "matching_recovery_preflight_and_independent_8_response_audit_required": true,
+    "maximum_fit_submissions": 1,
+    "maximum_preflight_submissions": 1,
+    "original_v4_fit_scientific_claim_also_required": true,
+    "preflight_key": "original_science_identity_with_stage+accepted_execution_core"
+  },
+  "contract_id": "qwen3-student-order-execution-recovery-v2",
+  "controls": [
+    "tools/sdsc_student_order_execution_v2_contract.py",
+    "tools/sdsc_student_order_execution_v2.py",
+    "tools/sdsc_student_order_execution_v2_job.py",
+    "tools/sdsc_student_order_execution_v2_probe.py"
+  ],
+  "diagnostic": {
+    "job_id": "54643629",
+    "memory_sha256": "fde24b590b50b42a6580c16ecd718ae15c744d59641140c05228ec27dac6e541",
+    "node_sha256": "27e167f0ccdac46b0c32cfb1b100d5ade379688210ec5a16a24afe3e5debabd4",
+    "plan_sha256": "570e39613cff38031375ebbdea149adbc197dd17ad51be8fc74abeb2bd32f21d",
+    "publication_sha256": "3ad6a79f3fbdc49b5270a333ca9aa59b3d14bf53797198bad30f5726badc18a2",
+    "report_sha256": "9b1fc5ed109db6725b8d094333809c10de535ab88adbc01422780899ab62d1a9"
+  },
+  "diagnostic_implementation_commit": "c1b0b5904ebb509c5c3e442bd87ea9c56e5fdc31",
+  "execution": {
+    "early_probe_before_large_input_staging": true,
+    "early_probe_importtime": true,
+    "early_probe_separate_child_reaped_before_training": true,
+    "early_probe_stack_dump_interval_seconds": 30,
+    "early_probe_thread_environment": {
+      "MKL_NUM_THREADS": "12",
+      "OMP_NUM_THREADS": "12",
+      "OPENBLAS_NUM_THREADS": "12"
+    },
+    "early_probe_timeout_covers_import_cuda_and_tiny_checks": true,
+    "early_probe_timeout_seconds": 300,
+    "early_probe_timestamped_progress": true,
+    "frozen_v1_rank_training_wrapper_unchanged": true,
+    "inner_science_and_outer_execution_plan_hashes_distinct": true,
+    "original_resources_walltime_publication_reserves_unchanged": true,
+    "original_scientific_auditor_required": true,
+    "preserve_original_cuda_visible_devices": true,
+    "preserve_original_scientific_report_and_raw_inventory": true,
+    "preserve_original_worker_13_input_keys": true,
+    "rank_startup_predicates_before_unchanged_worker": true,
+    "retained_startup_log_max_bytes": 1048576,
+    "retained_startup_log_truncation_and_raw_progress_required": true,
+    "separate_execution_receipt_required": true
+  },
+  "failed_preflight": {
+    "execution_node_sha256": "0e5e39afdda0ea4238872ede638eabaa17415aaf4f4e452c6331d71b77a983ce",
+    "execution_plan_sha256": "73478b7e5a45324a4f957d3ba60fe2f64053c75cb8ef63cb3db8ff04daf94c07",
+    "execution_publication_sha256": "d4b4ee9effd7bc7ca842c09d384d882b31e40c83e80cc94bd3b22f1f9b289bfd",
+    "job_id": "54643463",
+    "plan_sha256": "34b45d2b888bf7bc6b7a96c72ce5a9b664a080356cfae2bc8f10dbd4eb9a730d",
+    "publication_sha256": "d7ddc12da44da08189e057347b6be24dff23db1410a384513279f1e632c2002a",
+    "report_sha256": "63099dc1c2d40c7cb4cffae46d53ad1511de72a7f316663f8312fa4837b79468"
+  },
+  "frozen_dependencies": {
+    "tools/sdsc_cuda_diagnostic.py": "b7b082ddad9595d8365522834ec02b691b92287c72f0a506b5ef2ed0871f181c",
+    "tools/sdsc_cuda_diagnostic_job.py": "9572e9bcaa572a6d7995d483da0d24e8ce81f7ff496139d7f36119d669149e4b",
+    "tools/sdsc_cuda_diagnostic_worker.py": "709b9732acdff7c027b91d8762d6a164e0649f6a1e7b4fdd1d87287a30f40e5b",
+    "tools/sdsc_student_branch_qualify_job.py": "b09059327ec7aa8ec9e01d39408959e1a2e8d85a87e25f2b9e55ab94442751f3",
+    "tools/sdsc_student_order_execution.py": "1692fae5b84070961de1d33d2774b75ac46e40ee5b0666adb798b8352ad2f1c7",
+    "tools/sdsc_student_order_execution_contract.py": "7163d33dee68c531dda03ea6e2a32136078e2557dfefd4c450a763929367b476",
+    "tools/sdsc_student_order_execution_job.py": "ebf004742cca8f350ff090abfc8ce3fbb3d874a87623755014f9e8766783e51b",
+    "tools/sdsc_student_order_execution_worker.py": "366b606532b6a476cda53dfd847eccc083adf6da226626bc3d196e20f48448e5",
+    "tools/sdsc_torch_import_probe.py": "91db7d0d0fbf6a2257c11b70a969d9193db8e512f24b3e765cf3ffb9504c8917",
+    "tools/sdsc_torch_import_probe_job.py": "22b545b7b1b1a0f710388838ab9491abdf4e93b5554239f61bb441986775a866",
+    "tools/sdsc_torch_import_probe_worker.py": "b7f4cc07720172794e98106b5c03cf59e8657e88bd7b520e098bb65e561b0261"
+  },
+  "parent_science": {
+    "acceptance_commit": "d4db85327f0165f2aec1ea53caefd1693663f9b2",
+    "artifact_sha256": "0642a565f0ec3c1d3d12c5aedf1157adc848a2ca6c766af9c7e439c06c86f55d",
+    "implementation_commit": "8036f8af6cbb67edef6df1c8d8ff0cee65a1d84b",
+    "protocol_path": "prereg/amendments/qwen3_student_order_preparation_v4.json",
+    "protocol_sha256": "b3517d592adfa25247072c6f7e39c703ce01cff272c47b9a49383af7890906d8"
+  },
+  "previous_execution": {
+    "acceptance_commit": "23bc1aae3c68c14353d3a62bb88e6f516c8c9b65",
+    "artifact_sha256": "d433ac93a19eb2a52fbec91cd6a6f58e0800faaafb863804e9729f336569f782",
+    "contract_path": "prereg/amendments/qwen3_student_order_execution_recovery_v1.json",
+    "core_sha256": "4f745b038209cd5cdcd884e0acf3cf76b136e4699a41d6c6af6af62ef4aec06e",
+    "implementation_commit": "8086b38a1b7a8ad72f8acded8ef05157972c4613"
+  },
+  "review": {
+    "rationale": null,
+    "reviewed_at_utc": null,
+    "reviewed_implementation_commit": null,
+    "reviewer": null,
+    "status": "proposed"
+  },
+  "schema": "opd-student-order-execution-recovery-v2",
+  "scope": {
+    "automatic_retry": false,
+    "diagnostic_identifies_original_node_cause": false,
+    "diagnostic_proves_thread_policy_necessary": false,
+    "diagnostic_substitutes_for_recovery_preflight": false,
+    "execution_class_certified": false,
+    "factorial_ready": false,
+    "formal_initial_accepted": false,
+    "g0_passed": false,
+    "model_data_seed_threshold_change": false,
+    "pilot_passed": false,
+    "same_node_aba_separates_cache_from_order": false,
+    "scientific_change": false,
+    "student_accepted": false,
+    "teacher_or_formal_protocol_change": false
+  }
+}

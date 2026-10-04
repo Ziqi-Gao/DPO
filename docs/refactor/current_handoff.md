@@ -298,15 +298,18 @@ cause. A1's8.156s exit tail also has I/O/page faults; no native stack identifies
 The import-only result performs no CUDA predicates/model/training and grants no
 scientific acceptance.
 
-An execution-only v2 successor is being implemented: early-child bound300s inside
-the unchanged total worker budget/publication reserves, earlyOMP/MKL/OPENBLAS12
-for policy consistency, timestamps and30s repeating stacks with bounded retained
-logs. The original V4 worker, frozen v1 rank wrapper, science/gates/resources stay
-unchanged; oldclaims stay consumed. New v2 contract/controller/node/probe files
-are not yet accepted or deployable. Finish CPU tests, independent review and
-separate implementation/review-only acceptance before a fresh preflight. Successful
-new CUDA/four-update preflight plus original eight-response audit remain required
-before fit; this mitigation does not guarantee startup or training success.
+The execution-only v2 implementation is complete and independently reviewed:
+175 focused CPU tests pass (87 contract,35 node/probe,53 transport), Ruff/format/
+AST checks, and two independent real child-group cleanup cases. It raises the
+maximum early-child total to300s inside unchanged worker/publication budgets,
+sets earlyOMP/MKL/OPENBLAS12 for consistency, and records import timings,
+timestamped progress and30s stacks in bounded logs. Trace events are checked
+against retained raw log bytes. Original V4 science, frozen v1 rank wrapper,
+resources and numerical gates remain unchanged; all prior claims stay consumed.
+The v2 contract is proposed pending exact-commit review and a separate review-only
+acceptance. See docs/refactor/sdsc_student_order_execution_recovery_v2_20261004.md.
+A fresh successful CUDA/four-update preflight plus original eight-response audit
+remain required before fit; this mitigation does not guarantee startup success.
 V4 qualification transport/node drafts remain incomplete and untracked; their
 old producer-HEAD equality still needs migration to the completed core. No worker,
 auditor or candidate JSON exists. This path cannot admit the failed preflight or
