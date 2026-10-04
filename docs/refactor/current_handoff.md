@@ -74,11 +74,44 @@ passes actual restoration, FP32/native-BF16 parity, startup, memory and persiste
 publication. Control's successful early startup160.539s exceeds the obsolete
 120s bound but fits the accepted300s bound; no scientific conclusion follows.
 See `docs/refactor/sdsc_student_anchor_probe_20261004.md` for exact records.
-No diagnostic checkpoint may be promoted. The next repair is under evidence-led
-analysis; no new policy, protocol, plan or submission is selected yet. A full
-common-initial preparation and original896-response formal qualification
-(anti-shortcut input limit2244 tokens) remain required. All scientific thresholds
-are unchanged.
+No diagnostic checkpoint may be promoted. A full common-initial preparation
+and original896-response formal qualification (anti-shortcut input limit2244
+tokens) remain required. All scientific thresholds are unchanged.
+
+The proposed next diagnostic is `student_batch_probe`, documented in
+`docs/refactor/sdsc_student_batch_probe_20261004.md`. It tests batch grouping and
+presentation order: control groups all16 sibling/view rows of each signed pair;
+treatment spreads32 independent pairs across each64-row window. Both arms use
+the preceding two-anchor/50%-rename policy and exactly the same2048 scientific
+rows, prompts, canonical targets, token IDs, masks and per-row rank ownership.
+Only grouping/order changes. Fresh namespaces are350000042/360000042 for fit/dev
+and370000042/380000042 for transforms. First treatment four updates expose all128
+pairs; both full32-update runs consume the same1,587,844 input tokens. Early
+prefixes differ in graph/depth/token exposure as part of this intervention;
+this does not isolate a pure within-batch-correlation effect.
+
+Both arms restart original native1.7B54548846 with unchanged FP32/W2 FULL_SHARD,
+global64/micro4/accum8 and constant AdamW5e-5. Six checkpoints4/6/7/8/12/32 each
+retain768 raw responses (4608/arm). Three separate prespecified primary contrasts
+are rename/fact-order/rule-order proof changes averaged over6/7/8; step32 is the
+fixed equal-full-exposure companion. Original parser/verifier and scientific
+thresholds stay unchanged. Branch-depth/transition summaries are explanatory,
+not acceptance criteria. No checkpoint selection or model acceptance occurs.
+
+All142 parent scientific files, seven protocols and11 frozen helpers remain
+unchanged. New code adds six science paths and separate controls/auditor.
+Shared population token feasibility and full historical isolation pass; evidence
+is `.sdsc/diagnostics/student-batch-probe-v1/`. Resources are exactly
+2H100/24CPU/384GiB/02:30:00 per arm, at most four concurrent GPUs, with unchanged
+300s early startup and600s publication reserve. Focused CPU suites passed339
+unique tests before the final report-identity correction. Independent review
+caught a stale worker source identity, reproduced in both actual-execute arms;
+the correction passes four targeted producer/controller-identity/generation
+regressions. Observation/analysis helpers and all production surfaces receive
+non-author review. A distinct implementation/review-only acceptance pair is
+required before deployment. No new batch-probe plan or submission exists yet. The verified SSH master is live on
+quser43; fresh login runtime/account/storage checks pass, but actual GPU-node
+mounts and execution remain prerequisites.
 
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
