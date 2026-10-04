@@ -360,6 +360,72 @@ def test_launcher_uses_absolute_release_not_slurm_spool(c, plan, tmp_path):
     assert subprocess.run(["/bin/bash", "-n", str(path)]).returncode == 0
 
 
+@pytest.mark.parametrize("wrong_hash", [False, True])
+def test_ssh_launcher_executes_actual_controller_or_rejects_hash_before_runpy(c, plan, tmp_path, wrong_hash):
+    # Execute the exact controller-generated launcher against actual source.
+    # Its real Quest-only guard is the stop point, before request handling or
+    # any scheduler/SSH action. The fake CLI replaces only the SSH transport.
+    release = tmp_path / "local-release"
+    release.mkdir()
+    (release / "source").symlink_to(ROOT, target_is_directory=True)
+    plan["release"], plan["python"] = str(release), sys.executable
+    controller_path = "tools/sdsc_student_focus.py"
+    controller_sha = c.sha((ROOT / controller_path).read_bytes())
+    plan["control_sha256"][controller_path] = "0" * 64 if wrong_hash else controller_sha
+    startup_sha = plan["control_sha256"]["tools/sdsc_student_focus_startup.py"]
+    assert startup_sha != controller_sha
+    calls = []
+
+    def local_ssh(argv, *, data, timeout):
+        assert argv[:4] == [sys.executable, "-I", "-B", "-c"]
+        assert argv[-2] == str(release / "source" / controller_path)
+        assert json.loads(data) == dict(action="dry-run", plan=plan, authorize=False, dry_run=None)
+        assert timeout == 240
+        result = subprocess.run(argv, input=data, capture_output=True, timeout=10)
+        calls.append(result)
+        return result
+
+    expected = "AssertionError" if wrong_hash else "Slurm operations cannot run on Quest"
+    with pytest.raises(ValueError, match=expected):
+        c.ssh_operation(SimpleNamespace(ssh_call=local_ssh), plan, "dry-run")
+    assert len(calls) == 1 and calls[0].returncode != 0
+    if wrong_hash:
+        assert b"Slurm operations cannot run on Quest" not in calls[0].stderr
+        assert b"sdsc_student_focus.py" not in calls[0].stderr
+    else:
+        assert b"AssertionError" not in calls[0].stderr
+        assert b"sdsc_student_focus.py" in calls[0].stderr
+
+
+def test_ssh_launcher_forwards_remote_argv_request_and_checked_named_payload(c, plan, tmp_path):
+    release = tmp_path / "release"
+    script = release / "source/tools/sdsc_student_focus.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "import json,sys\n"
+        "request=json.load(sys.stdin)\n"
+        "print(json.dumps(dict(argv=sys.argv,request=request,checked_payload_executed=True)))\n"
+    )
+    plan["release"], plan["python"] = str(release), sys.executable
+    plan["control_sha256"]["tools/sdsc_student_focus.py"] = c.sha(script.read_bytes())
+    # Keep the real distinct startup pin: reordering TOOLS must not determine
+    # which file's bytes authorize the controller path.
+    calls = []
+
+    def local_ssh(argv, *, data, timeout):
+        calls.append((list(argv), data, timeout))
+        return subprocess.run(argv, input=data, capture_output=True, timeout=10)
+
+    proof = {"dry_run": True, "sentinel": "unchanged request"}
+    result = c.ssh_operation(SimpleNamespace(ssh_call=local_ssh), plan, "submit", True, proof)
+    assert result == dict(
+        argv=[str(script), "remote"],
+        request=dict(action="submit", plan=plan, authorize=True, dry_run=proof),
+        checked_payload_executed=True,
+    )
+    assert len(calls) == 1
+
+
 def test_submission_requires_matching_dry_run_before_claim(c, plan, monkeypatch):
     monkeypatch.setattr(c, "verify_source", lambda _: None)
     monkeypatch.setattr(c, "admission", lambda _: pytest.fail("must reject before admission"))

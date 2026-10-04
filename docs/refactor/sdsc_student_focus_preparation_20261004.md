@@ -155,3 +155,39 @@ No observer is launched yet. Source implementation must next be committed,
 reviewed at that exact identity and accepted in a distinct review-only commit.
 Actual release/provenance, fresh parent/runtime checks and preflight submission
 remain subsequent operations. No V5 model, job or GPU success is claimed here.
+
+## Initial deployment launch correction
+
+Implementation46db8e64e9592d410bca4f9dbf735ff7bcaa09cd and distinct acceptance
+262d48e3a06ac83e4d3744d645196993422af3b6 passed two exact-commit reviews and the
+actual accepted resolver. Initial release20261004T211027Z-b00ee9b8283e-2c39ad8d
+(804 files/12170496B) and genuine provenance
+8e210749c19061d67c058d08f9777b732d1d6e91b2ed3fcfea66fdb7dd63c354 remain immutable.
+Preflight intentb9489918ded50254d0aba96966394839, plan
+a4d208705e845c84c07b00b15e05101dca58b4ad94a99a063b62a4e8719b83c6, failed its
+first actual remote dry-run before runpy or any Slurm operation: ssh_operation
+checked the controller path against TOOLS[0], which was the startup adapter.
+Both deployed files match their genuine recorded hashes; the lookup was wrong.
+The prior reviews/tests missed this actual SSH launch boundary.
+
+Read-only exact remote reconciliation in
+`failed-dryrun-no-claim-reconciliation.json` verifies the execution claim,
+scientific claim, submission directory and result directory are all absent.
+There was no GPU job or unknown submission. Preserve the failed plan/release;
+never submit it. Correct only the named controller hash lookup and exercise the
+actual isolated launch argv with correct/incorrect hashes. The protocol's
+scientific core/data/thresholds remain identical. A fresh corrective
+implementation and separate review-only acceptance must precede a fresh release,
+provenance, plan and actual dry-run. This does not silently patch deployed code.
+
+Corrective regression first reproduced the old defect: the correct-hash actual
+controller launch and successful checked-payload forwarding failed, while the
+wrong-hash rejection passed(2FAIL/1PASS). After the explicit named controller
+lookup, all three new cases and five related entrypoint/claim cases pass(8PASS).
+The actual isolated -I/-B/-c launch reaches the real controller's Quest Slurm
+guard; an incorrect hash fails before runpy. Total distinct focused cases are
+now412, with prior results retained and only the affected boundary rerun.
+Ruff/format/diff pass. Corrected controller
+36020e7fbaa923dbb3a559894d0e0fb11390e8d88efded30395a968e9620f0d7
+and testsb40602091d46c7feb532c4d08de5f6e530c5a648995aea287230180926dc4f37
+are bound by the corrective evidence. No other positional TOOLS lookup exists.

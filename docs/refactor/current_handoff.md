@@ -7,10 +7,11 @@ and immediate evidence-led repair of new failures.** New batch-order diagnostic
 control54659007/treatment54659010 completed, passed full raw/execution audits,
 and show mixed policy effects. Observer72184 ended verified_complete/exit0
 at20:32:22Z after204 queries. No student is accepted; never re-arm or resubmit.
-Branch-focused full preparation V5 implementation46db8e64e9592d410bca4f9dbf735ff7bcaa09cd
-has passed exact-commit independent review and is accepted by the separate
-review-only transition. Real four-step GPU preflight remains required. No V5
-job is submitted. Original numerical gates are unchanged.
+V5 first remote dry-run failed before any Slurm action: the launcher selected
+the startup-file hash for the controller-file path. Exact remote reconciliation
+found no claim, submission directory, results or job. A narrow corrective
+implementation is in progress; original data/scientific core/gates stay frozen.
+No V5 GPU job is submitted; do not reuse the failed release/plan.
 Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
@@ -184,9 +185,16 @@ Full144k/history isolation and token feasibility pass: fit1,665,064 tokens,
 preflight205,428, dev max2448<=2454. New data namespaces390000042..420000042
 are frozen. All148 historical science files/eight protocols/11helpers match.
 Exact-commit review2fd46a0be921a569e666c5320083cd36c29f1459e936b2662ce44c2d0f811bb8
-passes all13 implementation blobs and accepts readiness only. This distinct
-acceptance changes only protocol.review and this handoff. Real matching
-four-step preflight and raw audit are next, followed by fresh full32 updates/
+passed all13 implementation blobs but missed the real SSH launch boundary.
+Initial implementation46db8e64/acceptance262d48e3 and failed release
+20261004T211027Z-b00ee9b8283e-2c39ad8d remain preserved. Intent
+b9489918ded50254d0aba96966394839 never acquired an execution/scientific claim.
+The single positional TOOLS[0] digest is corrected to bind the named controller.
+Real isolated launch regression reproduced2FAIL/1PASS before the correction;
+all3 new cases plus5 related gates now pass(412 distinct cases with prior
+evidence). Corrective independent acceptance and fresh deployment remain
+required, preserving the identical scientific protocol core. Real matching
+four-step preflight and raw audit remain next, followed by fresh full32 updates/
 12 checkpoints/18432 responses and the
 original earliest-eligible selection. Original896-response formal qualification
 remains mandatory. No further compute has been submitted. See

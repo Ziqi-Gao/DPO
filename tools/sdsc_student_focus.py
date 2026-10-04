@@ -1472,7 +1472,15 @@ def ssh_operation(cli, plan, action, authorize=False, dry_run=None):
         'sys.argv=[str(p),"remote"];runpy.run_path(str(p),run_name="__main__")'
     )
     result = cli.ssh_call(
-        [plan["python"], "-I", "-B", "-c", launch, path, plan["control_sha256"][TOOLS[0]]],
+        [
+            plan["python"],
+            "-I",
+            "-B",
+            "-c",
+            launch,
+            path,
+            plan["control_sha256"]["tools/sdsc_student_focus.py"],
+        ],
         data=canonical(dict(action=action, plan=plan, authorize=authorize, dry_run=dry_run)),
         timeout=240,
     )
