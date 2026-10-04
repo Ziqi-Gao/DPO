@@ -357,7 +357,10 @@ startup/trace/rank-exit/accounting before staging. Exact311-FP32 master loading
 must match both fit ranks before one BF16 copy. No candidate JSON exists: full
 fit success, complete independent18,432-response audit, earliest eligible checkpoint,
 then a separately accepted candidate remain mandatory. Generic consumer readiness
-is not qualification or G0/pilot acceptance. Current exact-commit review is pending.
+is not qualification or G0/pilot acceptance. Implementation
+fba1a51128d6135e1c16a3c218e0033557c41dcc received exact-commit review; this
+separate document-only review records generic consumer readiness. Review SHA
+f30377e2671acc3f5f8d9cdd9140dd2b1f71507f66284b85117cc10cab9fd28f.
 See docs/refactor/sdsc_student_order_qualification_core_20261004.md.
 
 The additive V3-only
