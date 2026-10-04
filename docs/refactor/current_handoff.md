@@ -7,8 +7,19 @@ and immediate evidence-led repair of new failures.** Latest V4 fit54643699 compl
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
 no student is accepted. Both finite observers are terminal, with no job active.
-A fresh single-factor control/treatment order diagnostic is being implemented;
-it has not been accepted, deployed or submitted. See
+The fresh single-factor control/treatment order diagnostic implementation is
+complete:274 focused CPU tests pass in237.70s, with independent cross-review,
+Ruff/format/AST checks and all130 historical science files/11 helper pins intact.
+It has not yet received exact-commit acceptance, deployment or submission.
+Both arms restart native1.7B, share256 fit/128 dev bases and consume the same
+768 rows/606,232 tokens in12 updates; treatment independently permutes every
+view. Five fixed observations retain3840 responses per arm. Each arm uses
+2H100/24CPU/384GiB/2h, at most four concurrent GPUs. Diagnostic completion
+never selects or accepts a model. Review repaired raw12xW2 optimizer-evidence
+validation and startup clock consistency without changing scientific settings.
+The existing quser43 SSH master, fixed runtime/account and original54548846
+parent were freshly verified around13:54UTC. See
+`docs/refactor/sdsc_student_order_probe_20261004.md`,
 `docs/refactor/sdsc_student_order_failure_20261004.md` and the V4 section below.
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
