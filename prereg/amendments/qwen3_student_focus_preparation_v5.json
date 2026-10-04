@@ -316,11 +316,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "The first remote dry-run exposed a wrong positional startup digest for the controller path before any Slurm action. Corrective implementation uses the explicit controller key. Actual isolated launch regression reproduces failure before the fix and passes afterward; independent review covers all four launch surfaces and confirms the sole production delta. All154 science blobs and original148/eight protocols/11helpers are bound, with unchanged scientific core, data and numerical gates. Failed release/plan and no-claim reconciliation are preserved. This accepts implementation readiness only; fresh real matching preflight/raw audit, full32 updates/18432 responses and original896-response formal qualification remain required.",
+    "reviewed_at_utc": "2026-10-04T21:21:20Z",
+    "reviewed_implementation_commit": "711db871f2c3cff54be324ec4fe1ea3178a63b11",
+    "reviewer": "Independent Codex qualification_binding_finish exact corrective implementation review; initial independent core/worker/auditor/transport reviews retained for unchanged surfaces",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [

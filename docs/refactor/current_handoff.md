@@ -9,8 +9,9 @@ and show mixed policy effects. Observer72184 ended verified_complete/exit0
 at20:32:22Z after204 queries. No student is accepted; never re-arm or resubmit.
 V5 first remote dry-run failed before any Slurm action: the launcher selected
 the startup-file hash for the controller-file path. Exact remote reconciliation
-found no claim, submission directory, results or job. A narrow corrective
-implementation is in progress; original data/scientific core/gates stay frozen.
+found no claim, submission directory, results or job. Corrective implementation711db871f2c3cff54be324ec4fe1ea3178a63b11 passed
+independent actual-launch and exact-commit review; this review-only acceptance
+binds those bytes. Original data/scientific core/gates stay frozen.
 No V5 GPU job is submitted; do not reuse the failed release/plan.
 Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
@@ -192,8 +193,10 @@ b9489918ded50254d0aba96966394839 never acquired an execution/scientific claim.
 The single positional TOOLS[0] digest is corrected to bind the named controller.
 Real isolated launch regression reproduced2FAIL/1PASS before the correction;
 all3 new cases plus5 related gates now pass(412 distinct cases with prior
-evidence). Corrective independent acceptance and fresh deployment remain
-required, preserving the identical scientific protocol core. Real matching
+evidence). Exact corrective reviewccbed8f6d1ad3e2ea2a12de9a527cde3706da993e161aa486c03deba3dbf4c63
+and14 independent launch/interface checks pass. This separate acceptance only
+changes protocol.review and handoff. Fresh deployment remains required with
+the identical scientific protocol core. Real matching
 four-step preflight and raw audit remain next, followed by fresh full32 updates/
 12 checkpoints/18432 responses and the
 original earliest-eligible selection. Original896-response formal qualification
