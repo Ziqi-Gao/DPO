@@ -185,14 +185,14 @@ After manual authentication, the existing master on quser43 was verified on
 2026-10-04. Fresh diagnostic status at05:14:34Z confirms job/batch/extern
 COMPLETED0:0, empty queue, verified publication and success=true/cuda_ready=true.
 Parent calibration54548846 was also freshly verified COMPLETED with accepted
-artifacts. No recovery job or observer is active. The prior SSH-loss stop and
-original job identities remain preserved; no submission was retried.
+artifacts. The prior SSH-loss stop and original job identities remain preserved;
+no submission was retried.
 Plan `.sdsc/cuda-diagnostic/36da1a433a8db07a2df99f2032651275/plan.json`, SHA
 `d8c40f45e61d50ff25182b7870d4224f07ed342eaec9c53eb430074512bfefda`;
 receipt is under that same intent directory. Never resubmit this diagnostic.
 A PASS on exp-19-01 cannot identify the missing predicate on exp-19-05.
-The execution-only recovery implementation is complete:103 focused CPU tests pass (34 contract,32 startup worker,37 transport/
-node), with Ruff/format/Python3.12 AST checks. New execution contract/controller/
+The execution-only recovery implementation is complete:103 focused CPU tests pass
+(34 contract,32 startup worker,37 transport/node), with Ruff/format/Python3.12 AST checks. New execution contract/controller/
 node/worker preserve all130 science files/five protocols and original numerical
 gates. Early120s CUDA child exits before large staging; each rank records raw
 predicates then calls the exact original V4 worker with its original13 inputs.
@@ -217,20 +217,59 @@ ancestor from actual fit source HEAD and requires combined recovery evidence,
 while retaining every original formal gate. Implementation142b86e received exact
 non-author review (four independent tests and18 additional rejection cases),
 evidence SHA0b688ac8a8e4d25c02a37fa6783d1f78c5b65c7814f70612d604408f77c2e04f.
-The later review-only record accepts core readiness only, not a bound candidate.
-Actual scientific workspace verification and the original recovery resolver now
-pass. Next is fresh genuine source/provenance and one instrumented preflight.
-See `docs/refactor/sdsc_student_order_qualification_core_20261004.md`.
-Keep the new reviewed HEAD/provenance fixed through both
-preflight and matching fit-plan preparation; later handoff-only changes can be
-committed after those plans are frozen. Do not rewrite/reset Git to achieve this. See
-`docs/refactor/sdsc_student_order_execution_recovery_20261003.md`.
-The new finite foreground observer in diagnostics`student-order-v4/
-watch_execution_readonly.py` has22 independently passing fixtures; SHA
-`9f07640178d35268dfaeb84f1b26a59efe0e5e9f9bdc6240e9561d0e20fcce19`,
-review SHA`1efd8a1e6d0791762b20e0e624eefa8b18e465832052546ea64f52b6c8e1749d`.
-It checks only receipted job status every60s, for at most3h preflight/12h fit;
-SSH/hash/unknown-state/deadline errors stop it. It has not been activated.
+The later review-only record6d37d96 accepts core readiness only, not a bound
+candidate. Actual scientific workspace and original recovery resolver pass.
+Release20261004T053548Z-5dc1752d917f-d19d7523 contains734 files/9,968,494 bytes;
+genuine provenance7853755f98fb9bed69eb4eef55241560641ffeaa3e4a97f38466e249eb59767f
+is remotely verified at HEAD6d37d9658a710ae6d7519ce802895e6b18001b75. The exact
+deployment/plan/dry-run independent review passed, evidence SHA
+8de6c4394864f3d0befce93544ea74e3f8bf30564ce5929edb879a9b3173d76b.
+Recovery preflight **54643463 FAILED before model staging or training**. It was
+submitted once at2026-10-04T05:45:13Z,2H100/24CPU/384GiB/1h; accounting records
+job/batch FAILED1:0, externCOMPLETED0:0,125s onexp-19-02. Intent
+44340f6e52b16b20d59538170b588576 has inner plan SHA
+34b45d2b888bf7bc6b7a96c72ce5a9b664a080356cfae2bc8f10dbd4eb9a730d and outer plan SHA
+73478b7e5a45324a4f957d3ba60fe2f64053c75cb8ef63cb3db8ff04daf94c07. Plans remain under
+.sdsc/student-order/ and .sdsc/student-order-execution/ that intent; receipt
+submit-20261004T054513210995Z.json is retained. Never resubmit or re-arm it.
+The early child logged driver580.178.04 then began import_torch but did not
+return before120s. No explicit CUDA predicates, large input staging, model load
+or optimizer updates occurred. This differs from54623814's later CUDA guard.
+All three memory observations pass, peak599,973,888 bytes (0.559GiB), noOOM/failcnt.
+Fetch32,172 bytes is .sdsc/fetched/54643463/fetch-tcvymoay/; science publication SHA
+d7ddc12da44da08189e057347b6be24dff23db1410a384513279f1e632c2002a and execution SHA
+d4b4ee9effd7bc7ca842c09d384d882b31e40c83e80cc94bd3b22f1f9b289bfd both verify.
+Independent failure audit SHA
+2a295348373cf1b6bc35b39f85de0e1c2a702354a568c1c7693b1b7203c48a7c verifies paired
+plans/publications and raw own-job memory; eight-response replay is inapplicable.
+The finite observer stopped05:47:54Z after3 polls with terminal_failure/exit2;
+state is diagnostics/student-order-v4/watch-execution-preflight-54643463/state.json.
+No preparation job, fit or observer remains active. Fresh06:05:21Z status confirms
+empty queue, FAILED accounting and both verified publications; terminal state is
+fully reconciled. The earlier05:51:14Z cached FAILED queue row is superseded.
+
+Import delay/root cause remains unresolved. Successful54626913 explicitly set
+OMP/MKL/OPENBLAS threads4; failed early recovery inherited them without recording
+their values. This is a launcher-policy difference, not proof they were unset or
+caused the timeout. Next is one separately identified bounded import-only A/B/A
+observation: inherited env, explicit12 threads, inherited env again on one
+allocation; record stacks/import timings/own-process I/O/thread state to separate
+cache/order effects from thread policy. This diagnostic changes no accepted
+scientific or recovery bytes, production timeout, model, gate or selected checkpoint.
+See docs/refactor/sdsc_student_order_execution_recovery_20261003.md and
+sdsc_student_order_qualification_core_20261004.md. The user's ongoing repair and
+necessary-preflight authorization covers this focused continuation.
+The additive import diagnostic implementation is ready:142 focused CPU tests
+(78 controller,36 worker,28 node) pass in13.18s, including actual isolated-child
+hang/timeout, process cleanup, worker-to-controller and full node publication
+interfaces. Ruff/format/Python3.12 AST/diff checks pass;141 named historical
+science/dependency blobs are unchanged. No actual GPU/import outcome follows
+from these CPU fixtures. Resources are fixed2H100/24CPU/16GiB/10min; each of
+three children gets at most180s inside540s, with bounded logs/proc/partial reports
+and persistent read-back hashes. Independent controller/worker review SHA
+3be9022b74e8d58380b86958c257c9fda26abcf99fdf6af17964dc75091927da and final node
+addendum SHA c35394648437f1f5ec311a7f180b47a7e40a6ac6c0a7bb64260c72ec417b2b5d pass.
+See sdsc_student_torch_import_failure_20261004.md.
 V4 qualification transport/node drafts remain incomplete and untracked; their
 old producer-HEAD equality still needs migration to the completed core. No worker,
 auditor or candidate JSON exists. This path cannot admit the failed preflight or
