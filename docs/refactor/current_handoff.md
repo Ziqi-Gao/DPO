@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-10-03 UTC. **The user selected keeping1.7B and preparing one
+Last updated: 2026-10-04 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** Latest completed preparation is
@@ -181,17 +181,17 @@ init and tiny logical0/1 FP32 sums; CVD0,1 unchanged. Six memory samples pass,
 peak0.8891/16GiB. Fetch61,626 bytes is `.sdsc/fetched/54626913/fetch-cmlk843u/`.
 Publication SHA`f90a64d4085b77326cd346f374491cd6bb51820f21a459544563574f497eae84`;
 report SHA`1bc3c15fe285e9fd1ed28158309124c504774463f26fc28be6e7ec8e81867a60`.
-Last status17:54:45Z still had the COMPLETED row retained in squeue, so overall
-terminal/success flags remained false pending fresh empty-queue reconciliation.
-Then the SSH master vanished on quser34; remote operations stopped without retry.
-The user was asked to manually authenticate on the same host. No training job
-is active at last observation. Do not claim monitoring persists through SSH loss.
+After manual authentication, the existing master on quser43 was verified on
+2026-10-04. Fresh diagnostic status at05:14:34Z confirms job/batch/extern
+COMPLETED0:0, empty queue, verified publication and success=true/cuda_ready=true.
+Parent calibration54548846 was also freshly verified COMPLETED with accepted
+artifacts. No recovery job or observer is active. The prior SSH-loss stop and
+original job identities remain preserved; no submission was retried.
 Plan `.sdsc/cuda-diagnostic/36da1a433a8db07a2df99f2032651275/plan.json`, SHA
 `d8c40f45e61d50ff25182b7870d4224f07ed342eaec9c53eb430074512bfefda`;
-receipt is under that same intent directory. After manual SSH restoration,
-continue status/fetch, never resubmit. A PASS on exp-19-01 cannot identify the
-missing predicate on exp-19-05. The execution-only recovery implementation is
-complete:103 focused CPU tests pass (34 contract,32 startup worker,37 transport/
+receipt is under that same intent directory. Never resubmit this diagnostic.
+A PASS on exp-19-01 cannot identify the missing predicate on exp-19-05.
+The execution-only recovery implementation is complete:103 focused CPU tests pass (34 contract,32 startup worker,37 transport/
 node), with Ruff/format/Python3.12 AST checks. New execution contract/controller/
 node/worker preserve all130 science files/five protocols and original numerical
 gates. Early120s CUDA child exits before large staging; each rank records raw
@@ -206,11 +206,19 @@ The accepted execution contract is
 Implementation commit8086b38a1b7a8ad72f8acded8ef05157972c4613 has exact-commit
 non-author review, evidence SHA
 `b446e114844cbb29b7d22b3973c0f57b2811efc3bf82b08797cf6c79991b1df6`.
-The distinct review-only acceptance binds that implementation and changes no
-scientific or execution code. It grants implementation readiness only.
-Next after manual SSH restoration: fresh diagnostic terminal reconciliation,
-check/sync/provenance/dry-run, then one new instrumented preflight. No recovery
-plan/deployment/job exists yet. Keep accepted HEAD/provenance fixed through both
+The distinct review-only acceptance23bc1aa binds that implementation and changes
+no scientific or execution code. It grants implementation readiness only.
+The first reconnect snapshot20261004T051538Z-227afb77688f-37a4c453 was uploaded,
+but provenance correctly rejected the unfinished untracked V4 qualification
+module. No plan or job was created. The qualification protocol core is now
+complete with215 focused CPU tests, Ruff/format/AST checks, and a real frozen
+accounting/status-producer interface fixture. It separates the frozen science
+ancestor from actual fit source HEAD and requires combined recovery evidence,
+while retaining every original formal gate. Independent source review and a
+later review-only record are required before new genuine source/provenance and
+one instrumented preflight plan. This core is not a bound qualification candidate.
+See `docs/refactor/sdsc_student_order_qualification_core_20261004.md`.
+Keep the new reviewed HEAD/provenance fixed through both
 preflight and matching fit-plan preparation; later handoff-only changes can be
 committed after those plans are frozen. Do not rewrite/reset Git to achieve this. See
 `docs/refactor/sdsc_student_order_execution_recovery_20261003.md`.
@@ -220,8 +228,10 @@ watch_execution_readonly.py` has22 independently passing fixtures; SHA
 review SHA`1efd8a1e6d0791762b20e0e624eefa8b18e465832052546ea64f52b6c8e1749d`.
 It checks only receipted job status every60s, for at most3h preflight/12h fit;
 SSH/hash/unknown-state/deadline errors stop it. It has not been activated.
-V4 qualification scaffold is paused and has no candidate JSON; it cannot admit
-the failed preflight or replace the required successful full fit.
+V4 qualification transport/node drafts remain incomplete and untracked; their
+old producer-HEAD equality still needs migration to the completed core. No worker,
+auditor or candidate JSON exists. This path cannot admit the failed preflight or
+replace the required successful full fit and independent raw audit.
 
 The additive V3-only
 `student_branch_qualification` module and `tools/sdsc_student_branch_qualify*.py`
