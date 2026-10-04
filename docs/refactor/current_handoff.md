@@ -6,36 +6,49 @@ improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
-no student is accepted. Both historical V4 observers are terminal. New diagnostic
-control54648255 and treatment54648257 are RUNNING as observed at14:19:52UTC.
-The fresh single-factor control/treatment order diagnostic implementation is
-complete:274 focused CPU tests pass in237.70s, with independent cross-review,
-Ruff/format/AST checks and all130 historical science files/11 helper pins intact.
-Implementation b81b62a82ab8fa7b786f082796f9692026fbab7d passed exact-commit
-independent cross-review, SHA26990fd032edfef1a85a08224258db9147d332d0793f33a7ce83fb287263f864.
-Separate acceptance ebb1fc5c25ac39ce536b51ef4b699af3247699d9 is deployed as
-20261004T140714Z-d2326e59f530-5ebc8a86 (768 files/10,866,456 bytes). Genuine
-provenance983f2ec8129e060237911d5b5615c03ded84a94b807b59222398293ba5872cb6
-and independent exact deployment/two-plan review pass. No GPU outcome yet.
-Both arms restart native1.7B, share256 fit/128 dev bases and consume the same
-768 rows/606,232 tokens in12 updates; treatment independently permutes every
-view. Five fixed observations retain3840 responses per arm. Each arm uses
-2H100/24CPU/384GiB/2h, at most four concurrent GPUs. Diagnostic completion
-never selects or accepts a model. Control intent21fc86300215de2e3b26b7d23e89078e
-and treatment intent75aaacbf055cfd68a5b729dfb7648101 were each submitted once,
-at14:19:00Z and14:19:27Z. Plans/receipts are under `.sdsc/student-order-probe/`
-those exact intent directories; never resubmit or re-arm them. The foreground
-read-only pair observer is active under
-`.sdsc/diagnostics/student-order-probe-v1/watch-pair-54648255-54648257/`,
-every60s until20:00UTC at latest; it stops on any failure/unknown/SSH loss and
-never submits, retries or cancels. Observer/comparator root review passes49 CPU
-fixtures; paired comparison awaits both complete independent raw audits.
-Review repaired raw12xW2 optimizer-evidence
-validation and startup clock consistency without changing scientific settings.
-The existing quser43 SSH master, fixed runtime/account and original54548846
-parent were freshly verified around13:54UTC. See
-`docs/refactor/sdsc_student_order_probe_20261004.md`,
-`docs/refactor/sdsc_student_order_failure_20261004.md` and the V4 section below.
+no student is accepted. The paired order diagnostic completed: control54648255
+and treatment54648257 have job/batch/extern COMPLETED0:0, elapsed5305/5353s,
+verified publications and final empty own-job queues at15:53:51Z/15:54:51Z.
+The finite observer ended verified_complete/exit0 after191 queries; never re-arm.
+Both native1.7B arms completed12 updates/606,232 tokens and3840 raw responses.
+Independent raw replay passes all768 prompts/3840 responses per arm. Fixed
+steps6/7/8 treatment-minus-control proof-rate changes are IID-5.990pp,
+fact-order+7.552pp, rule-order-1.042pp and rename-22.656pp. The prespecified
+order-gap reduction9.245pp combines mean permutation gain3.255pp with IID loss;
+it is not broad invariance success. Rename paired wins/losses28/115 and nearly
+unchanged format counts355/354 point mainly to premise/citation errors.
+No diagnostic checkpoint is eligible for preparation or formal acceptance.
+
+Accepted diagnostic implementation b81b62a82ab8fa7b786f082796f9692026fbab7d
+and separate acceptance ebb1fc5c25ac39ce536b51ef4b699af3247699d9 remain frozen.
+Release20261004T140714Z-d2326e59f530-5ebc8a86 and genuine provenance
+983f2ec8129e060237911d5b5615c03ded84a94b807b59222398293ba5872cb6 are verified.
+Control intent21fc86300215de2e3b26b7d23e89078e and treatment
+75aaacbf055cfd68a5b729dfb7648101 were each submitted once; preserve plans and
+receipts under `.sdsc/student-order-probe/` and never resubmit them.
+Small fetches are `.sdsc/fetched/54648255/fetch-duprqhff/` and
+`.sdsc/fetched/54648257/fetch-ha53j27_/`. Raw audits and frozen paired comparison
+are under `.sdsc/diagnostics/student-order-probe-v1/`; see
+`docs/refactor/sdsc_student_order_probe_20261004.md` for exact evidence.
+Independent execution review passes all updates, exports/restoration, startup,
+memory and publication evidence (SHA24414b765795a162e579538605fe1a3010748283b920cd999a66d4555cf63731).
+No further GPU job is active.
+
+A fresh prospective anchor diagnostic is now being implemented under new
+`student_anchor_probe` namespaces. It compares100% independent joint order
+against75% joint with one plain-identity and one rename-only original-order
+anchor per eight views; renamed fraction remains50%. Other numerical settings,
+12-update/5-checkpoint schedule, fresh native weights,128 dev bases and
+2H100/24CPU/384GiB/2h per arm remain unchanged. Three separate descriptive
+steps6/7/8 absolute-rate contrasts report rename, fact-order and rule-order;
+no composite score, new threshold or model acceptance. This tests the joint
+consequences of restoring ordered coverage/reducing compound difficulty and
+reintroducing position cues, not one uniquely identified mechanism. Fresh
+populations exclude both preceding diagnostic arms and all historical data.
+All136 accepted science files and historical gates remain frozen. New code
+still needs focused checks, independent review, distinct acceptance and actual
+GPU evidence before any result can be claimed. Full common-initial preparation
+and unchanged formal896/2244 qualification remain required afterward.
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
 `docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**

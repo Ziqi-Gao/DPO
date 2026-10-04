@@ -134,7 +134,7 @@ Control54648255 was submitted once at14:19:00Z with intent
 Treatment54648257 was submitted once at14:19:27Z with intent
 75aaacbf055cfd68a5b729dfb7648101, plan SHA
 f5d536f937366d899651410de7e4d344c220711e935eadc9b4694dd961c20c66.
-Both are RUNNING at14:19:52UTC. A finite foreground observer checks both every60s,
+Both were RUNNING at14:19:52UTC. A finite foreground observer checked both every60s,
 with absolute deadline20:00UTC, and stops on any failure/unknown/connection loss.
 It never submits, retries, cancels or changes either allocation. Its launch/state
 are under `.sdsc/diagnostics/student-order-probe-v1/watch-pair-54648255-54648257/`.
@@ -143,5 +143,78 @@ The observer and prespecified paired comparator pass49 independently rerun CPU
 fixtures. Root review fixes an observer receipt-path mismatch by binding actual
 controller-generated timestamped submit/reconcile receipts explicitly. Their
 ignored diagnostic files and review are under `.sdsc/diagnostics/student-order-probe-v1/`.
-No actual GPU completion, causal improvement or student acceptance is established
-by these submissions; full terminal accounting, artifacts and raw replay remain.
+The terminal accounting and independent raw replay results are recorded below.
+These diagnostic runs never select or accept a common initial model.
+
+
+## Completed paired diagnostic
+
+Control54648255 and treatment54648257 completed with job/batch/extern0:0 in
+5305/5353 seconds. Final verified empty own-job queues were observed at
+2026-10-04T15:53:51Z and15:54:51Z. The finite observer ended verified_complete,
+exit0,191 status queries. Preserve its terminal state and both permanent claims.
+Both runs completed12 updates/606,232 input tokens, all five checkpoints and
+3840 generated responses; selected_checkpoint remains null and every preparation,
+student, formal, G0, pilot, factorial and execution-class acceptance flag is false.
+
+Small results, excluding model weights, are36,372,330 bytes under
+`.sdsc/fetched/54648255/fetch-duprqhff/` and36,377,938 bytes under
+`.sdsc/fetched/54648257/fetch-ha53j27_/`. Publication hashes are respectively
+03cbf6973ce8f41350d1a0763d3c84cd36c0dc37ced10f24c5df3526b9d697e0 and
+21cb982bb112c87b51e8769e9cb739be90609aa96d646a87ac1e3aa1267dd2ec.
+The frozen auditor reconstructs all768 prompts and3840 responses per arm:
+control audit SHA4fee3f1fc03ecf4486dcd347e73aba5b5da0d719fc08d7f965b5a3caa813e051;
+treatment SHA5a895119ee042574c929464d63bad5f16c727204dd3c37df7cef1ec305adf46c.
+The fixed comparator JSON SHA is
+1678eeb1e77880e951fc77f34378d744242d2af705a72a6f5189f877dcc9bb9d.
+These checks recompute parser/verifier evidence and artifact bindings; they do
+not rerun GPU arithmetic or independently download/hash large model files.
+
+Proof counts out of128, control/treatment:
+
+| Step | IID | Rename | Fact order | Rule order | Paraphrase | Distractors |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4 | 29/2 | 18/16 | 18/5 | 32/2 | 31/31 | 34/0 |
+| 6 | 64/59 | 62/36 | 53/65 | 50/54 | 69/58 | 56/53 |
+| 7 | 64/59 | 62/33 | 50/62 | 54/52 | 72/62 | 50/56 |
+| 8 | 75/62 | 76/44 | 62/67 | 65/59 | 81/68 | 59/63 |
+| 12 | 85/80 | 80/71 | 82/89 | 81/79 | 85/84 | 85/77 |
+
+The declared steps6/7/8 gap contrast is-9.245 percentage points, decomposing
+into IID-5.990pp and mean(fact,rule)+3.255pp. Fact proof improves+7.552pp;
+rule changes-1.042pp; rename declines-22.656pp. Thus some absolute fact-order
+improvement is real within this one paired diagnostic, but much of the reduced
+gap comes from lower IID, and other capabilities regress. This is descriptive
+single-seed evidence without a significance or acceptance claim.
+
+Across6/7/8 rename pairs, treatment wins28 and loses115; proof counts113 versus200,
+while format-valid counts355 versus354 and length stops27 versus30. Observed
+antecedent_mismatch is205 versus140, unknown_citation19 versus3, and first-invalid
+step S01 occurs91 versus39. This implicates premise/citation behavior more than
+format or response truncation; it does not uniquely prove an internal mechanism.
+Full evidence is `completed-error-patterns.json`, SHA
+0de0e644c4c660e30ec338a69ee18e90e04942fef9c750620935e1190b77da21,
+under `.sdsc/diagnostics/student-order-probe-v1/`.
+
+The next prospective diagnostic restores two original-order training anchors
+(identity and rename-only) while retaining independent joint permutations for
+six other views. It keeps50% renamed coverage and all numerical settings fixed,
+uses new excluded fit/dev populations, and reports separate rename/fact/rule
+absolute-rate contrasts. The intervention jointly tests restored coverage,
+compound difficulty and position cues; no outcome or unique mechanism is assumed.
+The current diagnostic checkpoints cannot be promoted. A later complete fit and
+original selection/qualification gates remain required.
+
+
+Independent execution review also passes, SHA
+24414b765795a162e579538605fe1a3010748283b920cd999a66d4555cf63731.
+It rehashes25 small files per arm and verifies24 finite/nonzero rank updates,
+actual step4 full-state restoration, ten311-FP32-tensor reload observations,
+20 exact native-BF16 parity observations and ten2454-token finite forwards.
+All171/172 own-job memory samples pass without OOM counters; peaks127.142/
+127.146GiB within384GiB. Each arm persists12 large files,62,527,562,769/
+62,527,563,281 bytes, with producer read-back hash evidence; publication191.24/
+212.37s stays within600s. Early probes take133.850/118.882s. The control therefore
+provides direct evidence that a legitimate startup can exceed the historical
+120s bound while completing within the accepted300s limit. This does not
+retrospectively identify the exact cause of every prior startup failure.
