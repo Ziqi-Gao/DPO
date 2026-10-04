@@ -155,10 +155,91 @@ Required outputs use persistent
 
 The reviewed foreground observer started16:35UTC, session8280, state
 `.sdsc/diagnostics/student-anchor-probe-v1/watch-pair-54655732-54655735/`,
-with a22:00UTC deadline and one-minute status interval. Both arms were observed
-RUNNING at16:35:14Z/16:35:15Z. It stops on unknown state, failure, SSH loss,
-changed controls or deadline, and never submits/retries/cancels/fetches. Root
-continues result collection and raw review separately. Reviewed observer,
-one-shot bounded live reader and comparator pass35/23/22 fixtures respectively.
-No GPU completion or capability outcome is established by these submissions.
-Existing unrelated tracked and legacy untracked changes were preserved.
+with a22:00UTC deadline and one-minute status interval. It ended normally at
+18:00:14UTC after167 queries, phaseverified_complete/exit0. Preserve that
+terminal state; never re-arm or resubmit. Reviewed observer, one-shot bounded
+live reader and comparator passed35/23/22 fixtures respectively. Existing
+unrelated tracked and legacy untracked changes were preserved.
+
+## Completed execution and raw verification
+
+Control54655732 and treatment54655735 each have job/batch/extern COMPLETED0:0,
+elapsed5137/4781s. Both publications and required artifact hashes were verified;
+final own-job queues were empty at18:00:14Z/17:55:15Z. Small fetches occurred
+while Slurm still retained each COMPLETED queue row, so those historical
+fetch-status snapshots correctly have accounting_complete=false. The later
+observer status establishes complete accounting; no early success was claimed.
+
+| Evidence | Control | Treatment |
+| --- | --- | --- |
+| Small fetch | `.sdsc/fetched/54655732/fetch-vf2ewbqc/` | `.sdsc/fetched/54655735/fetch-_n5a3wad/` |
+| Small bytes |35,062,315|34,846,046|
+| Publication SHA |9aa51b63327a3a6bb0aa7c1bfd49434f67522292febe548a8ef01465b1c3593d|470d205914b39b303caa3d7a5c790bf4e84c77a54c19a1b0fd9115995f088159|
+| Raw audit SHA |ce6eccd91567ecb7819f598292f767c9a5f82c6019af0bb5a05efe890c6d0d86|10cf809e98ffa58c5a397c4cd0082617733681cf051ed160409e89472c3d8726|
+
+Both arms complete12 global updates/606,988 input tokens,24 finite nonzero rank
+updates/768 unique slots, actual step4 full-state restoration,10 exact311-key
+FP32 reloads,20 exact native-BF16 logit comparisons and10 finite2454-token
+forwards. Independent raw replay passes all768 prompts and3840 responses per
+arm. All acceptance flags remain false and selected_checkpoint is null.
+
+Independent paired execution review passes, SHA
+ce39153d3b6a0fd08c22875d044dfe786be3318ab1f220add629e4d6a414222c.
+Control/treatment early startup takes160.539/80.252s, including torch imports
+157.042/76.808s. The control is another successful observation above the obsolete
+120s bound and below the accepted300s bound; this does not identify every
+historical startup failure. All164/152 memory samples pass, peak127.094/127.101GiB,
+no own-job OOM/fail counters. Twelve large artifacts per arm contain
+62,527,563,025/62,527,563,537 bytes with persistent read-back evidence; publication
+copy takes226.07/238.46s within600s. Large weights remain remote. This review
+checks recorded execution evidence and does not independently recompute GPU
+arithmetic or local hashes of downloaded large weights.
+
+## Scientific outcome
+
+The two restored ordered anchors improve renamed-symbol performance but lose
+fact/rule permutation accuracy. The three prespecified mean absolute proof-rate
+contrasts at steps6/7/8 are reported separately:
+
+| View | Control | Treatment | Treatment minus control | Paired wins/losses |
+| --- | --- | --- | --- | --- |
+| Renamed symbols |35.42%|48.96%|+13.542pp|67/15|
+| Fact permutation |56.77%|48.18%|-8.594pp|26/59|
+| Rule permutation |59.64%|53.12%|-6.510pp|18/43|
+
+IID changes62.760%→59.896%, -2.865pp. The corresponding IID-minus-view gap
+changes are -16.406pp,+5.729pp,+3.646pp; only the first shrinks, partly because
+IID decreases. These denominators pool repeated observations of128 bases at
+three checkpoints, not384 independent bases. No significance/noninferiority,
+composite primary score or checkpoint selection is performed.
+
+Proof-correct counts below are control/treatment out of128 at each step:
+
+| Step | IID | Rename | Fact order | Rule order | Paraphrase | Distractors |
+| --- | --- | --- | --- | --- | --- | --- |
+|4|32/34|22/30|26/26|28/31|33/31|16/34|
+|6|82/76|44/59|65/53|72/63|71/74|61/72|
+|7|86/79|51/70|83/67|83/73|81/81|82/74|
+|8|73/75|41/59|70/65|74/68|70/77|70/70|
+|12|96/102|61/85|102/97|98/99|93/104|36/95|
+
+Frozen comparator JSON SHA
+13cbf936982ec340be8633f80fcd79abf71238150639fbeac0d8ae498c367bd3;
+Chinese summary SHA
+be6a788fecf14044a5baeabe900266fcd3359507a558bb34aab8f7c798503819.
+The JSON retains every checkpoint/view/structure and3840 paired observations.
+Paired error patterns SHA
+ff4f92eff53fb028f9b8ab24310cb0ac0eb4417f73f88e5ac9037b14505c14f0.
+At steps6/7/8, fact-order first-invalid-S01 counts rise44→100 and antecedent
+mismatches121→148; rule-order unknown citations rise2→26. Fact truncation is
+10→10 and rule truncation14→7, with little format change. These losses therefore
+are not explained mainly by longer or malformed output. Treatment IID structure
+counts are chain135/144, branch11/90 and DAG84/150. The intervention still
+jointly changes coverage, compound difficulty and order cues; these observations
+do not uniquely identify an internal model mechanism.
+
+This diagnostic establishes an unresolved generalization tradeoff. It does not
+support promoting either checkpoint or declaring student training repaired.
+The next evidence-led repair is being assessed; no next policy or submission
+has been selected. Full preparation, original selection and formal qualification
+remain required with unchanged scientific thresholds.

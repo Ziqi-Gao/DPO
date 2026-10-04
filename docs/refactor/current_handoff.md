@@ -34,53 +34,52 @@ Independent execution review passes all updates, exports/restoration, startup,
 memory and publication evidence (SHA24414b765795a162e579538605fe1a3010748283b920cd999a66d4555cf63731).
 Those two historical jobs and their observer are terminal.
 
-A fresh prospective anchor diagnostic is implemented and independently reviewed under new
-`student_anchor_probe` namespaces. It compares100% independent joint order
-against75% joint with one plain-identity and one rename-only original-order
-anchor per eight views; renamed fraction remains50%. Other numerical settings,
-12-update/5-checkpoint schedule, fresh native weights,128 dev bases and
-2H100/24CPU/384GiB/2h per arm remain unchanged. Three separate descriptive
-steps6/7/8 absolute-rate contrasts report rename, fact-order and rule-order;
-no composite score, new threshold or model acceptance. This tests the joint
-consequences of restoring ordered coverage/reducing compound difficulty and
-reintroducing position cues, not one uniquely identified mechanism. Fresh
-populations exclude both preceding diagnostic arms and all historical data.
-All136 accepted science files, six protocols and eleven helpers remain frozen.
-All296 unique focused CPU tests pass (68core/114transport/42worker/72auditor),
-plus35 observer fixtures; Ruff/format/AST/diff checks pass. Full CPU history
-isolation passes, SHA f475f141b0d052f79aefd3cd47ba0bb5e17ca8cc50144273657ffcb80814f888.
-Both arms have1,625,484 full-population tokens and606,988 executed tokens;
-maxinput1165/1536 and development2446/2454. The inherited rank sharding has
-rank0 eight positive anchors/rank1 eight negative anchors per window, globally
-8/8; each rank overall remains16/16 with unchanged global sequence mean.
-Independent core/auditor, worker/startup and controller/node reviews pass.
-The protocol core is534eee4b464f8bd3e08d433319c71f35246561af643da9a6aab8e3a4f1c2ab64.
-Implementation c383b6f9a25dc44d3416e4f8e7436526aa52374e passed exact-commit
-cross-review, SHA ace9888c912b354d59a87d74e651c51c0bbcd90c87db723c69fabbb8c62d5bb5.
-Separate review-only acceptance80534bb59abefa7b7766def21a978c71de2265ed
-changes no scientific code or protocol content outside review. Accepted artifact
-SHA82e4a5e52fa291a3514531f6b0d2074c47ddfe636a810f6056798a7c6d75148d
-and all142 scientific files are bound to that genuine producer HEAD. Release
-20261004T161558Z-10ba8793444e-b3cc46db contains780 files/11,266,364 bytes;
-provenancec046d5f0c89756b32e8555a7211e01c10133dc9c2d43b37a80c2aa8803c95778
-was uploaded and verified. Runtime19pins and native parent54548846 passed fresh
-checks. Root pre-submit plan review passes; the supplementary independent actual
-deployment/two-plan review also passes, SHA
-38b6950e7f684a175e329bc9ceb1855f7ceb414057f068825dfa07611095b0f8.
-Control54655732 and treatment54655735 were submitted once at16:28:20Z/16:29:28Z,
-with separate intents481c8ca7356156e7fbbcbd22acb2190f and
+The subsequent original-order anchor diagnostic is also complete, with mixed
+scientific effects and no accepted student. Control54655732 and treatment54655735
+have job/batch/extern COMPLETED0:0, elapsed5137/4781s, verified publications and
+final empty own-job queues at18:00:14Z/17:55:15Z. Foreground observer8280 ended
+verified_complete/exit0 after167 queries; preserve its terminal state in
+`.sdsc/diagnostics/student-anchor-probe-v1/watch-pair-54655732-54655735/`.
+Never re-arm or resubmit intents481c8ca7356156e7fbbcbd22acb2190f and
 2e243530a9ff5c6576f209d16370192e under `.sdsc/student-anchor-probe/`.
-Each uses2H100/24CPU/384GiB/2h; second dry-run accounted for the first arm's2GPUs,
-keeping total4. Both were observed RUNNING at16:35:14Z/16:35:15Z.
-The reviewed finite read-only observer is active in foreground session8280,
-state `.sdsc/diagnostics/student-anchor-probe-v1/watch-pair-54655732-54655735/`,
-once per minute until22:00UTC at most. Never start a competing observer or
-resubmit either intent; inspect actual state and receipts after reconnection.
-Only running status is established; GPU completion and raw results are pending.
-Existing unrelated `.gitignore`, `AGENTS.md` and legacy untracked changes remain;
-this is an accepted named-science deployment, not a wholly clean checkout.
-See `docs/refactor/sdsc_student_anchor_probe_20261004.md`. Full common-initial
-preparation and unchanged formal896/2244 qualification remain required afterward.
+No job or observer from these two diagnostic pairs remains active.
+
+Accepted implementationc383b6f9a25dc44d3416e4f8e7436526aa52374e and separate
+acceptance80534bb59abefa7b7766def21a978c71de2265ed are immutable. Release
+20261004T161558Z-10ba8793444e-b3cc46db and genuine provenance
+c046d5f0c89756b32e8555a7211e01c10133dc9c2d43b37a80c2aa8803c95778
+bind142 scientific files. All296 focused CPU tests and independent reviews
+passed before submission. Existing unrelated `.gitignore`, `AGENTS.md` and
+legacy untracked changes remain; do not claim a wholly clean checkout.
+
+Control independently jointly permuted all eight views; treatment restored the
+original order only for identity and rename-only slots (two anchors/eight), with
+50% renamed coverage in both arms. Both fresh native1.7B runs completed12 global
+updates/606,988 input tokens and all3840 responses. Independent replay passes
+all768 prompts/3840 responses per arm. Prespecified steps6/7/8 absolute proof
+changes (treatment-control) are rename+13.542pp, fact-order-8.594pp,
+rule-order-6.510pp, with IID-2.865pp. Paired wins/losses are67/15,26/59,18/43
+respectively; these are repeated observations of128 bases, not384 independent
+bases. The three primary contrasts stay separate. This is a tradeoff, not a
+broad invariance repair. Fact-order first-invalid-S01 counts rise44→100;
+rule-order unknown citations rise2→26. Near-unchanged format and unchanged or
+lower truncation do not explain the lost accuracy. Treatment IID structure
+proof totals are chain135/144, branch11/90, DAG84/150 over those same steps.
+
+Small fetches are `.sdsc/fetched/54655732/fetch-vf2ewbqc/` and
+`.sdsc/fetched/54655735/fetch-_n5a3wad/`. Frozen comparison and both raw audits are
+under `.sdsc/diagnostics/student-anchor-probe-v1/`. Final paired execution review
+SHAce39153d3b6a0fd08c22875d044dfe786be3318ab1f220add629e4d6a414222c
+passes actual restoration, FP32/native-BF16 parity, startup, memory and persistent
+publication. Control's successful early startup160.539s exceeds the obsolete
+120s bound but fits the accepted300s bound; no scientific conclusion follows.
+See `docs/refactor/sdsc_student_anchor_probe_20261004.md` for exact records.
+No diagnostic checkpoint may be promoted. The next repair is under evidence-led
+analysis; no new policy, protocol, plan or submission is selected yet. A full
+common-initial preparation and original896-response formal qualification
+(anti-shortcut input limit2244 tokens) remain required. All scientific thresholds
+are unchanged.
+
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
 `docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**
