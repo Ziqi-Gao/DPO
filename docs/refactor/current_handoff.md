@@ -330,7 +330,7 @@ and independent actual-results review5e5fdfda8a2ae4ecbafc2abfea3884aa3a88bf6b3ef
 pass. This is engineering preflight, not model capability or formal acceptance.
 
 Matching full fit54643699 was submitted once at2026-10-04T07:37:31Z and is
-RUNNING at the07:42:48Z snapshot; early CUDA and large staging have passed.
+RUNNING at the10:47:31Z reconciled snapshot; early CUDA and large staging have passed.
 It uses the unchanged32-update/1,614,932-token V4 plan and all18,432 development
 responses,2H100/24CPU/384GiB/8h. Both immutable plans use sourceHEADbc3f0efa:
 preflight intent01c37609a7296137d2a5ec5d1ca95f1e (outer8c6e327eac2861bb87c0cf731235eab3dbfc37e17e3a962e0c91b6c5107a0da3);
@@ -338,12 +338,20 @@ fit intentad8b3f9b80302cfe580f9ef9472d6a84, inner0b963544286d94f1ffc250cc26c12c5
 outer7e909d0f9a5a103845b2fcbf77c9650dbc106957ca1785affd32c4e04eb669c2.
 Plans live under .sdsc/student-order/ and .sdsc/student-order-execution-v2/;
 fit receipt submit-20261004T073731565776Z.json is retained. Never resubmit/re-arm.
-The finite foreground observer started07:44:03Z, polls each60s for at most12h,
-status only. State: .sdsc/diagnostics/student-order-v4/watch-execution-v2-fit-54643699/.
-Its separate watcher SHAe3113cda609000d0271eadd56afc548fc611fe3b3c397e74073d151df3d926f9
-has29 passing tests and unchanged classification/poll logic. Do not edit its
-pinned controls or start a competing observer. SSH/control/unknown failure stops
-it; the active agent handles repair. No wakeup after conversation loss is implied.
+The original read-only observer stopped10:36:42Z after168 polls when one Slurm
+query returned nonzero; this was not a training failure. Fresh combined status
+and raw queue/accounting independently reconciled the same job RUNNING with0:0.
+The original watcher/state remain unchanged under .sdsc/diagnostics/student-order-v4/
+watch-execution-v2-fit-54643699/. A reviewed one-shot wrapper resumed status-only
+observation at10:48:10Z under watch-execution-v2-fit-54643699-resume-1/, each60s,
+retaining the original2026-10-04T19:44:03.594554Z deadline. Wrapper SHA
+139e4aea8fd5362aa93b73cb40f7c8af16fe5d9e036060f0a28afd232cae60c9;
+34 targeted tests independently pass. Its fixed fresh reconciliation SHA
+08dd406a6c64b497e8aecead808eb5c4cc1ffdd3203a2c5c736dae88c6d4a9d6,
+old state, plan, receipt and controls are pinned. No job was retried or resubmitted.
+Do not edit pinned controls or start a competing observer. SSH/control/unknown
+failure stops it; the active agent handles repair. No wakeup after conversation
+loss is implied.
 
 The V4 qualification consumer now includes core, controller, node, worker and
 independent raw auditor. All541 integrated CPU tests pass, plus Ruff/format/AST,
