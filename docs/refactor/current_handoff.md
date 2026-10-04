@@ -306,8 +306,10 @@ sets earlyOMP/MKL/OPENBLAS12 for consistency, and records import timings,
 timestamped progress and30s stacks in bounded logs. Trace events are checked
 against retained raw log bytes. Original V4 science, frozen v1 rank wrapper,
 resources and numerical gates remain unchanged; all prior claims stay consumed.
-The v2 contract is proposed pending exact-commit review and a separate review-only
-acceptance. See docs/refactor/sdsc_student_order_execution_recovery_v2_20261004.md.
+Implementation0848946f1942f0b844eecec4824cad104e2ff850 received exact-commit
+non-author review; this separate review-only acceptance grants execution readiness.
+Exact review SHA0a48483ac5cc73c6fa90153253ef56996458046189e9d856f5c5e10fd1181352.
+See docs/refactor/sdsc_student_order_execution_recovery_v2_20261004.md.
 A fresh successful CUDA/four-update preflight plus original eight-response audit
 remain required before fit; this mitigation does not guarantee startup success.
 V4 qualification transport/node drafts remain incomplete and untracked; their
