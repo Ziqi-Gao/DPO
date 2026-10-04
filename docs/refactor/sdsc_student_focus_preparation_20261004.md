@@ -191,3 +191,56 @@ Ruff/format/diff pass. Corrected controller
 36020e7fbaa923dbb3a559894d0e0fb11390e8d88efded30395a968e9620f0d7
 and testsb40602091d46c7feb532c4d08de5f6e530c5a648995aea287230180926dc4f37
 are bound by the corrective evidence. No other positional TOOLS lookup exists.
+
+Corrective implementation711db871f2c3cff54be324ec4fe1ea3178a63b11 received exact
+non-author reviewccbed8f6d1ad3e2ea2a12de9a527cde3706da993e161aa486c03deba3dbf4c63
+and separate acceptance71d0508407d429e5f700a3908671af1244b63f1f. Actual accepted
+resolver passes154 files; artifactbcf01ad38c47f9fd38364efb037608fb9084ac22200b9e1c7ea051bbb9fd9029.
+Fresh release20261004T212138Z-cb394fe810bf-63f87ad8(804files/12177175B) and genuine
+provenancef55e440e50b2c031cd4112e69b99f3f4034e5e1f0f699071489ccbd9b4ee6396
+were uploaded and verified. Corrective remote dry-run verifies source, parent,
+accepted protocol and19 dependencies; existing0+new2<=4 GPUs.
+
+Preflight54661792 submitted once at21:27:14Z. Intent
+aaf558e27fd94b9d6ba47530c162bd38, plan
+a90c07a6d9511594a009c92c850d62568a5d60f7dacc97607953a828b7fcdb9a, receipt
+submit-20261004T212714672605Z.json are preserved under `.sdsc/student-focus-v5/`.
+Exact resources2H100/24CPU/384GiB/1h. Foreground observer99374 polls60s in
+`.sdsc/diagnostics/student-focus-v5/watch-preflight-54661792/`, first state
+PENDING21:27:49Z. No real GPU/scientific success is yet claimed. Do not re-arm
+or start another observer. The same release/provenance must serve a matching
+fit after real preflight and independent raw/execution audits pass.
+
+## Actual preflight and full preparation submission
+
+Preflight54661792 finished all job/batch/extern COMPLETED0:0 in769s, with final
+empty queue21:46:49Z. Observer99374 ended verified_preflight_complete/exit0 after
+20 polls. Exact4 updates/205428tokens, step4 real restore, both311-key FP32 reloads,
+nativeBF16 parity and both2454 finite forwards pass. Early probe96.579s;25 memory
+samples pass, peak89.289GiB of384GiB, noOOM/failcnt. Eight required large files
+total30,019,124,141B with persistent read-back hashes. No weights were fetched.
+
+Small fetch `.sdsc/fetched/54661792/fetch-m238fgjm/` contains719906B; publication
+SHA c7cb1d649dcc73a1277ce3821d44a1c3aa18ec46dab65be5c6f0e1aa1190226a. Initial
+fetch correctly retains incomplete accounting while the completed entry remained
+in the queue; final observer status7048131bbb7aa888d05c7fba564a052b51c46ca3d9be135b7c86feb66ccf1adc
+records its later removal. Preserve both observations. Raw audit
+38b28edcdbf1cb651d9b74134bfacf39c7af6b1463732284ef7c91a785564d46 passes an
+independent byte-identical CLI rerun and direct eight-response reconstruction.
+Raw reviewd8e3d10f1fc7ed2a4099edc47b1fcc986965b4eb9d1fdd7f14ed96ea1a5fb717
+and execution reviewb68b69f65a67778246344be8c3c09b8099e55214b4f11786b36366dcbda0b047
+are retained. Eight training views produced0 valid proofs; these are engineering
+responses without a capability gate, not an accepted student or held-out score.
+
+Matching fit54663831 was submitted once21:51:35Z after real preflight and both
+audits passed. It uses the same release/provenance/source and restarts original
+native weights. Intent8da3db1571a34957e9e03992ebd16f73, plan
+0ed8d23abcc16a9ee56a6e44d3fe78a4d31932adee5b3622e70e3aca39e6a005, receipt
+submit-20261004T215136162183Z.json; exact2H100/24CPU/384GiB/8h. Actual dry-run
+21:49:04Z reverified the completed preflight, source,19 runtime pins and0+2<=4.
+Independent transition review509b67701cf660104339de9ae6458d0f0beadfdf9a4407944ab861bb346db617
+passes. Foreground observer53737 polls60s for<=10h in
+`.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/`; first statePENDING
+21:51:55Z. Do not duplicate or re-arm it. Full32/12CP/18432 and original earliest
+selection remain required, followed by original896-response formal qualification
+if an eligible candidate exists. No fullfit result or model acceptance yet.

@@ -3,16 +3,15 @@
 Last updated: 2026-10-04 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** New batch-order diagnostic
-control54659007/treatment54659010 completed, passed full raw/execution audits,
-and show mixed policy effects. Observer72184 ended verified_complete/exit0
-at20:32:22Z after204 queries. No student is accepted; never re-arm or resubmit.
-V5 first remote dry-run failed before any Slurm action: the launcher selected
-the startup-file hash for the controller-file path. Exact remote reconciliation
-found no claim, submission directory, results or job. Corrective implementation711db871f2c3cff54be324ec4fe1ea3178a63b11 passed
-independent actual-launch and exact-commit review; this review-only acceptance
-binds those bytes. Original data/scientific core/gates stay frozen.
-No V5 GPU job is submitted; do not reuse the failed release/plan.
+and immediate evidence-led repair of new failures.** V5 full preparation54663831
+was submitted once at21:51:35Z and is PENDING at21:51:55Z. Foreground read-only
+observer53737 polls every60s for at most10h; inspect
+`.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/` before further action.
+Do not start a competing observer or resubmit. Preflight54661792 passed actual
+execution and independent raw/execution audits; observer99374 ended verified
+at21:46:49Z/exit0 after20 polls. Original thresholds remain unchanged and no
+student model is accepted. Completed batch diagnostic54659007/54659010 showed
+mixed effects; observer72184 is terminal. Never re-arm historical flows.
 Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
@@ -172,37 +171,66 @@ Step32 rename branch24/42 and21/42 accounts for most remaining rename losses;
 earlier rename gaps also substantially involve chains. Branch focus is an
 untested repair hypothesis, not a demonstrated solution to every rename error.
 
-Next authorized work is fresh `student_focus_preparation` V5: change only fit
-structure proportions relative to the anchored control from50/25/25 to75/12.5/
-12.5 branch/chain/DAG. Each global64 window has three branch signed pairs plus
-one nonbranch pair, alternating chain/DAG across windows, with the original
-depth schedule. Preserve eight views, two original-order anchors,50% renamed,
-75% jointly permuted, sequence-mean loss,5e-5 and all training/selection gates.
-All409 unique focused CPU tests and124 observer/reader tests pass; independent
-core, transport, worker, auditor and observation reviews pass. Actual producer
-seam review corrected the isolation manifest field and independently bound
-report isolation/token evidence; no frozen science or threshold changed.
-Full144k/history isolation and token feasibility pass: fit1,665,064 tokens,
-preflight205,428, dev max2448<=2454. New data namespaces390000042..420000042
-are frozen. All148 historical science files/eight protocols/11helpers match.
-Exact-commit review2fd46a0be921a569e666c5320083cd36c29f1459e936b2662ce44c2d0f811bb8
-passed all13 implementation blobs but missed the real SSH launch boundary.
-Initial implementation46db8e64/acceptance262d48e3 and failed release
-20261004T211027Z-b00ee9b8283e-2c39ad8d remain preserved. Intent
-b9489918ded50254d0aba96966394839 never acquired an execution/scientific claim.
-The single positional TOOLS[0] digest is corrected to bind the named controller.
-Real isolated launch regression reproduced2FAIL/1PASS before the correction;
-all3 new cases plus5 related gates now pass(412 distinct cases with prior
-evidence). Exact corrective reviewccbed8f6d1ad3e2ea2a12de9a527cde3706da993e161aa486c03deba3dbf4c63
-and14 independent launch/interface checks pass. This separate acceptance only
-changes protocol.review and handoff. Fresh deployment remains required with
-the identical scientific protocol core. Real matching
-four-step preflight and raw audit remain next, followed by fresh full32 updates/
-12 checkpoints/18432 responses and the
-original earliest-eligible selection. Original896-response formal qualification
-remains mandatory. No further compute has been submitted. See
-`docs/refactor/sdsc_student_focus_preparation_20261004.md` for fixed scope and
-evidence under `.sdsc/diagnostics/student-focus-v5/`.
+Active `student_focus_preparation` V5 changes fit structure sampling relative
+to the anchored control from50/25/25 to75/12.5/12.5 branch/chain/DAG, keeping
+original depths, eight views, two original-order anchors,50% renamed,75%
+joint-permutation operations, sequence-mean loss,5e-5 and original gates. New
+namespaces390000042..420000042 are frozen; full144k/history isolation passes.
+Full fit has256bases/2048views/1,665,064tokens and1536devviews(max2448<=2454).
+All148 historical science/eight protocols/11helpers remain unchanged.
+
+Initial implementation46db8e64/acceptance262d48e3 passed reviews but its actual
+remote dry-run exposed a wrong positional startup hash for the controller path.
+Failed release20261004T211027Z-b00ee9b8283e-2c39ad8d and intent
+b9489918ded50254d0aba96966394839 remain preserved and unsubmitted; remote
+reconciliation confirmed no execution/scientific claim or output. Corrective
+implementation711db871f2c3cff54be324ec4fe1ea3178a63b11 uses the named controller
+hash. Real launch regression reproduced2FAIL/1PASS before correction, then
+3new+5related cases passed; prior409+new3=412 unique cases. Independent14 launch
+checks and exact reviewccbed8f6d1ad3e2ea2a12de9a527cde3706da993e161aa486c03deba3dbf4c63
+pass. The124 observer/reader cases and original independent reviews remain bound.
+
+Distinct acceptance71d0508407d429e5f700a3908671af1244b63f1f resolves all154science
+files, artifactbcf01ad38c47f9fd38364efb037608fb9084ac22200b9e1c7ea051bbb9fd9029.
+Release20261004T212138Z-cb394fe810bf-63f87ad8 has804files/12177175B; genuine
+provenancef55e440e50b2c031cd4112e69b99f3f4034e5e1f0f699071489ccbd9b4ee6396
+and actual deployment reviewdd5a0da32b043fa722340a5afd9c43f57466bc05706cabc703a89a3c6b2ac7c5
+pass. Original data/scientific core/numerical gates are unchanged by the fix.
+
+Preflight54661792 has all3 accounting lines COMPLETED0:0,769s and final empty
+queue at21:46:49Z. Intent aaf558e27fd94b9d6ba47530c162bd38, plan
+a90c07a6d9511594a009c92c850d62568a5d60f7dacc97607953a828b7fcdb9a and receipt
+submit-20261004T212714672605Z.json are immutable. Actual W2 completed4 updates/
+205,428tokens; both ranks performed step4 full-state restoration, exact311-key
+FP32 reload/nativeBF16 parity and2454-token finite forwards. All25 own-job
+memory samples pass(peak89.289/384GiB, noOOM/failcnt); early probe96.579s.
+Eight large files/30,019,124,141B have persistent read-back hash evidence.
+Fetch `.sdsc/fetched/54661792/fetch-m238fgjm/` is719906B, publication
+c7cb1d649dcc73a1277ce3821d44a1c3aa18ec46dab65be5c6f0e1aa1190226a.
+Raw audit38b28edcdbf1cb651d9b74134bfacf39c7af6b1463732284ef7c91a785564d46
+replays identically under independent rerun; review
+d8e3d10f1fc7ed2a4099edc47b1fcc986965b4eb9d1fdd7f14ed96ea1a5fb717 passes.
+Execution reviewb68b69f65a67778246344be8c3c09b8099e55214b4f11786b36366dcbda0b047
+passes. These8 training-view responses are engineering evidence, not ability
+qualification; their descriptive proof score0/8 is not a new gate. Preserve
+historical fetch accounting=false and later verified terminal status separately.
+Observer99374 is terminal; never restart it.
+
+Matching fullfit54663831 uses intent8da3db1571a34957e9e03992ebd16f73, plan
+0ed8d23abcc16a9ee56a6e44d3fe78a4d31932adee5b3622e70e3aca39e6a005 and receipt
+submit-20261004T215136162183Z.json under `.sdsc/student-focus-v5/`. Same accepted
+source/release/provenance and actual preflight/raw audit bind this fresh native
+restart; no preflight checkpoint/resume input. Actual remote dry-run21:49:04Z
+and independent transition review509b67701cf660104339de9ae6458d0f0beadfdf9a4407944ab861bb346db617
+pass. Exact resources2H100/24CPU/384GiB/8h(accountnwu181/sharednormal),0+2<=4.
+The full32 updates/12 checkpoints/18432 responses and original earliest-eligible
+selection remain mandatory; failure preserves complete evidence with no
+threshold relaxation. Original896-response formal qualification remains
+separate and needs the V5 flat-publication adapter plus a genuine selected
+candidate if one exists. No formal/G0/pilot/factorial/class acceptance is claimed.
+Details: `docs/refactor/sdsc_student_focus_preparation_20261004.md`; evidence
+under `.sdsc/diagnostics/student-focus-v5/`. Only documents changed after fit
+preparation/submission; original accepted production controls stay frozen.
 
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
