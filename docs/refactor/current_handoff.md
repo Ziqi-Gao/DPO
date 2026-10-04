@@ -55,7 +55,10 @@ rank0 eight positive anchors/rank1 eight negative anchors per window, globally
 8/8; each rank overall remains16/16 with unchanged global sequence mean.
 Independent core/auditor, worker/startup and controller/node reviews pass.
 The protocol core is534eee4b464f8bd3e08d433319c71f35246561af643da9a6aab8e3a4f1c2ab64.
-Distinct exact-commit review/acceptance and actual deployment still remain.
+Implementation c383b6f9a25dc44d3416e4f8e7436526aa52374e passed exact-commit
+cross-review, SHA ace9888c912b354d59a87d74e651c51c0bbcd90c87db723c69fabbb8c62d5bb5.
+This separate review-only acceptance changes no scientific code or protocol
+content outside review. Actual deployment and GPU evidence still remain.
 The existing quser43 master/runtime/account were freshly checked16:07:54UTC,
 and native parent54548846 remains verified COMPLETED. No new plan or job exists.
 See `docs/refactor/sdsc_student_anchor_probe_20261004.md`. Full common-initial
