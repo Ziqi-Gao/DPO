@@ -316,11 +316,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Exact committed scientific and execution surfaces match final independent reviews. Full historical isolation, original selection logic, actual producer/controller/auditor seams, fixed native parent and resource/runtime contracts verified. V5 prospectively changes fit structure sampling to75/12.5/12.5 while preserving anchored views and original thresholds. This accepts implementation readiness only: real matching four-step preflight and raw audit, full32 updates/18432 responses and separate original896-response formal qualification remain required.",
+    "reviewed_at_utc": "2026-10-04T21:10:06Z",
+    "reviewed_implementation_commit": "46db8e64e9592d410bca4f9dbf735ff7bcaa09cd",
+    "reviewer": "Independent Codex recovery_readiness_review exact-commit acceptance; qualification_binding_finish non-author core/protocol; torch_import_probe_worker non-author auditor; root non-author transport",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [
