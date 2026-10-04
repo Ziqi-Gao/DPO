@@ -116,6 +116,32 @@ publication, rank startup/exit and owned-descendant termination. CUDA/FSDP model
 fixtures are explicitly mocked where appropriate; this is not H100 evidence.
 
 Review records are in `.sdsc/diagnostics/student-order-v4/order-probe-v1-review/`
-and `order-probe-startup-independent-review.json`. Implementation acceptance must
-still bind the actual implementation commit in the separate review-only change.
-Neither arm has been submitted at this implementation snapshot.
+and `order-probe-startup-independent-review.json`. Implementation b81b62a82ab8fa7b786f082796f9692026fbab7d received exact-commit
+independent review and distinct acceptance ebb1fc5c25ac39ce536b51ef4b699af3247699d9.
+The accepted protocol core is646efc0d80c63440172abf4140ac3ebf8b47d95f583054f027cdbefb84c0af3c;
+accepted artifact SHA2bb8f3c9993eea7dc6a760639d0607f61896f5fd22599edd3f76bc268ac2d3e0.
+
+## Submitted diagnostic
+
+Both exact dry-runs and independent deployment review passed before submission.
+Release20261004T140714Z-d2326e59f530-5ebc8a86 contains768 files/10,866,456 bytes;
+genuine provenance983f2ec8129e060237911d5b5615c03ded84a94b807b59222398293ba5872cb6
+was uploaded and verified against the accepted HEAD. All19 runtime pins match.
+
+Control54648255 was submitted once at14:19:00Z with intent
+21fc86300215de2e3b26b7d23e89078e, plan SHA
+67606001ab0e0ab1b64dbbba1ccc7085e17f6903fe3081da8da0c36801ec93ad.
+Treatment54648257 was submitted once at14:19:27Z with intent
+75aaacbf055cfd68a5b729dfb7648101, plan SHA
+f5d536f937366d899651410de7e4d344c220711e935eadc9b4694dd961c20c66.
+Both are RUNNING at14:19:52UTC. A finite foreground observer checks both every60s,
+with absolute deadline20:00UTC, and stops on any failure/unknown/connection loss.
+It never submits, retries, cancels or changes either allocation. Its launch/state
+are under `.sdsc/diagnostics/student-order-probe-v1/watch-pair-54648255-54648257/`.
+
+The observer and prespecified paired comparator pass49 independently rerun CPU
+fixtures. Root review fixes an observer receipt-path mismatch by binding actual
+controller-generated timestamped submit/reconcile receipts explicitly. Their
+ignored diagnostic files and review are under `.sdsc/diagnostics/student-order-probe-v1/`.
+No actual GPU completion, causal improvement or student acceptance is established
+by these submissions; full terminal accounting, artifacts and raw replay remain.

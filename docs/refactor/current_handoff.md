@@ -6,19 +6,31 @@ improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
-no student is accepted. Both finite observers are terminal, with no job active.
+no student is accepted. Both historical V4 observers are terminal. New diagnostic
+control54648255 and treatment54648257 are RUNNING as observed at14:19:52UTC.
 The fresh single-factor control/treatment order diagnostic implementation is
 complete:274 focused CPU tests pass in237.70s, with independent cross-review,
 Ruff/format/AST checks and all130 historical science files/11 helper pins intact.
 Implementation b81b62a82ab8fa7b786f082796f9692026fbab7d passed exact-commit
 independent cross-review, SHA26990fd032edfef1a85a08224258db9147d332d0793f33a7ce83fb287263f864.
-This separate review-only acceptance grants diagnostic implementation readiness;
-actual deployment/submission and GPU evidence are still pending.
+Separate acceptance ebb1fc5c25ac39ce536b51ef4b699af3247699d9 is deployed as
+20261004T140714Z-d2326e59f530-5ebc8a86 (768 files/10,866,456 bytes). Genuine
+provenance983f2ec8129e060237911d5b5615c03ded84a94b807b59222398293ba5872cb6
+and independent exact deployment/two-plan review pass. No GPU outcome yet.
 Both arms restart native1.7B, share256 fit/128 dev bases and consume the same
 768 rows/606,232 tokens in12 updates; treatment independently permutes every
 view. Five fixed observations retain3840 responses per arm. Each arm uses
 2H100/24CPU/384GiB/2h, at most four concurrent GPUs. Diagnostic completion
-never selects or accepts a model. Review repaired raw12xW2 optimizer-evidence
+never selects or accepts a model. Control intent21fc86300215de2e3b26b7d23e89078e
+and treatment intent75aaacbf055cfd68a5b729dfb7648101 were each submitted once,
+at14:19:00Z and14:19:27Z. Plans/receipts are under `.sdsc/student-order-probe/`
+those exact intent directories; never resubmit or re-arm them. The foreground
+read-only pair observer is active under
+`.sdsc/diagnostics/student-order-probe-v1/watch-pair-54648255-54648257/`,
+every60s until20:00UTC at latest; it stops on any failure/unknown/SSH loss and
+never submits, retries or cancels. Observer/comparator root review passes49 CPU
+fixtures; paired comparison awaits both complete independent raw audits.
+Review repaired raw12xW2 optimizer-evidence
 validation and startup clock consistency without changing scientific settings.
 The existing quser43 SSH master, fixed runtime/account and original54548846
 parent were freshly verified around13:54UTC. See
