@@ -34,7 +34,7 @@ Independent execution review passes all updates, exports/restoration, startup,
 memory and publication evidence (SHA24414b765795a162e579538605fe1a3010748283b920cd999a66d4555cf63731).
 No further GPU job is active.
 
-A fresh prospective anchor diagnostic is now being implemented under new
+A fresh prospective anchor diagnostic is implemented and independently reviewed under new
 `student_anchor_probe` namespaces. It compares100% independent joint order
 against75% joint with one plain-identity and one rename-only original-order
 anchor per eight views; renamed fraction remains50%. Other numerical settings,
@@ -45,10 +45,21 @@ no composite score, new threshold or model acceptance. This tests the joint
 consequences of restoring ordered coverage/reducing compound difficulty and
 reintroducing position cues, not one uniquely identified mechanism. Fresh
 populations exclude both preceding diagnostic arms and all historical data.
-All136 accepted science files and historical gates remain frozen. New code
-still needs focused checks, independent review, distinct acceptance and actual
-GPU evidence before any result can be claimed. Full common-initial preparation
-and unchanged formal896/2244 qualification remain required afterward.
+All136 accepted science files, six protocols and eleven helpers remain frozen.
+All296 unique focused CPU tests pass (68core/114transport/42worker/72auditor),
+plus35 observer fixtures; Ruff/format/AST/diff checks pass. Full CPU history
+isolation passes, SHA f475f141b0d052f79aefd3cd47ba0bb5e17ca8cc50144273657ffcb80814f888.
+Both arms have1,625,484 full-population tokens and606,988 executed tokens;
+maxinput1165/1536 and development2446/2454. The inherited rank sharding has
+rank0 eight positive anchors/rank1 eight negative anchors per window, globally
+8/8; each rank overall remains16/16 with unchanged global sequence mean.
+Independent core/auditor, worker/startup and controller/node reviews pass.
+The protocol core is534eee4b464f8bd3e08d433319c71f35246561af643da9a6aab8e3a4f1c2ab64.
+Distinct exact-commit review/acceptance and actual deployment still remain.
+The existing quser43 master/runtime/account were freshly checked16:07:54UTC,
+and native parent54548846 remains verified COMPLETED. No new plan or job exists.
+See `docs/refactor/sdsc_student_anchor_probe_20261004.md`. Full common-initial
+preparation and unchanged formal896/2244 qualification remain required afterward.
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
 `docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**
