@@ -357,11 +357,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Exact committed science/control/worker/auditor and prospective analysis reviewed independently. Shared rows and rank ownership, independent 32-window raw audit, historical isolation and unchanged thresholds verified. Stale emitted source identity was reproduced and fixed before acceptance with actual producer/controller regressions. Acceptance is implementation readiness only; actual diagnostic accounting, raw replay, full preparation and original formal qualification remain required.",
+    "reviewed_at_utc": "2026-10-04T18:42:16Z",
+    "reviewed_implementation_commit": "fa1b8b5693db644a842a7bbefe72def353da0d48",
+    "reviewer": "Independent Codex reviewers recovery_readiness_review and qualification_binding_finish; root non-author transport review; torch_import_probe_worker non-author core and analysis review",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [

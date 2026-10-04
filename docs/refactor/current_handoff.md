@@ -78,7 +78,7 @@ No diagnostic checkpoint may be promoted. A full common-initial preparation
 and original896-response formal qualification (anti-shortcut input limit2244
 tokens) remain required. All scientific thresholds are unchanged.
 
-The proposed next diagnostic is `student_batch_probe`, documented in
+The next diagnostic implementation is accepted as `student_batch_probe`, documented in
 `docs/refactor/sdsc_student_batch_probe_20261004.md`. It tests batch grouping and
 presentation order: control groups all16 sibling/view rows of each signed pair;
 treatment spreads32 independent pairs across each64-row window. Both arms use
@@ -107,10 +107,14 @@ is `.sdsc/diagnostics/student-batch-probe-v1/`. Resources are exactly
 unique tests before the final report-identity correction. Independent review
 caught a stale worker source identity, reproduced in both actual-execute arms;
 the correction passes four targeted producer/controller-identity/generation
-regressions. Observation/analysis helpers and all production surfaces receive
-non-author review. A distinct implementation/review-only acceptance pair is
-required before deployment. No new batch-probe plan or submission exists yet. The verified SSH master is live on
-quser43; fresh login runtime/account/storage checks pass, but actual GPU-node
+regressions. Observation/analysis helpers and all production surfaces passed
+non-author review. Implementationfa1b8b5693db644a842a7bbefe72def353da0d48
+has two exact-commit independent reviews, including the corrected worker;
+all13 task files match. This separate review-only acceptance changes only the
+new protocol review block and this handoff. It accepts implementation readiness,
+not a GPU diagnostic result or a qualified student. No new batch-probe plan or
+submission exists yet. The verified SSH master is live on quser43; fresh login
+runtime/account/storage and original54548846 checks pass, but actual GPU-node
 mounts and execution remain prerequisites.
 
 Historical V3 preparation is
