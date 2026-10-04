@@ -270,6 +270,43 @@ and persistent read-back hashes. Independent controller/worker review SHA
 3be9022b74e8d58380b86958c257c9fda26abcf99fdf6af17964dc75091927da and final node
 addendum SHA c35394648437f1f5ec311a7f180b47a7e40a6ac6c0a7bb64260c72ec417b2b5d pass.
 See sdsc_student_torch_import_failure_20261004.md.
+Implementation c1b0b5904ebb509c5c3e442bd87ea9c56e5fdc31 has exact-commit review SHA
+8619feb52de4f63b35f36c5288c4fb956d5e84b3c4e5f6a63943aa456534c82c. Release
+20261004T062152Z-919ed27483c7-293d2788 contains741 files/10,116,612 bytes, code SHA
+919ed27483c76e8acdf993b30b2cc8f32c7a3e04c4360e744938b0b231999501; deployed/runtime/
+storage/failed-paired-publication checks pass. Diagnostic **54643629** was submitted
+once at06:29:12Z with the exact2H100/24CPU/16GiB/10min resources. Intent
+2ac800ac6e8e71ccf2e20068cf290a1b, plan SHA
+570e39613cff38031375ebbdea149adbc197dd17ad51be8fc74abeb2bd32f21d; plan and receipt
+are under .sdsc/torch-import-probe/2ac800ac6e8e71ccf2e20068cf290a1b/.
+Diagnostic54643629 **completed and passed its diagnostic evidence checks**:
+fresh06:39:32Z accounting confirms allthree Slurm rows COMPLETED0:0,71s, empty
+queue. It ran onexp-19-02, the same node recorded for54643463. Fetch446,160bytes
+is .sdsc/fetched/54643629/fetch-twg_e5bt/;12 artifact hashes match publication SHA
+3ad6a79f3fbdc49b5270a333ca9aa59b3d14bf53797198bad30f5726badc18a2. Independent raw
+review SHA7b44b038225ce5d8c9a6318830eabc2c3a690d65193bb6aae3defa67bc449a6e verifies
+allthree worker reports,15 process samples and18 memory samples; peak579,444,736B,
+noOOM/failcnt. No diagnostic observer/job remains active; never resubmit/re-arm it.
+
+A1/B/A2 Torch imports took53.419/1.559/1.571s; A1/A2 inherited OMP/MKL/OPENBLAS
+unset, B set12. The equally fast A2 disproves thread12 being necessary for fast
+warm import in this observation. A1's30s Python stack is importlib.get_data loading
+asyncio from Lustre; asyncio cumulative import is3.324/.021/.021s while torch._C
+selftime is.340/.334/.329s. This supports variable shared-runtime loading/cache
+costs. It does not reconstruct the old120s timeout's exact stack or prove its sole
+cause. A1's8.156s exit tail also has I/O/page faults; no native stack identifies why.
+The import-only result performs no CUDA predicates/model/training and grants no
+scientific acceptance.
+
+An execution-only v2 successor is being implemented: early-child bound300s inside
+the unchanged total worker budget/publication reserves, earlyOMP/MKL/OPENBLAS12
+for policy consistency, timestamps and30s repeating stacks with bounded retained
+logs. The original V4 worker, frozen v1 rank wrapper, science/gates/resources stay
+unchanged; oldclaims stay consumed. New v2 contract/controller/node/probe files
+are not yet accepted or deployable. Finish CPU tests, independent review and
+separate implementation/review-only acceptance before a fresh preflight. Successful
+new CUDA/four-update preflight plus original eight-response audit remain required
+before fit; this mitigation does not guarantee startup or training success.
 V4 qualification transport/node drafts remain incomplete and untracked; their
 old producer-HEAD equality still needs migration to the completed core. No worker,
 auditor or candidate JSON exists. This path cannot admit the failed preflight or

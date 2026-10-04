@@ -69,3 +69,36 @@ Independent node review and final TMPDIR-only addendum are under
 `c35394648437f1f5ec311a7f180b47a7e40a6ac6c0a7bb64260c72ec417b2b5d`.
 All review files are in `.sdsc/diagnostics/student-order-v4/`. Their exact source
 hashes bind reviewed bytes; implementation readiness grants no GPU/science result.
+
+## Actual diagnostic outcome
+
+Job54643629 ran once onexp-19-02, the same node as failed54643463, and completed
+in71s. Fresh06:39:32Z accounting shows job/batch/extern COMPLETED0:0 and empty
+queue. All12 artifacts are read-back verified in
+`.sdsc/fetched/54643629/fetch-twg_e5bt/` (446,160bytes); publication SHA
+`3ad6a79f3fbdc49b5270a333ca9aa59b3d14bf53797198bad30f5726badc18a2`.
+The independent result audit SHA is
+`7b44b038225ce5d8c9a6318830eabc2c3a690d65193bb6aae3defa67bc449a6e`.
+All18 own-job memory samples pass, peak579,444,736B, noOOM/failcnt.
+
+| Observation | Thread variables | Torch import | Entire child |
+| --- | --- | ---: | ---: |
+| A1 | inherited, allthree unset |53.419s|61.634s|
+| B | allthree12 |1.559s|2.074s|
+| A2 | inherited, allthree unset |1.571s|2.093s|
+
+The equally fast A2 means12 threads were not necessary for fast warm import here.
+The30s A1 Python stack is inside importlib.get_data loading asyncio from Lustre.
+Asyncio cumulative import times3.324/.021/.021s contrast with torch._C self times
+.340/.334/.329s. This supports variable shared-runtime/module loading and cache
+costs, without establishing the exact stack or sole cause of the earlier120s
+failure. I/O/page faults also continue in A1's8.156s exit tail; no native stack
+identifies that cause. B/A2 only have initial process samples, so their peak
+thread counts cannot be compared. No explicit CUDA checks or training occurred.
+
+The proportionate successor increases only the early-child bound to300s within
+the existing stage budget, records continuous startup evidence, and fixes early
+thread policy for consistency. It preserves all numerical science and requires
+its own reviewed implementation, fresh original CUDA/four-update preflight and
+independent raw audit. It is a resilience improvement, not a claim that300s
+necessarily cures the prior failure. The completed diagnostic must not be retried.
