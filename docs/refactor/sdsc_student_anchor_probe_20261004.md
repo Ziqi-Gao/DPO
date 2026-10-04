@@ -112,6 +112,53 @@ Independent reviews under `.sdsc/diagnostics/student-anchor-probe-v1/`:
 - actual rank exposure/sequence scaling:af552b13c8713f882d3aa13273681f4a041a3373936b94b1d5213568176fef15.
 
 Protocol core534eee4b464f8bd3e08d433319c71f35246561af643da9a6aab8e3a4f1c2ab64
-and proposed artifact3e14900a3f0da12bd505ea3d4d2ec71a207785cb991696205eaeecb291753b9f
-still require an implementation commit followed by exact-commit review and a
-distinct review-only acceptance. No GPU outcome or submission is recorded here.
+was implemented in c383b6f9a25dc44d3416e4f8e7436526aa52374e. Exact-commit
+cross-review passes, SHA
+ace9888c912b354d59a87d74e651c51c0bbcd90c87db723c69fabbb8c62d5bb5.
+Separate review-only acceptance80534bb59abefa7b7766def21a978c71de2265ed
+produces accepted artifact
+82e4a5e52fa291a3514531f6b0d2074c47ddfe636a810f6056798a7c6d75148d;
+scientific content outside review is unchanged.
+
+## Actual deployment and submission
+
+Release20261004T161558Z-10ba8793444e-b3cc46db has780 files/11,266,364 bytes,
+code SHA10ba8793444e1a5a696cf08bc114f37adc219b8f963142adcc203589331d2c20
+and canonical manifest SHA
+8f28b2b7a0d54dc4a4ee3f8228a55519ef754bf5bad2f2fa9cfccff55b38f368.
+Genuine provenance SHA
+c046d5f0c89756b32e8555a7211e01c10133dc9c2d43b37a80c2aa8803c95778
+binds the accepted producer HEAD80534bb59abefa7b7766def21a978c71de2265ed.
+Independent deployment/two-plan review passes, SHA
+38b6950e7f684a175e329bc9ceb1855f7ceb414057f068825dfa07611095b0f8.
+This supplementary report arrived after the first submission; the prior root
+pre-submit review already checked both actual plans/source/runtime/resource
+bindings, SHA1c6964dff87043d0923010715ef5df5f2c06cb645972bbc87a60bc3c60a848d0.
+All19 remote runtime pins and the verified native parent54548846 were checked.
+Node-local mounts/free space remain actual runtime gates.
+
+| Arm | Job | Intent | Submission UTC |
+| --- | --- | --- | --- |
+| Control |54655732|481c8ca7356156e7fbbcbd22acb2190f|2026-10-04T16:28:20Z|
+| Treatment |54655735|2e243530a9ff5c6576f209d16370192e|2026-10-04T16:29:28Z|
+
+Plans and timestamped submission receipts are under
+`.sdsc/student-anchor-probe/<intent>/`. Plan SHAs are
+control daf7d82f93ed9ff83996a5d816b2ecc72adca595c780a86049dc65c4c17c0264
+and treatment40422ad3db68e86c697ce2413ba14f8411784673a4b98c6295b2deb1d5f55b3f.
+Both allocations are2H100/24CPU/384GiB/02:00:00 on accountnwu181,
+partitionnairr-gpu-shared/QoSnairr-gpu-shared-normal. The fresh second-arm
+dry-run counted the first arm's2GPUs plus2newGPUs against the4GPU limit.
+These are two distinct acknowledged submissions; never submit either again.
+Required outputs use persistent
+`/expanse/lustre/projects/nwu181/zgao12/OPD/student-anchor-probe/<intent>`.
+
+The reviewed foreground observer started16:35UTC, session8280, state
+`.sdsc/diagnostics/student-anchor-probe-v1/watch-pair-54655732-54655735/`,
+with a22:00UTC deadline and one-minute status interval. Both arms were observed
+RUNNING at16:35:14Z/16:35:15Z. It stops on unknown state, failure, SSH loss,
+changed controls or deadline, and never submits/retries/cancels/fetches. Root
+continues result collection and raw review separately. Reviewed observer,
+one-shot bounded live reader and comparator pass35/23/22 fixtures respectively.
+No GPU completion or capability outcome is established by these submissions.
+Existing unrelated tracked and legacy untracked changes were preserved.
