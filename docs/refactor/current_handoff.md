@@ -214,9 +214,12 @@ module. No plan or job was created. The qualification protocol core is now
 complete with215 focused CPU tests, Ruff/format/AST checks, and a real frozen
 accounting/status-producer interface fixture. It separates the frozen science
 ancestor from actual fit source HEAD and requires combined recovery evidence,
-while retaining every original formal gate. Independent source review and a
-later review-only record are required before new genuine source/provenance and
-one instrumented preflight plan. This core is not a bound qualification candidate.
+while retaining every original formal gate. Implementation142b86e received exact
+non-author review (four independent tests and18 additional rejection cases),
+evidence SHA0b688ac8a8e4d25c02a37fa6783d1f78c5b65c7814f70612d604408f77c2e04f.
+The later review-only record accepts core readiness only, not a bound candidate.
+Actual scientific workspace verification and the original recovery resolver now
+pass. Next is fresh genuine source/provenance and one instrumented preflight.
 See `docs/refactor/sdsc_student_order_qualification_core_20261004.md`.
 Keep the new reviewed HEAD/provenance fixed through both
 preflight and matching fit-plan preparation; later handoff-only changes can be

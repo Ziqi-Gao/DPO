@@ -63,3 +63,21 @@ protocol JSON and accepted complete consumer do not yet exist. The default draft
 is unbound and cannot be accepted or used for production. Missing candidate and
 worker artifacts keep resolution/submission fail-closed. No model, qualification,
 G0 or pilot acceptance, and no new submission, is produced by this change.
+
+## Independent implementation review
+
+Implementation `142b86ed505a9ebc2c9a1ba611915a86094d1efa` received independent
+non-author review by `recovery_readiness_review` at2026-10-04T05:34:03Z. The
+review accepts generic protocol-core readiness only. All four exact implementation
+files match the reviewed bytes; four independently selected interface/Git/draft
+tests and18 additional publication/cross-binding rejection checks pass. The
+accepted execution resolver passes at that HEAD with130 unchanged science files,
+five historical protocols and eight unchanged execution dependencies.
+
+Review evidence is `.sdsc/diagnostics/student-order-v4/
+qualification-core-independent-review-20261004.json`, SHA-256
+`0b688ac8a8e4d25c02a37fa6783d1f78c5b65c7814f70612d604408f77c2e04f`.
+This later review-only record changes no code or scientific artifact. A generic
+Git provenance implementation/review pair may reference these real commits; it
+does not replace the separately accepted V4 science/recovery protocols, authorize
+a candidate, or waive any execution or scientific completion gate.
