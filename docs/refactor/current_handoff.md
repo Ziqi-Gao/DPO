@@ -4,9 +4,11 @@ Last updated: 2026-10-04 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** New batch-order diagnostic
-control54659007/treatment54659010 were each submitted once and are RUNNING at
-2026-10-04T18:51:21Z; foreground observer72184 is active. No student is accepted.
-Preserve its pinned controls and do not start a competing observer or resubmit.
+control54659007/treatment54659010 completed, passed full raw/execution audits,
+and show mixed policy effects. Observer72184 ended verified_complete/exit0
+at20:32:22Z after204 queries. No student is accepted; never re-arm or resubmit.
+A fresh branch-focused full preparation V5 is being implemented, not yet
+accepted or submitted, with unchanged original numerical gates.
 Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
@@ -82,7 +84,7 @@ No diagnostic checkpoint may be promoted. A full common-initial preparation
 and original896-response formal qualification (anti-shortcut input limit2244
 tokens) remain required. All scientific thresholds are unchanged.
 
-The next diagnostic implementation is accepted as `student_batch_probe`, documented in
+The completed diagnostic implementation is accepted as `student_batch_probe`, documented in
 `docs/refactor/sdsc_student_batch_probe_20261004.md`. It tests batch grouping and
 presentation order: control groups all16 sibling/view rows of each signed pair;
 treatment spreads32 independent pairs across each64-row window. Both arms use
@@ -130,17 +132,52 @@ submit-20261004T184954149588Z.json; treatment54659010 uses intent
 e59545f3b425afb5945746b2777c800feecb6abf20f8504458b645de89468c2d and receipt
 submit-20261004T185046166446Z.json. Plans/receipts are under their exact intent
 directories in `.sdsc/student-batch-probe/`. Each submitted once; never resubmit.
-The second fresh dry-run verified existing2+new2<=4. Both are RUNNING at
-18:51:21Z. Early own-job memory samples pass; model updates are not yet observed.
-
-Foreground finite read-only observer72184 runs every60s until at most
-2026-10-05T00:51:17Z. State/launch evidence is
+The second fresh dry-run verified existing2+new2<=4. Both jobs, batch and extern
+are now COMPLETED0:0, elapsed5746/5714s, with final empty queues at20:32:21Z/
+20:32:22Z. Foreground observer72184 ended verified_complete/exit0 after204 polls;
+its terminal state remains in
 `.sdsc/diagnostics/student-batch-probe-v1/watch-pair-54659007-54659010/`.
-Do not edit its pinned controls or start a competing observer. SSH loss or
-unknown/failure stops it without retry/cancellation. Continue foreground status
-and bounded live reads, then require terminal accounting, verified persistent
-publication, complete4608-response raw audits and frozen paired/branch analyses.
-Scientific results never waive full common-initial preparation or qualification.
+No diagnostic job or observer is active. Preserve all identities and never re-arm.
+
+Both runs completed32 updates/2048 rows/1,587,844 tokens and4608 raw responses.
+Small fetches are `.sdsc/fetched/54659007/fetch-rxyjtq4f/` and
+`.sdsc/fetched/54659010/fetch-m910ypr3/`. Their historical fetch status retains
+COMPLETED queue entries; later verified terminal statuses establish empty queues.
+Raw replay hashes are41562e93e6686366333571973d937a3f3f48a9c9ab5f7b1371a041c27448d9db
+and88ae19fa01b695ef534e24f61b67d338c91bb714834dbf21d3dbaeab46e3dca3.
+Independent actual execution review
+SHAea4ad21e3a9be675134678fa2d450f28fea5efa504c23d7caf461e054a1bedbb
+passes actual step4 restoration, six exports, all311-key FP32/native-BF16 checks,
+181 clean own-job memory samples and13 persistently verified large files per arm.
+Peak host memory142.468/142.197GiB; no observed numeric explosion or OOM.
+
+Frozen primary6/7/8 absolute proof differences(treatment-control) are rename
+-3.646pp, fact-order+4.948pp, rule-order+1.562pp, with IID+1.042pp. Paired wins/
+losses40/54,39/20,47/41 describe repeated checkpoints, not independent bases.
+At fixedstep32 control/treatment IID124/120 of128, rename107/104, fact123/119,
+rule123/121: there is no broad batch-spreading advantage. Comparison SHA
+6b6490b792fddd1f2775d29405a6396f9395463d428cb9e23fc43bfea3484010
+and frozen branch analysis651b149932a1f612f82f190b1fccba6281d6631a92694680010b82ac717927e2
+are in the batch diagnostics. No diagnostic checkpoint is promoted.
+
+The primary window has IID chain138/144 and133/144 but depth3/4 branch0/78 and
+2/78. Among complete first-branch prefixes, next canonical-step successes are
+0/34 and3/32, immediately invalid31/34 and28/32, missing0. Step32 branch improves
+to39/42 and34/42, when IID already exceeds the unchanged initial ability band.
+Step32 rename branch24/42 and21/42 accounts for most remaining rename losses;
+earlier rename gaps also substantially involve chains. Branch focus is an
+untested repair hypothesis, not a demonstrated solution to every rename error.
+
+Next authorized work is fresh `student_focus_preparation` V5: change only fit
+structure proportions relative to the anchored control from50/25/25 to75/12.5/
+12.5 branch/chain/DAG. Each global64 window has three branch signed pairs plus
+one nonbranch pair, alternating chain/DAG across windows, with the original
+depth schedule. Preserve eight views, two original-order anchors,50% renamed,
+75% jointly permuted, sequence-mean loss,5e-5 and all training/selection gates.
+It needs new independent implementation/acceptance, actual matching four-step
+preflight and audit, then fresh full32 updates/12 checkpoints/18432 responses
+and original earliest-eligible selection. Original896-response formal
+qualification remains mandatory. No further compute has been submitted yet.
 
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in

@@ -116,7 +116,7 @@ Each arm requests2H100/24CPU/384GiB/02:30:00 under accountnwu181,
 partitionnairr-gpu-shared/QoSnairr-gpu-shared-normal; at most four concurrently
 allocatable GPUs. Model shapes and the2048-row population size are unchanged;
 the allocation allows the extra20 training updates and sixth evaluation over
-observed79.7/85.6-minute12-update predecessors. Actual runtime is not yet known.
+observed79.7/85.6-minute12-update predecessors. Actual completed runtimes are5746/5714s.
 Preserve300s early startup,12 threads,192GiB node-local free space,384GiB memory
 checks,600s publication reserve,128GiB large and224MiB small artifact bounds.
 Six dense checkpoints plus the original step4 full state require13 large files;
@@ -170,11 +170,63 @@ e59545f3b425afb5945746b2777c800feecb6abf20f8504458b645de89468c2d, receipt
 submit-20261004T185046166446Z.json. Preserve exact plan/receipt directories under
 `.sdsc/student-batch-probe/`; each was submitted once and must never be resubmitted.
 
-Both jobs are RUNNING in the18:51:21Z snapshot. Early own-job memory checks pass,
-but model updates have not yet been observed. The reviewed finite foreground
-observer72184 polls every60s, deadline2026-10-05T00:51:17Z, with launch/state in
-`.sdsc/diagnostics/student-batch-probe-v1/watch-pair-54659007-54659010/`.
-It has no submit/retry/cancel action and stops on failure, unknown state, SSH loss
-or changed pins. Root continues bounded live reads. Completion still requires
-terminal accounting, persistent artifact verification, independent all4608 raw
-responses/training-evidence replay and frozen comparison/branch analyses.
+## Verified completed outcome
+
+Both job/batch/extern rows are COMPLETED0:0, elapsed5746/5714s. Final empty own-job
+queues were verified at2026-10-04T20:32:21Z/20:32:22Z. The foreground observer72184
+ended verified_complete/exit0 after204 polls; never re-arm it or resubmit either
+intent. Both arms completed32 updates,2048 rows,1,587,844 tokens and4608 responses.
+
+Bounded fetches are `.sdsc/fetched/54659007/fetch-rxyjtq4f/`(40,813,816B) and
+`.sdsc/fetched/54659010/fetch-m910ypr3/`(40,945,363B). Their status snapshots
+retain completed queue entries; preserve them and use the later final statuses.
+Publication hashes are
+e1eec0c680b0c86cd68653cef5afb05abbb17bffae65ebb4c22beb0f4b6c9da1 and
+2848bc69b2fef7504166271807151fb82983e39768f9a308b024e037fb9af410.
+Independent raw audits reconstruct all2048 fit encodings,32 windows,768 prompts
+and4608 responses per arm, with hashes
+41562e93e6686366333571973d937a3f3f48a9c9ab5f7b1371a041c27448d9db and
+88ae19fa01b695ef534e24f61b67d338c91bb714834dbf21d3dbaeab46e3dca3.
+
+Independent execution review
+ea4ad21e3a9be675134678fa2d450f28fea5efa504c23d7caf461e054a1bedbb
+passes64 rank-update records, step4 genuine restoration, six dense exports,
+12 exact311-key FP32 reloads,24 native-BF16 parity observations and12 finite2454
+forwards per arm. All181 own-cgroup samples per arm pass with noOOM/failcnt;
+peak142.468/142.197GiB. Each13-file large inventory totals70,654,669,674B with
+persistent readback evidence. Publication234.842/226.542s fits600s. Early startup
+121.872/73.434s fits the accepted300s. Large tensors were not locally fetched or
+GPU arithmetic independently recomputed. These are execution facts, not a
+qualified common initial.
+
+| Fixed steps6/7/8 proof | Control | Treatment | Difference, percentage points | Paired treatment/control wins |
+| --- | --- | --- | --- | --- |
+| Rename | 49.48% | 45.83% | -3.646 | 40/54 |
+| Fact order | 49.22% | 54.17% | +4.948 | 39/20 |
+| Rule order | 48.44% | 50.00% | +1.562 | 47/41 |
+
+IID increases1.042pp. These are three separate prespecified contrasts; the same128
+bases recur across checkpoints. At step32 control/treatment proof counts out of128
+are IID124/120, rename107/104, fact123/119, rule123/121, paraphrase126/119 and
+OOD-distractors122/113. No consistent batch-spreading improvement is established.
+Frozen comparison JSON is6b6490b792fddd1f2775d29405a6396f9395463d428cb9e23fc43bfea3484010;
+branch analysis is651b149932a1f612f82f190b1fccba6281d6631a92694680010b82ac717927e2.
+All scientific summaries and evidence are under the batch diagnostics directory.
+
+Primary IID chain counts138/144 and133/144 contrast with depth3/4 branch0/78
+and2/78. Exact first-branch prefix denominators34/32 yield next canonical step
+0/3 and immediately invalid next step31/28, with no missing next step. At step32,
+IID branches rise to39/42 and34/42, but overall ability is above the unchanged
+common-initial band. Remaining step32 rename gaps are mostly branch; early rename
+gaps also include substantial chain losses. Finite training loss falls to
+0.002757/0.001673; the lower treatment training loss does not improve its final
+development performance. There is no observed recurrence of the historical
+fixed-batch loss explosion and no new optimizer defect established here.
+
+The next preparation will test a targeted data change:75% branch,12.5% chain,
+12.5% DAG instead of50/25/25, with three branch signed pairs and one alternating
+nonbranch pair per window. It preserves the anchored control order, all view
+fractions, targets, optimizer and thresholds. This aims to learn difficult branch
+transitions before easy structures saturate; improvement remains unproven.
+A new full preparation and original qualification are required. No diagnostic
+checkpoint has been selected or accepted.
