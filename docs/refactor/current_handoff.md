@@ -7,8 +7,10 @@ and immediate evidence-led repair of new failures.** New batch-order diagnostic
 control54659007/treatment54659010 completed, passed full raw/execution audits,
 and show mixed policy effects. Observer72184 ended verified_complete/exit0
 at20:32:22Z after204 queries. No student is accepted; never re-arm or resubmit.
-A fresh branch-focused full preparation V5 is being implemented, not yet
-accepted or submitted, with unchanged original numerical gates.
+A fresh branch-focused full preparation V5 has completed implementation and
+independent surface review; exact-commit acceptance and real four-step GPU
+preflight remain required. No V5 job is submitted. Original numerical gates
+are unchanged.
 Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
@@ -174,10 +176,19 @@ structure proportions relative to the anchored control from50/25/25 to75/12.5/
 one nonbranch pair, alternating chain/DAG across windows, with the original
 depth schedule. Preserve eight views, two original-order anchors,50% renamed,
 75% jointly permuted, sequence-mean loss,5e-5 and all training/selection gates.
-It needs new independent implementation/acceptance, actual matching four-step
-preflight and audit, then fresh full32 updates/12 checkpoints/18432 responses
-and original earliest-eligible selection. Original896-response formal
-qualification remains mandatory. No further compute has been submitted yet.
+All409 unique focused CPU tests and124 observer/reader tests pass; independent
+core, transport, worker, auditor and observation reviews pass. Actual producer
+seam review corrected the isolation manifest field and independently bound
+report isolation/token evidence; no frozen science or threshold changed.
+Full144k/history isolation and token feasibility pass: fit1,665,064 tokens,
+preflight205,428, dev max2448<=2454. New data namespaces390000042..420000042
+are frozen. All148 historical science files/eight protocols/11helpers match.
+Exact-commit acceptance, real matching four-step preflight and raw audit are
+next, followed by fresh full32 updates/12 checkpoints/18432 responses and the
+original earliest-eligible selection. Original896-response formal qualification
+remains mandatory. No further compute has been submitted. See
+`docs/refactor/sdsc_student_focus_preparation_20261004.md` for fixed scope and
+evidence under `.sdsc/diagnostics/student-focus-v5/`.
 
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
