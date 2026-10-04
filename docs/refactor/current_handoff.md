@@ -10,7 +10,10 @@ no student is accepted. Both finite observers are terminal, with no job active.
 The fresh single-factor control/treatment order diagnostic implementation is
 complete:274 focused CPU tests pass in237.70s, with independent cross-review,
 Ruff/format/AST checks and all130 historical science files/11 helper pins intact.
-It has not yet received exact-commit acceptance, deployment or submission.
+Implementation b81b62a82ab8fa7b786f082796f9692026fbab7d passed exact-commit
+independent cross-review, SHA26990fd032edfef1a85a08224258db9147d332d0793f33a7ce83fb287263f864.
+This separate review-only acceptance grants diagnostic implementation readiness;
+actual deployment/submission and GPU evidence are still pending.
 Both arms restart native1.7B, share256 fit/128 dev bases and consume the same
 768 rows/606,232 tokens in12 updates; treatment independently permutes every
 view. Five fixed observations retain3840 responses per arm. Each arm uses

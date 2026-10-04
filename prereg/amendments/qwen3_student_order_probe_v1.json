@@ -292,11 +292,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Accept diagnostic implementation readiness only. Exact-commit review SHA256 26990fd032edfef1a85a08224258db9147d332d0793f33a7ce83fb287263f864 binds all 13 blobs, six non-author surface reviews and 274 passing CPU tests; all historical science/protocol/helper bytes remain unchanged. Core author disclosure and independent core review are explicit. Neither GPU execution nor student/model/qualification/G0/pilot acceptance is implied.",
+    "reviewed_at_utc": "2026-10-04T14:06:28Z",
+    "reviewed_implementation_commit": "b81b62a82ab8fa7b786f082796f9692026fbab7d",
+    "reviewer": "Independent cross-author review consolidated by qualification_binding_finish; core science independently reviewed by torch_import_probe_worker",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [
