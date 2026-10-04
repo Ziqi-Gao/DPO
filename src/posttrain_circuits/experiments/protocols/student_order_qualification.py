@@ -33,17 +33,41 @@ PARENT_IMPLEMENTATION_COMMIT = "8036f8af6cbb67edef6df1c8d8ff0cee65a1d84b"
 PARENT_PROTOCOL_SHA256 = "0642a565f0ec3c1d3d12c5aedf1157adc848a2ca6c766af9c7e439c06c86f55d"
 PARENT_PROTOCOL_CORE_SHA256 = "b3517d592adfa25247072c6f7e39c703ce01cff272c47b9a49383af7890906d8"
 PARENT_AUDITOR_SHA256 = "0b1ce443f468d16feb07490d12e6970cd232e3e73bb5f5791adf3ab82cedbb38"
-RECOVERY_PATH = "prereg/amendments/qwen3_student_order_execution_recovery_v1.json"
-RECOVERY_IMPLEMENTATION_COMMIT = "8086b38a1b7a8ad72f8acded8ef05157972c4613"
-RECOVERY_ACCEPTANCE_COMMIT = "23bc1aae3c68c14353d3a62bb88e6f516c8c9b65"
-RECOVERY_CORE_SHA256 = "4f745b038209cd5cdcd884e0acf3cf76b136e4699a41d6c6af6af62ef4aec06e"
-RECOVERY_ARTIFACT_SHA256 = "d433ac93a19eb2a52fbec91cd6a6f58e0800faaafb863804e9729f336569f782"
+RECOVERY_PATH = "prereg/amendments/qwen3_student_order_execution_recovery_v2.json"
+RECOVERY_IMPLEMENTATION_COMMIT = "0848946f1942f0b844eecec4824cad104e2ff850"
+RECOVERY_ACCEPTANCE_COMMIT = "bc3f0efa903a33e95a0878270f9c2650a1877020"
+RECOVERY_CORE_SHA256 = "2515416bf1bebcf1ad36f78dc4033cf4adfa76ab29d018a11c8568469938cecb"
+RECOVERY_ARTIFACT_SHA256 = "d565481421c914409e6ffaaef4e4a404e808665dcf77c1ee1a8d5963de615b3e"
 RECOVERY_CONTROL_SHA256 = {
-    "tools/sdsc_student_order_execution_contract.py": (
-        "7163d33dee68c531dda03ea6e2a32136078e2557dfefd4c450a763929367b476"
+    "tools/sdsc_student_order_execution_v2_contract.py": (
+        "1dee269e149c2693b9fcfa37f1f572ea8bb2fde9c744596b69904d78a9b23bac"
+    ),
+    "tools/sdsc_student_order_execution_v2.py": (
+        "fcd74eb8c048830ecbb01fef0a4a3a57d354359b57d8958837abdd9bfca269da"
+    ),
+    "tools/sdsc_student_order_execution_v2_job.py": (
+        "112245116eb02f0f413b09550252b1dff03b8093696feddb43cd1cc11ba2e51d"
+    ),
+    "tools/sdsc_student_order_execution_v2_probe.py": (
+        "ade43340c9c06cc0948b92def7e91e47b6f1605a9fb04418a4d1feb1cbe84da3"
+    ),
+}
+FROZEN_EXECUTION_SHA256 = {
+    **RECOVERY_CONTROL_SHA256,
+    RECOVERY_PATH: RECOVERY_ARTIFACT_SHA256,
+    "tools/sdsc_cuda_diagnostic.py": "b7b082ddad9595d8365522834ec02b691b92287c72f0a506b5ef2ed0871f181c",
+    "tools/sdsc_cuda_diagnostic_job.py": "9572e9bcaa572a6d7995d483da0d24e8ce81f7ff496139d7f36119d669149e4b",
+    "tools/sdsc_cuda_diagnostic_worker.py": (
+        "709b9732acdff7c027b91d8762d6a164e0649f6a1e7b4fdd1d87287a30f40e5b"
+    ),
+    "tools/sdsc_student_branch_qualify_job.py": (
+        "b09059327ec7aa8ec9e01d39408959e1a2e8d85a87e25f2b9e55ab94442751f3"
     ),
     "tools/sdsc_student_order_execution.py": (
         "1692fae5b84070961de1d33d2774b75ac46e40ee5b0666adb798b8352ad2f1c7"
+    ),
+    "tools/sdsc_student_order_execution_contract.py": (
+        "7163d33dee68c531dda03ea6e2a32136078e2557dfefd4c450a763929367b476"
     ),
     "tools/sdsc_student_order_execution_job.py": (
         "ebf004742cca8f350ff090abfc8ce3fbb3d874a87623755014f9e8766783e51b"
@@ -51,14 +75,21 @@ RECOVERY_CONTROL_SHA256 = {
     "tools/sdsc_student_order_execution_worker.py": (
         "366b606532b6a476cda53dfd847eccc083adf6da226626bc3d196e20f48448e5"
     ),
+    "tools/sdsc_torch_import_probe.py": "91db7d0d0fbf6a2257c11b70a969d9193db8e512f24b3e765cf3ffb9504c8917",
+    "tools/sdsc_torch_import_probe_job.py": (
+        "22b545b7b1b1a0f710388838ab9491abdf4e93b5554239f61bb441986775a866"
+    ),
+    "tools/sdsc_torch_import_probe_worker.py": (
+        "b7f4cc07720172794e98106b5c03cf59e8657e88bd7b520e098bb65e561b0261"
+    ),
+    "prereg/amendments/qwen3_student_order_execution_recovery_v1.json": (
+        "d433ac93a19eb2a52fbec91cd6a6f58e0800faaafb863804e9729f336569f782"
+    ),
 }
-FROZEN_EXECUTION_SHA256 = {
-    **RECOVERY_CONTROL_SHA256,
-    RECOVERY_PATH: RECOVERY_ARTIFACT_SHA256,
-    "tools/sdsc_cuda_diagnostic.py": ("b7b082ddad9595d8365522834ec02b691b92287c72f0a506b5ef2ed0871f181c"),
-    "tools/sdsc_cuda_diagnostic_job.py": ("9572e9bcaa572a6d7995d483da0d24e8ce81f7ff496139d7f36119d669149e4b"),
-    "tools/sdsc_cuda_diagnostic_worker.py": (
-        "709b9732acdff7c027b91d8762d6a164e0649f6a1e7b4fdd1d87287a30f40e5b"
+# Named pure-function reuse belongs only to qualification, not the frozen fit.
+FROZEN_QUALIFICATION_HELPER_SHA256 = {
+    "tools/sdsc_student_branch_qualify_worker.py": (
+        "35cd93ef1a36b7f53f4c887efe283bba5c15248c9cf4a836c1bcc74ab696515f"
     ),
 }
 FORMAL_PROMPTS_SHA256 = "ac58b320c219c8611943d84fa194c4658b24d641e665c6a9f3c9f0b0a783c51b"
@@ -72,6 +103,7 @@ FROZEN_PROTOCOL_SHA256 = {
 FROZEN_SCIENCE_PATHS = tuple(preparation.SCIENCE_PATHS)
 SCIENCE_PATHS = (
     *FROZEN_SCIENCE_PATHS,
+    *FROZEN_QUALIFICATION_HELPER_SHA256,
     "src/posttrain_circuits/experiments/protocols/student_order_qualification.py",
     "tools/sdsc_student_order_qualify.py",
     "tools/sdsc_student_order_qualify_job.py",
@@ -212,8 +244,8 @@ def validate_parent_recovery_evidence(
     candidate = validate_prepared_initial(prepared_initial)
     _require(isinstance(execution_plan, dict), "recovered fit plan required")
     _require(
-        execution_plan.get("schema") == "quest-sdsc-student-order-execution-plan-v1"
-        and execution_plan.get("task") == "qwen3-v2-student-order-execution-v1"
+        execution_plan.get("schema") == "quest-sdsc-student-order-execution-plan-v2"
+        and execution_plan.get("task") == "qwen3-v2-student-order-execution-v2"
         and hashlib.sha256(_canonical(execution_plan)).hexdigest() == candidate["fit_execution_plan_sha256"],
         "recovered fit execution plan differs",
     )
@@ -313,7 +345,8 @@ def validate_parent_recovery_evidence(
         )
         if prefix:
             _require(
-                publication.get("task") == execution_plan["task"]
+                publication.get("schema") == "quest-sdsc-student-order-execution-publication-v2"
+                and publication.get("task") == execution_plan["task"]
                 and publication.get("plan_sha256") == candidate["fit_execution_plan_sha256"]
                 and publication.get("science_plan_sha256") == candidate["fit_plan_sha256"]
                 and publication.get("execution_core_sha256") == RECOVERY_CORE_SHA256
@@ -359,6 +392,7 @@ def proposed_student_order_qualification_protocol(
         parent_acceptance_commit=PARENT_HEAD,
         parent_auditor_sha256=PARENT_AUDITOR_SHA256,
         frozen_parent_protocol_sha256=dict(FROZEN_PROTOCOL_SHA256),
+        frozen_qualification_helper_sha256=dict(FROZEN_QUALIFICATION_HELPER_SHA256),
         parent_execution_recovery=dict(
             contract_path=RECOVERY_PATH,
             core_sha256=RECOVERY_CORE_SHA256,
@@ -562,6 +596,10 @@ def resolve_student_order_qualification_protocol(
         "original frozen preregistration changed",
     )
     hashes = {path: hashlib.sha256(read(path)).hexdigest() for path in SCIENCE_PATHS}
+    _require(
+        all(hashes.get(path) == digest for path, digest in FROZEN_QUALIFICATION_HELPER_SHA256.items()),
+        "frozen qualification helper changed",
+    )
     implementation, acceptance = payload["review"]["reviewed_implementation_commit"], None
     if payload["review"]["status"] == "accepted":
         _require(

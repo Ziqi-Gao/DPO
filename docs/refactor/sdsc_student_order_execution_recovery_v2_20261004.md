@@ -9,9 +9,9 @@ it does not establish the exact old timeout stack or thread count as its cause.
 See `sdsc_student_torch_import_failure_20261004.md` for verified raw evidence.
 
 The new execution-only contract is
-`prereg/amendments/qwen3_student_order_execution_recovery_v2.json`. It is proposed
-until a complete implementation commit receives independent review followed by
-a separate review-only acceptance commit. Accepted v1 files and both failed jobs
+`prereg/amendments/qwen3_student_order_execution_recovery_v2.json`. Implementation0848946f1942f0b844eecec4824cad104e2ff850 was independently reviewed
+and accepted in the separate review-only commit
+bc3f0efa903a33e95a0878270f9c2650a1877020. Accepted v1 files and both failed jobs
 remain immutable. A diagnostic completion does not satisfy a training preflight.
 
 The v2 early child gets at most300seconds within the original stage worker
@@ -46,8 +46,7 @@ Unknown submission acknowledgements are reconciled without retry.
 
 The original scientific source binding and genuine Git provenance remain
 separate from this execution contract. Immutable v1 and diagnostic helpers are
-hash-pinned dependencies. Current v1-only qualification bindings must explicitly
-migrate to accepted v2 recovery evidence before any later candidate qualification;
+hash-pinned dependencies. The qualification consumer now binds accepted v2 recovery evidence;
 no candidate can be bound before successful full fit and independent raw replay.
 
 The complete focused CPU suite passes175 tests:87 contract,35 node/probe and53
@@ -55,5 +54,13 @@ transport. Ruff, formatting and Python3.12 AST checks pass. Independent node rev
 also exercised two real process groups with surviving descendants and confirmed
 bounded cleanup. Actual CPU producer-to-publication-to-parser fixtures cover both
 negative CUDA startup and trace/log contradictions. These tests do not establish
-GPU startup, training success or model quality. Exact implementation review and
-separate acceptance are required before deployment.
+GPU startup, training success or model quality.
+
+Actual preflight54643683 subsequently passed all startup, four-update, restore,
+export and eight-response audit gates. The early probe took49.610s, including
+47.795s Torch import. At07:34:27Z all accounting rows were COMPLETED0:0 and
+the queue was empty. Independent results review SHA is
+5e5fdfda8a2ae4ecbafc2abfea3884aa3a88bf6b3efb1eee94b1e9c213c37033.
+Matching full fit54643699 was submitted once at07:37:31Z and was running at
+07:42:48Z. Its32 updates and18,432 development responses remain to be accepted.
+See current_handoff.md for immutable plans, receipts and monitor state.

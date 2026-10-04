@@ -192,7 +192,7 @@ def test_parent_admission_counts_rank_masters_and_immutable_inventory():
     assert spec["parent_report_flags_must_be_false"] == list(original.FLAGS)
     assert qualification.FROZEN_SCIENCE_PATHS == parent.SCIENCE_PATHS
     assert len(qualification.FROZEN_SCIENCE_PATHS) == 130
-    assert len(qualification.SCIENCE_PATHS) == len(set(qualification.SCIENCE_PATHS)) == 135
+    assert len(qualification.SCIENCE_PATHS) == len(set(qualification.SCIENCE_PATHS)) == 136
     assert len(qualification.FROZEN_PROTOCOL_SHA256) == 5
     for path, expected in qualification.FROZEN_PROTOCOL_SHA256.items():
         assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == expected
@@ -253,6 +253,7 @@ def repo_builder(tmp_path, monkeypatch):
         "prereg/qwen3_v2.yaml",
         *qualification.FROZEN_PROTOCOL_SHA256,
         *qualification.FROZEN_EXECUTION_SHA256,
+        *qualification.FROZEN_QUALIFICATION_HELPER_SHA256,
     ):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -269,7 +270,11 @@ def repo_builder(tmp_path, monkeypatch):
     git("add", ".")
     git("commit", "--quiet", "-m", "Actual later fit source fixture")
     monkeypatch.setitem(globals(), "FIT_SOURCE_HEAD", git("rev-parse", "HEAD"))
-    monkeypatch.setattr(qualification, "SCIENCE_PATHS", ("parent.py", "kernel.py"))
+    monkeypatch.setattr(
+        qualification,
+        "SCIENCE_PATHS",
+        ("parent.py", "kernel.py", *qualification.FROZEN_QUALIFICATION_HELPER_SHA256),
+    )
     monkeypatch.setattr(qualification, "FROZEN_SCIENCE_PATHS", ("parent.py",))
 
     def build(*, bound=True, accept=True, changed_parent=False, acceptance_extra=False):
@@ -461,8 +466,8 @@ def recovery_fixture():
         **dict.fromkeys(qualification.FLAGS, False),
     )
     outer = dict(
-        schema="quest-sdsc-student-order-execution-plan-v1",
-        task="qwen3-v2-student-order-execution-v1",
+        schema="quest-sdsc-student-order-execution-plan-v2",
+        task="qwen3-v2-student-order-execution-v2",
         science_plan=science,
         intent_id=value["fit_intent"],
         execution=dict(
@@ -493,6 +498,7 @@ def recovery_fixture():
         **dict.fromkeys(qualification.FLAGS, False),
     )
     execution = dict(
+        schema="quest-sdsc-student-order-execution-publication-v2",
         task=outer["task"],
         job_id=value["fit_job_id"],
         plan_sha256=value["fit_execution_plan_sha256"],
@@ -671,10 +677,15 @@ def test_preserved_failed_preflight_cannot_supply_recovery_completion():
         qualification.validate_parent_recovery_evidence(value, **kwargs)
 
 
-def test_actual_frozen_accounting_and_recovery_status_schema_without_terminal(monkeypatch):
+@pytest.mark.parametrize(
+    "scientific_ok,startup_ok", [(True, True), (False, True), (True, False), (False, False)]
+)
+def test_actual_frozen_accounting_and_recovery_status_schema_without_terminal(
+    monkeypatch, scientific_ok, startup_ok
+):
     value, kwargs, _ = recovery_fixture()
     spec = importlib.util.spec_from_file_location(
-        "qualification_actual_recovery", ROOT / "tools/sdsc_student_order_execution.py"
+        "qualification_actual_recovery", ROOT / "tools/sdsc_student_order_execution_v2.py"
     )
     controller = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(controller)
@@ -723,22 +734,26 @@ def test_actual_frozen_accounting_and_recovery_status_schema_without_terminal(mo
         }
     }
     science_status.update(actual)
+    science_status.update(
+        success=scientific_ok, stage_complete=scientific_ok, preparation_complete=scientific_ok
+    )
     monkeypatch.setattr(controller.science, "inspect_job", lambda *a, **k: copy.deepcopy(science_status))
     publication = copy.deepcopy(kwargs["status"]["execution_publication"])
     publication["files"] = [{"path": f"rank-{rank}-exit.json"} for rank in (0, 1)]
+    publication["startup_passed"] = startup_ok
     monkeypatch.setattr(
         controller,
         "execution_publication",
         lambda *a: dict(
             execution_publication_verified=True,
-            startup_passed=True,
+            startup_passed=startup_ok,
             execution_publication=publication,
             execution_publication_sha256=hashlib.sha256(raw(publication)).hexdigest(),
         ),
     )
     node = dict(
         science_publication_sha256=value["fit_publication_sha256"],
-        scientific_stage_complete=True,
+        scientific_stage_complete=scientific_ok,
         work_dir="/tmp/qualification-fixture",
     )
 
@@ -767,7 +782,14 @@ def test_actual_frozen_accounting_and_recovery_status_schema_without_terminal(mo
     assert "terminal" not in kwargs["status"]
     kwargs["execution_publication_raw"] = raw(publication)
     value["fit_execution_publication_sha256"] = hashlib.sha256(raw(publication)).hexdigest()
-    assert qualification.validate_parent_recovery_evidence(value, **kwargs) == value
+    if scientific_ok and startup_ok:
+        assert qualification.validate_parent_recovery_evidence(value, **kwargs) == value
+    else:
+        assert kwargs["status"]["success"] is False
+        with pytest.raises(
+            qualification.StudentOrderQualificationError, match="successful complete recovery"
+        ):
+            qualification.validate_parent_recovery_evidence(value, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -788,3 +810,72 @@ def test_combined_status_cannot_contradict_its_queries(field, bad):
     kwargs["status"][field] = bad
     with pytest.raises(qualification.StudentOrderQualificationError, match="empty queue"):
         qualification.validate_parent_recovery_evidence(value, **kwargs)
+
+
+def test_v2_execution_and_qualification_helper_scopes_stay_separate():
+    assert len(qualification.RECOVERY_CONTROL_SHA256) == 4
+    assert len(qualification.FROZEN_EXECUTION_SHA256) == 17
+    assert len(qualification.FROZEN_QUALIFICATION_HELPER_SHA256) == 1
+    assert not set(qualification.FROZEN_QUALIFICATION_HELPER_SHA256) & set(
+        qualification.FROZEN_EXECUTION_SHA256
+    )
+    assert not set(qualification.FROZEN_QUALIFICATION_HELPER_SHA256) & set(qualification.FROZEN_SCIENCE_PATHS)
+    payload = qualification.proposed_student_order_qualification_protocol()
+    assert (
+        payload["preserved_base"]["frozen_qualification_helper_sha256"]
+        == qualification.FROZEN_QUALIFICATION_HELPER_SHA256
+    )
+    for path, digest in qualification.FROZEN_QUALIFICATION_HELPER_SHA256.items():
+        assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest
+
+
+@pytest.mark.parametrize("mutation", ["working", "staged_only", "committed"])
+def test_real_git_named_qualification_helper_is_immutable(repo_builder, mutation):
+    root, git, _ = repo_builder()
+    relative = next(iter(qualification.FROZEN_QUALIFICATION_HELPER_SHA256))
+    path = root / relative
+    old = path.read_bytes()
+    path.write_bytes(old + b"\n")
+    if mutation != "working":
+        git("add", relative)
+    if mutation == "staged_only":
+        path.write_bytes(old)
+    elif mutation == "committed":
+        git("commit", "--quiet", "-m", "Unreviewed pure helper change")
+    with pytest.raises(qualification.StudentOrderQualificationError):
+        qualification.resolve_student_order_qualification_protocol(root)
+
+
+@pytest.mark.parametrize(
+    "field,bad",
+    [
+        ("schema", "quest-sdsc-student-order-execution-plan-v1"),
+        ("task", "qwen3-v2-student-order-execution-v1"),
+        ("task", "sdsc-torch-import-probe-v1"),
+    ],
+)
+def test_rehashed_v1_or_diagnostic_outer_plan_cannot_impersonate_v2(field, bad):
+    value, kwargs, raw = recovery_fixture()
+    kwargs["execution_plan"][field] = bad
+    value["fit_execution_plan_sha256"] = hashlib.sha256(raw(kwargs["execution_plan"])).hexdigest()
+    with pytest.raises(qualification.StudentOrderQualificationError, match="execution plan"):
+        qualification.validate_parent_recovery_evidence(value, **kwargs)
+
+
+@pytest.mark.parametrize("schema", [None, "quest-sdsc-student-order-execution-publication-v1"])
+def test_rehashed_prior_publication_schema_cannot_impersonate_v2(schema):
+    value, kwargs, raw = recovery_fixture()
+    publication = kwargs["status"]["execution_publication"]
+    publication["schema"] = schema
+    kwargs["execution_publication_raw"] = raw(publication)
+    digest = hashlib.sha256(kwargs["execution_publication_raw"]).hexdigest()
+    kwargs["status"]["execution_publication_sha256"] = value["fit_execution_publication_sha256"] = digest
+    with pytest.raises(qualification.StudentOrderQualificationError, match="execution publication"):
+        qualification.validate_parent_recovery_evidence(value, **kwargs)
+
+
+def test_same_accepted_execution_head_is_a_valid_producer_identity():
+    value = candidate()
+    value["fit_source_head"] = qualification.RECOVERY_ACCEPTANCE_COMMIT
+    assert qualification.validate_prepared_initial(value) == value
+    assert qualification.PARENT_HEAD != qualification.RECOVERY_ACCEPTANCE_COMMIT

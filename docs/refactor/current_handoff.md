@@ -310,12 +310,55 @@ Implementation0848946f1942f0b844eecec4824cad104e2ff850 received exact-commit
 non-author review; this separate review-only acceptance grants execution readiness.
 Exact review SHA0a48483ac5cc73c6fa90153253ef56996458046189e9d856f5c5e10fd1181352.
 See docs/refactor/sdsc_student_order_execution_recovery_v2_20261004.md.
-A fresh successful CUDA/four-update preflight plus original eight-response audit
-remain required before fit; this mitigation does not guarantee startup success.
-V4 qualification transport/node drafts remain incomplete and untracked; their
-old producer-HEAD equality still needs migration to the completed core. No worker,
-auditor or candidate JSON exists. This path cannot admit the failed preflight or
-replace the required successful full fit and independent raw audit.
+Distinct v2 acceptance is bc3f0efa903a33e95a0878270f9c2650a1877020. Release
+20261004T070437Z-b95eb023fecd-a8f2fade contains751 files/10,304,363 bytes;
+genuine provenance08c6e49c1f76aff9dae928a4e4564da6a8b53fb8f6c9901206304ea438918adc
+is verified at that actual HEAD. Independent deployed-plan review SHA
+ac469ada23a20643cdd162693029a779da8bd0656fd9a9ba9f505e481afcfd17 passes.
+
+Recovery preflight54643683 PASSED. Fresh2026-10-04T07:34:27Z confirms empty
+queue, all three accounting rows COMPLETED0:0 and combined success,775s.
+Early probe49.610s includes47.795s Torch import; both rank startup/exit records
+pass. Four64-slot updates/190,324 tokens, same-world full-state save/restore,
+exact311-key FP32 reload, native-BF16 export parity and2454-token finite probes
+pass. All25 memory observations pass, peak87.469/384GiB, noOOM/failcnt.
+Fetch725,421 bytes: .sdsc/fetched/54643683/fetch-3_st6tsf/. Science publication SHA
+df44231fbfc864b58df7f7cb12ab6cf6b7b6dd829e2813e23521d4ad2a698d1a;
+execution publication4afa45e36a67fb9f06741674e38246194a3b1f98f0423f152f95c9028def099b.
+Original eight-response audit9868ed67a3381a5d1ef67bcd9b8c58259c7430024ee0adf98a9c37d1ad330541
+and independent actual-results review5e5fdfda8a2ae4ecbafc2abfea3884aa3a88bf6b3efb1eee94b1e9c213c37033
+pass. This is engineering preflight, not model capability or formal acceptance.
+
+Matching full fit54643699 was submitted once at2026-10-04T07:37:31Z and is
+RUNNING at the07:42:48Z snapshot; early CUDA and large staging have passed.
+It uses the unchanged32-update/1,614,932-token V4 plan and all18,432 development
+responses,2H100/24CPU/384GiB/8h. Both immutable plans use sourceHEADbc3f0efa:
+preflight intent01c37609a7296137d2a5ec5d1ca95f1e (outer8c6e327eac2861bb87c0cf731235eab3dbfc37e17e3a962e0c91b6c5107a0da3);
+fit intentad8b3f9b80302cfe580f9ef9472d6a84, inner0b963544286d94f1ffc250cc26c12c50e88ccf46321cdeb475b3c7ffcb333702,
+outer7e909d0f9a5a103845b2fcbf77c9650dbc106957ca1785affd32c4e04eb669c2.
+Plans live under .sdsc/student-order/ and .sdsc/student-order-execution-v2/;
+fit receipt submit-20261004T073731565776Z.json is retained. Never resubmit/re-arm.
+The finite foreground observer started07:44:03Z, polls each60s for at most12h,
+status only. State: .sdsc/diagnostics/student-order-v4/watch-execution-v2-fit-54643699/.
+Its separate watcher SHAe3113cda609000d0271eadd56afc548fc611fe3b3c397e74073d151df3d926f9
+has29 passing tests and unchanged classification/poll logic. Do not edit its
+pinned controls or start a competing observer. SSH/control/unknown failure stops
+it; the active agent handles repair. No wakeup after conversation loss is implied.
+
+The V4 qualification consumer now includes core, controller, node, worker and
+independent raw auditor. All541 integrated CPU tests pass, plus Ruff/format/AST,
+and non-author transport/node and worker/auditor reviews. It pins17 V2 execution
+dependencies and a separately named unchanged V3 pure-function helper; all130
+original science files/five protocols and896/2244 formal gates remain unchanged.
+Actual fit source HEAD is distinct from d4db science ancestry. Four frozen
+recovery documents bind full V2 combined status and paired publications through
+controller, node, worker and offline audit. The node freshly verifies actual
+startup/trace/rank-exit/accounting before staging. Exact311-FP32 master loading
+must match both fit ranks before one BF16 copy. No candidate JSON exists: full
+fit success, complete independent18,432-response audit, earliest eligible checkpoint,
+then a separately accepted candidate remain mandatory. Generic consumer readiness
+is not qualification or G0/pilot acceptance. Current exact-commit review is pending.
+See docs/refactor/sdsc_student_order_qualification_core_20261004.md.
 
 The additive V3-only
 `student_branch_qualification` module and `tools/sdsc_student_branch_qualify*.py`

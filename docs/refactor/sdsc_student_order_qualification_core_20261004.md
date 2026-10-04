@@ -1,70 +1,54 @@
-# V4 qualification core with separate execution-recovery ancestry
+# V4 qualification with separate execution-recovery ancestry
 
-The preparation science was accepted at `d4db853`, but an instrumented recovery
-fit will run from a later source HEAD. Treating that historical acceptance commit
-as the actual producer HEAD would reject a valid recovered fit. This additive
-core keeps those identities separate and requires both scientific and execution
-completion before a future fixed candidate can be qualified.
+The preparation science was accepted at d4db853, while the recovered fit runs
+from bc3f0efa. The completed qualification consumer keeps the original scientific
+ancestor separate from actual fit source HEAD, then requires scientific and
+execution completion before binding a candidate. No candidate JSON exists yet.
 
-The immutable V4 science remains the same 130 files and five historical protocol
-artifacts. Its implementation is `8036f8a`, acceptance is `d4db853`, and every
-original formal measurement remains unchanged: validation128 plus anti-shortcut
-IID128 and640 transformations, the original2244-token auxiliary envelope, base
-answer floor, proof floors and signed shortcut-gap rule. Prior formal896 exposure
-in failed job54606205 remains explicitly disclosed; these are not an unexposed
-holdout. No historical checkpoint can be reselected.
+The 130 frozen V4 scientific files and five historical protocols are unchanged.
+Formal evaluation still uses128 validation,128 anti-shortcut IID and640 transformed
+responses, the original2244-token auxiliary envelope,256-token greedy generation,
+answer/proof floors and signed shortcut gaps. Prior formal896 exposure in failed
+job54606205 remains disclosed. A complete18,432-response development replay and
+its original earliest eligible checkpoint selection are required; no historical
+checkpoint reselection is allowed.
 
-The independent execution recovery remains its existing accepted contract:
-implementation `8086b38`, acceptance `23bc1aa`. The core pins its contract, four
-controls and three frozen diagnostic dependencies. It does not modify that
-contract, any of those controls, or the V4 worker/auditor.
+The consumer now pins accepted execution-v2 implementation0848946 and acceptance
+bc3f0efa. Its17 execution dependencies include the new controls/contract and all
+named immutable prior helpers/contracts. One separate pinned V3 worker supplies
+unchanged config/runtime/prompt/scoring functions; qualification's named scientific
+surface is136 files. The original fit's130-file binding is unchanged. Reused
+functions receive original populations directly; V4 candidate/report schemas are
+validated as V4 rather than translated into another experiment's schema.
 
-A future prepared-initial identity must additionally freeze its actual fit source
-HEAD, outer execution-plan SHA and execution-publication SHA. The original inner
-science-plan and scientific-publication hashes stay distinct. The actual producer
-HEAD is dynamic, rather than globally replacing d4db with23bc: real Git validation
-requires accepted recovery <= actual fit source <= candidate implementation in
-ancestry, and checks all named immutable scientific/execution bytes at use time.
-A review-only acceptance of one bound qualification candidate remains separately
-required after its complete implementation. No such candidate is created here.
+The controller freshly calls the accepted V2 combined inspector and verifies
+accounting, claims, startup/trace/rank exits and both publications. Four canonical
+recovery documents freeze the outer plan, combined verified status and paired
+execution/science publications. The node rechecks the real parent before staging
+those exact bytes. Its14 worker inputs retain that recovery bundle inside
+preparation_evidence. Worker and independent auditor cross-bind it to the candidate,
+parent report, original raw audit and exact selected checkpoint. Offline shape
+validation does not independently establish live CUDA or scheduler state.
 
-`validate_parent_recovery_evidence` is a pure cross-binding check, additional to
-the accepted execution controller and unchanged independent raw auditor. Callers
-must first resolve the accepted recovery at the actual producer source, validate
-the complete outer plan, obtain freshly verified combined status (including real
-Slurm accounting, all startup observations and both rank exit records), and replay
-all18432 development responses with the original earliest eligible selector. The
-helper does not independently recompute CUDA arithmetic, inspect remote storage,
-validate raw startup records or perform scientific raw replay. Its shape validators
-alone cannot establish that a candidate actually completed an experiment.
+The selected dense checkpoint must match its declared step, byte size and SHA,
+all311 FP32 state keys, and both parent ranks' master hashes before a single BF16
+inference copy. The original896 raw responses are retained and independently
+replayed. Resources remain1H100/24CPU/192GiB/2h; qualification cannot start from a
+failed/preflight/diagnostic parent or an unbound/proposed candidate.
 
-The helper rejects ordinary scientific-only status, preflight/diagnostic plans,
-missing/false or truthy non-boolean completion fields, nonempty or failed queue
-queries, failed accounting queries, mismatched actual source/science/recovery
-bindings, and substituted publication bytes. Both actual publication byte streams
-must match the candidate hashes and returned documents. Neither the preparation
-status nor either publication may grant student, formal-initial, G0, pilot,
-factorial or execution-class acceptance.
+The integrated CPU suite passes541 tests (255 core,138 transport/node and148
+worker/auditor), with Ruff/format/AST checks. Independent non-author transport/node
+review and worker/auditor review pass; the latter independently ran27 targeted
+FP32/recovery/decoder checks. An actual node-input-builder to fresh isolated worker
+fixture passes. These are implementation tests, not a qualified-model result.
 
-CPU validation passes215 focused tests, with Ruff and format checks. Tests cover
-an unbound draft, exact original formal science, real temporary Git review
-histories, later producer ancestry, immutable execution dependencies, typed
-negative completion cases, and a seam through the frozen accounting parser and
-execution status producer. That producer does not emit a `terminal` field; success
-uses its actual COMPLETED/accounting/combined-status fields. Synthetic statuses,
-raw publications and accounting rows establish contract behavior only. The local
-preserved failed preflight54623814 is rejected as a qualification parent.
+Next required evidence is actual successful V4 full fit, the complete original
+auditor result and exact selected checkpoint. Then create a bound candidate,
+commit its complete implementation, independently review it and make a separate
+review-only acceptance before qualification deployment/submission. Generic consumer
+readiness does not waive those gates or accept G0/pilot/factorial execution.
 
-This is a complete, testable protocol core, not an operational qualification
-adapter. The existing untracked transport/node drafts remain incomplete; their
-old `validate_parent_binding` still equates actual producer HEAD with d4db and
-must be migrated to this recovery binding. A reviewed worker, auditor, candidate
-protocol JSON and accepted complete consumer do not yet exist. The default draft
-is unbound and cannot be accepted or used for production. Missing candidate and
-worker artifacts keep resolution/submission fail-closed. No model, qualification,
-G0 or pilot acceptance, and no new submission, is produced by this change.
-
-## Independent implementation review
+## Historical protocol-core review
 
 Implementation `142b86ed505a9ebc2c9a1ba611915a86094d1efa` received independent
 non-author review by `recovery_readiness_review` at2026-10-04T05:34:03Z. The
