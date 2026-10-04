@@ -3,7 +3,14 @@
 Last updated: 2026-10-04 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** Latest completed preparation is
+and immediate evidence-led repair of new failures.** Latest V4 fit54643699 completed
+all32 updates and18432 responses but failed unchanged scientific selection.
+Independent raw replay and execution review confirm a complete rejected run;
+no student is accepted. Both finite observers are terminal, with no job active.
+A fresh single-factor control/treatment order diagnostic is being implemented;
+it has not been accepted, deployed or submitted. See
+`docs/refactor/sdsc_student_order_failure_20261004.md` and the V4 section below.
+Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
 `docs/refactor/sdsc_student_branch_preparation_20261003.md`. V3 implementation **d163d3f**
 has exact-commit non-author review and a distinct review-only acceptance. All205
@@ -329,8 +336,18 @@ Original eight-response audit9868ed67a3381a5d1ef67bcd9b8c58259c7430024ee0adf98a9
 and independent actual-results review5e5fdfda8a2ae4ecbafc2abfea3884aa3a88bf6b3efb1eee94b1e9c213c37033
 pass. This is engineering preflight, not model capability or formal acceptance.
 
-Matching full fit54643699 was submitted once at2026-10-04T07:37:31Z and is
-RUNNING at the10:47:31Z reconciled snapshot; early CUDA and large staging have passed.
+Matching full fit54643699 FAILED scientific selection after completing all32
+updates/1,614,932 tokens/18432 responses. Fresh13:24:57Z status confirms empty
+queue, job/batchFAILED1:0 and externCOMPLETED0:0, elapsed20205s. Original raw audit
+59912e703f685132949a23dd476f593c86a56899a5b53cb6988ec001d4bf4b1f
+reproduces selected_checkpoint=null; independent execution review
+9322986544da9dda1f2464ab20f3397ddc2285588ba46778b36b07e3090f0ceb
+passes. All655 memory samples pass, peak175.654GiB, with complete FP32 reload,
+BF16 parity, full-state restoration and persistent artifact evidence. Fetch
+137603306 bytes at .sdsc/fetched/54643699/fetch-990r44qd/. No checkpoint is accepted.
+Step7 IID/fact/rule/distractor proofs145/94/93/96 out of256 fail gap gates;
+late order robustness improves after IID exceeds153. See failure diagnosis above.
+The job was submitted once at2026-10-04T07:37:31Z.
 It uses the unchanged32-update/1,614,932-token V4 plan and all18,432 development
 responses,2H100/24CPU/384GiB/8h. Both immutable plans use sourceHEADbc3f0efa:
 preflight intent01c37609a7296137d2a5ec5d1ca95f1e (outer8c6e327eac2861bb87c0cf731235eab3dbfc37e17e3a962e0c91b6c5107a0da3);
@@ -349,9 +366,9 @@ retaining the original2026-10-04T19:44:03.594554Z deadline. Wrapper SHA
 34 targeted tests independently pass. Its fixed fresh reconciliation SHA
 08dd406a6c64b497e8aecead808eb5c4cc1ffdd3203a2c5c736dae88c6d4a9d6,
 old state, plan, receipt and controls are pinned. No job was retried or resubmitted.
-Do not edit pinned controls or start a competing observer. SSH/control/unknown
-failure stops it; the active agent handles repair. No wakeup after conversation
-loss is implied.
+The resumed observer ended13:15:04Z after144 polls with terminal_failure/exit2;
+no observer/job remains active. Preserve both stopped state directories and
+claims. No submission was retried; no wakeup after conversation loss is implied.
 
 The V4 qualification consumer now includes core, controller, node, worker and
 independent raw auditor. All541 integrated CPU tests pass, plus Ruff/format/AST,
