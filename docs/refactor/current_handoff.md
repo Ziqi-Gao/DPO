@@ -3,7 +3,11 @@
 Last updated: 2026-10-04 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** Latest V4 fit54643699 completed
+and immediate evidence-led repair of new failures.** New batch-order diagnostic
+control54659007/treatment54659010 were each submitted once and are RUNNING at
+2026-10-04T18:51:21Z; foreground observer72184 is active. No student is accepted.
+Preserve its pinned controls and do not start a competing observer or resubmit.
+Latest V4 fit54643699 completed
 all32 updates and18432 responses but failed unchanged scientific selection.
 Independent raw replay and execution review confirm a complete rejected run;
 no student is accepted. The paired order diagnostic completed: control54648255
@@ -110,12 +114,33 @@ the correction passes four targeted producer/controller-identity/generation
 regressions. Observation/analysis helpers and all production surfaces passed
 non-author review. Implementationfa1b8b5693db644a842a7bbefe72def353da0d48
 has two exact-commit independent reviews, including the corrected worker;
-all13 task files match. This separate review-only acceptance changes only the
-new protocol review block and this handoff. It accepts implementation readiness,
-not a GPU diagnostic result or a qualified student. No new batch-probe plan or
-submission exists yet. The verified SSH master is live on quser43; fresh login
-runtime/account/storage and original54548846 checks pass, but actual GPU-node
-mounts and execution remain prerequisites.
+all13 task files match. Separate review-only acceptance is
+07d5813b9319ac401f09ce9847d564f841f80a50; accepted artifact
+5c5f4bd45e0902083151eb966904db0e7588e20bedff3766ac00a9acfbb5594d.
+Release20261004T184239Z-ac70f9af5121-555462c2 has792 eligible files/11,699,048B;
+genuine provenance7dca28abe649f0a03b742d485833120d8edcdd7c3e4bbc1f34422ca01588ac3c
+and actual deployment/two-plan independent review06851c5a2d1558c4adb695372008493692b3d72739e2759fdb0bb53bf6a648fe
+pass. Runtime19pins and native54548846 parent were rechecked. This is execution
+readiness, not a GPU diagnostic result or a qualified student.
+
+Control54659007 uses intent8c01dc6f5a748e1bcfcfd6dbb06ea315, plan SHA
+6f5237183173aa34bbff74aaed0031fb911f3dfa953645b2ade8d24376ee33fd and receipt
+submit-20261004T184954149588Z.json; treatment54659010 uses intent
+95d7e6e70a4a5ebeed4d5aafbb376e0e, plan SHA
+e59545f3b425afb5945746b2777c800feecb6abf20f8504458b645de89468c2d and receipt
+submit-20261004T185046166446Z.json. Plans/receipts are under their exact intent
+directories in `.sdsc/student-batch-probe/`. Each submitted once; never resubmit.
+The second fresh dry-run verified existing2+new2<=4. Both are RUNNING at
+18:51:21Z. Early own-job memory samples pass; model updates are not yet observed.
+
+Foreground finite read-only observer72184 runs every60s until at most
+2026-10-05T00:51:17Z. State/launch evidence is
+`.sdsc/diagnostics/student-batch-probe-v1/watch-pair-54659007-54659010/`.
+Do not edit its pinned controls or start a competing observer. SSH loss or
+unknown/failure stops it without retry/cancellation. Continue foreground status
+and bounded live reads, then require terminal accounting, verified persistent
+publication, complete4608-response raw audits and frozen paired/branch analyses.
+Scientific results never waive full common-initial preparation or qualification.
 
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in

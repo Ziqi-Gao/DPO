@@ -142,6 +142,39 @@ proposed artifact85cf798f00c3ceed563b1d98a0a7e6870bde28f45a8bd41a78ce05fd13e2eab
 Non-author reviews cover the core, raw auditor, controller/node, startup/worker
 and ignored observation/analysis helpers. The observer/live reader passes58
 fixtures, comparator30 and branch helper27; their reviewed bytes are frozen
-before GPU results. Root static Ruff/format/AST/JSON checks pass. An exact-commit
-review and distinct review-only acceptance must finish before deployment and
-submission. No batch-probe job is submitted by implementation or CPU checks.
+before GPU results. Root static Ruff/format/AST/JSON checks pass. Exact-commit
+science and corrected-worker reviews pass for implementation
+fa1b8b5693db644a842a7bbefe72def353da0d48. Separate acceptance
+07d5813b9319ac401f09ce9847d564f841f80a50 changes only review metadata and handoff;
+accepted artifact is5c5f4bd45e0902083151eb966904db0e7588e20bedff3766ac00a9acfbb5594d.
+Neither implementation acceptance nor CPU tests establish GPU/model success.
+
+## Actual deployment and submission
+
+Release20261004T184239Z-ac70f9af5121-555462c2 binds792 files/11,699,048B, code SHA
+ac70f9af5121520ce5d22bc1f18eff6c7ff5fee2db260025563d1afdabf16410.
+Genuine accepted-HEAD provenance is
+7dca28abe649f0a03b742d485833120d8edcdd7c3e4bbc1f34422ca01588ac3c.
+Independent actual deployment/two-plan review SHA
+06851c5a2d1558c4adb695372008493692b3d72739e2759fdb0bb53bf6a648fe
+verifies148 science/24 controls, original native54548846, all19 runtime packages,
+exact resources, wrapper/script and distinct scientific arm claims. The initial
+queue had zero allocatable GPUs; the second fresh preview after control submit
+verified existing2+new2<=4.
+
+Control job54659007 uses intent8c01dc6f5a748e1bcfcfd6dbb06ea315, plan SHA
+6f5237183173aa34bbff74aaed0031fb911f3dfa953645b2ade8d24376ee33fd, receipt
+submit-20261004T184954149588Z.json. Treatment54659010 uses intent
+95d7e6e70a4a5ebeed4d5aafbb376e0e, plan SHA
+e59545f3b425afb5945746b2777c800feecb6abf20f8504458b645de89468c2d, receipt
+submit-20261004T185046166446Z.json. Preserve exact plan/receipt directories under
+`.sdsc/student-batch-probe/`; each was submitted once and must never be resubmitted.
+
+Both jobs are RUNNING in the18:51:21Z snapshot. Early own-job memory checks pass,
+but model updates have not yet been observed. The reviewed finite foreground
+observer72184 polls every60s, deadline2026-10-05T00:51:17Z, with launch/state in
+`.sdsc/diagnostics/student-batch-probe-v1/watch-pair-54659007-54659010/`.
+It has no submit/retry/cancel action and stops on failure, unknown state, SSH loss
+or changed pins. Root continues bounded live reads. Completion still requires
+terminal accounting, persistent artifact verification, independent all4608 raw
+responses/training-evidence replay and frozen comparison/branch analyses.
