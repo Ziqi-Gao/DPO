@@ -11,7 +11,7 @@ has not started. See `docs/refactor/sdsc_student_focus_lr_results_20261005.md`.
 
 The additive `student_name_cue_probe` implementation
 39489f76da0e26c357f329ef7fb60f1ec11a0f2d has three exact-commit non-author reviews
-and is accepted by a distinct review-only successor. It uses both fixed step32
+and is accepted by f1674f27b0b488ef1690fb5b67de639d64d3107f. It uses both fixed step32
 LR checkpoints solely for inference:64 fresh bases (48 depth4 branch/16 chain),
 two fixed name assignments and four matched cue conditions,512 responses/model.
 Seeds470000042/480000042 are fixed. All eight variants preserve graph/proof order,
@@ -41,9 +41,19 @@ Instrumented16:09:31Z evidence reaches `project_stat_begin` then times out20s in
 This establishes blocked project-storage metadata access fromlogin01, not SSH
 authentication loss or a proven cluster-wide outage. Preserve
 `remote-storage-phase-diagnosis.json`; no source deployment or submission occurred.
-After storage becomes responsive, revalidate runtime/storage, then fresh
+The current Quest host is nowquser43. At20:03:33Z its required master socket
+`/home/del6500/.ssh/cm/sdsc-quser43` was absent, so no remote command ran and the
+earlier storage blocker remains unverified. Preserve
+`reconnect-20261005T200333Z.json`; manual authentication onquser43 is required.
+Local reconciliation confirms all18 supervision states terminal, no name-cue
+intent/claim/submission or v2 export, and unchanged accepted168-file science.
+After same-host authentication and responsive storage, revalidate runtime, then fresh
 check→sync dry/sync→v2 export/upload and exact-plan dry-run/review before one
 authorized submission. Do not resume any historical failed training/supervisor.
+V2's reviewed transport/export pair must end at the actual exported HEAD; later
+handoff-only commits need a separately reviewed terminal transport pair. That
+transport review does not replace the scientific39489f76/f1674f27 acceptance,
+change any scientific file or authorize a submission by itself.
 
 V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
