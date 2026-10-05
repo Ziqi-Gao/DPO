@@ -54,6 +54,12 @@ V2's reviewed transport/export pair must end at the actual exported HEAD; later
 handoff-only commits need a separately reviewed terminal transport pair. That
 transport review does not replace the scientific39489f76/f1674f27 acceptance,
 change any scientific file or authorize a submission by itself.
+The handoff-only transport implementationda6f2db1447afa62ccd5185062708707af681e9e
+is independently accepted by its distinct documentation-review successor.
+Review `documentation-da6f2db-independent-review.json`
+(SHA75f7a27aeb1ade06d15e8e526260eb902b5220ec475648ed0279a83fa7358a00)
+confirms all168 named files and the scientific protocol unchanged. Use that
+genuine terminal pair for v2 export; retain39489f76/f1674f27 as scientific anchors.
 
 V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
