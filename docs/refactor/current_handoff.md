@@ -33,33 +33,48 @@ See `docs/refactor/sdsc_student_name_cue_probe_20261005.md` and bounded evidence
 `.sdsc/diagnostics/student-name-cue-probe-v1/`. Exact-commit review artifacts are
 `core-v2-exact-commit-independent-review.json`,
 `exact-commit-39489f7-transport-independent-review.json` and
-`worker-auditor-exact-commit-review.json`. No new intent/job exists yet.
-Questquser32 SSH worked at15:50:32Z; a16:01:15Z runtime/storage inventory timed out
-after150s. Separate16:05:21Z master/remote identity checks still succeeded.
-Instrumented16:09:31Z evidence reaches `project_stat_begin` then times out20s in
-`os.stat('/expanse/lustre/projects/nwu181/zgao12/OPD')`, before the runtime check.
-This establishes blocked project-storage metadata access fromlogin01, not SSH
-authentication loss or a proven cluster-wide outage. Preserve
-`remote-storage-phase-diagnosis.json`; no source deployment or submission occurred.
-The current Quest host is nowquser43. At20:03:33Z its required master socket
-`/home/del6500/.ssh/cm/sdsc-quser43` was absent, so no remote command ran and the
-earlier storage blocker remains unverified. Preserve
-`reconnect-20261005T200333Z.json`; manual authentication onquser43 is required.
-Local reconciliation confirms all18 supervision states terminal, no name-cue
-intent/claim/submission or v2 export, and unchanged accepted168-file science.
-After same-host authentication and responsive storage, revalidate runtime, then fresh
-check→sync dry/sync→v2 export/upload and exact-plan dry-run/review before one
-authorized submission. Do not resume any historical failed training/supervisor.
-V2's reviewed transport/export pair must end at the actual exported HEAD; later
-handoff-only commits need a separately reviewed terminal transport pair. That
-transport review does not replace the scientific39489f76/f1674f27 acceptance,
-change any scientific file or authorize a submission by itself.
-The handoff-only transport implementationda6f2db1447afa62ccd5185062708707af681e9e
-is independently accepted by its distinct documentation-review successor.
-Review `documentation-da6f2db-independent-review.json`
-(SHA75f7a27aeb1ade06d15e8e526260eb902b5220ec475648ed0279a83fa7358a00)
-confirms all168 named files and the scientific protocol unchanged. Use that
-genuine terminal pair for v2 export; retain39489f76/f1674f27 as scientific anchors.
+`worker-auditor-exact-commit-review.json`.
+The current execution is job54681802, submitted once at2026-10-05T20:27:45Z,
+intent43b6665d68c9b525320fc8e60ed16c2b. Its exact plan and successful receipt are
+under `.sdsc/student-name-cue-probe/43b6665d68c9b525320fc8e60ed16c2b/`;
+planSHA614f6f48bd498983ce820f9c86856b2494e349b8d9dc625b6f5fb75d431fe858.
+Fresh20:28:18Z accounting and own-job queue showRUNNING with the exact two-GPU
+allocation. The20:29:39Z persistent snapshot isCUDAstartup,111s elapsed;
+no inference result or diagnostic completion exists yet. Continue this job with
+status, bounded progress, and terminal fetch/audit; never duplicate its intent.
+
+The user restored the required master on current Quest hostquser43. At20:12:54Z
+project/runtime metadata access recovered; fresh check and admission subsequently
+verified storage, all19 runtime pins, both completed LR parents and0+2<=4GPU.
+The generic15s metadata check timed out, while the isolated24.3s version read and
+later original45s admission succeeded. Historical16:09:31Z Lustre metadata stall
+and20:03:33Z missing master are superseded, with original evidence preserved.
+All18 historical supervision states remain terminal; none was restarted.
+Release20261005T201650Z-f84b21cce1b2-343d689b deployed844files/13,453,315B;
+codeSHAf84b21cce1b2d5872113c0c6159cc0339fe28e99169d57d10fbe36186f962018.
+The first actual provenance-v2 export/upload verifies genuineHEAD
+2b3d1f2cc994a4a17274e556ccab114f90d250da,133 unpublished commits and original
+public tip. Manifest63f36570998a79532195704a83e49121cf6b3c51a9c01c7e5a0647de70309dff
+binds bundle3,661,290B and the matching wrapper. The terminal transport pair is
+da6f2db1447afa62ccd5185062708707af681e9e→2b3d1f2cc994a4a17274e556ccab114f90d250da;
+scientific39489f76/f1674f27 anchors remain unchanged. This successful export
+must not be re-created from a later documentationHEAD without a reviewed terminal
+transport pair. V2 transport review does not replace scientific acceptance.
+Independent exact-plan/deployment/admission review
+`exact-plan-independent-review.json` SHA08d850d0aca91688248b941d8c52af63d8215d09eb50ddff5122494cb795a1f9
+passes. Initial local plan preparation used a stdlib-only Python and failed on
+missingPyYAML before creating any intent; the existing test environment produced
+the single reviewed plan without source edits. The exact remote dry-run passed,
+then the one authorized submit repeated admission and returned a genuine receipt.
+
+An ignored, independent-reviewed one-shot progress reader lives under
+`.sdsc/diagnostics/student-name-cue-probe-v1/read_live_progress.py`.
+It validates plan/submit receipt/controls and remote own-job binding, reads at most
+16KiB with nofollow and preserves malformed bytes;36 author and36 independent
+fixtures pass. It performs no Slurm query, submission, retry, loop or completion
+inference. Root currently observes this job in the foreground; no persistent
+supervisor or automation is implied. Frozen controller accounting/publication and
+the original1024-response auditor remain terminal authority. No student is accepted.
 
 V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
@@ -144,8 +159,8 @@ Additive full-bundle tools `tools/sdsc_provenance_v2.py` and
 verification. V2 has a new schema/namespace and fixed256-commit limit, preserving
 all old trust/byte bounds and frozen v1 files. See
 `docs/refactor/sdsc_provenance_v2_20261005.md`. The accepted name-cue consumer now
-explicitly binds v2 controls, protocol inventory and namespace; no production-v2
-artifact has yet been exported/uploaded. Historical native-parent verification
+explicitly binds v2 controls, protocol inventory and namespace; its first actual
+export/upload for job54681802 is verified above. Historical native-parent verification
 remains v1. Never raise the active helper's
 limit or move the public ref to bypass the old bound.
 Preflight54661792 passed actual
