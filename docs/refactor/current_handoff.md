@@ -4,17 +4,30 @@ Last updated: 2026-10-05 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** V5 full preparation54663831
-was submitted once onOctober4 at21:51:35Z. **Monitoring stopped onOctober5 at
-00:17:54Z because the SSH master socket disappeared on Quest quser43.**
-Observer53737 exited3 after146 polls, with no retry or job action. Its terminal
-state is `.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/`; never re-arm it
-blindly. Last successful status was RUNNING at00:16:55Z; latest live evidence at
-00:16:53Z showed update5/252368tokens, rank losses0.0634004/0.0700890 and283
-passing memory samples(current94.50GiB), without observed errors. Current remote
-state is unknown; SSH loss does not establish a training failure or cancellation.
-The user must restore the existing master on quser43. Then reconcile this exact
-plan/receipt/job with fresh status/logs/fetch before any new observer or action;
-do not resubmit. Preflight54661792 passed actual
+**FAILED scientific selection after completing all32 updates/1,665,064 tokens,
+12 checkpoints and18,432 development responses.** Following manual authentication
+on current Quest hostquser32, fresh2026-10-05T05:56:09Z accounting confirms
+job/batchFAILED1:0, externCOMPLETED0:0, elapsed21200s and empty queue. Source,
+publication and bounded results verify. Complete original raw replay and
+independent execution review pass; selected_checkpoint=null. No student is accepted.
+Step5 passes view gaps but fails branch/DAG floors; step6–8 passes structure
+floors but fails invariance. Step8 IID153/256 is at the original capability
+ceiling, versus rename132/fact143/rule130/paraphrase160/distractor124 proofs.
+Later checkpoints exceed153 IID answers and still fail at least one view gap.
+There is no observed OOM or numerical explosion:680 own-job memory samples pass,
+peak166.942/384GiB; actual save/restore and all FP32/BF16 checks pass. Both ranks'
+exit2 is the deliberate no-eligible-model result, followed by node exit1.
+See `docs/refactor/sdsc_student_focus_failure_20261005.md` for evidence and limits.
+
+The historical observer53737 remains stopped after SSH loss onquser43 at
+00:17:54Z/exit3/146polls. Preserve
+`.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/`; never re-arm or resubmit
+this completed job. A new additive LR-only diagnostic is being implemented:
+fresh paired5e-5/2.5e-5, identical new2048-row exposure/32updates and V5 sampling,
+128-base development, seven fixed checkpoints2/4/6/8/12/16/32, no checkpoint
+promotion. It has no accepted protocol, deployment or submission yet. This tests
+a hypothesis; smaller LR is not an established cure. Original numerical gates
+remain unchanged. Preflight54661792 passed actual
 execution and independent raw/execution audits; observer99374 ended verified
 at21:46:49Z/exit0 after20 polls. Original thresholds remain unchanged and no
 student model is accepted. Completed batch diagnostic54659007/54659010 showed
@@ -178,7 +191,7 @@ Step32 rename branch24/42 and21/42 accounts for most remaining rename losses;
 earlier rename gaps also substantially involve chains. Branch focus is an
 untested repair hypothesis, not a demonstrated solution to every rename error.
 
-Active `student_focus_preparation` V5 changes fit structure sampling relative
+Completed `student_focus_preparation` V5 changed fit structure sampling relative
 to the anchored control from50/25/25 to75/12.5/12.5 branch/chain/DAG, keeping
 original depths, eight views, two original-order anchors,50% renamed,75%
 joint-permutation operations, sequence-mean loss,5e-5 and original gates. New
@@ -237,16 +250,18 @@ separate and needs the V5 flat-publication adapter plus a genuine selected
 candidate if one exists. No formal/G0/pilot/factorial/class acceptance is claimed.
 Details: `docs/refactor/sdsc_student_focus_preparation_20261004.md`; evidence
 under `.sdsc/diagnostics/student-focus-v5/`. Original accepted production
-controls stay frozen. The post-submission changes committed here are documentation
-only; the conditional qualification code below is uncommitted and nonoperational.
+controls stay frozen. The conditional qualification consumer below remains
+unbound and nonoperational; completed failedfit54663831 cannot supply a candidate.
 
 The additive V5 qualification adapter and independent auditor have completed
 conditional implementation and non-author review:334 core/auditor,155 transport
 and74 worker unique CPU cases pass (563 total, not one combined run). There is
 deliberately no candidate protocol JSON or qualification submission. The five
-new production files and four tests remain uncommitted
-pending a genuine eligible full fit and independent18432-response/raw execution
-audit. Original896 responses/gates and formal2244-token limit are preserved;
+new production files and four tests are retained as reviewed generic consumer
+readiness, with no candidate-bound protocol or accepted model. The complete
+18432-response audit confirms that54663831 is ineligible. Any new preparation
+needs its own explicit successful parent binding and review. Original896
+responses/gates and formal2244-token limit are preserved;
 prior exposure in54606205 is explicitly disclosed. Qualifying a checkpoint does
 not itself accept the formal initial model, G0 or pilot.
 

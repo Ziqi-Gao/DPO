@@ -1,12 +1,12 @@
 # V5 prepared-student qualification
 
-Status: conditional code and independent reviews are complete; five production
-files and four tests remain uncommitted pending a genuine eligible candidate.
-Full preparation job54663831 was last observed RUNNING onOctober5 at00:16:55Z,
-after update5/252368tokens. Observer53737 stopped at00:17:54Z/exit3 after146 polls
-because the SSH master on Quest quser43 disappeared. No job action or login
-retry occurred; current remote state is unknown. Restore manual authentication
-and reconcile the existing plan/receipt before further operations.
+Status: conditional code and independent reviews are complete. The five
+production files and four tests are retained as an unbound consumer, with no
+operational model acceptance. Fresh2026-10-05T05:56:09Z accounting and full raw
+and execution audits confirm that preparation54663831 completed all32 updates
+but failed scientific selection. It cannot supply this adapter's candidate.
+Observer53737 remains terminal after the earlier SSH loss; the completed job
+must never be resubmitted. See `sdsc_student_focus_failure_20261005.md`.
 
 No candidate is bound, no qualification protocol JSON is present, and no
 qualification allocation has been submitted. This document is not evidence of
@@ -15,7 +15,7 @@ an accepted student.
 The V5 preparation publishes execution and scientific evidence together. The
 historical qualification adapter expects a different parent publication and
 checkpoint format. The additive `student_focus_qualification` adapter consumes
-the V5 evidence without changing the running preparation or the original
+the V5 evidence without changing the frozen preparation or the original
 qualification populations, generation policy, scorer or numerical gates.
 
 ## Admission and model identity
