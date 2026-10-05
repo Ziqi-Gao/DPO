@@ -1,13 +1,20 @@
 # OPD current handoff
 
-Last updated: 2026-10-04 UTC. **The user selected keeping1.7B and preparing one
+Last updated: 2026-10-05 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** V5 full preparation54663831
-was submitted once at21:51:35Z and is PENDING at21:51:55Z. Foreground read-only
-observer53737 polls every60s for at most10h; inspect
-`.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/` before further action.
-Do not start a competing observer or resubmit. Preflight54661792 passed actual
+was submitted once onOctober4 at21:51:35Z. **Monitoring stopped onOctober5 at
+00:17:54Z because the SSH master socket disappeared on Quest quser43.**
+Observer53737 exited3 after146 polls, with no retry or job action. Its terminal
+state is `.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/`; never re-arm it
+blindly. Last successful status was RUNNING at00:16:55Z; latest live evidence at
+00:16:53Z showed update5/252368tokens, rank losses0.0634004/0.0700890 and283
+passing memory samples(current94.50GiB), without observed errors. Current remote
+state is unknown; SSH loss does not establish a training failure or cancellation.
+The user must restore the existing master on quser43. Then reconcile this exact
+plan/receipt/job with fresh status/logs/fetch before any new observer or action;
+do not resubmit. Preflight54661792 passed actual
 execution and independent raw/execution audits; observer99374 ended verified
 at21:46:49Z/exit0 after20 polls. Original thresholds remain unchanged and no
 student model is accepted. Completed batch diagnostic54659007/54659010 showed
@@ -229,8 +236,47 @@ threshold relaxation. Original896-response formal qualification remains
 separate and needs the V5 flat-publication adapter plus a genuine selected
 candidate if one exists. No formal/G0/pilot/factorial/class acceptance is claimed.
 Details: `docs/refactor/sdsc_student_focus_preparation_20261004.md`; evidence
-under `.sdsc/diagnostics/student-focus-v5/`. Only documents changed after fit
-preparation/submission; original accepted production controls stay frozen.
+under `.sdsc/diagnostics/student-focus-v5/`. Original accepted production
+controls stay frozen. The post-submission changes committed here are documentation
+only; the conditional qualification code below is uncommitted and nonoperational.
+
+The additive V5 qualification adapter and independent auditor have completed
+conditional implementation and non-author review:334 core/auditor,155 transport
+and74 worker unique CPU cases pass (563 total, not one combined run). There is
+deliberately no candidate protocol JSON or qualification submission. The five
+new production files and four tests remain uncommitted
+pending a genuine eligible full fit and independent18432-response/raw execution
+audit. Original896 responses/gates and formal2244-token limit are preserved;
+prior exposure in54606205 is explicitly disclosed. Qualifying a checkpoint does
+not itself accept the formal initial model, G0 or pilot.
+
+Independent cross-module review caught an isolation-file encoding mismatch:
+the producer writes canonicalJSON+LF while an initial consumer draft omitted
+LF when hashing. Final worker binds unique publication size/SHA and exact
+canonical+LF bytes. The actual4433B preflight isolation file proves RED→GREEN;
+preflight remains inadmissible as a fit. The ignored
+`qualification-conditional-readiness.json` inventory binds final source and all
+non-author reviews(SHA9b1fe8f76c8829187226da912856d9900536941a873c6cba145c2e6af6813126).
+It and `docs/refactor/sdsc_student_focus_qualification_20261004.md` describe the
+remaining candidate binding, implementation/exact review/acceptance and actual
+deployment/GPU qualification work. Never synthesize an eligible parent.
+
+Historical V3/V4 checkpoint2 generation took about65/50minutes; most other
+checkpoints took24–28minutes. Current elapsed evaluation alone is not a hang
+signal; monitor actual accounting, numeric progress, own-job memory and errors.
+The bounded timing review uses execution fields only. Read-only downstream
+mapping also confirms the old calibration/pipeline cannot be restarted as-is:
+it would restore native weights/old5e-4 settings, and its prepared loader binds
+V3 metadata. Any successor must carry the exact common V5 initial weights and
+teacher identities through matching calibration, full G0 and method gates.
+OPD/GRPO must retain their own supervision/reward semantics. See ignored
+`focus-qualification-downstream-readonly-map.md` in the same diagnostics root.
+The pre-handoff HEAD18f7003e had123/128 unpublished commits (active fit122);
+this documentation update adds one. No limit, public ref or history was changed.
+Recount current HEAD before provenance creation and reserve remaining commits
+for concrete reviewed work;
+if a future release exceeds128 it needs a separately reviewed versioned
+export/upload/consumer path, not an export-only workaround.
 
 Historical V3 preparation is
 `prereg/amendments/qwen3_student_branch_preparation_v3.json`, documented in
