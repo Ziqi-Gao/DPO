@@ -34,14 +34,58 @@ See `docs/refactor/sdsc_student_name_cue_probe_20261005.md` and bounded evidence
 `core-v2-exact-commit-independent-review.json`,
 `exact-commit-39489f7-transport-independent-review.json` and
 `worker-auditor-exact-commit-review.json`.
-The current execution is job54681802, submitted once at2026-10-05T20:27:45Z,
-intent43b6665d68c9b525320fc8e60ed16c2b. Its exact plan and successful receipt are
-under `.sdsc/student-name-cue-probe/43b6665d68c9b525320fc8e60ed16c2b/`;
-planSHA614f6f48bd498983ce820f9c86856b2494e349b8d9dc625b6f5fb75d431fe858.
-Fresh20:28:18Z accounting and own-job queue showRUNNING with the exact two-GPU
-allocation. The20:29:39Z persistent snapshot isCUDAstartup,111s elapsed;
-no inference result or diagnostic completion exists yet. Continue this job with
-status, bounded progress, and terminal fetch/audit; never duplicate its intent.
+Name-cue job54681802 failed before model staging or inference. It was submitted
+once at2026-10-05T20:27:45Z, intent43b6665d68c9b525320fc8e60ed16c2b; preserve
+its plan/receipt under `.sdsc/student-name-cue-probe/43b6665d68c9b525320fc8e60ed16c2b/`
+and never resubmit that consumed claim. PlanSHA is
+614f6f48bd498983ce820f9c86856b2494e349b8d9dc625b6f5fb75d431fe858.
+Fresh20:42:37Z accounting shows job/batchFAILED1:0, externCOMPLETED0:0,324s,
+with empty own-job queue. The controller's success-oriented accounting_complete
+flag remainsfalse for this failure; terminal raw rows and empty queue are decisive.
+Publicationa6750c0cd9afcbc9c42a0768f5f3ce32f37e2e0736ec1aa0ef038bbedea2074e
+and234,316B fetch `.sdsc/fetched/54681802/fetch-udmbb982/` verify. The300s early
+probe timed out while importingTorch; SIGTERM exit-15 was reaped at299.381s.
+There was no import completion, CUDA API, model load, rank worker or response.
+All12 own-job memory samples pass, peak0.721GiB, noOOM/failcnt. Independent
+failure review7690707aacaa574e119f48d6ad376a71280b2ba0a7fc7336c26e5f073d48052e
+binds the original trace/publication. Nine30s stacks remain in advancing module
+imports: sixpath-stat, twofile reads, oneextension load.1,088 completed import
+records sum289.738s self time, not syscall attribution. Shared-runtime loading
+latency is strongly supported; sole metadata causality or cluster-wide outage
+is not established. See `sdsc_student_name_cue_runtime_failure_20261005.md`.
+
+A separate execution recovery is implemented and CPU-reviewed, still proposed
+and not submitted: byte-identical full-prefix snapshot prepared offGPU, native node-local extraction,
+explicit relocated-interpreter/sys.prefix/module/native-library origin checks,
+and one recovery claim bound to this exact failed no-inference job. Keep the
+original300s import gate,4800s worker/600s persistence, all168 scientific files,
+models/inputs/readouts and original raw auditor unchanged. No environment
+installation or prefix rewriting. Native relocation still needs real proof.
+Root's final combined CPU suite passes153 cases; the separate real-Git accepted
+lineage/v2 full-history restore fixture also passes. Independent controller and
+node/auditor reviews are `recovery-controller-independent-review.json` and
+`recovery-node-independent-review.json` under the same diagnostic directory.
+Review caught and fixed Git replace-object handling, actual startup argument
+compatibility, and publication-to-node job/plan binding before GPU use.
+
+The first CPU pack request76be489cc18946e98df5c43ce1ed9232 stopped before its
+remote claim because a new private directory inherited normal SGID (02700).
+Read-only negative reconciliation confirms no snapshot/claim/event/archive;
+preserve its local request and failed execution evidence. The new utility
+preserves directory SGID only, with62 author and62 independent tests; no
+existing directory permissions or original runtime bytes were changed.
+After a fresh21:10:30Z connection/storage/runtime check and matching sync,
+preparatory release20261005T211101Z-50c8d43ae489-546fd0a1 is deployed. At21:16UTC
+one foreground CPU pack began under fresh identity7ef839cabc924bd89851ee07a0f724b2,
+requesta360fce74e4effccc277615cbe72c0f9a26440fcb520bc24c4bbaa6ff0d95d7f.
+Its3600s bound, exact source/deployment pins and single-use local/remote claims
+are recorded by `.sdsc/diagnostics/student-name-cue-probe-v1/runtime-pack-request-v2*`.
+At this edit it remains in source inventory; no completed descriptor exists.
+Reconcile this operation before any successor. After a verified snapshot, run
+the separately bounded CPU native-origin rehearsal, then exact-commit execution
+acceptance and a fresh final deployment/provenance/plan/admission. Draft recovery
+files in preparatory releases are not accepted GPU entrypoints. No new GPU job,
+scientific result, prepared-student acceptance or formal OPD/RL progression exists.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
@@ -72,9 +116,9 @@ An ignored, independent-reviewed one-shot progress reader lives under
 It validates plan/submit receipt/controls and remote own-job binding, reads at most
 16KiB with nofollow and preserves malformed bytes;36 author and36 independent
 fixtures pass. It performs no Slurm query, submission, retry, loop or completion
-inference. Root currently observes this job in the foreground; no persistent
-supervisor or automation is implied. Frozen controller accounting/publication and
-the original1024-response auditor remain terminal authority. No student is accepted.
+inference. The foreground observation caught the startup failure and has ended;
+no persistent supervisor or automation exists. The original1024-response audit
+is inapplicable because no responses were generated. No student is accepted.
 
 V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
