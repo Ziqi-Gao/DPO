@@ -22,11 +22,18 @@ See `docs/refactor/sdsc_student_focus_failure_20261005.md` for evidence and limi
 The historical observer53737 remains stopped after SSH loss onquser43 at
 00:17:54Z/exit3/146polls. Preserve
 `.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/`; never re-arm or resubmit
-this completed job. A new additive LR-only diagnostic is being implemented:
+this completed job. A new additive LR-only diagnostic implementation is ready:
 fresh paired5e-5/2.5e-5, identical new2048-row exposure/32updates and V5 sampling,
 128-base development, seven fixed checkpoints2/4/6/8/12/16/32, no checkpoint
-promotion. It has no accepted protocol, deployment or submission yet. This tests
-a hypothesis; smaller LR is not an established cure. Original numerical gates
+promotion. Core/transport/worker-auditor author suites cover82/183/169 passing
+cases; non-author reviews include18/74/34 targeted cases. Full CPU isolation and
+token checks pass:1,660,712 tokens, maximum dev prefix2198 plus256=2454, shared
+manifest84227f0858cad084ed7e4ef72317d02c1e0ab18875628b4065c938bc4a510669.
+All154 parent scientific files, nine historical protocols and11 helper pins
+remain exact. See `docs/refactor/sdsc_student_focus_lr_probe_20261005.md`.
+Separate exact-implementation review/acceptance, deployment and submission remain
+pending. Each arm requests2H100/24CPU/384GiB/3h, at most4 total. This tests a
+hypothesis; smaller LR is not an established cure. Original numerical gates
 remain unchanged. Preflight54661792 passed actual
 execution and independent raw/execution audits; observer99374 ended verified
 at21:46:49Z/exit0 after20 polls. Original thresholds remain unchanged and no
