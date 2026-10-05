@@ -337,11 +337,11 @@
   },
   "protocol_id": "qwen3-student-name-cue-probe-v1",
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Accept only the fixed-step32, two-model, 1024-response inference diagnostic. Exact-commit non-author reviews bind the tested implementation; 201 author cases and independent 32/47/28-case reviews pass, with complete token/isolation and graph/rank checks. Original thresholds, 160 historical scientific files, old protocols and helpers remain unchanged. No prepared-student acceptance, checkpoint promotion, training, G0, pilot or execution-class claim is authorized by diagnostic completion.",
+    "reviewed_at_utc": "2026-10-05T16:13:30Z",
+    "reviewed_implementation_commit": "39489f76da0e26c357f329ef7fb60f1ec11a0f2d",
+    "reviewer": "Independent agents fit_reconcile_review (core/v2), focus_failure_science (transport), next_repair_design (worker/auditor); root integration review",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [

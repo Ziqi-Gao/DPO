@@ -9,8 +9,9 @@ strongly suppresses early capped/syntactically invalid output, but does not solv
 symbol-renaming invariance. No prepared student is accepted and formal OPD/RL
 has not started. See `docs/refactor/sdsc_student_focus_lr_results_20261005.md`.
 
-The additive `student_name_cue_probe` implementation is complete, with a proposed
-protocol awaiting exact-commit independent acceptance. It uses both fixed step32
+The additive `student_name_cue_probe` implementation
+39489f76da0e26c357f329ef7fb60f1ec11a0f2d has three exact-commit non-author reviews
+and is accepted by a distinct review-only successor. It uses both fixed step32
 LR checkpoints solely for inference:64 fresh bases (48 depth4 branch/16 chain),
 two fixed name assignments and four matched cue conditions,512 responses/model.
 Seeds470000042/480000042 are fixed. All eight variants preserve graph/proof order,
@@ -24,16 +25,25 @@ with serial native BF16 models, exact FP32 loading and original raw-verifier aud
 All160 historical scientific files, ten protocols and frozen helpers are unchanged.
 The new168-file inventory explicitly integrates provenance-v2; historical LR/native
 parents retain frozen v1 verification. Core/transport/worker-auditor author suites
-pass49/85/67 distinct CPU cases. Tests caught and repaired a missing declared
+pass49/85/67 distinct CPU cases; independent core/transport/worker-auditor reviews
+pass32/47/28 targeted cases. Tests caught and repaired a missing declared
 isolation dimension field, a duplicate error-analysis key and two invalid loader
 constant references before any GPU submission. CPU evidence is not GPU success.
 See `docs/refactor/sdsc_student_name_cue_probe_20261005.md` and bounded evidence in
-`.sdsc/diagnostics/student-name-cue-probe-v1/`. No new intent/job exists yet.
+`.sdsc/diagnostics/student-name-cue-probe-v1/`. Exact-commit review artifacts are
+`core-v2-exact-commit-independent-review.json`,
+`exact-commit-39489f7-transport-independent-review.json` and
+`worker-auditor-exact-commit-review.json`. No new intent/job exists yet.
 Questquser32 SSH worked at15:50:32Z; a16:01:15Z runtime/storage inventory timed out
-after150s. Separate16:05:21Z master/remote identity checks still succeeded; the
-timed-out inventory is not evidence of runtime/storage readiness. Reconcile that
-check, accept the implementation, then fresh check→sync dry/sync→v2 export/upload
-and exact-plan dry-run/review before one authorized submission.
+after150s. Separate16:05:21Z master/remote identity checks still succeeded.
+Instrumented16:09:31Z evidence reaches `project_stat_begin` then times out20s in
+`os.stat('/expanse/lustre/projects/nwu181/zgao12/OPD')`, before the runtime check.
+This establishes blocked project-storage metadata access fromlogin01, not SSH
+authentication loss or a proven cluster-wide outage. Preserve
+`remote-storage-phase-diagnosis.json`; no source deployment or submission occurred.
+After storage becomes responsive, revalidate runtime/storage, then fresh
+check→sync dry/sync→v2 export/upload and exact-plan dry-run/review before one
+authorized submission. Do not resume any historical failed training/supervisor.
 
 V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
@@ -117,7 +127,7 @@ Additive full-bundle tools `tools/sdsc_provenance_v2.py` and
 `tools/sdsc_provenance_upload_v2.py` now have author and independent46-case
 verification. V2 has a new schema/namespace and fixed256-commit limit, preserving
 all old trust/byte bounds and frozen v1 files. See
-`docs/refactor/sdsc_provenance_v2_20261005.md`. The proposed name-cue consumer now
+`docs/refactor/sdsc_provenance_v2_20261005.md`. The accepted name-cue consumer now
 explicitly binds v2 controls, protocol inventory and namespace; no production-v2
 artifact has yet been exported/uploaded. Historical native-parent verification
 remains v1. Never raise the active helper's
