@@ -82,11 +82,36 @@ Git replacement-object handling and a missing publication-to-raw-node job/plan
 cross-check. The standalone execution auditor requires an external receipt hash;
 the original scientific raw auditor remains a separate required check.
 
-The active off-GPU pack request is
+The second off-GPU pack request was
 `7ef839cabc924bd89851ee07a0f724b2`, from preparatory release
-`20261005T211101Z-50c8d43ae489-546fd0a1`. It is finite and foreground, owns a fresh
-snapshot namespace, and rechecks the old negative reconciliation before claiming.
-It cannot submit Slurm or certify native execution. Completion requires the
+`20261005T211101Z-50c8d43ae489-546fd0a1`. It failed at22:16UTC after3600.033seconds,
+with actual foreground exec1327 returning1 and a matching remote timeout record.
+Initial inventory consumed about51–52minutes; subsequent serial packing left
+265,339,753bytes without a manifest or completion. Preserve this partial output.
+The fixed request/start/error bytes, complete local logs and a later complete
+own-process scan establish termination. Two initially conservative unknown
+reconciliations are retained; the reviewed local successor predicate permits an
+earlier incomplete scan only when it has no contradictory process evidence and
+the final scan is complete. It issues no retry or artifact-acceptance permission.
+
+The additive I/O repair overlaps at most four metadata lookups and caches32
+parent-directory descriptors. All source stamps, file bytes/modes/links, sorted
+archive order, final inventory and full readback remain required. CPU fixtures
+cover actual overlap, bounded descriptors, source mutation, partial submission,
+and a task whose submission starts work but raises before returning its Future.
+The whole worker pool is drained before borrowed directory descriptors close;
+an external child-process supervisor remains necessary for blocked I/O.
+
+The proposed single CPU successor has10800seconds total,10760seconds work,
+10770seconds for cleanup attempts and30seconds publication reserve; local SSH
+acknowledgement is bounded at10820seconds. Three hours provides engineering
+headroom, not a measured completion guarantee. Original GPU startup300seconds,
+worker4800seconds and publication600seconds remain unchanged. A permanent claim
+keyed to the failed parent request blocks alternate UUID/code/release retries.
+Missing acknowledgement or unreaped work stays unknown. Current scripts remain
+disabled until actual failure and fresh deployment identities are reviewed.
+
+OffGPU preparation cannot submit Slurm or certify native execution. Completion requires the
 entire source inventory and archive readback, followed by a separate CPU rehearsal
 that imports the original packages under the actual relocated Python and checks
 all observed module/native-library bytes and origins. That rehearsal explicitly

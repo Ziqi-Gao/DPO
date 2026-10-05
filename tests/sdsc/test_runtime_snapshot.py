@@ -429,7 +429,8 @@ def test_source_file_changed_during_streaming_is_rejected(fixture, monkeypatch):
 
     def change(_):
         nonlocal called
-        if f["artifact"].exists() and not called:
+        # Keep the mutation inside streaming, after the source was opened.
+        if f["artifact"].exists() and not called and sys._getframe(1).f_code.co_name == "prepare":
             called = True
             path = f["prefix"] / "bin/python3.12"
             raw = path.read_bytes()

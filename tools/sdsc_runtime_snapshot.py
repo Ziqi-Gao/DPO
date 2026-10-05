@@ -1,5 +1,6 @@
 """Byte-preserving native runtime snapshots; no install, prefix rewrite, or execution.
 
+The caller must supervise the process to bound blocked filesystem calls.
 The caller supplies owned roots and a trusted manifest SHA. A snapshot includes
 the complete prefix, including package metadata and bytecode. It is not a secret
 scrubber: the caller must select the already reviewed runtime, not a data/cache
@@ -22,6 +23,9 @@ import os
 import re
 import stat
 import time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 SCHEMA = "quest-sdsc-native-runtime-snapshot-v1"
@@ -35,6 +39,8 @@ MAX_MANIFEST_BYTES = 64 * 1024**2
 FREE_RESERVE_BYTES = 1024**3
 MAX_DEPTH = 64
 CHUNK = 1024**2
+METADATA_WORKERS = 4
+PARENT_CACHE_LIMIT = 32
 LOCAL_FILESYSTEMS = frozenset(("ext2", "ext3", "ext4", "xfs", "btrfs"))
 HEX = re.compile(r"[a-f0-9]{64}\Z")
 
@@ -128,6 +134,8 @@ def mode(item):
 
 
 def open_relative(root_fd, name, flags):
+    if isinstance(root_fd, ParentDirectoryCache):
+        return root_fd.open(name, flags)
     parts = PurePosixPath(relative(name)).parts
     current = os.dup(root_fd)
     try:
@@ -140,51 +148,161 @@ def open_relative(root_fd, name, flags):
         os.close(current)
 
 
-def scan(prefix, *, deadline=None):
-    """lstat/openat traversal; never follow a source symlink while inventorying."""
+class ParentDirectoryCache:
+    """At most32 owned extra directory FDs; source root FD is borrowed."""
+
+    def __init__(self, root_fd, initial, *, deadline=None, counters=None):
+        self.root_fd, self.initial, self.deadline = root_fd, initial, deadline
+        self.entries = OrderedDict()
+        self.counters = counters if counters is not None else {}
+        self.counters.update(parent_cache_hits=0, parent_cache_misses=0, directory_opens=0, peak_cached_fds=0)
+
+    def _checked(self, name, fd):
+        check_deadline(self.deadline)
+        require(stamp(os.fstat(fd)) == self.initial[name], "source directory changed before packing")
+        return fd
+
+    def _parent(self, parts):
+        name = "/".join(parts)
+        if not name:
+            return self._checked("", self.root_fd)
+        if name in self.entries:
+            self.counters["parent_cache_hits"] += 1
+            self.entries.move_to_end(name)
+            return self._checked(name, self.entries[name])
+        self.counters["parent_cache_misses"] += 1
+        index, current = len(parts), self.root_fd
+        while index and "/".join(parts[:index]) not in self.entries:
+            index -= 1
+        if index:
+            ancestor = "/".join(parts[:index])
+            current = self._checked(ancestor, self.entries[ancestor])
+            self.entries.move_to_end(ancestor)
+        else:
+            self._checked("", current)
+        for level in range(index, len(parts)):
+            check_deadline(self.deadline)
+            if len(self.entries) == PARENT_CACHE_LIMIT:
+                victim = next(key for key, fd in self.entries.items() if fd != current)
+                os.close(self.entries.pop(victim))
+            relative_name = "/".join(parts[: level + 1])
+            following = os.open(parts[level], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
+            try:
+                self._checked(relative_name, following)
+            except BaseException:
+                os.close(following)
+                raise
+            self.entries[relative_name] = following
+            self.counters["directory_opens"] += 1
+            self.counters["peak_cached_fds"] = max(self.counters["peak_cached_fds"], len(self.entries))
+            current = following
+        return current
+
+    def open(self, name, flags):
+        parts = PurePosixPath(relative(name)).parts
+        parent = self._parent(parts[:-1])
+        check_deadline(self.deadline)
+        return os.open(parts[-1], flags | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+
+    def close(self):
+        while self.entries:
+            _, fd = self.entries.popitem()
+            os.close(fd)
+
+
+@contextmanager
+def phase(diagnostics, name):
+    row = dict(phase=name, completed=False)
+    if diagnostics is not None:
+        diagnostics["phases"].append(row)
+    started = time.monotonic()
+    try:
+        yield row
+        row["completed"] = True
+    finally:
+        row["elapsed_seconds"] = time.monotonic() - started
+
+
+def scan(prefix, *, deadline=None, counters=None):
+    """Bounded metadata overlap, with the original deterministic lstat/openat walk."""
     entries, stamps, total = [], {}, 0
+    counters = counters if counters is not None else {}
+    counters.update(
+        entries=0, metadata_requests=0, peak_pending=0, directories=0, regular_files=0, symlinks=0
+    )
     root_fd = os.open(prefix, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         root_stat = os.fstat(root_fd)
         require(root_stat.st_uid == os.getuid(), "runtime root is not owned")
         stamps[""] = stamp(root_stat)
 
-        def walk(fd, parent):
-            nonlocal total
-            with os.scandir(fd) as listing:
-                names = sorted(entry.name for entry in listing)
-            require(len(names) + len(entries) <= MAX_ENTRIES, "runtime entry count exceeds bound")
-            for name in names:
-                check_deadline(deadline)
-                path = relative(parent + "/" + name if parent else name)
-                item = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                require(item.st_uid == os.getuid(), "runtime entry is not owned")
-                stamps[path] = stamp(item)
-                row = dict(path=path, mode=mode(item))
-                if stat.S_ISDIR(item.st_mode):
-                    row["type"] = "directory"
-                    entries.append(row)
-                    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-                    try:
-                        require(stamp(os.fstat(child)) == stamps[path], "source directory changed")
-                        walk(child, path)
-                        require(stamp(os.fstat(child)) == stamps[path], "source directory changed")
-                    finally:
-                        os.close(child)
-                elif stat.S_ISREG(item.st_mode):
-                    require(0 <= item.st_size <= MAX_FILE_BYTES, "runtime file exceeds bound")
-                    total += item.st_size
-                    require(total <= MAX_TOTAL_BYTES, "runtime total exceeds bound")
-                    row.update(type="file", size=item.st_size)
-                    entries.append(row)
-                elif stat.S_ISLNK(item.st_mode):
-                    row.update(type="symlink", target=os.readlink(name, dir_fd=fd))
-                    entries.append(row)
-                else:
-                    raise ValueError("non-regular runtime entry forbidden")
-                require(len(entries) <= MAX_ENTRIES, "runtime entry count exceeds bound")
+        def metadata(fd, name):
+            check_deadline(deadline)
+            item = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            target = os.readlink(name, dir_fd=fd) if stat.S_ISLNK(item.st_mode) else None
+            check_deadline(deadline)
+            return item, target
 
-        walk(root_fd, "")
+        with ThreadPoolExecutor(max_workers=METADATA_WORKERS, thread_name_prefix="runtime-metadata") as pool:
+
+            def walk(fd, parent):
+                nonlocal total
+                with os.scandir(fd) as listing:
+                    names = sorted(entry.name for entry in listing)
+                require(len(names) + len(entries) <= MAX_ENTRIES, "runtime entry count exceeds bound")
+                for begin in range(0, len(names), METADATA_WORKERS):
+                    check_deadline(deadline)
+                    batch = names[begin : begin + METADATA_WORKERS]
+                    futures = []
+                    try:
+                        for name in batch:
+                            futures.append(pool.submit(metadata, fd, name))
+                            counters["metadata_requests"] += 1
+                            counters["peak_pending"] = max(counters["peak_pending"], len(futures))
+                        observed = [future.result() for future in futures]
+                    finally:
+                        # No worker can retain a directory FD across recursive close/error.
+                        wait(futures)
+                    for name, (item, target) in zip(batch, observed, strict=True):
+                        check_deadline(deadline)
+                        path = relative(parent + "/" + name if parent else name)
+                        require(item.st_uid == os.getuid(), "runtime entry is not owned")
+                        stamps[path] = stamp(item)
+                        row = dict(path=path, mode=mode(item))
+                        if stat.S_ISDIR(item.st_mode):
+                            row["type"] = "directory"
+                            entries.append(row)
+                            counters["directories"] += 1
+                            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                            try:
+                                require(stamp(os.fstat(child)) == stamps[path], "source directory changed")
+                                walk(child, path)
+                                require(stamp(os.fstat(child)) == stamps[path], "source directory changed")
+                            except BaseException:
+                                # submit() can enqueue/start a task and then raise before
+                                # returning its Future. Drain the whole pool before a nested
+                                # directory FD closes; an external process must enforce time.
+                                pool.shutdown(wait=True, cancel_futures=True)
+                                raise
+                            finally:
+                                os.close(child)
+                        elif stat.S_ISREG(item.st_mode):
+                            require(0 <= item.st_size <= MAX_FILE_BYTES, "runtime file exceeds bound")
+                            total += item.st_size
+                            require(total <= MAX_TOTAL_BYTES, "runtime total exceeds bound")
+                            row.update(type="file", size=item.st_size)
+                            entries.append(row)
+                            counters["regular_files"] += 1
+                        elif stat.S_ISLNK(item.st_mode):
+                            row.update(type="symlink", target=target)
+                            entries.append(row)
+                            counters["symlinks"] += 1
+                        else:
+                            raise ValueError("non-regular runtime entry forbidden")
+                        counters["entries"] += 1
+                        require(len(entries) <= MAX_ENTRIES, "runtime entry count exceeds bound")
+
+            walk(root_fd, "")
         require(stamp(os.fstat(root_fd)) == stamps[""], "source runtime changed")
         entries.sort(key=lambda row: row["path"])
         validate_entries(entries, hashed=False)
@@ -294,7 +412,14 @@ def write_once(path, raw):
 
 
 def prepare(
-    prefix, artifact_dir, *, source_root, artifact_root, python_relative_path="bin/python3.12", deadline=None
+    prefix,
+    artifact_dir,
+    *,
+    source_root,
+    artifact_root,
+    python_relative_path="bin/python3.12",
+    deadline=None,
+    diagnostics=None,
 ):
     prefix = owned_path(prefix, source_root)
     artifact = owned_path(artifact_dir, artifact_root, exists=False)
@@ -304,21 +429,33 @@ def prepare(
         "source and artifact overlap",
     )
     relative(python_relative_path)
-    entries, initial, root_mode = scan(prefix, deadline=deadline)
+    if diagnostics is not None:
+        require(isinstance(diagnostics, dict) and not diagnostics, "fresh diagnostics dict required")
+        diagnostics.update(
+            schema="opd-runtime-snapshot-preparation-diagnostics-v1",
+            accepted=False,
+            deployable=False,
+            phases=[],
+        )
+    with phase(diagnostics, "initial_inventory") as inventory:
+        entries, initial, root_mode = scan(prefix, deadline=deadline, counters=inventory)
     check_space(artifact.parent, len(MAGIC) + sum(row.get("size", 0) for row in entries))
     artifact.mkdir(mode=0o700)
     archive_path = artifact / "runtime.bin"
     root_fd = os.open(prefix, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     digest, size = hashlib.sha256(), 0
+    cache = None
     try:
-        with archive_path.open("xb") as output:
+        with phase(diagnostics, "serial_pack") as packing, archive_path.open("xb") as output:
+            cache = ParentDirectoryCache(root_fd, initial, deadline=deadline, counters=packing)
+            packing.update(files_packed=0, bytes_packed=0)
             output.write(MAGIC)
             digest.update(MAGIC)
             size += len(MAGIC)
             for row in entries:
                 if row["type"] != "file":
                     continue
-                fd = open_relative(root_fd, row["path"], os.O_RDONLY)
+                fd = open_relative(cache, row["path"], os.O_RDONLY)
                 with os.fdopen(fd, "rb") as stream:
                     require(stamp(os.fstat(fd)) == initial[row["path"]], "source file changed before packing")
                     file_hash, count = hashlib.sha256(), 0
@@ -335,11 +472,16 @@ def prepare(
                     )
                 row["sha256"] = file_hash.hexdigest()
                 size += count
+                packing["files_packed"] += 1
+                packing["bytes_packed"] += count
             output.flush()
             os.fsync(output.fileno())
     finally:
+        if cache is not None:
+            cache.close()
         os.close(root_fd)
-    _, final, final_mode = scan(prefix, deadline=deadline)
+    with phase(diagnostics, "final_inventory") as inventory:
+        _, final, final_mode = scan(prefix, deadline=deadline, counters=inventory)
     require(initial == final and root_mode == final_mode, "runtime inventory changed while packing")
     files, total = validate_entries(entries)
     interpreter = next((r for r in entries if r["path"] == python_relative_path), {})
@@ -362,11 +504,13 @@ def prepare(
     )
     raw = canonical(manifest)
     require(len(raw) <= MAX_MANIFEST_BYTES, "runtime manifest exceeds bound")
-    require(
-        digest_file(archive_path, MAX_TOTAL_BYTES + len(MAGIC), deadline=deadline)
-        == {k: manifest["archive"][k] for k in ("size", "sha256")},
-        "archive readback differs",
-    )
+    with phase(diagnostics, "archive_readback") as readback:
+        require(
+            digest_file(archive_path, MAX_TOTAL_BYTES + len(MAGIC), deadline=deadline)
+            == {k: manifest["archive"][k] for k in ("size", "sha256")},
+            "archive readback differs",
+        )
+        readback["bytes_read"] = size
     write_once(artifact / "manifest.json", raw)
     return describe(artifact, sha(raw), artifact_root=artifact_root)
 

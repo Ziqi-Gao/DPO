@@ -80,8 +80,31 @@ one foreground CPU pack began under fresh identity7ef839cabc924bd89851ee07a0f724
 requesta360fce74e4effccc277615cbe72c0f9a26440fcb520bc24c4bbaa6ff0d95d7f.
 Its3600s bound, exact source/deployment pins and single-use local/remote claims
 are recorded by `.sdsc/diagnostics/student-name-cue-probe-v1/runtime-pack-request-v2*`.
-At this edit it remains in source inventory; no completed descriptor exists.
-Reconcile this operation before any successor. After a verified snapshot, run
+It failed at22:16UTC after3600.033s; actual exec1327 returned1. The initial
+inventory took about51–52minutes before serial packing. Preserve the265,339,753B
+partial archive, request/start/error sidecars and absent manifest/completion.
+`runtime-pack-v2-known-failure-proof.json` (SHA0625afa2c3355059d0f79981fbf8cab119105a91f50c701e4700b9f79c810a60)
+binds the genuine tool exit, complete logs, exact remote error and a complete
+final own-process scan confirming the old process is absent. Two earlier
+conservative unknown reconciliations remain unchanged; an incomplete earlier
+scan with no conflicting process evidence does not invalidate the complete later
+scan. The reader and local successor predicate have39/37 passing independent cases.
+
+The reviewed I/O successor overlaps at most four metadata queries and caches at
+most32 parent-directory FDs while retaining deterministic archive bytes, initial
+and final inventories, per-file checks and full archive readback. The updated
+four-suite CPU run passes166 cases including genuine Git-history restore;
+independent tests and a frozen-reference differential preserve exact bytes.
+It requires
+external process supervision because blocked filesystem calls cannot be bounded
+by cooperative checks. One separate offGPU preparation may use10800s total,
+10760s work cutoff,10770s cleanup-attempt deadline and30s publication reserve;
+the client bound is10820s. This is engineering headroom, not an observed runtime
+bound or guaranteed process death. All GPU300/4800/600s limits remain unchanged.
+The ignored v3 candidate is still disabled pending actual failure/deployment
+binding and review; its permanent parent-request key prevents another UUID from
+bypassing an unknown or consumed successor. No successor has been started.
+After a verified snapshot, run
 the separately bounded CPU native-origin rehearsal, then exact-commit execution
 acceptance and a fresh final deployment/provenance/plan/admission. Draft recovery
 files in preparatory releases are not accepted GPU entrypoints. No new GPU job,
