@@ -376,11 +376,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Accept exact implementation after independent source review and CPU contract, optimizer, two-rank resume, raw replay and launch tests. Both native1.7B arms consume identical ordered2048 rows for32 steps; only constant LR differs. Seven complete evaluations and actual optimizer LR evidence are mandatory. Historical154 science files,9 protocols and11 helpers remain exact. Paired cap/error/repeated-output readouts are fixed descriptive analyses. Bounded SDSC diagnostic only: no selected checkpoint, common-initial acceptance, G0, pilot or execution-class claim. Real GPU completion and scientific benefit remain unobserved.",
+    "reviewed_at_utc": "2026-10-05T06:29:18Z",
+    "reviewed_implementation_commit": "04a8832bb0eff69d7b7a26823e7759d35b7f150e",
+    "reviewer": "root non-author control review; focus_failure_science non-author core review; next_repair_design non-author worker/auditor review",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [

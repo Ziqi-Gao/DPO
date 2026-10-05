@@ -31,8 +31,10 @@ token checks pass:1,660,712 tokens, maximum dev prefix2198 plus256=2454, shared
 manifest84227f0858cad084ed7e4ef72317d02c1e0ab18875628b4065c938bc4a510669.
 All154 parent scientific files, nine historical protocols and11 helper pins
 remain exact. See `docs/refactor/sdsc_student_focus_lr_probe_20261005.md`.
-Separate exact-implementation review/acceptance, deployment and submission remain
-pending. Each arm requests2H100/24CPU/384GiB/3h, at most4 total. This tests a
+Exact implementation04a8832bb0eff69d7b7a26823e7759d35b7f150e has independent
+acceptance recommendations with unchanged reviewed bytes. This distinct
+review-only commit accepts the diagnostic protocol; deployment and submission
+remain pending. Accepted scope is diagnostic execution only, never a model PASS. Each arm requests2H100/24CPU/384GiB/3h, at most4 total. This tests a
 hypothesis; smaller LR is not an established cure. Original numerical gates
 remain unchanged. Preflight54661792 passed actual
 execution and independent raw/execution audits; observer99374 ended verified
