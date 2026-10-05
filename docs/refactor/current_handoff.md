@@ -8,6 +8,33 @@ and immediate evidence-led repair of new failures.** The paired LR diagnostic
 strongly suppresses early capped/syntactically invalid output, but does not solve
 symbol-renaming invariance. No prepared student is accepted and formal OPD/RL
 has not started. See `docs/refactor/sdsc_student_focus_lr_results_20261005.md`.
+
+The additive `student_name_cue_probe` implementation is complete, with a proposed
+protocol awaiting exact-commit independent acceptance. It uses both fixed step32
+LR checkpoints solely for inference:64 fresh bases (48 depth4 branch/16 chain),
+two fixed name assignments and four matched cue conditions,512 responses/model.
+Seeds470000042/480000042 are fixed. All eight variants preserve graph/proof order,
+literal frequencies and exact model-prefix/canonical-EOS token lengths; maximum
+prefix1350, target212, prefix+cap1606. Full144k/teacher/history isolation passes.
+Branch variants are eight distinct prompts; chain controls have six across eight
+rows and are repeated observations, never extra independent examples. No model
+selection, promotion, training, threshold relaxation or formal OPD/RL is in scope.
+The envelope is one2H100/24CPU/384GiB/90minute job,4800s worker plus600s persistence,
+with serial native BF16 models, exact FP32 loading and original raw-verifier audit.
+All160 historical scientific files, ten protocols and frozen helpers are unchanged.
+The new168-file inventory explicitly integrates provenance-v2; historical LR/native
+parents retain frozen v1 verification. Core/transport/worker-auditor author suites
+pass49/85/67 distinct CPU cases. Tests caught and repaired a missing declared
+isolation dimension field, a duplicate error-analysis key and two invalid loader
+constant references before any GPU submission. CPU evidence is not GPU success.
+See `docs/refactor/sdsc_student_name_cue_probe_20261005.md` and bounded evidence in
+`.sdsc/diagnostics/student-name-cue-probe-v1/`. No new intent/job exists yet.
+Questquser32 SSH worked at15:50:32Z; a16:01:15Z runtime/storage inventory timed out
+after150s. Separate16:05:21Z master/remote identity checks still succeeded; the
+timed-out inventory is not evidence of runtime/storage readiness. Reconcile that
+check, accept the implementation, then fresh check→sync dry/sync→v2 export/upload
+and exact-plan dry-run/review before one authorized submission.
+
 V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
 12 checkpoints and18,432 development responses.** Following manual authentication
@@ -69,7 +96,7 @@ other views163). All10 treatment final renamed capped responses already have
 an invalid premise/citation in a completed earlier step; extra output allowance
 cannot repair them. Native branch/DAG atom names expose structural `_L`/`_R`
 and paired-stem cues that opaque renaming removes. This is a next diagnostic
-hypothesis, not established causality or a reviewed new execution plan.
+hypothesis, not established causality; the separate name-cue protocol defines its test.
 No diagnostic checkpoint is selected or eligible for model promotion.
 
 Initial observer28744 stopped at
@@ -90,10 +117,10 @@ Additive full-bundle tools `tools/sdsc_provenance_v2.py` and
 `tools/sdsc_provenance_upload_v2.py` now have author and independent46-case
 verification. V2 has a new schema/namespace and fixed256-commit limit, preserving
 all old trust/byte bounds and frozen v1 files. See
-`docs/refactor/sdsc_provenance_v2_20261005.md`. It is not integrated into any
-current consumer and has not exported/uploaded a production artifact. The next
-scientific task must explicitly bind v2 controls, protocol inventory and namespace;
-historical native-parent verification remains v1. Never raise the active helper's
+`docs/refactor/sdsc_provenance_v2_20261005.md`. The proposed name-cue consumer now
+explicitly binds v2 controls, protocol inventory and namespace; no production-v2
+artifact has yet been exported/uploaded. Historical native-parent verification
+remains v1. Never raise the active helper's
 limit or move the public ref to bypass the old bound.
 Preflight54661792 passed actual
 execution and independent raw/execution audits; observer99374 ended verified
