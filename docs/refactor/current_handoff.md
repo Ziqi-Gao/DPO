@@ -31,12 +31,46 @@ token checks pass:1,660,712 tokens, maximum dev prefix2198 plus256=2454, shared
 manifest84227f0858cad084ed7e4ef72317d02c1e0ab18875628b4065c938bc4a510669.
 All154 parent scientific files, nine historical protocols and11 helper pins
 remain exact. See `docs/refactor/sdsc_student_focus_lr_probe_20261005.md`.
-Exact implementation04a8832bb0eff69d7b7a26823e7759d35b7f150e has independent
-acceptance recommendations with unchanged reviewed bytes. This distinct
-review-only commit accepts the diagnostic protocol; deployment and submission
-remain pending. Accepted scope is diagnostic execution only, never a model PASS. Each arm requests2H100/24CPU/384GiB/3h, at most4 total. This tests a
-hypothesis; smaller LR is not an established cure. Original numerical gates
-remain unchanged. Preflight54661792 passed actual
+Exact implementation04a8832bb0eff69d7b7a26823e7759d35b7f150e is independently
+accepted by distinct review-only commit ec349703d379400addd4ec244dcb79ee1b2b8059.
+Accepted artifact28eae66afe928a9718c77362ab39abb0b1500adceda13314191bc04e9f7f246f
+binds160 scientific files. Release20261005T062954Z-6b4d114e538c-5d4201ed and
+genuine provenance47fee241902d2bc2bc132cad42703e01d1987a297de87fef6588bd321073b73e
+are deployed and verified. Independent exact-plan review is
+`.sdsc/diagnostics/student-focus-lr-probe-v1/paired-plan-independent-review.json`
+(SHAb46bfeb7d94a985bdd5c37e0ae2fba5db95e273af704e5d82428137edcce96c3).
+Each arm requests2H100/24CPU/384GiB/3h; fresh second admission verifies2+2<=4.
+Control54673886 (LR5e-5), intent11c0db9b296008aeda5df5d008c2572f, was submitted
+once at06:41:08Z; treatment54673887 (LR2.5e-5), intent63b098982006ba6b1faaddfc790c9b8c,
+once at06:42:37Z. Exact plans and submit receipts are in their intent directories
+under `.sdsc/student-focus-lr-probe/`; never resubmit them. Both were RUNNING at
+07:12:11Z, without diagnostic completion. Initial observer28744 stopped at
+07:09:31Z/exit1 after52 polls because the owner squeue query failed its returncode/
+size guard. Original command stderr was not retained by the frozen helper;
+the cause is not established. Preserve its terminal state under
+`.sdsc/diagnostics/student-focus-lr-probe-v1/watch-pair-54673886-54673887/`.
+Fresh exact-owner queue and both bound statuses pass; SSH remains connected.
+Manual reconciliation is `observer-reconciliation-0713.json` in the same
+diagnostics directory. No training job was resubmitted or cancelled.
+New foreground observer54658 uses unchanged reviewed controls and actual
+receipts, checking each minute until the same absolute deadline12:40:00Z;
+its state directory is `watch-pair-54673886-54673887-reconciled-0713/` there.
+Inspect its actual state before further operations; do not re-arm or edit pinned
+controls while active. Read-only one-shot progress helper is independently
+reviewed in the same diagnostics directory. No new GPU outcome is established.
+Accepted scope is diagnostic execution only, never a model PASS. Smaller LR
+is not an established cure; original numerical gates remain unchanged.
+The accepted export has127 unpublished commits under the frozen128 limit.
+Additive full-bundle tools `tools/sdsc_provenance_v2.py` and
+`tools/sdsc_provenance_upload_v2.py` now have author and independent46-case
+verification. V2 has a new schema/namespace and fixed256-commit limit, preserving
+all old trust/byte bounds and frozen v1 files. See
+`docs/refactor/sdsc_provenance_v2_20261005.md`. It is not integrated into any
+current consumer and has not exported/uploaded a production artifact. The next
+scientific task must explicitly bind v2 controls, protocol inventory and namespace;
+historical native-parent verification remains v1. Never raise the active helper's
+limit or move the public ref to bypass the old bound.
+Preflight54661792 passed actual
 execution and independent raw/execution audits; observer99374 ended verified
 at21:46:49Z/exit0 after20 polls. Original thresholds remain unchanged and no
 student model is accepted. Completed batch diagnostic54659007/54659010 showed
