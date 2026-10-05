@@ -3,7 +3,12 @@
 Last updated: 2026-10-05 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
-and immediate evidence-led repair of new failures.** V5 full preparation54663831
+and immediate evidence-led repair of new failures.** The paired LR diagnostic
+54673886/54673887 is complete and independently audited: reducing5e-5 to2.5e-5
+strongly suppresses early capped/syntactically invalid output, but does not solve
+symbol-renaming invariance. No prepared student is accepted and formal OPD/RL
+has not started. See `docs/refactor/sdsc_student_focus_lr_results_20261005.md`.
+V5 full preparation54663831
 **FAILED scientific selection after completing all32 updates/1,665,064 tokens,
 12 checkpoints and18,432 development responses.** Following manual authentication
 on current Quest hostquser32, fresh2026-10-05T05:56:09Z accounting confirms
@@ -22,7 +27,7 @@ See `docs/refactor/sdsc_student_focus_failure_20261005.md` for evidence and limi
 The historical observer53737 remains stopped after SSH loss onquser43 at
 00:17:54Z/exit3/146polls. Preserve
 `.sdsc/diagnostics/student-focus-v5/watch-fit-54663831/`; never re-arm or resubmit
-this completed job. A new additive LR-only diagnostic implementation is ready:
+this completed job. The completed additive LR-only diagnostic used
 fresh paired5e-5/2.5e-5, identical new2048-row exposure/32updates and V5 sampling,
 128-base development, seven fixed checkpoints2/4/6/8/12/16/32, no checkpoint
 promotion. Core/transport/worker-auditor author suites cover82/183/169 passing
@@ -43,23 +48,43 @@ Each arm requests2H100/24CPU/384GiB/3h; fresh second admission verifies2+2<=4.
 Control54673886 (LR5e-5), intent11c0db9b296008aeda5df5d008c2572f, was submitted
 once at06:41:08Z; treatment54673887 (LR2.5e-5), intent63b098982006ba6b1faaddfc790c9b8c,
 once at06:42:37Z. Exact plans and submit receipts are in their intent directories
-under `.sdsc/student-focus-lr-probe/`; never resubmit them. Both were RUNNING at
-07:12:11Z, without diagnostic completion. Initial observer28744 stopped at
+under `.sdsc/student-focus-lr-probe/`; never resubmit them. Fresh15:14:56Z
+accounting confirms both job/batch/externCOMPLETED0:0, elapsed7704/6307s,
+empty own-job queues and verified publications. Each completed32updates,
+1,660,712tokens,7checkpoints and5376responses. Bounded fetches are
+`.sdsc/fetched/54673886/fetch-rbozfxw5/` (46,479,770B) and
+`.sdsc/fetched/54673887/fetch-uelo8apy/` (45,118,665B).
+Original raw auditors and an independent10752-response original-verifier replay
+pass. Actual execution review confirms all learning rates, save/restore,
+FP32/BF16 checks, startup/runtime and publication evidence; no OOM/fail counters.
+Review5903fd3ee9608accdac62b40053f03ee86ec410f894d73ef595305f8b865d011 and
+fixed comparison742a6254a2931289acefcf3e9156ec79eddf51d1d9f6b42cf9edbac95c8db2e5
+are under `.sdsc/diagnostics/student-focus-lr-probe-v1/`.
+Step2 caps fall768/768→18/768, but both arms have zero valid proofs there.
+Final proof counts (IID/rename/fact/rule/paraphrase/distractor; each /128) are
+control118/107/117/117/120/113 versus treatment120/108/123/120/122/119.
+Effects across intermediate checkpoints are mixed; rename at step12 is78vs99.
+All768 canonical targets fit256tokens includingEOS (rename maximum203,
+other views163). All10 treatment final renamed capped responses already have
+an invalid premise/citation in a completed earlier step; extra output allowance
+cannot repair them. Native branch/DAG atom names expose structural `_L`/`_R`
+and paired-stem cues that opaque renaming removes. This is a next diagnostic
+hypothesis, not established causality or a reviewed new execution plan.
+No diagnostic checkpoint is selected or eligible for model promotion.
+
+Initial observer28744 stopped at
 07:09:31Z/exit1 after52 polls because the owner squeue query failed its returncode/
 size guard. Original command stderr was not retained by the frozen helper;
 the cause is not established. Preserve its terminal state under
 `.sdsc/diagnostics/student-focus-lr-probe-v1/watch-pair-54673886-54673887/`.
-Fresh exact-owner queue and both bound statuses pass; SSH remains connected.
-Manual reconciliation is `observer-reconciliation-0713.json` in the same
-diagnostics directory. No training job was resubmitted or cancelled.
-New foreground observer54658 uses unchanged reviewed controls and actual
-receipts, checking each minute until the same absolute deadline12:40:00Z;
-its state directory is `watch-pair-54673886-54673887-reconciled-0713/` there.
-Inspect its actual state before further operations; do not re-arm or edit pinned
-controls while active. Read-only one-shot progress helper is independently
-reviewed in the same diagnostics directory. No new GPU outcome is established.
-Accepted scope is diagnostic execution only, never a model PASS. Smaller LR
-is not an established cure; original numerical gates remain unchanged.
+After documented manual reconciliation `observer-reconciliation-0713.json`,
+observer54658 used unchanged controls and new state directory
+`watch-pair-54673886-54673887-reconciled-0713/`. It stopped08:30:48Z after154polls
+on an explicit45s owner-squeue timeout. Preserve both stopped observers and
+their raw states; never re-arm them. Later actual live-binding files and exact
+terminal accounting reconcile both completed jobs. No training was resubmitted
+or cancelled, and no LR-probe GPU job remains active. Accepted scope is diagnostic
+execution only; original scientific thresholds remain unchanged.
 The accepted export has127 unpublished commits under the frozen128 limit.
 Additive full-bundle tools `tools/sdsc_provenance_v2.py` and
 `tools/sdsc_provenance_upload_v2.py` now have author and independent46-case
