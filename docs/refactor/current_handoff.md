@@ -56,14 +56,16 @@ is not established. See `sdsc_student_name_cue_runtime_failure_20261005.md`.
 
 The execution-only recovery implementation4698f204b967bfbe60bceaab2b735939e46770aa
 is independently accepted by16f5febcf1990be8b7721b48b04fc5428ed45029 after genuine
-CPU native-origin proof. One GPU recovery54687025 is now running. It uses a
+CPU native-origin proof. GPU recovery54687025 failed after all1024 responses;
+final origin acceptance was incomplete (details below). It used a
 byte-identical full-prefix snapshot prepared offGPU, native node-local extraction,
 explicit relocated-interpreter/sys.prefix/module/native-library origin checks,
 and one recovery claim bound to this exact failed no-inference job. Keep the
 original300s import gate,4800s worker/600s persistence, all168 scientific files,
 models/inputs/readouts and original raw auditor unchanged. No environment
-installation or prefix rewriting. Actual native CPU relocation passes; GPU-node
-storage, CUDA compatibility and scientific completion still need their own evidence.
+installation or prefix rewriting. Actual native relocation, GPU-node storage and
+CUDA/model execution succeeded, but final execution acceptance failed. Preserve
+the consumed recovery claim and all original failure flags; do not repeat inference.
 Root's final combined CPU suite passes153 cases; the separate real-Git accepted
 lineage/v2 full-history restore fixture also passes. Independent controller and
 node/auditor reviews are `recovery-controller-independent-review.json` and
@@ -243,7 +245,7 @@ review fields and this handoff. The accepted resolver verifies5controls/168scien
 No CPU operation remains active.
 
 The one authorized GPU recovery was submitted once at01:49:04.611583UTC as
-job54687025, intent046cf7c941b53e39610a9e2a0076fbe8. Continue its status/logs/fetch;
+job54687025, intent046cf7c941b53e39610a9e2a0076fbe8. It is now reconciled terminal;
 never resubmit or clear its permanent claim. Exact local outer plan is
 `.sdsc/student-name-cue-recovery/046cf7c941b53e39610a9e2a0076fbe8/plan.json`,
 SHA65d0ad749433513741eaa15de109b80cf3a5b7eb533bc18f356f10f8cdaaf35c;
@@ -259,19 +261,48 @@ binds139 genuine unpublished commits with terminal4698f204→16f5feb. Independen
 exact-plan review3fe2f8a534d91909d611ce520e70a010a8c5f7b6512ddf44a62204ac4972be21
 and actual fresh dry-run verify original failed accounting, both LR parents,19
 runtime pins and0+2<=4GPU. The allocation is2H100/24CPU/384GiB/90minutes.
-At01:52:45UTC accounting/queue both showRUNNING; no publication yet. Bounded
-fetch `.sdsc/fetched/54687025/fetch-5mpg04rj/` contains empty own stdout/stderr.
-The separately reviewed read-only observer `read_recovery_live_progress.py`
-SHAd37e2a1ff262fc9d3780b37fc68ad0d30219fce5ae0037db74234d764fdf0673 is pinned to
-this outer plan/receipt; activation review165d87b3888699ed2d6ca62dcdd81ef833c4185b7907700d936382ead8b4d189.
-At01:56:24UTC its latest heartbeat is21s old, elapsed408s in runtime staging,
-with no rank progress. This is liveness evidence only, not CUDA/model completion.
-Next: observe the existing job, require terminal accounting and both verified
-publications, then run execution audit followed by original1024-response raw
-scientific audit. Use `name-cue-terminal-audit-commands-and-inference.md` in the
-diagnostic directory; no checkpoint promotion or new training follows automatically.
-No new scientific result, prepared-student acceptance or formal OPD/RL progression
-exists yet.
+At02:32:10UTC accounting shows job/batchFAILED1:0, externCOMPLETED0:0,
+elapsed2252s; the latest queue response still contains54687025|FAILED, not empty.
+Both publications verify, with failed science SHA
+22fdd458b74c895f709cdc596042c6e2c69bce652d8bde5e98662e3e6c3bc35c and failed execution SHA
+2876568c3b9ebdbc09831880cdb7db8ece4f5ee837b9121f4fd3ce3ac34bfb51.
+Bounded fetch `.sdsc/fetched/54687025/fetch-53wdbbl1/` verifies all35 published files,
+34,470,691B. Both ranks completed inference and failed final origin validation on
+Torch's deterministic `_remote_module_non_scriptable.py` temporary search path.
+A complete comparison also found15 imported scientific files absent from the
+narrow168-file allowlist; all match genuinef167/16f5 and the complete provenance.
+No other recorded origin is unexplained. Old raw capture lacks the directory
+metadata required for a stronger successor proof; old flags cannot be upgraded.
+All65 memory samples pass, peak80.451/384GiB, noOOM. Preserve failed results and
+all consumed claims. The foreground observer ended; no background monitor exists.
+
+Unchanged tokenizer/parser/verifier pure replay reproduces all1024 responses and
+reported readouts. This is descriptive failed-run evidence only: the ordinary
+publication validator still rejects it. With name cues preserved, branch proof
+counts are29–34/48; breaking both naming cues reduces them to11–14/48, while chain
+controls remain14–16/16. Predominantly semantic errors support a name-cue
+sensitivity diagnosis, not an internal mechanism or sole historical cause.
+See `docs/refactor/sdsc_student_name_cue_results_20261006.md` and the independent
+failure review/addendum and `failed-54687025-local-raw-replay.json` in the same
+name-cue diagnostic directory. No student is accepted and formal OPD/RL is unstarted.
+
+The next additive preparation is being implemented, still proposed/uncommitted:
+`student_name_invariant_preparation`, fresh native1.7B reset, fixedLR2.5e-5,
+one uniform original tagged-name pool permutation per signed branch pair before
+all8 training views, fresh256 fitbases/2048rows and256 devbases/1536views,
+32 global64 updates and original12 checkpoint-selection gates. Original ordering
+anchors remain25%, but unmodified-name anchor coverage intentionally changes.
+Fixed seeds490000042/500000042/510000042/520000042/530000042 are preserved.
+Full historical isolation is still being checked. Actual encoding measures
+1,662,052 fit tokens (maxprefix1000/targetEOS205/input1163). Exactly2/1536dev
+views need prefix2200+256=2456, two tokens beyond historical2454. The new explicit
+inference shape2456 requires its own W2 context probe; no truncation, seed redraw
+or threshold relaxation. Training1536 and response256 limits remain fixed. New native execution will reuse the exact
+completed v3 snapshot, explicitly record the single Torch-derived module and
+named imported science closure, and run a new W2 preflight before an8h fit.
+No new job has been submitted. Next: finish new source/tests and independent
+implementation/acceptance review, then fresh connection/check/sync/admission,
+submit one preparation preflight, audit it, and gate the independent full fit.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
