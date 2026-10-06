@@ -286,8 +286,9 @@ See `docs/refactor/sdsc_student_name_cue_results_20261006.md` and the independen
 failure review/addendum and `failed-54687025-local-raw-replay.json` in the same
 name-cue diagnostic directory. No student is accepted and formal OPD/RL is unstarted.
 
-The additive `student_name_invariant_preparation` implementation is complete;
-its protocol remains proposed until a distinct exact-commit acceptance. It resets
+The additive `student_name_invariant_preparation` implementation
+1d5b41ea188955a339533f3329948bcb9a066128 has passed three exact-commit non-author
+reviews. This distinct review-only acceptance binds that implementation. It resets
 native1.7B, fixesLR2.5e-5, and applies one uniform original tagged-name pool
 permutation per signed branch pair before all8 fit views. Fresh256 fitbases/2048
 rows and256 devbases/1536views retain32 global64 updates and original12 checkpoint
@@ -323,9 +324,11 @@ records are in `.sdsc/diagnostics/student-name-invariant-preparation-v1/`:
 `worker-startup-auditor-independent-review.json`, `controller-independent-review.json`,
 `generated-origin-independent-review.json` and `independent-native-node-review.json`.
 See `docs/refactor/sdsc_student_name_invariant_preparation_20261006.md`.
-Fresh03:03:59UTC SDSC check verifies currentquser43 master, identity and shared QoS;
-all18 historical supervisors remain terminal. No new job is submitted. Next:
-exact implementation review, review-only acceptance, matching sync/provenance-v2,
+Fresh03:12:27UTC SDSC check verifies currentquser43 master, identity and shared QoS;
+all18 historical supervisors remain terminal. Exact review records are
+`exact-commit-core-native-review.json`, `exact-commit-worker-auditor-review.json`
+and `exact-commit-controller-generated-review.json` in that diagnostic directory.
+No new job is submitted. Next: matching sync/provenance-v2,
 fresh resource/runtime/storage admission and one2H100/24CPU/384GiB/1h preflight.
 Only verified accounting/artifacts and original raw audit may gate the separate
 same-resource8h fit. No prepared student or formal OPD/RL progression exists yet.

@@ -439,11 +439,11 @@
     "unchanged_base_anti_shortcut_paired_cohort_circuit_and_calibration_improvement_gates": true
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Exact-commit independent reviews exact-commit-core-native-review.json SHA256 c8aef05a63e9ac639fa6d7a7f2ed2cd6b6f5aee7b083178c36a58c8bc8c4f249; exact-commit-worker-auditor-review.json SHA256 d34908738bd0e61d25efa90f4f7ea2228f180f01137e3b6505e472b0815ba70a; exact-commit-controller-generated-review.json SHA256 5b12363716e3a26e10e27333b35d25a76eb0d84d814851009724d43a07a140c0. Original gates and frozen parent bytes preserved; new inference context2456 and role-name intervention explicitly bound. CPU review authorizes the new W2 preflight only; full fit remains gated on actual successful preflight accounting, artifacts and raw/native audit. No prepared student or formal OPD/RL acceptance.",
+    "reviewed_at_utc": "2026-10-06T03:13:29Z",
+    "reviewed_implementation_commit": "1d5b41ea188955a339533f3329948bcb9a066128",
+    "reviewer": "Independent non-author cross-review: torch_import_probe_worker (science/native/node), focus_failure_science (worker/startup/auditor), root (controller/generated-origin helper)",
+    "status": "accepted"
   },
   "review_contract": {
     "acceptance_allowed_changed_paths": [
