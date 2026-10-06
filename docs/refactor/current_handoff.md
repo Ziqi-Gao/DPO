@@ -411,7 +411,8 @@ The user then explicitly authorized blocking the old request and resubmitting:
 The additive execution recovery implementation is commit
 `0fdc01f07e0e5a32ecac449e3dbc4b7a42c487bf`; its contract
 `prereg/amendments/qwen3_student_name_invariant_execution_recovery_v1.json`
-has now received distinct review-only acceptance. Independent exact-commit
+has distinct review-only acceptance commit
+`dbd97a27ad0b836144b9bab2671c1c8b7bc50cd4`. Independent exact-commit
 reviews accept the fence, contract/node and non-author controller surfaces;
 162 distinct CPU tests pass including genuine full-history v2 export/restore.
 All213 protected Git blobs and worktree paths were independently verified.
@@ -433,14 +434,50 @@ against60s and consumes the original allocation reserve; original3300s worker,
 Slurm3600s and TERM@180 remain unchanged. It does not guarantee a full300s
 reserve after setup or interrupt blocked filesystem calls.
 
-No remote fence or new submission has yet occurred. Follow fresh check→matching
-sync→accepted provenance→fence dry-run→single install/readback→new inner/outer
-plan→reviewed submit dry-run→single authorized submit→status/logs/fetch. Reserve
-old2+new2GPUs under the4GPU ceiling. Preserve any partial fence/submission claim
-and reconcile, never reset or retry. This contract covers preflight only.
+The permanent fence was installed exactly once at2026-10-06T05:19:08Z, then
+read back independently: proof90436B, SHA
+`8dd9a2e4cd1b5dc716eaac32b6b293cb86f4b3c82f6f95177eb5a1ed2f392bfe`.
+Retain its control proof/claim and exact old result directory permanently.
+All36 old file records remain unchanged. This blocks old model work; the old
+scheduler outcome remains unknown and must never be reported as cancelled.
+
+The one authorized successor preflight was submitted once at05:25:20Z and
+received actual job**54692520** at05:25:26Z, intent
+`00b0029c5bac2523196425ebb37a226b`. Complete sbatch observation:6.092s, exit0,
+stdout exactly54692520 plus LF, stderr empty, both EOF, no truncation/timeout.
+Its actual05:26:49Z accounting/queue state is RUNNING. GPU-node recovery entry
+passed at05:25:47Z in13.834s, including actual cross-host retained-fence check;
+05:28:08Z telemetry reached after_staging (early CUDA gate and inputs staged);
+05:29:12Z reports training_or_evaluation with no completed update yet.
+No optimizer update, final raw/native audit or scientific PASS is established.
+Bounded receipt/observation/entry/logs fetched to
+`.sdsc/fetched/54692520/fetch-vymdezf5/`. Continue using
+`tools/sdsc_student_name_invariant_recovery.py status|logs|fetch --plan
+.sdsc/student-name-invariant-recovery/00b0029c5bac2523196425ebb37a226b/plan.json`;
+never invoke the old submitter, re-arm a claim or resubmit either intent.
+
+Deployed release`20261006T051432Z-61ba795cb4c2-7b5da995` contains885files,
+14568627B, codeSHA61ba795cb4c2849d831ea8013df6a295210a9dfdcfc7e21e6740a4e20ecb3cde.
+Genuine v2 provenance manifest36d9b96474abf0289502e5d9337876ec35d417463cadd473906d74e50feea70f
+binds accepted HEADdbd97a2; remote upload verified. Inner plan SHA
+9bf5a62880fd96501b2f2d326caf51ee177d228f7ebd754cd5a30f1852a67520, outer SHA
+56d06d504637814e8b876ca6f2fe6c5c46cd70696aa7cd5590900783d572eeee. Independent
+actual-plan and fence reviews plus full remote dry-run passed;19runtime pins,
+original native snapshot and parent54548846 verified. Resources remain2H100,
+24CPU,384GiB,1hour, nwu181/nairr-gpu-shared/nairr-gpu-shared-normal. Reserve
+old2+new2GPUs under4GPU; preserve all claims/evidence. No supervisor was started.
+This contract covers preflight only.
 The frozen fit prerequisite deliberately cannot yet accept this recovered
 preflight's preserved old science claim; later fit needs an explicit reviewed
 adapter and the actual original raw/native preflight audit, not a claim rewrite.
+Read-only follow-up design identified both frozen gates: original controller
+verify_preflight and original node.main call it; changing only submission fails.
+The fit inner plan must retain this preflight's dbd97/61ba science release and
+provenance because validate_plan requires equality. A separately reviewed outer
+fit execution contract/source/provenance and explicit node orchestration must
+verify recovered preflight artifacts, normal wrapper exit and retained fence,
+then use the original worker/native/auditor. No monkeypatch, old claim rewrite
+or duplicate successful preflight; no fit adapter has been implemented yet.
 No prepared student, fit, qualification or formal OPD/RL progression is accepted.
 See `docs/refactor/sdsc_student_name_invariant_execution_recovery_20261006.md`.
 

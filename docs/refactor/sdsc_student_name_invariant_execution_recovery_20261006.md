@@ -5,9 +5,15 @@ one replacement. The original intent is
 `19665dfbd26d7b0024a46d9b7b811ce4`, plan SHA
 `b88f012fb8c30a9527d6300680dbabe29a944fdff64b29339a28f0c34764af5f`.
 Its scheduler outcome remains unknown; no receipt or rejection is invented.
-The proposed execution contract is
+The accepted execution contract is
 `prereg/amendments/qwen3_student_name_invariant_execution_recovery_v1.json`.
-Implementation and independent review-only acceptance remain distinct commits.
+Implementation`0fdc01f07e0e5a32ecac449e3dbc4b7a42c487bf` and independent
+review-only acceptance`dbd97a27ad0b836144b9bab2671c1c8b7bc50cd4` are distinct.
+The permanent fence was installed once at2026-10-06T05:19:08Z and verified.
+One successor preflight was submitted with complete acknowledgement as actual
+job`54692520`, intent`00b0029c5bac2523196425ebb37a226b`; its node entry passed.
+See the current handoff and `.sdsc/student-name-invariant-recovery/` for status
+and exact-plan evidence. This is not preflight completion or student acceptance.
 
 The scientific protocol is unchanged: Qwen3-1.7B initial checkpoint,2.5e-5 LR,
 original role-name intervention, seeds, data isolation, full-parameter W2/global64
