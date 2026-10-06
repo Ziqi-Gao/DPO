@@ -348,32 +348,51 @@ snapshot and0+2<=4GPU. Root invoked submit exactly once; remote sbatch began at
 receipt exists. Preserve the local submission-started record and both permanent
 remote claims; neither a new release nor a new session authorizes blind retry.
 
-Initial reconciliation exposed a query-timezone bug: UTC date2026-10-06 was
-interpreted as future Pacific midnight. A separate unchanged pinned reconcile
-under remoteTZ=UTC passes the queries but rejects zero/ambiguous matches. Wider
-exact-name and all-own queue/accounting queries at03:25–03:26UTC return0/empty;
-no matching own client remains and the fixed submission directory has no Slurm
-logs/receipt. sbatch--version and scontrol ping succeed. These negative results
-do not prove the request was never accepted. Actual AccountingStoreFlags=null
-and the known old job54687025's empty accounting Comment also show that the
-frozen Comment-matching reconciler may not recover a job after it leaves squeue.
-No source, scientific environment, old result flag or receipt was changed.
-Evidence is in the diagnostic directory's `preflight-submitted.stderr`,
-`preflight-reconciled.stderr`, `preflight-reconcile-raw-0324.json`,
-`preflight-reconcile-wide-accounting.json`, `preflight-reconcile-all-own-0326.json`,
-`preflight-reconcile-utc.json` and `preflight-slurm-reconciliation-config.json`.
-The final bounded snapshot at03:33:14.577063UTC, more than10minutes after the
-attempt, again returns0/empty for all-own queue and accounting under explicitUTC,
-with no matching client, receipt, live-binding or Slurm logs. Original plan and
-both claims are unchanged. Preserve `preflight-reconcile-final-10min.json`.
-Independent assessment `preflight-unknown-submission-independent-review.json`
-requires UNKNOWN_NO_RESUBMISSION; empty queries are insufficient to authorize an
-execution successor. No observer or automatic retry is running. Next requires
-SDSC server-side definitive rejection/no-pending-request evidence or recovery
-of the actual JobID. An unsent support draft with exact parameters is
-`sdsc-submission-operator-inquiry-final.txt` in the diagnostic directory. Only
-accepted actual W2 accounting/artifacts and raw/native audit can gate the8h fit.
-No prepared student is accepted and formal OPD/RL remains unstarted.
+The continued diagnosis confirms SSH never disconnected. The actual45s helper
+is `sdsc_student_lr.run` (aliased by the new controller), not the outer240sSSH
+limit. A reproduced engineering defect discards TimeoutExpired stdout/stderr
+while saving only its message. Empty controller JSON therefore does not mean
+sbatch itself printed nothing; original partial output cannot now be recovered.
+Five actual local-child tests reproduce that loss and verify inputEOF and
+SBATCH/SQUEUE/SACCT environment filtering; imports/admission do not change the
+parent environment/cwd. A separate query defect treated a UTC date as future
+Pacific midnight. Correct UTC queries resolve that error. AccountingStoreFlags
+is null and historic Comment is empty, so the frozen exact-Comment reconciler
+can also miss an accounting-only job. No original receipt may be invented.
+
+Further04:13–04:28UTC read-only checks find the actual23.02.7ELF, no CLI/SPANK
+plugins, fast script/config reads and responsive SSH/controllers. One explicit
+`sbatch --test-only -vv` prediction at04:15:43 takes80.018ms, longest traced wait
+29.607ms. Claims and plan retain identical hashes. **54690409 is exclusively
+this WILL_RUN temporary prediction ID; never reconcile it as the real preflight.**
+Its absence from queue/accounting and invalid scontrol JobID are verified.
+No script or GPU was run. Controller dynamic thread count256 at04:18:37 then3
+at04:19:48 supports contemporaneous transient load, not the original cause.
+The04:27:53UTC query, including explicit expanse cluster and duplicate accounting
+records, still returns0/complete/empty. Original submission remains UNKNOWN.
+
+Additive `tools/sdsc_observed_command.py` preserves bounded raw output/time/exit/
+timeout/reaping evidence, offers explicitUTC for allowed read queries and never
+retries or invents JobIDs. It is not wired into any accepted submit controller;
+all213 distinct protected science/control paths remain exact. Author14 cases,
+independent14 plus4 real-process boundaries and5 input-rejection cases pass.
+A real SDSC CPU timeout fixture verifies retained stdout/stderr and reaped direct
+child, followed by successful read-only UTC queries. The initial diagnostic
+harness assertion failure is preserved separately; the corrected v2 publishes
+raw fixture observations before judging them. The helper bytes never changed.
+See `docs/refactor/sdsc_submission_timeout_diagnosis_20261006.md` and records in
+`.sdsc/diagnostics/student-name-invariant-preparation-v1/`, especially
+`submission-test-only-independent-review.json`, `submission-client-path-independent-review.json`,
+`observed-command-independent-review.json` and `observed-command-sdsc-rehearsal-v2.json`.
+
+Both claims and original unknown evidence remain unchanged. No new real
+submission, cancellation, automatic observer or retry occurred. Next still needs
+SDSC server-side definitive rejection/no-pending-request evidence or the actual
+JobID for03:22:36.979479Z onward; the controller log is unavailable on the login
+node and ordinary-user statistics cannot recover this request. Preserve the
+unsent support draft in the diagnostic directory. Only accepted real W2 results
+and raw/native audit can gate the8h fit; no prepared student or formal OPD/RL
+progression is accepted.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
