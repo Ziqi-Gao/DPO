@@ -336,7 +336,8 @@ binds acceptance f7fc25c,143 unpublished genuine commits and bundle
 ae082431285cc04d73b72c82dfc4710308721adfd93f3682a9ed9ebb965cc57c.
 The actual accepted resolver and exact-plan/admission independent review pass.
 
-**The new preflight submission is UNKNOWN; do not resubmit or clear claims.**
+**The original preflight submission is UNKNOWN; never repeat its submission or clear claims.**
+The separately authorized, proof-gated replacement is described below.
 Intent19665dfbd26d7b0024a46d9b7b811ce4, plan
 `.sdsc/student-name-invariant-v1/19665dfbd26d7b0024a46d9b7b811ce4/plan.json`, SHA
 b88f012fb8c30a9527d6300680dbabe29a944fdff64b29339a28f0c34764af5f,
@@ -405,19 +406,39 @@ See the diagnosis document's no-administrator alternative and
 `submission-fence-main-rehearsal-result.json` and
 `submission-fence-source-parent-readonly.json` in the same diagnostic directory.
 
-This is a proposed execution-only recovery, not an accepted successor submitter.
-Permanently blocking the old intent is treated conservatively as retirement and
-needs the separate user authorization for stopping an old task. A reviewed
-single-attempt successor must bind durable fence proof, retain original claims
-and science, preserve raw submission output, and use a new recovery identity.
-Do not delete the consumed science claim or call the frozen submitter as a retry.
-An old late allocation remains possible: reserve its2GPUs when admitting one
-new2GPU preflight under the4GPU ceiling. Its original1h requested envelope may
-still be charged; fencing does not guarantee immediate release or no cost.
-Administrator evidence remains useful for the actual historical outcome, but
-is not the only possible way to prevent duplicate model work. Preserve the
-unsent support draft. Only accepted real W2 results and raw/native audit can
-gate the8h fit; no prepared student or formal OPD/RL progression is accepted.
+The user then explicitly authorized blocking the old request and resubmitting:
+“那就按照你的方式，阻止旧请求然后重提”. Do not ask for this authorization again.
+The additive execution recovery is implemented under the proposed contract
+`prereg/amendments/qwen3_student_name_invariant_execution_recovery_v1.json`.
+It still requires its distinct independent acceptance before operational use.
+Five named controls bind the permanent exclusive-mkdir fence, retained old
+claims, one new recovery identity, complete bounded180s sbatch observations,
+and a thin guard that invokes the unchanged original node. All213 protected
+science/control paths remain byte-exact. Root contract/node45 CPU cases and
+independent45 pass; controller63 fast cases and the separate full-history
+v2 export/restore with all203 science files pass. These are not GPU success.
+Independent review records are in the same diagnostic directory.
+
+Review caught and repaired a real parent-path replacement race and the mistaken
+use of client-local st_dev for cross-host fence identity. The fence now binds
+actual FD-backed shared mount source/type/filesystem path plus inode/owner/bytes;
+local before/after device checks remain strict.04:58UTC own NFS/Lustre discovery
+and historical GPU54687025 Lustre evidence ground the exact mounts. No source
+alias is inferred. New wrapper setup is checked before original-node entry
+against60s and consumes the original allocation reserve; original3300s worker,
+Slurm3600s and TERM@180 remain unchanged. It does not guarantee a full300s
+reserve after setup or interrupt blocked filesystem calls.
+
+No remote fence or new submission has yet occurred. Follow fresh check→matching
+sync→accepted provenance→fence dry-run→single install/readback→new inner/outer
+plan→reviewed submit dry-run→single authorized submit→status/logs/fetch. Reserve
+old2+new2GPUs under the4GPU ceiling. Preserve any partial fence/submission claim
+and reconcile, never reset or retry. This contract covers preflight only.
+The frozen fit prerequisite deliberately cannot yet accept this recovered
+preflight's preserved old science claim; later fit needs an explicit reviewed
+adapter and the actual original raw/native preflight audit, not a claim rewrite.
+No prepared student, fit, qualification or formal OPD/RL progression is accepted.
+See `docs/refactor/sdsc_student_name_invariant_execution_recovery_20261006.md`.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
