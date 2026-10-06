@@ -108,11 +108,43 @@ acknowledgement is bounded at10820seconds. Three hours provides engineering
 headroom, not a measured completion guarantee. Original GPU startup300seconds,
 worker4800seconds and publication600seconds remain unchanged. A permanent claim
 keyed to the failed parent request blocks alternate UUID/code/release retries.
-Missing acknowledgement or unreaped work stays unknown. Current scripts remain
-disabled until actual failure and fresh deployment identities are reviewed.
+Missing acknowledgement or unreaped work stays unknown. Activation requires actual failure and fresh deployment identities to be reviewed.
 
 OffGPU preparation cannot submit Slurm or certify native execution. Completion requires the
 entire source inventory and archive readback, followed by a separate CPU rehearsal
 that imports the original packages under the actual relocated Python and checks
 all observed module/native-library bytes and origins. That rehearsal explicitly
 does not prove GPU-node locality, CUDA, model inference or scientific success.
+
+
+## Actual snapshot and CPU relocation evidence, 2026-10-06
+
+Snapshot2a3797d216384301877dfaf6a398431a completed in4631.884seconds with
+49,474 files,5,034 directories and1,154 internal symlinks. The7,825,971,697-byte
+archive SHA is7151cc2839d518474b3ab968064a14773a43728c1671aea462b53234da1db83d;
+manifest SHA is2cc4fa21afe2dc180379456d8dd2965e6a694ffb50d52cf0a11802bac0e910cd.
+The first CPU restoration onto Lustre advanced too slowly; root stopped only
+its owned child, retained the partial tree, and verified actual exit/reaping.
+A separately reviewed login-local restoration preserved the same utility and
+checks. It completed restoration and imports within148.119seconds, but the
+native-origin collector failed before producing its file/library inventory.
+
+The raw error reports `FileNotFoundError` for `_classes.py`. Torch2.8 defines
+`torch.classes` and `torch.ops` as singleton ModuleType subclasses with inherited
+placeholder `__file__` values `_classes.py` and `_ops.py`. They are dynamic
+namespaces, with no actual module spec; their implementations are the real,
+manifest-hashed `torch/_classes.py` and `torch/_ops.py`. The collector incorrectly
+interpreted a placeholder as a current-directory file. All19 runtime versions
+were reported and all restored file bytes had already passed validation. This
+does not validate native origins: collection stopped before mapped libraries
+and file hashes were recorded.
+
+Actual `runtime-rehearsal-result-v3.json`, its genuine tool terminal, three
+hash-verified fetched proofs and independent diagnosis live under
+`.sdsc/diagnostics/student-name-cue-probe-v1/`. The execution-only fix now
+recognizes only the exact Torch singleton aliases, retains and verifies their
+backing source files, and rejects ordinary relative origins. The affected node
+suite passes74 author and74 independent tests;8 unchanged CPU-scope cases pass.
+A fresh real native rehearsal is still required before acceptance. The original failed GPU job54681802, both CPU
+failure receipts, all scientific inputs and the300/4800/600 GPU limits remain
+unchanged. No new GPU job has been submitted.

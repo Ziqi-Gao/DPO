@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import faulthandler
 import hashlib
+import importlib.machinery
 import importlib.metadata
 import importlib.util
 import json
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from pathlib import Path
 
 GIB = 1024**3
@@ -93,6 +95,72 @@ def file_record(path):
     )
 
 
+def torch_namespace_source(name, module, modules, stage, manifest):
+    """Identify two fileless Torch singleton modules without trusting their display filenames."""
+    alias, class_name, placeholder = {
+        "torch.classes": ("classes", "_Classes", "_classes.py"),
+        "torch.ops": ("ops", "_Ops", "_ops.py"),
+    }[name]
+    backing_name = "torch._" + alias
+    backing, package = modules.get(backing_name), modules.get("torch")
+
+    def require(condition):
+        if not condition:
+            raise ValueError("invalid Torch namespace identity or backing implementation: " + name)
+
+    require(type(backing) is types.ModuleType and type(package) is types.ModuleType)
+    own, defined, root = vars(module), vars(backing), vars(package)
+    cls = type(module)
+    require(
+        cls is defined.get(class_name)
+        and cls.__bases__ == (types.ModuleType,)
+        and vars(cls).get("__module__") == backing_name
+        and vars(cls).get("__file__") == placeholder
+        and own.get("__name__") == name
+        and "__file__" not in own
+        and "__spec__" in own
+        and own["__spec__"] is None
+        and "__loader__" in own
+        and own["__loader__"] is None
+        and defined.get(alias) is module
+        and root.get(alias) is module
+        and defined.get("torch") is package
+    )
+    initializer = vars(cls).get("__init__")
+    require(type(initializer) is types.FunctionType and initializer.__globals__ is defined)
+    raw = defined.get("__file__")
+    spec = defined.get("__spec__")
+    require(
+        defined.get("__name__") == backing_name
+        and defined.get("__package__") == "torch"
+        and isinstance(raw, str)
+        and Path(raw).is_absolute()
+        and type(spec) is importlib.machinery.ModuleSpec
+        and spec.name == backing_name
+        and spec.origin == raw
+    )
+    local = Path(stage["destination"]).resolve(strict=True)
+    path = Path(raw).resolve(strict=True)
+    relative = "lib/python3.12/site-packages/torch/" + placeholder
+    require(path == local / relative)
+    package_file = root.get("__file__")
+    package_spec = root.get("__spec__")
+    require(
+        root.get("__name__") == "torch"
+        and isinstance(package_file, str)
+        and Path(package_file).is_absolute()
+        and Path(package_file).resolve(strict=True) == path.parent / "__init__.py"
+        and type(package_spec) is importlib.machinery.ModuleSpec
+        and package_spec.name == "torch"
+        and package_spec.origin == package_file
+    )
+    expected = [entry for entry in manifest["entries"] if entry["path"] == relative]
+    require(len(expected) == 1 and expected[0]["type"] == "file")
+    observed = file_record(path)
+    require(all(observed[key] == expected[0][key] for key in ("size", "sha256", "mode")))
+    return str(path)
+
+
 def capture_runtime(plan, stage, context, manifest, *, phase, rank, control):
     """Retain raw observations even if validation fails; never claim source-path execution."""
     audit = audit_module(control)
@@ -134,12 +202,21 @@ def capture_runtime(plan, stage, context, manifest, *, phase, rank, control):
                 return raw
             if not isinstance(raw, str):
                 raise ValueError("invalid Python module origin")
+            if not Path(raw).is_absolute():
+                raise ValueError("relative Python module origin: " + raw)
             path = str(Path(raw).resolve(strict=True))
             files.add(path)
             return path
 
-        for name, module in sorted(list(sys.modules.items())):
+        modules = dict(sys.modules)
+        for name, module in sorted(modules.items()):
             if module is None:
+                continue
+            if name in ("torch.classes", "torch.ops"):
+                files.add(torch_namespace_source(name, module, modules, stage, manifest))
+                # These exact singleton instances have no own file or import spec. Their
+                # inherited relative __file__ strings describe namespaces, not files.
+                value["modules"].append(dict(name=name, file=None, spec_origin=None))
                 continue
             value["modules"].append(
                 dict(

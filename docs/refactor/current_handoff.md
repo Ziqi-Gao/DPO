@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-10-05 UTC. **The user selected keeping1.7B and preparing one
+Last updated: 2026-10-06 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** The paired LR diagnostic
@@ -101,13 +101,92 @@ by cooperative checks. One separate offGPU preparation may use10800s total,
 10760s work cutoff,10770s cleanup-attempt deadline and30s publication reserve;
 the client bound is10820s. This is engineering headroom, not an observed runtime
 bound or guaranteed process death. All GPU300/4800/600s limits remain unchanged.
-The ignored v3 candidate is still disabled pending actual failure/deployment
-binding and review; its permanent parent-request key prevents another UUID from
-bypassing an unknown or consumed successor. No successor has been started.
-After a verified snapshot, run
-the separately bounded CPU native-origin rehearsal, then exact-commit execution
-acceptance and a fresh final deployment/provenance/plan/admission. Draft recovery
-files in preparatory releases are not accepted GPU entrypoints. No new GPU job,
+Implementation80d205ffc06d84929ef26dc52e8d5c49ad26df7c is independently reviewed;
+the execution recovery remains proposed until actual native-runtime proof.
+Fresh22:28UTC environment check and matching sync deployed preparatory release
+20261005T223105Z-6b4ece643acd-a134a459, containing the reviewed utility. The
+separate v3 driver passed44 author and44 independent cases, binds the actual
+failure proof and deployment, and rechecked all old artifacts and complete
+process absence before its single remote claim. It started once at22:39:25UTC,
+snapshot2a3797d216384301877dfaf6a398431a, requestSHA
+4d7669badee042d5f5979d7d646d4dfb77309981c3f5a0f49c9791798733ce2f,
+driver09bea64c48ab57ae9696adb257620ebc2c07e8d2f1e1df1bba401abb0027284d.
+Exec74150 returned0 at23:56UTC with verified completion, child0/reaped/groupgone
+and empty stderr. Snapshot preparation took4631.884s: initial inventory1296.526s,
+serial pack2643.393s, final inventory664.054s, archive readback20.544s.
+All49,474 files,5,034 directories and1,154 internal symlinks verify. Archive
+7,825,971,697B SHA7151cc2839d518474b3ab968064a14773a43728c1671aea462b53234da1db83d;
+manifest10,436,951B SHA2cc4fa21afe2dc180379456d8dd2965e6a694ffb50d52cf0a11802bac0e910cd.
+The completed event SHA is c9c6f0955046bf99c0ae6d89937f28b1654f425f87597457e5d9e86f5b056e54,
+and descriptor SHA is c0956a33d4bde1e85668b59af3a66bc82527025b8a069c2e064611a49a31e535.
+Preserve `.sdsc/diagnostics/student-name-cue-probe-v1/runtime-pack-request-v3*`
+and `runtime-pack-v3-actual-tool-terminal.json`; the permanent claim stays consumed.
+Pack success independent review879792128ed378cfe688408a473c76bdfff8ea762d4d808289972b2aef4f4a96
+and CPU-rehearsal activation reviewc415cdba9bf5633c836d71704b83045a9503be59ab898423a88c55e5dc613f9a
+pass;46 author and46 independent cases pass. At2026-10-06T00:02UTC root started
+one foreground CPU native-origin rehearsal, exec46199, after the one matching
+dry-run. Request `runtime-rehearsal-request-v2.json` SHA
+5850624d7ed9227369de01beb2200802e8fde880d3bf02ece67903a9baf45b32,
+rehearsal623d95ecfade402a8e3f12ba2d8c01d9, driver
+e9f5f0c077b740b2ccca4b142a762f1a10bedc47fe56046eb4c3084297fb90b7.
+It uses the exact completed snapshot and unchanged native-origin harness on
+persistent project storage,0GPU,10800s total and10820s local acknowledgement.
+Live samples0001–0004 showed sustained shared-storage extraction latency; at
+00:32UTC the child had only reached the first site-packages directory. Root stopped
+only this owned CPU diagnostic child through one reviewed held-/proc-directory-FD
+SIGTERM at00:45UTC; no Slurm job, parent, service or process group was signalled.
+Actual exec46199 returned1, child-15/reaped/groupgone, parent phasefailed after
+2571.099s, empty stderr and no native/model/GPU result. Preserve the partial tree,
+stop intent/outcome and original consumed claims. Exact genuine terminal proof
+`runtime-rehearsal-v2-prior-terminal-proof.json` SHA
+e20b58c16b9b97c3707bc9e15a0472336205577ec341c1d06b8f198c34f58e23
+binds remote result67f670b32c70e491a17d2ff230d2966b9a97b508c163e62f7fe89295d701e299.
+
+A separately reviewed CPU successor keeps the utility, c35 native harness and
+all byte checks exact, while restoring only the runtime/archive to private
+login-local /tmp. Persistent controls and proofs remain in project storage.
+Actual /tmp ext4 available23,720,136,704B and2,017,810 inodes exceed the exact
+archive+runtime+unchanged1GiB reserve requirement16,725,685,196B. Own quota rows
+report zero limits; retain the unrelated protected-mount warning verbatim.
+56 author/56 independent design tests and8 activation cases pass. Activation
+review95b1b6b4e5c443b53779fedea5d2e9b03797d0c4cb6c3662dd3cc53a8c1cb0cc
+binds the true terminal proof and quota evidence. After one matching local dry-run,
+root started exec82580 at00:47–00:48UTC, rehearsal22dfdfacbd25406bb877034eb9918600,
+request `runtime-rehearsal-request-v3.json` SHA
+524304c8958ba351ebd200b1fc15ed9abd54777308f577f0cf8165478f45a0db,
+active driver5180a8311eeaa65868fe5cd8fc1012caa84de6d798be04d1b3507ce01a2bf922.
+Actual exec82580 returned1 after148.119s, child3060535 exited1/reaped/groupgone.
+All49,474 runtime files, archive bytes, modes and symlinks verify; the four required
+imports completed and metadata reported all19 pinned package versions. Native-origin capture then failed on
+Torch's synthetic `torch.classes.__file__ == "_classes.py"`; no native-library
+inventory was produced. The outer missing-inventory error is downstream, not a
+missing Torch installation. Preserve all three genuine proofs under
+`runtime-rehearsal-v3-fetched-proofs/`, exact raw result
+7b3778c64ad4330a3daa96eb9620e14dc4bcc3c18c630380cfc8cd4570daa536,
+and original consumed claims. Independent diagnosis b71badc9d3414af3c62fa78048a62ddedce4797961eb22a8b845ef2c1ce25a2b
+reproduces both `torch.classes` and `torch.ops` synthetic aliases against exact
+backing source bytes. The execution collector now verifies the exact two singleton
+identities/types/static metadata and backing source bytes against the manifest;
+ordinary relative origins still reject. The node suite passes74 author and74
+independent cases, and the unchanged c35 CPU-scope suite passes8. Independent
+review39076d21abc547927dd27bd18091595304c38b9d5f75f714683c5ef90c9e01bc
+binds nodef98ab54f3e6f79186a98e96d3777084851a9fbd497eb34aee0efa5a945e2d3af.
+All168 scientific files,33 frozen dependencies, the auditor/harness/utility and
+GPU300/4800/600s budgets remain unchanged. This new implementation still needs
+actual complete native-origin proof and a later distinct acceptance commit.
+
+At00:55:28UTC a complete own-process scan finds no old driver, child PID or
+process group. Actual reconciliation87886ae3955efcb80185ec85e3984d19c072c0f84ffa5c5e9e03e7b156013488
+binds original request/result and the retained local root(dev2052,inode526973)
+and runtime(dev2052,inode527443,mode02755); the temporary archive is gone after
+successful extraction. A separate reviewed CPU origin successor may reuse only
+this exact runtime after a fresh complete inventory and hash check, with a new
+implementation/deployment and its own single-use claim. Do not rerun v3 or
+remove its outputs. Native relocation is not accepted yet. The00:48:45UTC generic
+environment check passed on login01 through the quser43 master with unchanged
+versions and nwu181/nairr-gpu-shared/nairr-gpu-shared-normal.
+After actual native proof, finish exact-commit execution acceptance and fresh
+final deployment/provenance/plan/admission. Preparatory releases are not accepted GPU entrypoints. No new GPU job,
 scientific result, prepared-student acceptance or formal OPD/RL progression exists.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z

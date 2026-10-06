@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -249,6 +249,163 @@ def test_both_file_and_spec_origin_are_observed(bundle, monkeypatch):
         b["plan"], b["stage"], b["context"], b["manifest"], phase="early", rank=None, control=b["control"]
     )
     assert not value["passed"] and "original runtime" in value["error"]
+
+
+@pytest.fixture
+def torch_origins(bundle, monkeypatch):
+    """Real Torch singletons/code, with their import paths relocated into a verified tiny snapshot."""
+    import torch
+
+    b = bundle
+    prefix = Path(b["plan"]["runtime_snapshot"]["source_prefix"])
+    package = prefix / "lib/python3.12/site-packages/torch"
+    package.mkdir()
+    observed = {name: sys.modules[name] for name in ("torch", "torch._classes", "torch._ops")}
+    for name, module in observed.items():
+        filename = "__init__.py" if name == "torch" else name.removeprefix("torch.") + ".py"
+        (package / filename).write_bytes(Path(vars(module)["__file__"]).read_bytes())
+    # These are the real 2.8.0 backing bytes also observed in the remote cu128 manifest.
+    for filename, expected in (
+        ("_classes.py", "2a3dd93d72e9f19450670b89f3a57b5b5adf245709f6a49a551bbfad33c434bf"),
+        ("_ops.py", "829cd8b2705f7887240a0aac719daf6cfdb9b786aea1be870d8a32fe99df2efc"),
+    ):
+        assert b["control"].sha((package / filename).read_bytes()) == expected
+    artifact = Path(b["plan"]["runtime_snapshot"]["manifest"]["path"]).parent.parent / "torch"
+    descriptor = b["snapshot"].prepare(
+        prefix, artifact, source_root=prefix.parent, artifact_root=artifact.parent
+    )
+    stage = b["snapshot"].stage(
+        artifact,
+        descriptor["manifest"]["sha256"],
+        b["work"] / "torch-runtime",
+        artifact_root=artifact.parent,
+        destination_root=b["work"],
+    )
+    b["plan"]["runtime_snapshot"] = descriptor
+    b["stage"] = stage
+    b["manifest_raw"] = Path(descriptor["manifest"]["path"]).read_bytes()
+    b["manifest"] = json.loads(b["manifest_raw"])
+    b["context"] = b["node"].context_value(
+        b["plan"], stage, b["work"], {"job_id": "12345", "cuda_visible_devices": "2,3"}, b["control"]
+    )
+    b["audit"].validate_stage(b["plan"], stage, b["manifest_raw"])
+    assert produce_origin(b, monkeypatch)["passed"]
+    for name, module in observed.items():
+        filename = "__init__.py" if name == "torch" else name.removeprefix("torch.") + ".py"
+        path = str(Path(stage["destination"]) / "lib/python3.12/site-packages/torch" / filename)
+        monkeypatch.setattr(module, "__file__", path)
+        spec = copy.copy(vars(module)["__spec__"])
+        spec.origin = path
+        monkeypatch.setattr(module, "__spec__", spec)
+        b["node"].sys.modules[name] = module
+    b["node"].sys.modules.update({"torch.classes": torch.classes, "torch.ops": torch.ops})
+    return b
+
+
+def recapture(b):
+    return b["node"].capture_runtime(
+        b["plan"], b["stage"], b["context"], b["manifest"], phase="early", rank=None, control=b["control"]
+    )
+
+
+def test_real_torch_namespace_origin_producer_to_original_auditor(torch_origins):
+    b = torch_origins
+    value = recapture(b)
+    assert value["passed"], value["error"]
+    summary = b["audit"].validate_runtime_origin(
+        b["plan"], b["stage"], b["manifest"], b["context"], value, phase="early"
+    )
+    assert summary["module_count"] == 8
+    rows = {row["name"]: row for row in value["modules"]}
+    files = {row["path"] for row in value["files"]}
+    for namespace, backing in (("torch.classes", "torch._classes"), ("torch.ops", "torch._ops")):
+        assert rows[namespace] == {"name": namespace, "file": None, "spec_origin": None}
+        assert rows[backing]["file"] == rows[backing]["spec_origin"]
+        assert rows[backing]["file"] in files
+
+
+@pytest.mark.parametrize("namespace", ["torch.classes", "torch.ops"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "type",
+        "class",
+        "spec",
+        "loader",
+        "instance_file",
+        "singleton",
+        "package_alias",
+        "placeholder",
+        "backing_spec",
+        "backing_path",
+        "manifest",
+        "backing_bytes",
+    ],
+)
+def test_torch_namespace_exception_requires_real_identity_and_backing(
+    torch_origins, monkeypatch, namespace, change
+):
+    b = torch_origins
+    modules = b["node"].sys.modules
+    module = modules[namespace]
+    backing = modules["torch._classes" if namespace == "torch.classes" else "torch._ops"]
+    if change == "type":
+        modules[namespace] = type(module)()
+    elif change == "class":
+        modules[namespace] = ModuleType(namespace)
+    elif change in ("spec", "loader"):
+        monkeypatch.setitem(vars(module), "__" + change + "__", object())
+    elif change == "instance_file":
+        monkeypatch.setitem(vars(module), "__file__", vars(type(module))["__file__"])
+    elif change == "singleton":
+        monkeypatch.setitem(vars(backing), namespace.split(".")[1], object())
+    elif change == "package_alias":
+        monkeypatch.setitem(vars(modules["torch"]), namespace.split(".")[1], object())
+    elif change == "placeholder":
+        monkeypatch.setattr(type(module), "__file__", "unexpected-relative.py")
+    elif change == "backing_spec":
+        monkeypatch.setattr(vars(backing)["__spec__"], "origin", "/foreign/implementation.py")
+    elif change == "backing_path":
+        monkeypatch.setattr(backing, "__file__", Path(vars(backing)["__file__"]).name)
+    elif change == "manifest":
+        relative = str(Path(vars(backing)["__file__"]).relative_to(b["stage"]["destination"]))
+        next(row for row in b["manifest"]["entries"] if row["path"] == relative)["sha256"] = "0" * 64
+    else:
+        Path(vars(backing)["__file__"]).write_bytes(b"changed implementation\n")
+    with pytest.raises(ValueError, match="Torch namespace"):
+        b["node"].torch_namespace_source(namespace, modules[namespace], modules, b["stage"], b["manifest"])
+    value = recapture(b)
+    # The sorted full collector may reject an invalid backing module before reaching
+    # its namespace alias; both paths must fail and retain the actual error.
+    assert not value["passed"] and value["error"]
+    if change not in ("backing_spec", "backing_path"):
+        assert "Torch namespace" in value["error"]
+
+
+def test_torch_namespace_metadata_does_not_invoke_dynamic_getattr(torch_origins, monkeypatch):
+    b = torch_origins
+
+    def forbidden(*args):
+        raise AssertionError("collector invoked a dynamic namespace lookup")
+
+    for name in ("torch.classes", "torch.ops"):
+        monkeypatch.setattr(type(b["node"].sys.modules[name]), "__getattr__", forbidden)
+    value = recapture(b)
+    assert value["passed"], value["error"]
+
+
+@pytest.mark.parametrize("field", ["file", "spec_origin"])
+def test_real_relative_module_origin_rejected_even_when_cwd_file_exists(bundle, monkeypatch, field):
+    b = bundle
+    assert produce_origin(b, monkeypatch)["passed"]
+    path = Path(b["stage"]["destination"]) / "lib/python3.12/site-packages/torch.py"
+    monkeypatch.chdir(path.parent)
+    if field == "file":
+        b["node"].sys.modules["torch"].__file__ = path.name
+    else:
+        b["node"].sys.modules["torch"].__spec__.origin = path.name
+    value = recapture(b)
+    assert not value["passed"] and "relative Python module origin" in value["error"]
 
 
 def test_local_python_used_for_both_probe_and_torchrun_without_inner_mutation(bundle):
