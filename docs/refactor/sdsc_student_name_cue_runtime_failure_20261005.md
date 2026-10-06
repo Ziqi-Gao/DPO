@@ -148,3 +148,27 @@ suite passes74 author and74 independent tests;8 unchanged CPU-scope cases pass.
 A fresh real native rehearsal is still required before acceptance. The original failed GPU job54681802, both CPU
 failure receipts, all scientific inputs and the300/4800/600 GPU limits remain
 unchanged. No new GPU job has been submitted.
+
+
+The subsequent v4 reuse rehearsal used implementation7c1a7bf and returned a
+known failure after77.455seconds. Its19.599-second full rescan/rehash preserved
+all49,474 files, and the repaired collector produced2013 module observations,
+1933 file records and196 mapped native libraries. Both Torch namespace aliases
+now validate against their real pinned backing files. Exactly one file violates
+the old host-directory rule: the system-provided
+`/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so.525.85.12`.
+It is root-owned0755 and its entire canonical parent chain is root-owned and
+nonwritable by ordinary users. System loader discovery registers the same driver
+installation. No Python module was loaded from/cm.
+
+The bounded execution-policy correction recognizes the observed compute families
+libcuda, libnvidia-ml, libnvidia-ptxjitcompiler, libnvidia-nvvm, libnvidia-allocator,
+libnvidia-compiler and libcudadebugger only under that exact versioned directory,
+with an identical numeric version in the filename. Root ownership, nonwritable
+mode and actual native-map membership remain required. Other/cm paths and Python
+origins are rejected. This supports SDSC's existing driver installation without
+changing it; real compute-node CUDA initialization and compatibility still have
+to pass the unchanged GPU gates. A separate CPU harness shares the execution
+auditor's predicate so the policies cannot drift; the original c35 harness and
+failed v4 evidence remain unchanged. Revised-policy replay is diagnostic evidence,
+not a retroactive successful v4 result.

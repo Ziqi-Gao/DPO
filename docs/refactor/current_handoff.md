@@ -179,12 +179,49 @@ At00:55:28UTC a complete own-process scan finds no old driver, child PID or
 process group. Actual reconciliation87886ae3955efcb80185ec85e3984d19c072c0f84ffa5c5e9e03e7b156013488
 binds original request/result and the retained local root(dev2052,inode526973)
 and runtime(dev2052,inode527443,mode02755); the temporary archive is gone after
-successful extraction. A separate reviewed CPU origin successor may reuse only
-this exact runtime after a fresh complete inventory and hash check, with a new
-implementation/deployment and its own single-use claim. Do not rerun v3 or
-remove its outputs. Native relocation is not accepted yet. The00:48:45UTC generic
-environment check passed on login01 through the quser43 master with unchanged
-versions and nwu181/nairr-gpu-shared/nairr-gpu-shared-normal.
+successful extraction. Implementation7c1a7bf1e79ac7dc5da4f939499b0a9c9e86a4f1 committed the namespace
+fix, tests and handoff; exact reviewcc54ace76e30503840da4af7bd12155fabcbc98746361b416375b079f1ef54a3
+passes. Fresh01:03:39UTC environment check and matching sync deployed preparatory
+release20261006T010455Z-6c927ff26705-c47a01f4,855 files/13,745,412B. One independently
+reviewed reuse-only CPU v4 ran as exec89208, requestc3994329bc28dbf0683e09e64c94c387a7b9380f4cb8e5bc0febfec025485567,
+rehearsal07ec360c5cdc403b85a9455389ef510b. It returned1 after77.455s; child3175503
+exited1/reaped/groupgone, without timeout or any GPU/model activity. Full runtime
+rescan/rehash passed in19.599s, preserving49,474 files and55,662 total entries.
+
+The namespace fix worked on actual cu128: complete raw capture contains2013
+modules,1933 file records and196 mapped native libraries. Of these files,1917
+match the runtime manifest,7 match deployed source and8 meet existing host rules.
+Exactly one legitimate mapped system libcuda falls outside the old path rules:
+`/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so.525.85.12`, uid0/mode0755,
+SHA4083a12107a3abbaaad95ee8dafec158cd142d60fcb9034bf46979f58a7af1bf.
+The four required imports completed and all19 package metadata versions match.
+CPU c35 rejects this path; the raw production validator independently retains
+its expected1-vs12-thread error. Neither result is GPU readiness. Preserve failed
+`runtime-rehearsal-result-v4.json`, actual tool exit and four fetched proofs.
+Raw result SHA25257acbac6a271a362e5d6aafa2e1f625b05dc1f740be0f4da7512a997ff8a7;
+independent driver diagnosis66e029b52fd0fca63e4bd2611f1d866e9216c934caa082348f53ddd0e356407e.
+
+Actual root-chain and loader discoveryfedd5c1d5eac415529bef8e2c09336c625222abae93a24596c2aa6909d2d6eed
+verifies all canonical parents root-owned/nonwritable and seven installed compute
+library families. The proposed execution auditor correction admits only these
+version-matched files under the exact SDSC driver layout, still requiring root
+ownership, no group/other write and actual native-map membership. Generic/cm,
+Python origins and frozen scientific code stay rejected/unchanged. The initial
+automatic-review refusal misidentified this proposed execution control as the
+frozen scientific auditor; direct re-review with Git lineage and actual filesystem
+evidence allowed the same patch. No system/driver/loader/SSH setting was changed.
+The new CPU harness is separate; historical c35 remains unchanged. Auditor
+SHA9bdacadde3f158793c4bf184c52e5616688f6da47ea0e6553fb4af47f6274259
+and harness3f959950c5e6b71e00df8ece1a6c4b6479328ab0489f7b461fa46014d95520bc
+passed128 author and128 independent tests; reviewcc436fc953a730f775a414308c4ac0aa588e6f1226857a313ce6331bf7226602
+reports no findings. All33 frozen dependencies are unchanged. Replaying all1933
+raw file records under the new rule passes without modifying old evidence;
+this is diagnosis only. A fresh actual native proof is still required before
+execution acceptance.
+At01:18:42UTC actual reconciliation2fc49e4f9d5a4c95322234850fcddd5039312deb1cf65ed8942ff14b6f535429
+confirms v4 child/group and all same-driver processes absent, with the same local
+runtime inode. Preserve every old claim; a separately identified v5 may reuse
+only that fully reverified tree. No CPU operation is currently running.
 After actual native proof, finish exact-commit execution acceptance and fresh
 final deployment/provenance/plan/admission. Preparatory releases are not accepted GPU entrypoints. No new GPU job,
 scientific result, prepared-student acceptance or formal OPD/RL progression exists.

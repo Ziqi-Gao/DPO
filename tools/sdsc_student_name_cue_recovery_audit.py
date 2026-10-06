@@ -52,6 +52,39 @@ ENV_KEYS = (
     "OPENBLAS_NUM_THREADS",
 )
 SYSTEM_ROOTS = ("/usr/lib", "/usr/lib64", "/lib", "/lib64")
+SDSC_DRIVER_LIBRARIES = (
+    "libcuda",
+    "libnvidia-ml",
+    "libnvidia-ptxjitcompiler",
+    "libnvidia-nvvm",
+    "libnvidia-allocator",
+    "libnvidia-compiler",
+    "libcudadebugger",
+)
+SDSC_DRIVER_PATH = re.compile(
+    r"/cm/local/apps/cuda-driver/libs/(?P<version>[0-9]+(?:\.[0-9]+)+)/lib64/(?:"
+    + "|".join(re.escape(name) for name in SDSC_DRIVER_LIBRARIES)
+    + r")\.so\.(?P=version)"
+)
+
+
+def is_host_native_library(row, native_libraries):
+    """Recognize root-managed host libraries, including SDSC's observed compute driver layout."""
+    raw, uid, mode = row.get("path"), row.get("uid"), row.get("mode")
+    if not (
+        isinstance(raw, str)
+        and Path(raw).is_absolute()
+        and str(Path(raw)) == raw
+        and ".." not in Path(raw).parts
+        and type(uid) is int
+        and uid == 0
+        and type(mode) is int
+        and not mode & 0o022
+    ):
+        return False
+    return any(Path(raw).is_relative_to(Path(root)) for root in SYSTEM_ROOTS) or bool(
+        SDSC_DRIVER_PATH.fullmatch(raw) and isinstance(native_libraries, list) and raw in native_libraries
+    )
 
 
 def require(ok, message):
@@ -277,9 +310,7 @@ def validate_native_inventory(plan, stage, manifest, context, value):
             )
         else:
             require(
-                any(path.is_relative_to(Path(root)) for root in SYSTEM_ROOTS)
-                and row["uid"] == 0
-                and not row["mode"] & 0o022,
+                is_host_native_library(row, value["native_libraries"]),
                 "foreign or writable host native library",
             )
         files[row["path"]] = row

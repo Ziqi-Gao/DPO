@@ -408,6 +408,100 @@ def test_real_relative_module_origin_rejected_even_when_cwd_file_exists(bundle, 
     assert not value["passed"] and "relative Python module origin" in value["error"]
 
 
+def add_host_driver(value, *, path=None, uid=0, mode=0o755, mapped=True):
+    path = path or "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so.525.85.12"
+    value["files"].append(
+        dict(
+            path=path,
+            uid=uid,
+            mode=mode,
+            size=29863848,
+            sha256="4083a12107a3abbaaad95ee8dafec158cd142d60fcb9034bf46979f58a7af1bf",
+        )
+    )
+    value["files"].sort(key=lambda row: row["path"])
+    if mapped:
+        value["native_libraries"] = sorted([*value["native_libraries"], path])
+    return path
+
+
+@pytest.mark.parametrize(
+    "family",
+    [
+        "libcuda",
+        "libnvidia-ml",
+        "libnvidia-ptxjitcompiler",
+        "libnvidia-nvvm",
+        "libnvidia-allocator",
+        "libnvidia-compiler",
+        "libcudadebugger",
+    ],
+)
+@pytest.mark.parametrize("version", ["525.85.12", "570.133.20"])
+def test_actual_sdsc_system_driver_mapping_allowed_by_pure_inventory(bundle, monkeypatch, family, version):
+    b = bundle
+    value = produce_origin(b, monkeypatch)
+    add_host_driver(value, path=f"/cm/local/apps/cuda-driver/libs/{version}/lib64/{family}.so.{version}")
+    assert (
+        b["audit"].validate_native_inventory(b["plan"], b["stage"], b["manifest"], b["context"], value)[
+            "native_library_count"
+        ]
+        == 2
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"uid": 543540},
+        {"mode": 0o775},
+        {"mode": 0o757},
+        {"mapped": False},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so.550.54.15"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libarbitrary.so.525.85.12"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libnvidia-glcore.so.525.85.12"},
+        {"path": "/cm/local/apps/cuda-driver/libs/latest/lib64/libcuda.so.latest"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so.525.85.12.py"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/../lib64/libcuda.so.525.85.12"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12//lib64/libcuda.so.525.85.12"},
+        {"path": "/cm/local/apps/other/libs/525.85.12/lib64/libcuda.so.525.85.12"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/libcuda.so.525.85.12/extra"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/lib64/stubs/libcuda.so.525.85.12"},
+        {"path": "/cm/local/apps/cuda-driver/libs/525.85.12/compat/libcuda.so.525.85.12"},
+        {"path": "/cm/local/apps/cuda/libs/current/lib64/libcuda.so.525.85.12"},
+    ],
+)
+def test_system_driver_exception_rejects_unrelated_or_writable_origins(bundle, monkeypatch, kwargs):
+    b = bundle
+    value = produce_origin(b, monkeypatch)
+    add_host_driver(value, **kwargs)
+    with pytest.raises(ValueError):
+        b["audit"].validate_native_inventory(b["plan"], b["stage"], b["manifest"], b["context"], value)
+
+
+def test_system_driver_cannot_be_a_python_module_origin(bundle, monkeypatch):
+    b = bundle
+    value = produce_origin(b, monkeypatch)
+    path = add_host_driver(value)
+    value["modules"].append(dict(name="fake_host_python", file=path, spec_origin=path))
+    with pytest.raises(ValueError, match="Python module imported from a foreign origin"):
+        b["audit"].validate_native_inventory(b["plan"], b["stage"], b["manifest"], b["context"], value)
+
+
+@pytest.mark.parametrize("root", ["/usr/lib", "/usr/lib64", "/lib", "/lib64"])
+def test_existing_system_library_roots_keep_original_inventory_policy(bundle, monkeypatch, root):
+    b = bundle
+    value = produce_origin(b, monkeypatch)
+    add_host_driver(value, path=root + "/existing-system-library.so")
+    assert (
+        b["audit"].validate_native_inventory(b["plan"], b["stage"], b["manifest"], b["context"], value)[
+            "native_library_count"
+        ]
+        == 2
+    )
+
+
 def test_local_python_used_for_both_probe_and_torchrun_without_inner_mutation(bundle):
     b = bundle
     before = copy.deepcopy(b["plan"])
