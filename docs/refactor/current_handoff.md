@@ -286,23 +286,49 @@ See `docs/refactor/sdsc_student_name_cue_results_20261006.md` and the independen
 failure review/addendum and `failed-54687025-local-raw-replay.json` in the same
 name-cue diagnostic directory. No student is accepted and formal OPD/RL is unstarted.
 
-The next additive preparation is being implemented, still proposed/uncommitted:
-`student_name_invariant_preparation`, fresh native1.7B reset, fixedLR2.5e-5,
-one uniform original tagged-name pool permutation per signed branch pair before
-all8 training views, fresh256 fitbases/2048rows and256 devbases/1536views,
-32 global64 updates and original12 checkpoint-selection gates. Original ordering
-anchors remain25%, but unmodified-name anchor coverage intentionally changes.
-Fixed seeds490000042/500000042/510000042/520000042/530000042 are preserved.
-Full historical isolation is still being checked. Actual encoding measures
-1,662,052 fit tokens (maxprefix1000/targetEOS205/input1163). Exactly2/1536dev
-views need prefix2200+256=2456, two tokens beyond historical2454. The new explicit
-inference shape2456 requires its own W2 context probe; no truncation, seed redraw
-or threshold relaxation. Training1536 and response256 limits remain fixed. New native execution will reuse the exact
-completed v3 snapshot, explicitly record the single Torch-derived module and
-named imported science closure, and run a new W2 preflight before an8h fit.
-No new job has been submitted. Next: finish new source/tests and independent
-implementation/acceptance review, then fresh connection/check/sync/admission,
-submit one preparation preflight, audit it, and gate the independent full fit.
+The additive `student_name_invariant_preparation` implementation is complete;
+its protocol remains proposed until a distinct exact-commit acceptance. It resets
+native1.7B, fixesLR2.5e-5, and applies one uniform original tagged-name pool
+permutation per signed branch pair before all8 fit views. Fresh256 fitbases/2048
+rows and256 devbases/1536views retain32 global64 updates and original12 checkpoint
+selection gates. Original-order anchors remain25%, but original-name anchor
+coverage intentionally changes. Fixed seeds490000042/500000042/510000042/
+520000042/530000042 and all historical thresholds are unchanged.
+Full144000 original-family, teacher8192/512 and all historical populations,
+including name-cue64bases/512views, pass isolation:22 base and21 view streams.
+The actual fixed fit uses1,662,052tokens, maxprefix1000/targetEOS205/input1163.
+Exactly2/1536dev rows require prefix2200+256=2456; only new inference/probe shape
+changes by2tokens, without truncation/redraw. Training1536 and response256 remain.
+A new W2 preflight must exercise2456 native BF16 logits,4 updates/full-state
+restore and8 training-only responses before full32-step/18432-response fit.
+
+New native execution reuses the exact completed v3 snapshot without installation
+or runtime mutation. Its203 explicitly named scientific files include194 frozen
+parent files (including15 diagnostic and11 training-import closure additions),
+and9 newly bound surfaces. Real CPU Qwen3 forward/backward/AdamW and training
+imports leave no unbound scientific file. The one Torch-derived module has exact
+source/content/owner/private-directory evidence, not a scratch-root exception.
+A reproduced shared-work-directory race is fixed by checking stable dev/ino/uid/
+mode while retaining full before/after metadata; private generated directory/file
+stamps stay strict. Historical controls/results are untouched. New flat publication
+persists bounded raw failure evidence before large checkpoint copying.
+
+Core52 author cases and5 independent reconstruction cases pass. Worker/auditor177
+independent cases,19 startup/trace cases,180 independent controller cases,46
+independent generated-origin cases and8 new native-entry plus26 selected native/
+node cases pass; transport/native author coverage is215 distinct passing cases.
+These are CPU/source checks, not actual GPU readiness. Full-isolation and review
+records are in `.sdsc/diagnostics/student-name-invariant-preparation-v1/`:
+`core-author-validation.json`, `independent-core-science-review.json`,
+`worker-startup-auditor-independent-review.json`, `controller-independent-review.json`,
+`generated-origin-independent-review.json` and `independent-native-node-review.json`.
+See `docs/refactor/sdsc_student_name_invariant_preparation_20261006.md`.
+Fresh03:03:59UTC SDSC check verifies currentquser43 master, identity and shared QoS;
+all18 historical supervisors remain terminal. No new job is submitted. Next:
+exact implementation review, review-only acceptance, matching sync/provenance-v2,
+fresh resource/runtime/storage admission and one2H100/24CPU/384GiB/1h preflight.
+Only verified accounting/artifacts and original raw audit may gate the separate
+same-resource8h fit. No prepared student or formal OPD/RL progression exists yet.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
