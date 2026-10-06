@@ -54,13 +54,15 @@ records sum289.738s self time, not syscall attribution. Shared-runtime loading
 latency is strongly supported; sole metadata causality or cluster-wide outage
 is not established. See `sdsc_student_name_cue_runtime_failure_20261005.md`.
 
-A separate execution recovery is implemented and CPU-reviewed, still proposed
-and not submitted: byte-identical full-prefix snapshot prepared offGPU, native node-local extraction,
+The execution-only recovery implementation4698f204b967bfbe60bceaab2b735939e46770aa
+is independently accepted after genuine CPU native-origin proof; GPU recovery is
+not yet submitted. It uses a byte-identical full-prefix snapshot prepared offGPU, native node-local extraction,
 explicit relocated-interpreter/sys.prefix/module/native-library origin checks,
 and one recovery claim bound to this exact failed no-inference job. Keep the
 original300s import gate,4800s worker/600s persistence, all168 scientific files,
 models/inputs/readouts and original raw auditor unchanged. No environment
-installation or prefix rewriting. Native relocation still needs real proof.
+installation or prefix rewriting. Actual native CPU relocation passes; GPU-node
+storage, CUDA compatibility and scientific completion still need their own evidence.
 Root's final combined CPU suite passes153 cases; the separate real-Git accepted
 lineage/v2 full-history restore fixture also passes. Independent controller and
 node/auditor reviews are `recovery-controller-independent-review.json` and
@@ -102,7 +104,8 @@ by cooperative checks. One separate offGPU preparation may use10800s total,
 the client bound is10820s. This is engineering headroom, not an observed runtime
 bound or guaranteed process death. All GPU300/4800/600s limits remain unchanged.
 Implementation80d205ffc06d84929ef26dc52e8d5c49ad26df7c is independently reviewed;
-the execution recovery remains proposed until actual native-runtime proof.
+its final namespace/host-driver successor is4698f204; the actual native proof and
+independent execution acceptance are recorded below.
 Fresh22:28UTC environment check and matching sync deployed preparatory release
 20261005T223105Z-6b4ece643acd-a134a459, containing the reviewed utility. The
 separate v3 driver passed44 author and44 independent cases, binds the actual
@@ -203,7 +206,7 @@ independent driver diagnosis66e029b52fd0fca63e4bd2611f1d866e9216c934caa082348f53
 
 Actual root-chain and loader discoveryfedd5c1d5eac415529bef8e2c09336c625222abae93a24596c2aa6909d2d6eed
 verifies all canonical parents root-owned/nonwritable and seven installed compute
-library families. The proposed execution auditor correction admits only these
+library families. The accepted execution auditor correction admits only these
 version-matched files under the exact SDSC driver layout, still requiring root
 ownership, no group/other write and actual native-map membership. Generic/cm,
 Python origins and frozen scientific code stay rejected/unchanged. The initial
@@ -216,15 +219,29 @@ and harness3f959950c5e6b71e00df8ece1a6c4b6479328ab0489f7b461fa46014d95520bc
 passed128 author and128 independent tests; reviewcc436fc953a730f775a414308c4ac0aa588e6f1226857a313ce6331bf7226602
 reports no findings. All33 frozen dependencies are unchanged. Replaying all1933
 raw file records under the new rule passes without modifying old evidence;
-this is diagnosis only. A fresh actual native proof is still required before
-execution acceptance.
+that historical replay is diagnosis only; fresh actual v5 evidence follows.
 At01:18:42UTC actual reconciliation2fc49e4f9d5a4c95322234850fcddd5039312deb1cf65ed8942ff14b6f535429
 confirms v4 child/group and all same-driver processes absent, with the same local
-runtime inode. Preserve every old claim; a separately identified v5 may reuse
-only that fully reverified tree. No CPU operation is currently running.
-After actual native proof, finish exact-commit execution acceptance and fresh
-final deployment/provenance/plan/admission. Preparatory releases are not accepted GPU entrypoints. No new GPU job,
-scientific result, prepared-student acceptance or formal OPD/RL progression exists.
+runtime inode. All old claims remain consumed. Fresh check01:29:55UTC and matching
+sync deployed4698f204 as preparatory release20261006T013036Z-5ddadc50d17f-c0b41b2a.
+Separately reviewed v5 used that same retained runtime after a complete new hash
+pass:49,474 files/55,662 entries/7,825,971,675B verified in19.253s. Actual exec65427
+completed with zero exit in41.515s; child3315251 exited0, reaped/groupgone, no timeout.
+Rehearsale44217e85420449db2c000334af0512f binds request
+0e26e7d4619868e7b5a357c525a327559118a73c3e452a6ecaddb4aa030cc90e and raw result
+bf5589e4b8c2e51e79b660e3b0514fb668ab07c3ee046249f0305f08b4000443. Four original
+proofs are under `runtime-rehearsal-v5-fetched-proofs/`; native proof
+30b62e7361d58d02a75d70f01b8b257df07c85e17c676be224751ca0e30c3ce5 verifies1933files,
+2013modules,196libraries and19 version pins. The production raw1-vs12-thread
+failure is preserved; the separate one-thread CPU validator passes. Every CUDA,
+model, GPU-node-local and production-readiness flag remainsfalse.
+Independent source/exact-commit/actual-evidence review
+3db8479e08e5e4b93644fb0276448b1d0e57678d8f7d9cff0410f35e5440a349 recommends accepting4698f204;
+the distinct review-only acceptance changes only its five review fields and this
+handoff. No CPU operation remains active. Next: final accepted deployment, genuine
+provenance-v2, exact inner/outer plans and fresh admission, then one authorized
+GPU recovery. No new GPU job, scientific result, prepared-student acceptance or
+formal OPD/RL progression exists.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
