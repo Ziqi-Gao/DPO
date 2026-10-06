@@ -101,11 +101,11 @@
     "protocol_sha256": "58f66c4a114f249dc8b69e7172112dcffb94e3f0e1cc7d1f399db0b0c66a3a09"
   },
   "review": {
-    "rationale": null,
-    "reviewed_at_utc": null,
-    "reviewed_implementation_commit": null,
-    "reviewer": null,
-    "status": "proposed"
+    "rationale": "Accepted exact implementation after non-author reviews and 162 distinct CPU tests, including full genuine-v2 export/restore. Exact-commit review records SHA256: fence 951a7058670b242d66a694f20ff86a587248214ff11f193af45ffe11c8df1327; contract/node 06547baf0c99f16ff460db46e4297ffd07495fde61b206dcba1c30818e425083; controller 8c0b90c20c71482f922df5a8304cc65607f283a50d948235b28aafc1407bc734. All 213 original protected science/control paths match committed and working bytes. Acceptance covers one permanently fenced replacement preflight only, not installed remote fence, scheduler cancellation, GPU success or fit. Retain old 2-GPU reservation and all partial/unknown evidence; no retry or claim reset.",
+    "reviewed_at_utc": "2026-10-06T05:13:40.428708Z",
+    "reviewed_implementation_commit": "0fdc01f07e0e5a32ecac449e3dbc4b7a42c487bf",
+    "reviewer": "Independent surface review: /root/next_repair_design (fence and immutable science); /root/fit_reconcile_review (contract and node); /root (non-author controller).",
+    "status": "accepted"
   },
   "schema": "opd-student-name-invariant-execution-recovery-v1",
   "scope": {

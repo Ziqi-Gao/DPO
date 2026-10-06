@@ -408,9 +408,13 @@ See the diagnosis document's no-administrator alternative and
 
 The user then explicitly authorized blocking the old request and resubmitting:
 “那就按照你的方式，阻止旧请求然后重提”. Do not ask for this authorization again.
-The additive execution recovery is implemented under the proposed contract
-`prereg/amendments/qwen3_student_name_invariant_execution_recovery_v1.json`.
-It still requires its distinct independent acceptance before operational use.
+The additive execution recovery implementation is commit
+`0fdc01f07e0e5a32ecac449e3dbc4b7a42c487bf`; its contract
+`prereg/amendments/qwen3_student_name_invariant_execution_recovery_v1.json`
+has now received distinct review-only acceptance. Independent exact-commit
+reviews accept the fence, contract/node and non-author controller surfaces;
+162 distinct CPU tests pass including genuine full-history v2 export/restore.
+All213 protected Git blobs and worktree paths were independently verified.
 Five named controls bind the permanent exclusive-mkdir fence, retained old
 claims, one new recovery identity, complete bounded180s sbatch observations,
 and a thin guard that invokes the unchanged original node. All213 protected
