@@ -55,8 +55,9 @@ latency is strongly supported; sole metadata causality or cluster-wide outage
 is not established. See `sdsc_student_name_cue_runtime_failure_20261005.md`.
 
 The execution-only recovery implementation4698f204b967bfbe60bceaab2b735939e46770aa
-is independently accepted after genuine CPU native-origin proof; GPU recovery is
-not yet submitted. It uses a byte-identical full-prefix snapshot prepared offGPU, native node-local extraction,
+is independently accepted by16f5febcf1990be8b7721b48b04fc5428ed45029 after genuine
+CPU native-origin proof. One GPU recovery54687025 is now running. It uses a
+byte-identical full-prefix snapshot prepared offGPU, native node-local extraction,
 explicit relocated-interpreter/sys.prefix/module/native-library origin checks,
 and one recovery claim bound to this exact failed no-inference job. Keep the
 original300s import gate,4800s worker/600s persistence, all168 scientific files,
@@ -236,12 +237,41 @@ proofs are under `runtime-rehearsal-v5-fetched-proofs/`; native proof
 failure is preserved; the separate one-thread CPU validator passes. Every CUDA,
 model, GPU-node-local and production-readiness flag remainsfalse.
 Independent source/exact-commit/actual-evidence review
-3db8479e08e5e4b93644fb0276448b1d0e57678d8f7d9cff0410f35e5440a349 recommends accepting4698f204;
-the distinct review-only acceptance changes only its five review fields and this
-handoff. No CPU operation remains active. Next: final accepted deployment, genuine
-provenance-v2, exact inner/outer plans and fresh admission, then one authorized
-GPU recovery. No new GPU job, scientific result, prepared-student acceptance or
-formal OPD/RL progression exists.
+3db8479e08e5e4b93644fb0276448b1d0e57678d8f7d9cff0410f35e5440a349 supports the distinct
+review-only acceptance16f5febcf1990be8b7721b48b04fc5428ed45029, changing only five
+review fields and this handoff. The accepted resolver verifies5controls/168science.
+No CPU operation remains active.
+
+The one authorized GPU recovery was submitted once at01:49:04.611583UTC as
+job54687025, intent046cf7c941b53e39610a9e2a0076fbe8. Continue its status/logs/fetch;
+never resubmit or clear its permanent claim. Exact local outer plan is
+`.sdsc/student-name-cue-recovery/046cf7c941b53e39610a9e2a0076fbe8/plan.json`,
+SHA65d0ad749433513741eaa15de109b80cf3a5b7eb533bc18f356f10f8cdaaf35c;
+its inner scientific plan is in the same intent under `.sdsc/student-name-cue-probe/`,
+SHAbbb85dc5e2a791ebfee5e138aa3947117209bb3954f24d943e1e086ff9211bbb.
+Actual canonical submit receipt `submit-20261006T014904822614Z.json` SHA
+6e1089c4abc0126355760e75b76b597d2db1a6c8a7475a9205c54393eddf82b8 is beside the
+outer plan. Original failed54681802 science claim remains unchanged and consumed.
+Final release20261006T013943Z-9f43c5e1fde1-f491e9ee carries genuineHEAD16f5feb,
+855files/13,757,253B; codedigest9f43c5e1fde1bc9ff330a24cb70f76394f9608539b02a5e3089d8c166a790ff4.
+Verified and uploaded provenance-v2 manifestd4c4ad1fe0e064820b33d51e6ac8c6e40310f873f3ef7886a82f2fe0d88a267e
+binds139 genuine unpublished commits with terminal4698f204→16f5feb. Independent
+exact-plan review3fe2f8a534d91909d611ce520e70a010a8c5f7b6512ddf44a62204ac4972be21
+and actual fresh dry-run verify original failed accounting, both LR parents,19
+runtime pins and0+2<=4GPU. The allocation is2H100/24CPU/384GiB/90minutes.
+At01:52:45UTC accounting/queue both showRUNNING; no publication yet. Bounded
+fetch `.sdsc/fetched/54687025/fetch-5mpg04rj/` contains empty own stdout/stderr.
+The separately reviewed read-only observer `read_recovery_live_progress.py`
+SHAd37e2a1ff262fc9d3780b37fc68ad0d30219fce5ae0037db74234d764fdf0673 is pinned to
+this outer plan/receipt; activation review165d87b3888699ed2d6ca62dcdd81ef833c4185b7907700d936382ead8b4d189.
+At01:56:24UTC its latest heartbeat is21s old, elapsed408s in runtime staging,
+with no rank progress. This is liveness evidence only, not CUDA/model completion.
+Next: observe the existing job, require terminal accounting and both verified
+publications, then run execution audit followed by original1024-response raw
+scientific audit. Use `name-cue-terminal-audit-commands-and-inference.md` in the
+diagnostic directory; no checkpoint promotion or new training follows automatically.
+No new scientific result, prepared-student acceptance or formal OPD/RL progression
+exists yet.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
