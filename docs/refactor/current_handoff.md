@@ -288,7 +288,8 @@ name-cue diagnostic directory. No student is accepted and formal OPD/RL is unsta
 
 The additive `student_name_invariant_preparation` implementation
 1d5b41ea188955a339533f3329948bcb9a066128 has passed three exact-commit non-author
-reviews. This distinct review-only acceptance binds that implementation. It resets
+reviews. Distinct acceptance f7fc25c921f12e60b694508c01cb804114ffd24a
+binds that implementation. It resets
 native1.7B, fixesLR2.5e-5, and applies one uniform original tagged-name pool
 permutation per signed branch pair before all8 fit views. Fresh256 fitbases/2048
 rows and256 devbases/1536views retain32 global64 updates and original12 checkpoint
@@ -324,14 +325,55 @@ records are in `.sdsc/diagnostics/student-name-invariant-preparation-v1/`:
 `worker-startup-auditor-independent-review.json`, `controller-independent-review.json`,
 `generated-origin-independent-review.json` and `independent-native-node-review.json`.
 See `docs/refactor/sdsc_student_name_invariant_preparation_20261006.md`.
-Fresh03:12:27UTC SDSC check verifies currentquser43 master, identity and shared QoS;
+Fresh03:17:14UTC check verifies currentquser43 master, identity and shared QoS;
 all18 historical supervisors remain terminal. Exact review records are
 `exact-commit-core-native-review.json`, `exact-commit-worker-auditor-review.json`
 and `exact-commit-controller-generated-review.json` in that diagnostic directory.
-No new job is submitted. Next: matching sync/provenance-v2,
-fresh resource/runtime/storage admission and one2H100/24CPU/384GiB/1h preflight.
-Only verified accounting/artifacts and original raw audit may gate the separate
-same-resource8h fit. No prepared student or formal OPD/RL progression exists yet.
+Release20261006T031349Z-8b60a5c42c29-1687bff3 is deployed:872files/14,356,992B,
+code8b60a5c42c29c4ab2f252bd7de093118a78ffc2a959b27142bbfb566e46df21f.
+Genuine provenance-v2 d2459ed71c93e68dab969c858a6240ffd3041d5b010ba3370dec67104f90b5b0
+binds acceptance f7fc25c,143 unpublished genuine commits and bundle
+ae082431285cc04d73b72c82dfc4710308721adfd93f3682a9ed9ebb965cc57c.
+The actual accepted resolver and exact-plan/admission independent review pass.
+
+**The new preflight submission is UNKNOWN; do not resubmit or clear claims.**
+Intent19665dfbd26d7b0024a46d9b7b811ce4, plan
+`.sdsc/student-name-invariant-v1/19665dfbd26d7b0024a46d9b7b811ce4/plan.json`, SHA
+b88f012fb8c30a9527d6300680dbabe29a944fdff64b29339a28f0c34764af5f,
+requests2H100/24CPU/384GiB/1h on nwu181/shared/shared-normal. Fresh dry-run and
+actual submission admission verify parent54548846, all19 runtime pins, exact
+snapshot and0+2<=4GPU. Root invoked submit exactly once; remote sbatch began at
+2026-10-06T03:22:36.979479Z and timed out after45s, recording unknown.json at
+03:23:22.045304Z. Actual Quest exec76213 returned1. No trustworthy job ID or
+receipt exists. Preserve the local submission-started record and both permanent
+remote claims; neither a new release nor a new session authorizes blind retry.
+
+Initial reconciliation exposed a query-timezone bug: UTC date2026-10-06 was
+interpreted as future Pacific midnight. A separate unchanged pinned reconcile
+under remoteTZ=UTC passes the queries but rejects zero/ambiguous matches. Wider
+exact-name and all-own queue/accounting queries at03:25–03:26UTC return0/empty;
+no matching own client remains and the fixed submission directory has no Slurm
+logs/receipt. sbatch--version and scontrol ping succeed. These negative results
+do not prove the request was never accepted. Actual AccountingStoreFlags=null
+and the known old job54687025's empty accounting Comment also show that the
+frozen Comment-matching reconciler may not recover a job after it leaves squeue.
+No source, scientific environment, old result flag or receipt was changed.
+Evidence is in the diagnostic directory's `preflight-submitted.stderr`,
+`preflight-reconciled.stderr`, `preflight-reconcile-raw-0324.json`,
+`preflight-reconcile-wide-accounting.json`, `preflight-reconcile-all-own-0326.json`,
+`preflight-reconcile-utc.json` and `preflight-slurm-reconciliation-config.json`.
+The final bounded snapshot at03:33:14.577063UTC, more than10minutes after the
+attempt, again returns0/empty for all-own queue and accounting under explicitUTC,
+with no matching client, receipt, live-binding or Slurm logs. Original plan and
+both claims are unchanged. Preserve `preflight-reconcile-final-10min.json`.
+Independent assessment `preflight-unknown-submission-independent-review.json`
+requires UNKNOWN_NO_RESUBMISSION; empty queries are insufficient to authorize an
+execution successor. No observer or automatic retry is running. Next requires
+SDSC server-side definitive rejection/no-pending-request evidence or recovery
+of the actual JobID. An unsent support draft with exact parameters is
+`sdsc-submission-operator-inquiry-final.txt` in the diagnostic directory. Only
+accepted actual W2 accounting/artifacts and raw/native audit can gate the8h fit.
+No prepared student is accepted and formal OPD/RL remains unstarted.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
