@@ -386,13 +386,38 @@ See `docs/refactor/sdsc_submission_timeout_diagnosis_20261006.md` and records in
 `observed-command-independent-review.json` and `observed-command-sdsc-rehearsal-v2.json`.
 
 Both claims and original unknown evidence remain unchanged. No new real
-submission, cancellation, automatic observer or retry occurred. Next still needs
-SDSC server-side definitive rejection/no-pending-request evidence or the actual
-JobID for03:22:36.979479Z onward; the controller log is unavailable on the login
-node and ordinary-user statistics cannot recover this request. Preserve the
-unsent support draft in the diagnostic directory. Only accepted real W2 results
-and raw/native audit can gate the8h fit; no prepared student or formal OPD/RL
-progression is accepted.
+submission, cancellation, execution fence, automatic observer or retry occurred.
+The user asked for recovery without an administrator. An independently reviewed
+alternative can prevent duplicate scientific execution without claiming to resolve
+the old scheduler outcome: exclusively create and permanently retain the old
+plan's exact result directory. The frozen node4d9b45d6 performs mkdir without
+exist_ok at line598 before runtime staging, CUDA, model loading or training.
+Only successful atomic creation by the fencing operation is evidence of winning
+that gate; EEXIST, path changes or an unknown result must stop recovery, never
+adopt an existing directory. Missing receipt/live-binding alone is NOT a fence.
+Three actual-main/local-filesystem fixtures pass: existing directory stops before
+science, absent directory crosses the gate, and two real processes have exactly
+one mkdir winner. These CPU fixtures do not establish an installed remote fence.
+At04:37UTC original queue/accounting remain empty and old result_dir is absent;
+04:38UTC verifies the exact deployed node hash and safe persistent parent chain.
+See the diagnosis document's no-administrator alternative and
+`submission-fence-static-independent-review.json`,
+`submission-fence-main-rehearsal-result.json` and
+`submission-fence-source-parent-readonly.json` in the same diagnostic directory.
+
+This is a proposed execution-only recovery, not an accepted successor submitter.
+Permanently blocking the old intent is treated conservatively as retirement and
+needs the separate user authorization for stopping an old task. A reviewed
+single-attempt successor must bind durable fence proof, retain original claims
+and science, preserve raw submission output, and use a new recovery identity.
+Do not delete the consumed science claim or call the frozen submitter as a retry.
+An old late allocation remains possible: reserve its2GPUs when admitting one
+new2GPU preflight under the4GPU ceiling. Its original1h requested envelope may
+still be charged; fencing does not guarantee immediate release or no cost.
+Administrator evidence remains useful for the actual historical outcome, but
+is not the only possible way to prevent duplicate model work. Preserve the
+unsent support draft. Only accepted real W2 results and raw/native audit can
+gate the8h fit; no prepared student or formal OPD/RL progression is accepted.
 
 The user restored the required master on current Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
