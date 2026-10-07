@@ -98,3 +98,35 @@ raw/native audit before its preparation outcome is accepted. A fit outcome does
 not grant held-out qualification, shared-initial acceptance, G0, OPD/RL pilot or
 factorial readiness. No new supervisor, daemon or runtime installation is part
 of this adapter.
+
+## Actual accepted deployment and launch
+
+Implementation commit `2c687c5b3ff744dd74861fa0fcfac3bdf58f7a15` has distinct
+review-only acceptance `3e2479c50662a1c68fd32c0c6864c1e838ddaac5`. All 127
+distinct author and independent CPU cases passed. The actual plan and remote
+dry-run received independent acceptance before one submission. Both real v2
+bundles and complete single-parent local histories were checked; the new
+provenance contains 151 unpublished commits and no manufactured old HEAD.
+
+Full-fit job **54713307**, intent `20050257b02da9a664c4d6b48b792703`, was
+acknowledged at `2026-10-07T02:14:02Z`: complete 0.754-second sbatch observation,
+exit zero, stdout exactly `54713307` plus LF, stderr empty, no retry. Actual
+accounting shows RUNNING. GPU pre-model guards passed in 32.032 seconds. Live
+progress at `02:21:38Z` reports step 1/32, 50,900 global input tokens and finite
+rank losses 0.987235 and 0.998048. This is observational progress, not completion
+or qualification. The first full development evaluation remains pending.
+
+The deployed execution release is `20261007T020018Z-3d8dd8273aad-0205f017`;
+genuine v2 manifest SHA is
+`56cb38e1c306680200913c67c5ec9ae549114cd14a13c27bb5c3c9e8e46de855`.
+The exact outer plan is `.sdsc/student-name-invariant-fit/20050257b02da9a664c4d6b48b792703/plan.json`,
+SHA `32dc35559732ea362584fe25f2aa63c1480249ddd2de8226e2ea43e3929cf865`.
+Bounded startup evidence is in `.sdsc/fetched/54713307/fetch-ncw2a0lb/`.
+
+Each of 12 scheduled checkpoints evaluates 256 development bases in six views,
+1,536 responses total, 768 per rank; the full run generates 18,432 development
+responses. Eight correlated training-only smoke views do not determine full-run
+throughput. The first full development checkpoint is needed for runtime
+calibration. Preserve the original eight-hour allocation and 28,200-second
+worker limit; no automatic extension or retry. Root sampled live progress
+read-only; no unattended watcher or supervisor was launched.

@@ -490,7 +490,34 @@ node36 and transport51 including genuine dual-history restore; CPU evidence
 is not fit GPU success. Fit starts original untrained1.7B, LR2.5e-5,
 W2/global64/32updates;2H100/24CPU/384GiB/8h, worker28200s, original600s reserve
 consumed by wrapper setup checked against60s. Reserve old2+new2<=4GPUs.
-No full fit has been prepared/submitted and no supervisor was started.
+The one normal full-fit intent`20050257b02da9a664c4d6b48b792703` was submitted
+once and acknowledged as actual job**54713307** at2026-10-07T02:14:02Z.
+Sbatch0.754s/exit0, complete9B stdout54713307+LF, empty stderr; no retry.
+Fresh02:24:54Z accounting and queue show RUNNING; fit pre-model entry passed
+at02:14:41Z in32.032s, SHA1089b6ef15d9024ed5fa625e0e72ccb48c36be326ce6f7a5cd3b41aec9da1a18.
+02:21:38Z observational telemetry records update1/32,50900 global input tokens,
+finite rank losses0.987235/0.998048; full development evaluation is pending.
+This progress is not completion, checkpoint qualification or scientific PASS.
+No supervisor or unattended watcher was started; root sampled read-only live
+progress under the existing master. Continue known54713307 with the new
+controller status|logs|fetch, never submit its intent again.
+Outer plan `.sdsc/student-name-invariant-fit/20050257b02da9a664c4d6b48b792703/plan.json`,
+SHA32dc35559732ea362584fe25f2aa63c1480249ddd2de8226e2ea43e3929cf865;
+inner original-format planSHA352b6f010585416e8ef6177b891e276e18785f17c828cff047467a61fd803963.
+Accepted executionHEAD3e2479c50662a1c68fd32c0c6864c1e838ddaac5;
+new release20261007T020018Z-3d8dd8273aad-0205f017,893files/14740627B,
+codeSHA3d8dd8273aade7c6b9f67e006a94e4ced3f80c77cd6193a365779f1cd816703e.
+Genuine v2 manifest56cb38e1c306680200913c67c5ec9ae549114cd14a13c27bb5c3c9e8e46de855
+verified/uploaded;151 genuine unpublished commits. Inner science retains
+old dbd97/61ba/36d9 release/provenance. Independent actual-plan+dry-run review
+PASS, recordSHA6648c2ba9b9e041a6b621f964a973dec9322f2f1e9114c2afa808f358506105a;
+all223 named deployed pins match, both genuine bundles/histories checked.
+Small startup evidence `.sdsc/fetched/54713307/fetch-ncw2a0lb/` (380355B).
+Full fit evaluates1536 responses at each of12 checkpoints (18432 total).
+The8 training-only preflight smoke responses cannot establish eight-hour fit
+completion; first complete development checkpoint must calibrate actual runtime.
+Preserve the original8h/28200s limit and science; no automatic extension/retry.
+
 Current hostquser34 manual SSH master was restored;2026-10-07T01:53:50Z fresh
 check confirms access/account/partition/QoS. All18 historical flows remain
 terminal; none was rearmed. No prepared student, qualification or formal
