@@ -441,20 +441,23 @@ Retain its control proof/claim and exact old result directory permanently.
 All36 old file records remain unchanged. This blocks old model work; the old
 scheduler outcome remains unknown and must never be reported as cancelled.
 
-The one authorized successor preflight was submitted once at05:25:20Z and
-received actual job**54692520** at05:25:26Z, intent
-`00b0029c5bac2523196425ebb37a226b`. Complete sbatch observation:6.092s, exit0,
-stdout exactly54692520 plus LF, stderr empty, both EOF, no truncation/timeout.
-Its actual05:26:49Z accounting/queue state is RUNNING. GPU-node recovery entry
-passed at05:25:47Z in13.834s, including actual cross-host retained-fence check;
-05:28:08Z telemetry reached after_staging (early CUDA gate and inputs staged);
-05:29:12Z reports training_or_evaluation with no completed update yet.
-No optimizer update, final raw/native audit or scientific PASS is established.
-Bounded receipt/observation/entry/logs fetched to
-`.sdsc/fetched/54692520/fetch-vymdezf5/`. Continue using
-`tools/sdsc_student_name_invariant_recovery.py status|logs|fetch --plan
-.sdsc/student-name-invariant-recovery/00b0029c5bac2523196425ebb37a226b/plan.json`;
-never invoke the old submitter, re-arm a claim or resubmit either intent.
+The one authorized successor preflight **54692520**, intent
+`00b0029c5bac2523196425ebb37a226b`, completed at2026-10-06T05:36:47Z:
+job/batch/extern COMPLETED0:0,676s elapsed. Fresh remote checks at
+2026-10-07T01:38Z verify accounting, publication and normal recovery entry/exit.
+Four optimizer updates consumed256 training views/203084 input tokens; real
+W2 FULL_SHARD save/load, exact master reload and bitwise logits parity passed.
+Native early/before/after audit and BF16 context probes passed; peak99.72GiB.
+The unchanged independent raw auditor replayed8 training-only responses and
+reconstructed4 optimizer windows: auditSHA
+`a1360693838e1a1ebee8a9a38747df7eb553438903ec2e91497c19c722e2188d`.
+It does not independently recompute GPU numerics or historical isolation.
+PublicationSHA`aad46e81aee94b33f3e9af0863a8cd2a4ccdb8c5f6a875369fe4ace9fb7d66f5`;
+terminal small results `.sdsc/fetched/54692520/fetch-fuk6kze0/` (21920343B).
+Large artifacts remain persistent; current status checks type/size and bound
+producer readback evidence, not a fresh independent30GB rehash/download.
+No chosen checkpoint or student qualification is established by this preflight.
+Never resubmit either preflight, reset a claim or invoke the old submitter.
 
 Deployed release`20261006T051432Z-61ba795cb4c2-7b5da995` contains885files,
 14568627B, codeSHA61ba795cb4c2849d831ea8013df6a295210a9dfdcfc7e21e6740a4e20ecb3cde.
@@ -467,21 +470,34 @@ original native snapshot and parent54548846 verified. Resources remain2H100,
 24CPU,384GiB,1hour, nwu181/nairr-gpu-shared/nairr-gpu-shared-normal. Reserve
 old2+new2GPUs under4GPU; preserve all claims/evidence. No supervisor was started.
 This contract covers preflight only.
-The frozen fit prerequisite deliberately cannot yet accept this recovered
-preflight's preserved old science claim; later fit needs an explicit reviewed
-adapter and the actual original raw/native preflight audit, not a claim rewrite.
-Read-only follow-up design identified both frozen gates: original controller
-verify_preflight and original node.main call it; changing only submission fails.
-The fit inner plan must retain this preflight's dbd97/61ba science release and
-provenance because validate_plan requires equality. A separately reviewed outer
-fit execution contract/source/provenance and explicit node orchestration must
-verify recovered preflight artifacts, normal wrapper exit and retained fence,
-then use the original worker/native/auditor. No monkeypatch, old claim rewrite
-or duplicate successful preflight; no fit adapter has been implemented yet.
-No prepared student, fit, qualification or formal OPD/RL progression is accepted.
-See `docs/refactor/sdsc_student_name_invariant_execution_recovery_20261006.md`.
+The frozen original fit gates reject the recovered preflight's preserved old
+scientific claim. A separate additive fit execution adapter is now implemented
+as a **proposed implementation**, pending its distinct independent review-only
+acceptance. All127 distinct CPU cases passed author and independent runs,
+including genuine dual-history v2 export/restore; no remaining review blockers.
+`tools/sdsc_student_name_invariant_fit.py` and its fit contract/node retain the
+exact dbd97/61ba inner scientific release and provenance, while binding a
+separate new outer execution source and genuine v2 history. Both histories,
+actual successful preflight artifacts/raw/native audit, normal wrapper exit
+and retained fence are verified. Explicit node orchestration preserves the
+original scientific body; no monkeypatch or old claim rewrite. Independent
+node review fixed saved-live-binding validation to use the original pure
+predicate without Slurm queries. All219 distinct named existing science and
+frozen-dependency files remain unchanged. Local cases cover contract40,
+node36 and transport51 including genuine dual-history restore; CPU evidence
+is not fit GPU success. Fit starts original untrained1.7B, LR2.5e-5,
+W2/global64/32updates;2H100/24CPU/384GiB/8h, worker28200s, original600s reserve
+consumed by wrapper setup checked against60s. Reserve old2+new2<=4GPUs.
+No full fit has been prepared/submitted and no supervisor was started.
+Current hostquser34 manual SSH master was restored;2026-10-07T01:53:50Z fresh
+check confirms access/account/partition/QoS. All18 historical flows remain
+terminal; none was rearmed. No prepared student, qualification or formal
+OPD/RL progression is accepted. Continue via the reviewed fit adapter only
+once accepted and deployed; never repeat the successful preflight.
+See `docs/refactor/sdsc_student_name_invariant_fit_execution_20261006.md` and
+`docs/refactor/sdsc_student_name_invariant_execution_recovery_20261006.md`.
 
-The user restored the required master on current Quest hostquser43. At20:12:54Z
+Earlier, the user restored the required master on Quest hostquser43. At20:12:54Z
 project/runtime metadata access recovered; fresh check and admission subsequently
 verified storage, all19 runtime pins, both completed LR parents and0+2<=4GPU.
 The generic15s metadata check timed out, while the isolated24.3s version read and
