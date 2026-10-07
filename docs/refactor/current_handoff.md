@@ -1,6 +1,6 @@
 # OPD current handoff
 
-Last updated: 2026-10-06 UTC. **The user selected keeping1.7B and preparing one
+Last updated: 2026-10-07 UTC. **The user selected keeping1.7B and preparing one
 common initial model for all methods, authorized repair/submission, and requested
 improvement after qualification54606205 failed, followed by real-time monitoring
 and immediate evidence-led repair of new failures.** The paired LR diagnostic
@@ -493,7 +493,7 @@ consumed by wrapper setup checked against60s. Reserve old2+new2<=4GPUs.
 The one normal full-fit intent`20050257b02da9a664c4d6b48b792703` was submitted
 once and acknowledged as actual job**54713307** at2026-10-07T02:14:02Z.
 Sbatch0.754s/exit0, complete9B stdout54713307+LF, empty stderr; no retry.
-Fresh02:24:54Z accounting and queue show RUNNING; fit pre-model entry passed
+Last retained02:24:54Z accounting and queue showed RUNNING; fit pre-model entry passed
 at02:14:41Z in32.032s, SHA1089b6ef15d9024ed5fa625e0e72ccb48c36be326ce6f7a5cd3b41aec9da1a18.
 02:21:38Z observational telemetry records update1/32,50900 global input tokens,
 finite rank losses0.987235/0.998048; full development evaluation is pending.
@@ -518,11 +518,18 @@ The8 training-only preflight smoke responses cannot establish eight-hour fit
 completion; first complete development checkpoint must calibrate actual runtime.
 Preserve the original8h/28200s limit and science; no automatic extension/retry.
 
-Current hostquser34 manual SSH master was restored;2026-10-07T01:53:50Z fresh
-check confirms access/account/partition/QoS. All18 historical flows remain
-terminal; none was rearmed. No prepared student, qualification or formal
-OPD/RL progression is accepted. Continue via the reviewed fit adapter only
-after matching deployment and actual-plan/dry-run review; never repeat the successful preflight.
+At2026-10-07T23:45:42Z the current Quest host is **quser41** and its required
+`/home/del6500/.ssh/cm/sdsc-quser41` socket is absent. Remote result reconciliation
+is blocked on same-host manual authentication; no fallback login/retry occurred.
+Independent local audit finds no observation later than02:24:54Z (Oct6 21:24CDT),
+no terminal accounting/publication/report/exit, and no unattended watcher.
+The8h allocation interval has elapsed but that does not prove success or failure;
+current54713307 outcome is unknown. Do not describe retained RUNNING/step1 as
+current progress. After manual connection, continue this exact known fit job
+with status/logs/fetch; never resubmit or clear its consumed claims. Earlier
+quser34 authentication/runtime checks remain historical evidence. All18
+historical flows are terminal; none was rearmed. No prepared student,
+qualification or formal OPD/RL progression is accepted from retained evidence.
 See `docs/refactor/sdsc_student_name_invariant_fit_execution_20261006.md` and
 `docs/refactor/sdsc_student_name_invariant_execution_recovery_20261006.md`.
 
