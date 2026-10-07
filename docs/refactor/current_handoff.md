@@ -3588,6 +3588,10 @@ tests, automation notes and Quest agent instructions are now tracked for the
 user-authorized GitHub publication. Their existing bytes and scientific review
 blocks are preserved. Runtime evidence under `.sdsc/`, generated data, weights,
 checkpoints and private Git metadata remain excluded from the source repository.
+The full source history was published to `Ziqi-Gao/DPO` on2026-10-07 through
+`master`; archival commit `1ced05b4f788ab3765354f621fbd60a78c85e2c7` was
+independently read back through the GitHub API. Historical provenance bundles'
+unpublished-commit counts describe producer-time state and remain unchanged.
 
 The user authorizes this teacher-failure repair and a fresh G0 retry through
 armed automatic intake. Agents own git add/commit for authorized work; the
