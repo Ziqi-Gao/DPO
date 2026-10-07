@@ -27,3 +27,4 @@ checkpoints/
 *.ckpt
 *.parquet
 project.local.env
+.sdsc/

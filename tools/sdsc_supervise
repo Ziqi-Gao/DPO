@@ -1,0 +1,14 @@
+#!/bin/bash
+# Finite Quest supervisor; the Python control plane sends every Slurm query over SSH.
+set -euo pipefail
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# AGENTS requires this shared helper. Reviewed bytes contain definitions only;
+# none of its local-Slurm functions are called by the Expanse control plane.
+helper="$repo_root/scripts/production/slurm_supervision.sh"
+helper_sha="$(sha256sum -- "$helper")"
+if [[ ${helper_sha%% *} != b1f8c6e58cbd89ad2748e9294e205b9ead2cc13bec58c97935214d817b7cf439 ]]; then
+  echo "Shared Slurm helper changed; review it before starting supervision." >&2
+  exit 1
+fi
+source "$helper"
+exec /usr/bin/python3.12 -I -B "$repo_root/tools/sdsc_supervise.py" "$@"

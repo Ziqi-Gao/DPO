@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
+# Required shared policy is sourced; SDSC operations use the SSH-only Python
+# boundary, and no Quest-local Slurm helper is invoked.
+source "$ROOT/scripts/production/slurm_supervision.sh"
+exec /usr/bin/python3.12 -I -B -u "$ROOT/tools/sdsc_pipeline.py" "$@"

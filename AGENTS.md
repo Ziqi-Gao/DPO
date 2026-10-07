@@ -4,6 +4,113 @@ This file describes the current OPD repository after the scientific-domain and
 ServerScheduler refactor. It is authoritative for work performed from an OPD
 project session. It does not grant authority over the central scheduler.
 
+## Quest development / SDSC Expanse scope
+
+The user-authorized Quest→SDSC workflow is a separate execution path documented
+in `docs/sdsc_workflow.md`, implemented by `tools/sdsc`. For this path, Quest's
+actual repository remains the only editable source; the server-specific roots,
+ServerScheduler prerequisites, clean-commit requirement and legacy-Slurm ban
+below do not prohibit this workflow. Preserve existing server and Slurm files.
+Do not force commits, reset, checkout, or workspace cleanup for synchronization.
+
+- Compute `$HOME/.ssh/cm/sdsc-$(hostname -s)` at runtime. Check the existing
+  master first; use it with BatchMode and host-key checking, without fallback
+  authentication or retries. The user authenticates in an ordinary Quest terminal.
+- Execute every Expanse Slurm command through SSH to
+  `zgao12@login.expanse.sdsc.edu`; never invoke it locally on Quest. No remote
+  Codex/editor server, workflow daemon, or editor-keeping interactive allocation.
+- Stage independent, content-hashed releases including eligible uncommitted and
+  new files after a matching dry-run. Exclude credentials, environments, caches,
+  weights, data and historical outputs; no external symlinks or rsync deletion.
+  Snapshot hashes are deployment provenance, not new scientific inputs.
+- Submission/cancellation require explicit user authorization and exact resource
+  parameters. The initial 1-H100 / 4-CPU / 16-GiB / at-most-5-minute smoke
+  allowance was used for job `54345483`, intent
+  `ed6b17d1d1fd45a58c4fc206766d6324`, which completed successfully and was fetched.
+  The user subsequently authorized starting formal training and choosing GPU
+  count/resources from workload evidence. This covers necessary preparation,
+  storage/model/distributed preflights and the gated Qwen3-v2 training path;
+  do not request the same authorization again. It does not waive scientific
+  validation, permit duplicate/unknown submissions, or automatically expand to
+  the full three-seed factorial or Gemma replication. Preserve the completed
+  smoke evidence; new work needs fresh run/job identities.
+  A missing submission receipt requires reconciliation, never blind resubmission.
+- Use a discovered remote runtime and verified node-local workspace. Verify
+  input/output mounts on the GPU node; do not infer H100 Lustre access from the
+  login node or add `--constraint=lustre` automatically. Persist required results
+  before allocation exit; HOME is only for source and small control information.
+- Accept completion only with accounting state, exit code and verified artifacts.
+  Fetch bounded small results into `.sdsc/fetched/`, never over Quest source.
+  The initial smoke envelope is one H100, four CPUs, 16 GiB and at most five
+  minutes; it is not authorization or evidence for G0 or production training.
+
+For every new Quest/SDSC session, first read the current handoff and
+[new-session sequence in docs/sdsc_workflow.md](docs/sdsc_workflow.md#新会话操作顺序).
+Inspect `.sdsc/supervision/*/state.json` and existing `.sdsc/submissions/`
+receipts before submitting: continue an
+existing job with status/logs/fetch, or reconcile an unknown intent, rather than
+duplicating it. For a new, authorized run, follow
+check → sync dry-run → sync → check runtime/storage → submit dry-run → authorized
+submit → status/logs/fetch. Use the documented, discovered host/container paths
+and exact account/partition/QoS; recheck mutable environment facts. If the SSH
+master is absent, stop for manual authentication on the same Quest host.
+
+`tools/sdsc_supervise` is a finite Quest process for one verified teacher job
+followed by one two-H100 canonical-SFT calibration. It checks every five minutes,
+stops starting new operations after eight hours, pins the reviewed control tools
+and deployed release,
+and stops on SSH loss, changed controls, failed prerequisites or unknown submission.
+It never retries a submission, cancels jobs, or starts the full G0/pilot/factorial.
+Do not edit its pinned control files or launch a competing supervisor while it
+is active. A stopped flow must be reconciled from its state and submission
+receipts; never re-arm it blindly. Its shared Slurm helper is hash-checked and
+sourced as required below, but no local-Slurm helper function is called.
+
+`tools/sdsc_pipeline` is the separate finite Quest successor for verified
+calibration → complete G0 → four-H100 preflight → full seed-42 pilot. It preserves
+the existing teacher/calibration supervisor, uses a reviewed immutable plan,
+polls every five minutes, and starts no new operations after fourteen days.
+Inspect `.sdsc/supervision/teacher54345715-g0-pilot-v1/` for the deployed plan,
+launch evidence and actual state; do not infer activation from source existence.
+Never edit its `control_files` while active or start a competing flow. Existing
+stage claims must be reconciled, never deleted or blindly resubmitted.
+
+- Keep at most four concurrently allocatable GPUs: teacher array `0-15%4`
+  uses one H100 per task; the eight-method training array `0-7%1` uses four.
+  Four-GPU tasks use discovered `nairr-gpu` / `nairr-gpu-normal`; one/two-GPU
+  tasks use `nairr-gpu-shared` / `nairr-gpu-shared-normal`, account `nwu181`.
+- Preserve genuine scientific HEAD and all scientific thresholds. Private
+  container mounts restore original checkpoint paths without rewriting bytes.
+  New SDSC G0/pilot adapters explicitly state their scope; neither issues nor
+  borrows a Blackwell execution-class certificate.
+- Pilot inputs require all 4096 prompts, not the 256-prompt G0 store. Preserve
+  per-candidate RNG, four-rank training semantics and every method/circuit gate.
+  Scientific failure stops progression; no threshold relaxation or auto-retry.
+- Required results are hash-verified on persistent storage before success;
+  fetch only bounded reports/logs. Node-local free space is checked before
+  staging. The pilot runtime reads the existing SDSC G0 base through a separate
+  small venv; never install packages into an active producer environment.
+- No per-stage confirmation is needed under the existing authorization. Full
+  three-seed factorial, Gemma, cancellation and new scope remain separate.
+  SSH loss stops the flow for manual authentication; a detached Quest process
+  does not make a foreground SSH master immune to terminal disconnection.
+
+Teacher failure recovery currently uses the separately identified exploratory
+`qwen3-v2-teacher-prompt-probe`, job `54351516`. Its `passed` flag means diagnostic
+completion only; it must never satisfy a teacher/G0 prerequisite. Preserve the
+failed job `54345715`, proposed prompt-v4 protocol and both stopped v3 flows.
+Read `docs/refactor/sdsc_teacher_prompt_repair_20260918.md` before continuation.
+`tools/sdsc_probe_watch` is a separate read-only Quest observer; inspect
+`.sdsc/supervision/probe54351516-readonly-v1/` before starting anything. It polls
+at five-minute intervals for at most fourteen days and fetches small terminal
+results only. Never edit its pinned watcher/CLI/remote files while active;
+SSH loss, changed controls or unknown state stops it without submission/retry.
+The prompt repair changes scientific inputs; formal use still needs independent
+implementation/acceptance review and a complete newly verified teacher store.
+
+See `docs/sdsc_workflow.md` and `docs/sdsc_automation_gates.md` for execution,
+review and recovery boundaries. CPU tests do not establish actual G0/pilot PASS.
+
 ## Mandatory ServerScheduler contract
 
 Before changing or running OPD code, read these files in full:

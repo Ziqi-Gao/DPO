@@ -3582,6 +3582,13 @@ Operating instructions and next commands are in `docs/sdsc_workflow.md`.
 
 ## Repository and authority state
 
+This Quest checkout stores Git metadata in `.opd-git`; local Git commands use
+`git --git-dir=.opd-git --work-tree=.`. The existing SDSC workflow sources,
+tests, automation notes and Quest agent instructions are now tracked for the
+user-authorized GitHub publication. Their existing bytes and scientific review
+blocks are preserved. Runtime evidence under `.sdsc/`, generated data, weights,
+checkpoints and private Git metadata remain excluded from the source repository.
+
 The user authorizes this teacher-failure repair and a fresh G0 retry through
 armed automatic intake. Agents own git add/commit for authorized work; the
 former sandbox Git blocker is resolved. No central service, registration or
