@@ -472,9 +472,11 @@ old2+new2GPUs under4GPU; preserve all claims/evidence. No supervisor was started
 This contract covers preflight only.
 The frozen original fit gates reject the recovered preflight's preserved old
 scientific claim. A separate additive fit execution adapter is now implemented
-as a **proposed implementation**, pending its distinct independent review-only
-acceptance. All127 distinct CPU cases passed author and independent runs,
-including genuine dual-history v2 export/restore; no remaining review blockers.
+with independently reviewed implementation commit
+`2c687c5b3ff744dd74861fa0fcfac3bdf58f7a15` and distinct review-only acceptance
+of its execution contract. All127 distinct CPU cases passed author and
+independent runs, including genuine dual-history v2 export/restore; no
+remaining review blockers.
 `tools/sdsc_student_name_invariant_fit.py` and its fit contract/node retain the
 exact dbd97/61ba inner scientific release and provenance, while binding a
 separate new outer execution source and genuine v2 history. Both histories,
@@ -493,7 +495,7 @@ Current hostquser34 manual SSH master was restored;2026-10-07T01:53:50Z fresh
 check confirms access/account/partition/QoS. All18 historical flows remain
 terminal; none was rearmed. No prepared student, qualification or formal
 OPD/RL progression is accepted. Continue via the reviewed fit adapter only
-once accepted and deployed; never repeat the successful preflight.
+after matching deployment and actual-plan/dry-run review; never repeat the successful preflight.
 See `docs/refactor/sdsc_student_name_invariant_fit_execution_20261006.md` and
 `docs/refactor/sdsc_student_name_invariant_execution_recovery_20261006.md`.
 
